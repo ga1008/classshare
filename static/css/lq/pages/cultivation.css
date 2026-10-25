@@ -92,7 +92,7 @@
     content: ""; position: absolute; inset: auto 0 0 0; height: 40px; z-index: 2; pointer-events: none;
     background: linear-gradient(0deg, hsl(var(--lq-page-content) / .92) 20%, transparent);
 }
-.lq-cultivation__wind { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; pointer-events: none; color: hsl(var(--ls-ink-2)); }
+.lq-cultivation__wind { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; pointer-events: none; color: hsl(var(--ls-ink-2)); outline: 0 none hsl(var(--ls-c-sky-400)); /* outline-color feeds the shield flash */ }
 .lq-cultivation__stairs {
     --lq-cultivation-step-base: 30px;
     --lq-cultivation-step-rise: 17px;

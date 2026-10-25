@@ -1,0 +1,46 @@
+/* 六边形能力雷达 (templates/partials/ability_radar.html). Chart is a content
+   slot: colors from tokens only, no backdrop-filter. The figure and the axis
+   list sit side by side when the host is wide, stacked when narrow. */
+.lq-radar { container-type: inline-size; min-width: 0; color: hsl(var(--ls-ink)); }
+.lq-radar__inner { display: grid; gap: var(--ls-s-4); min-width: 0; }
+@container (min-width: 560px) {
+    .lq-radar__inner { grid-template-columns: minmax(250px, 1.05fr) minmax(0, 1fr); align-items: center; }
+}
+.lq-radar__figure { display: grid; justify-items: center; gap: var(--ls-s-2); margin: 0; min-width: 0; }
+.lq-radar__svg { display: block; width: 100%; max-width: 340px; height: auto; overflow: visible; font-family: var(--ls-font-sans); }
+.lq-radar__ring { fill: none; stroke: hsl(var(--ls-line)); stroke-width: 1; }
+.lq-radar__ring.is-outer { stroke: hsl(var(--ls-line-strong)); fill: hsl(var(--ls-ink) / .025); }
+.lq-radar__spoke { stroke: hsl(var(--ls-line)); stroke-width: 1; }
+.lq-radar__tick { fill: hsl(var(--ls-ink-3)); font-size: 8px; }
+.lq-radar__average { fill: hsl(var(--ls-c-amber-400) / .07); stroke: hsl(var(--ls-c-amber-500)); stroke-width: 1.6; stroke-dasharray: 5 4; stroke-linejoin: round; }
+.lq-radar__self { fill: hsl(var(--ls-primary) / .24); stroke: hsl(var(--ls-primary)); stroke-width: 2.2; stroke-linejoin: round; filter: drop-shadow(0 0 6px hsl(var(--ls-primary) / .35)); }
+.lq-radar__vertex { fill: hsl(var(--lq-page-content)); stroke: hsl(var(--ls-primary)); stroke-width: 2; }
+.lq-radar__label { fill: hsl(var(--ls-ink)); font-size: 12px; font-weight: 600; }
+.lq-radar__label-value { fill: hsl(var(--ls-primary)); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.lq-radar__label-average { fill: hsl(var(--ls-c-amber-500)); font-weight: 600; }
+.lq-radar__legend { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--ls-s-1) var(--ls-s-3); color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-caption); }
+.lq-radar__key { display: inline-flex; align-items: center; gap: 6px; }
+.lq-radar__key::before { content: ""; width: 16px; height: 0; border-top: 2.5px solid hsl(var(--ls-primary)); border-radius: 2px; }
+.lq-radar__key.is-average::before { border-top: 2px dashed hsl(var(--ls-c-amber-500)); }
+.lq-radar__key.is-scope::before { display: none; }
+.lq-radar__key.is-scope { padding: 1px var(--ls-s-2); border-radius: var(--ls-r-capsule); background: hsl(var(--ls-tone-neutral-soft)); }
+.lq-radar__detail { display: grid; gap: var(--ls-s-3); min-width: 0; }
+.lq-radar__insight { display: flex; flex-wrap: wrap; gap: var(--ls-s-1) var(--ls-s-4); margin: 0; color: hsl(var(--ls-ink-2)); font-size: var(--ls-t-sub); }
+.lq-radar__insight strong { color: hsl(var(--ls-ink)); }
+.lq-radar__axes { display: grid; gap: var(--ls-s-2); margin: 0; padding: 0; list-style: none; }
+.lq-radar__axis {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto 3.2em; grid-template-areas: "name value delta" "bar bar bar";
+    align-items: baseline; gap: 4px var(--ls-s-2); font-size: var(--ls-t-sub);
+}
+.lq-radar__axis-name { grid-area: name; color: hsl(var(--ls-ink-2)); }
+.lq-radar__axis-value { grid-area: value; justify-self: end; font-variant-numeric: tabular-nums; }
+.lq-radar__axis.is-empty .lq-radar__axis-value { color: hsl(var(--ls-ink-3)); font-weight: 400; }
+.lq-radar__delta { grid-area: delta; justify-self: end; text-align: right; font-size: var(--ls-t-caption); font-weight: 600; font-variant-numeric: tabular-nums; }
+.lq-radar__delta[data-tone="success"] { color: hsl(var(--ls-tone-success-fg)); }
+.lq-radar__delta[data-tone="warning"] { color: hsl(var(--ls-tone-warning-fg)); }
+.lq-radar__delta[data-tone="neutral"] { color: hsl(var(--ls-ink-3)); }
+.lq-radar__bar { grid-area: bar; position: relative; height: 6px; border-radius: var(--ls-r-capsule); background: hsl(var(--ls-tone-neutral-soft)); }
+.lq-radar__bar > i { position: absolute; inset: 0 auto 0 0; width: var(--value); border-radius: inherit; background: hsl(var(--ls-primary)); }
+.lq-radar__bar > b { position: absolute; top: -3px; bottom: -3px; left: var(--value); width: 2px; margin-left: -1px; border-radius: 1px; background: hsl(var(--ls-c-amber-500)); }
+.lq-radar__empty { margin: 0; color: hsl(var(--ls-ink-3)); font-size: var(--ls-t-sub); }
+@media (forced-colors: active) { .lq-radar__self { filter: none; } }

@@ -176,40 +176,6 @@ class StudentInsightCultivationTests(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_class_radar_average_hides_single_student_and_uses_cached_snapshots_for_peer_group(self):
-        conn = _conn()
-        try:
-            conn.execute("INSERT INTO students (id, class_id, name) VALUES (2, 10, '学生甲')")
-            offerings = [{"class_offering_id": 1}]
-
-            single = service._load_class_radar_average(conn, offerings=offerings, class_id=10)
-
-            self.assertFalse(single["available"])
-            self.assertEqual(1, single["student_count"])
-
-            conn.execute("INSERT INTO students (id, class_id, name) VALUES (3, 10, '学生乙')")
-            conn.execute(
-                """
-                INSERT INTO learning_progress_snapshots (class_offering_id, student_id, score, components_json)
-                VALUES (1, 2, 50, ?), (1, 3, 100, ?)
-                """,
-                (
-                    json.dumps({"material": 22.5, "task": 17.5, "interaction": 7.5, "consistency": 2.5}),
-                    json.dumps({"material": 45, "task": 35, "interaction": 15, "consistency": 5}),
-                ),
-            )
-
-            average = service._load_class_radar_average(conn, offerings=offerings, class_id=10)
-
-            self.assertTrue(average["available"])
-            self.assertEqual(2, average["student_count"])
-            self.assertEqual(75, average["axes"]["material"])
-            self.assertEqual(75, average["axes"]["task"])
-            self.assertEqual(75, average["axes"]["quality"])
-            self.assertEqual(75, average["axes"]["cultivation"])
-        finally:
-            conn.close()
-
 
 if __name__ == "__main__":
     unittest.main()

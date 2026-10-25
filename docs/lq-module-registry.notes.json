@@ -273,7 +273,8 @@
   "insights": {
     "title": "Insights 统计（AvatarStack / Ring / Bars / Meter）",
     "layer": "component",
-    "summary": "头像堆叠与三种小型统计图；数据色是内容槽位。"
+    "summary": "头像堆叠与三种小型统计图；数据色是内容槽位。",
+    "rules": " 六边形能力雷达用共享 partials/ability_radar.html（数据来自 ability_radar_service.build_ability_radar，样式 components/ability-radar.css），教师学生洞察与学生个人中心共用；不要再手写雷达 SVG。"
   },
   "workspace": {
     "title": "Workspace Split / Viewer",

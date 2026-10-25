@@ -25,6 +25,7 @@
 | [Page backdrop 页面背景层](#page-backdrop) | foundation | `lq-page-backdrop` | 仅 CSS | 1 |
 | [Prose copy 正文排版](#prose-copy) | foundation | — | 仅 CSS | 0 |
 | [React bridges](#react-bridges) | foundation | `lq-avatar-link` | 仅 CSS | 1 |
+| [ability-radar](#ability-radar) | component | `lq-radar` | 仅 CSS | 1 |
 | [Business 业务呈现（DeadlineClock / JobStatus / QuestionNavigator）](#business) | component | `lq-clock`, `lq-job`, `lq-nav-grid` | 宏 / JS / Py | 1 |
 | [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 269 |
 | [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 27 |
@@ -369,6 +370,7 @@
 - `templates/manage/system/diagnostics.html` ×4
 - `templates/partials/exams/modals.html` ×4
 - `templates/partials/profile/messages.html` ×4
+- `templates/partials/profile/overview.html` ×4
 - `templates/student_login_v4.html` ×4
 - `static/js/approval_workflow.js` ×3
 - `static/js/blog.js` ×3
@@ -397,7 +399,6 @@
 - `templates/partials/classroom_members/exams.html` ×3
 - `templates/partials/classroom_members/workspace.html` ×3
 - `templates/partials/exams/board.html` ×3
-- `templates/partials/profile/overview.html` ×3
 - `templates/partials/profile/settings.html` ×3
 - `templates/partials/teacher_onboarding_modal.html` ×3
 - `templates/permission_denied.html` ×3
@@ -545,6 +546,19 @@
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `frontend/src/components/action-entry.tsx` ×1
+
+</details>
+
+### ability-radar
+
+**ability-radar** · 层：component · CSS：`static/css/lq/components/ability-radar.css`
+
+- **根类**：`lq-radar`
+- **消费者**：1 个文件
+
+<details><summary>消费者清单（按命中次数）</summary>
+
+- `templates/partials/ability_radar.html` ×27
 
 </details>
 
@@ -1050,6 +1064,7 @@
 - `templates/manage/system/diagnostics.html` ×4
 - `templates/manage/system/users.html` ×4
 - `templates/partials/exams/modals.html` ×4
+- `templates/partials/profile/overview.html` ×4
 - `classroom_app/services/document_render_service.py` ×3
 - `frontend/src/islands/dashboard-workspace.tsx` ×3
 - `static/js/career_path_app.js` ×3
@@ -1073,7 +1088,6 @@
 - `templates/partials/classroom_members/exams.html` ×3
 - `templates/partials/classroom_members/workspace.html` ×3
 - `templates/partials/exams/board.html` ×3
-- `templates/partials/profile/overview.html` ×3
 - `templates/partials/profile/settings.html` ×3
 - `templates/partials/teacher_onboarding_modal.html` ×3
 - `static/js/classroom_page.js` ×2
@@ -1167,7 +1181,7 @@
 
 <details><summary>消费者清单（按命中次数）</summary>
 
-- `static/js/cultivation_emblems.js` ×14
+- `static/js/cultivation_emblems.js` ×20
 
 </details>
 
@@ -1458,6 +1472,7 @@
 **Insights 统计（AvatarStack / Ring / Bars / Meter）** · 层：component · CSS：`static/css/lq/components/insights.css`
 
 - **设计摘要**：头像堆叠与三种小型统计图；数据色是内容槽位。
+- **规则**： 六边形能力雷达用共享 partials/ability_radar.html（数据来自 ability_radar_service.build_ability_radar，样式 components/ability-radar.css），教师学生洞察与学生个人中心共用；不要再手写雷达 SVG。
 - **根类**：`lq-avatar-stack`, `lq-bars`, `lq-insight`, `lq-meter`, `lq-ring`
 - **Jinja 宏** `templates/macros/lq/insights.html`：`lq_avatar_stack`, `insight_ring`, `insight_bars`, `insight_meter`
 - **JS 入口** `static/js/lq/insights.js`：`INSIGHT_KINDS`, `avatar_stack`, `createInsight`, `html`, `insightMarkup`, `insightProps`, `insight_bars`, `insight_meter`, `insight_ring`

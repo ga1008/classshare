@@ -680,12 +680,29 @@ def _build_student_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
         "recent_items": _load_student_recent_items(conn, student_id, role),
         "security_summary": security_summary,
         "cultivation": cultivation,
+        # Cross-classroom ability radar: every classroom the student belongs to,
+        # each compared with its own class mean, then averaged (ability_radar_service).
+        "ability_radar": _student_ability_radar(conn, student_id, cultivation_courses),
         "activity_summary": {
             "activity_count": activity_count,
             "focus_minutes": focus_minutes,
             "notification_unread": notification_unread,
         },
     }
+
+
+def _student_ability_radar(conn, student_id: int, courses: list[dict[str, Any]]) -> dict[str, Any] | None:
+    from .ability_radar_service import build_ability_radar
+    from ..db.savepoint import best_effort
+
+    offering_ids = [int(item["class_offering_id"]) for item in courses if item.get("class_offering_id")]
+    if not offering_ids:
+        return None
+    radar = None
+    # Optional panel: a failure leaves the rest of the profile intact.
+    with best_effort(conn, "profile_ability_radar"):
+        radar = build_ability_radar(conn, student_id=int(student_id), offering_ids=offering_ids)
+    return radar
 
 
 def build_profile_overview(conn, profile: dict[str, Any], user: dict) -> dict[str, Any]:

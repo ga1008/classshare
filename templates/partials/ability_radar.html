@@ -1,0 +1,63 @@
+{#- 六边形能力雷达（共享）。传入 ability_radar = ability_radar_service.build_ability_radar(...)。
+    可选：radar_self_label（默认“本人”）。样式：static/css/lq/components/ability-radar.css -#}
+{% set r = ability_radar or {} %}
+{% set self_label = radar_self_label or '本人' %}
+{% if r.available %}
+<div class="lq-radar" data-lq-component="radar">
+<div class="lq-radar__inner">
+    <figure class="lq-radar__figure">
+        <svg class="lq-radar__svg" viewBox="-58 -14 356 268" role="img" aria-label="{{ self_label }}能力雷达：{% for axis in r.axes %}{{ axis.label }} {{ axis.score if axis.score is not none else '暂无' }}{% if axis.average is not none %}（{{ r.peer_label }} {{ axis.average }}）{% endif %}{{ '，' if not loop.last }}{% endfor %}">
+            {% for ring in r.rings %}
+            <polygon class="lq-radar__ring{% if ring.ratio == 100 %} is-outer{% endif %}" points="{{ ring.points }}"></polygon>
+            {% endfor %}
+            {% for spoke in r.spokes %}
+            <line class="lq-radar__spoke" x1="{{ r.center }}" y1="{{ r.center }}" x2="{{ spoke.x }}" y2="{{ spoke.y }}"></line>
+            {% endfor %}
+            {% for ring in r.rings[:3] %}
+            <text class="lq-radar__tick" x="{{ r.center + 3 }}" y="{{ r.center - 80 * ring.ratio / 100 + 3 }}">{{ ring.ratio }}</text>
+            {% endfor %}
+            {% if r.has_average %}
+            <polygon class="lq-radar__average" points="{{ r.average_points }}"><title>{{ r.peer_label }}</title></polygon>
+            {% endif %}
+            <polygon class="lq-radar__self" points="{{ r.points }}"><title>{{ self_label }}</title></polygon>
+            {% for axis in r.axes %}
+            {% if axis.score is not none %}
+            <circle class="lq-radar__vertex" cx="{{ axis.vertex_x }}" cy="{{ axis.vertex_y }}" r="3.4"><title>{{ axis.label }} {{ axis.score }}</title></circle>
+            {% endif %}
+            <text class="lq-radar__label" x="{{ axis.label_x }}" y="{{ axis.label_y }}" text-anchor="{{ axis.anchor }}">
+                <tspan x="{{ axis.label_x }}">{{ axis.label }}</tspan>
+                <tspan class="lq-radar__label-value" x="{{ axis.label_x }}" dy="15">{{ axis.score if axis.score is not none else '—' }}{% if axis.average is not none %}<tspan class="lq-radar__label-average"> / {{ axis.average }}</tspan>{% endif %}</tspan>
+            </text>
+            {% endfor %}
+        </svg>
+        <figcaption class="lq-radar__legend">
+            <span class="lq-radar__key is-self">{{ self_label }}</span>
+            {% if r.has_average %}<span class="lq-radar__key is-average">{{ r.peer_label }}{% if r.peer_count %} · {{ r.peer_count }} 人{% endif %}</span>{% endif %}
+            {% if r.course_count > 1 %}<span class="lq-radar__key is-scope">综合 {{ r.course_count }} 门课堂</span>{% endif %}
+        </figcaption>
+    </figure>
+    <div class="lq-radar__detail">
+        {% if r.strength or r.focus %}
+        <p class="lq-radar__insight">
+            {% if r.strength %}<span>{% if r.strength.delta is not none and r.strength.delta > 0 %}优势 <strong>{{ r.strength.label }}</strong>，高于{{ r.peer_label }} {{ r.strength.delta }}{% else %}相对强项 <strong>{{ r.strength.label }}</strong>{% endif %}</span>{% endif %}
+            {% if r.focus %}<span>{% if r.focus.delta is not none and r.focus.delta < 0 %}待加强 <strong>{{ r.focus.label }}</strong>，低于{{ r.peer_label }} {{ -r.focus.delta }}{% else %}可再提升 <strong>{{ r.focus.label }}</strong>{% endif %}</span>{% endif %}
+        </p>
+        {% endif %}
+        <ul class="lq-radar__axes">
+            {% for axis in r.axes %}
+            <li class="lq-radar__axis{% if axis.score is none %} is-empty{% endif %}">
+                <span class="lq-radar__axis-name">{{ axis.label }}</span>
+                <strong class="lq-radar__axis-value">{{ axis.score if axis.score is not none else '暂无' }}</strong>
+                {% if axis.delta is not none %}
+                <span class="lq-radar__delta" data-tone="{{ 'success' if axis.delta >= 5 else ('warning' if axis.delta <= -5 else 'neutral') }}">{{ '+' if axis.delta > 0 else '' }}{{ axis.delta }}</span>
+                {% else %}<span class="lq-radar__delta" data-tone="neutral" aria-hidden="true"></span>{% endif %}
+                <span class="lq-radar__bar" aria-hidden="true"><i style="--value: {{ axis.score or 0 }}%"></i>{% if axis.average is not none %}<b style="--value: {{ axis.average }}%"></b>{% endif %}</span>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+</div>
+{% else %}
+<p class="lq-radar__empty">还没有可用的学习数据：完成一次研读、提交或互动后，这里会生成能力雷达。</p>
+{% endif %}

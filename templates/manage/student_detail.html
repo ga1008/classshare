@@ -277,48 +277,12 @@
             <div class="student-insight-band__head">
                 <div>
                     <h3>六边形能力雷达</h3>
-                    <p>综合材料研读、任务执行、成绩质量、互动表达、稳定投入和修为推进。</p>
+                    <p>综合你所授课堂的材料、任务、成绩、互动、稳定投入与修为；虚线为同课堂均值，数值后为“该生 / 均值”。</p>
                 </div>
             </div>
-            <div class="student-radar-wrap">
-                <svg class="student-radar" viewBox="0 0 168 168" role="img" aria-label="学生能力雷达图">
-                    {% for points in insight.radar.grid_points %}
-                    <polygon class="student-radar-grid" points="{{ points }}"></polygon>
-                    {% endfor %}
-                    <line x1="84" y1="18" x2="84" y2="150" stroke="rgba(148,163,184,.24)"></line>
-                    <line x1="26.8" y1="51" x2="141.2" y2="117" stroke="rgba(148,163,184,.24)"></line>
-                    <line x1="141.2" y1="51" x2="26.8" y2="117" stroke="rgba(148,163,184,.24)"></line>
-                    {% if insight.radar.has_class_average %}
-                    <polygon class="student-radar-average" points="{{ insight.radar.class_average_points }}">
-                        <title>班级均值</title>
-                    </polygon>
-                    {% endif %}
-                    <polygon class="student-radar-fill" points="{{ insight.radar.points }}"></polygon>
-                    {% for axis in insight.radar.axes %}
-                    <text class="student-radar-label" x="{{ axis.label_x }}" y="{{ axis.label_y }}" text-anchor="middle" dominant-baseline="central">
-                        <title>{{ axis.label }}</title>{{ axis.short_label }}
-                    </text>
-                    {% endfor %}
-                </svg>
-                {% if insight.radar.has_class_average %}
-                <div class="student-radar-legend" aria-label="雷达图图例">
-                    <span class="is-self">该生</span>
-                    <span class="is-average">班级均值</span>
-                </div>
-                {% endif %}
-                <div class="student-radar-axis-list">
-                    {% for axis in insight.radar.axes %}
-                    <div class="student-radar-axis">
-                        <div>
-                            <span>{{ axis.label }}</span>
-                            <strong>{{ axis.score }}%</strong>
-                            {% if axis.class_average_score is not none %}<small>班均 {{ axis.class_average_score }}%</small>{% endif %}
-                        </div>
-                        <div class="student-mini-bar"><span style="--value: {{ axis.score }}%;"></span></div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
+            {% set ability_radar = insight.radar %}
+            {% set radar_self_label = '该生' %}
+            {% include 'partials/ability_radar.html' %}
         </aside>
     </section>
 

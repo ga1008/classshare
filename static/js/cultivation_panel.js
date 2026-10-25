@@ -210,72 +210,171 @@ function renderStageAction(progress, ctx) {
 
 const WIND_ANGLE = 28 * Math.PI / 180;
 
-/** 罡风: streaks blowing from the upper right toward the lower left of the ladder. */
-function startWind(canvas, ctx) {
+/**
+ * 罡风: streaks blowing from the upper right toward the lower left of the ladder.
+ * The selected emblem carries an invisible shield a few pixels outside the art:
+ * streaks that reach it are pushed off its surface and slide around it, and each
+ * hit leaves a brief arc of light on the shield where it struck.
+ * getShield() returns {x, y, r} in canvas pixels (or null) and is read per frame,
+ * so scrolling, dragging and re-selecting move the shield with the emblem.
+ */
+function startWind(canvas, ctx, getShield = () => null) {
     const painter = canvas.getContext('2d');
-    if (!painter) return () => {};
+    if (!painter) return { repaint() {}, stop() {} };
     const dx = -Math.cos(WIND_ANGLE);
     const dy = Math.sin(WIND_ANGLE);
+    const SHIELD_REACH = 2.4;      // influence radius, in shield radii
+    const MAX_IMPACTS = 40;
     let width = 0;
     let height = 0;
     let particles = [];
+    let impacts = [];
     let frame = null;
     let running = false;
     let last = 0;
     let rgb = [148, 163, 184];
+    let accent = [99, 102, 241];
     const origin = performance.now();
 
     const shape = () => ({ len: 16 + Math.random() * 54, speed: 150 + Math.random() * 280, alpha: 0.1 + Math.random() * 0.36, thick: 0.6 + Math.random() * 1.2 });
+    const rgbOf = (value, fallback) => {
+        const match = String(value || '').match(/\d+(\.\d+)?/g);
+        return match && match.length >= 3 ? match.slice(0, 3).map(Number) : fallback;
+    };
     const readColor = () => {
-        const match = String(getComputedStyle(canvas).color || '').match(/\d+(\.\d+)?/g);
-        if (match && match.length >= 3) rgb = match.slice(0, 3).map(Number);
+        const style = getComputedStyle(canvas);
+        rgb = rgbOf(style.color, rgb);
+        accent = rgbOf(style.outlineColor, accent);
+    };
+    // Each streak is drawn along its real recent path, so it bends around the
+    // shield instead of pointing a straight tail through it.
+    const withVelocity = (p) => {
+        p.vx = dx * p.speed;
+        p.vy = dy * p.speed;
+        p.trail = [{ x: p.x - dx * p.len, y: p.y - dy * p.len }, { x: p.x, y: p.y }];
+        return p;
     };
     const spawn = (scatter) => {
-        if (scatter) return { x: Math.random() * width * 1.2, y: Math.random() * height, ...shape() };
+        if (scatter) return withVelocity({ x: Math.random() * width * 1.2, y: Math.random() * height, ...shape() });
         const fromTop = Math.random() < width / ((width + height) || 1);
-        return {
+        return withVelocity({
             x: fromTop ? Math.random() * (width + height * 0.8) : width + Math.random() * 60,
             y: fromTop ? -Math.random() * 40 : Math.random() * height * 0.9,
             ...shape(),
-        };
+        });
     };
     const resize = () => {
-        const rect = canvas.getBoundingClientRect();
+        // Layout size, not getBoundingClientRect(): the dialog opens with a scale
+        // transform, and a transformed size would misplace every streak.
         const dpr = Math.min(2, window.devicePixelRatio || 1);
-        width = rect.width;
-        height = rect.height;
+        width = canvas.clientWidth;
+        height = canvas.clientHeight;
         canvas.width = Math.max(1, Math.round(width * dpr));
         canvas.height = Math.max(1, Math.round(height * dpr));
         painter.setTransform(dpr, 0, 0, dpr, 0, 0);
         readColor();
-        const count = Math.min(72, Math.max(16, Math.round(width / 15)));
+        const count = Math.min(84, Math.max(18, Math.round(width / 13)));
         particles = Array.from({ length: count }, () => spawn(true));
     };
+
+    /** Bend a particle's velocity around the shield; records an impact on a hit. */
+    const deflect = (p, shield, live) => {
+        const ox = p.x - shield.x;
+        const oy = p.y - shield.y;
+        const dist = Math.hypot(ox, oy) || 0.001;
+        if (dist > shield.r * SHIELD_REACH) return;
+        const nx = ox / dist;
+        const ny = oy / dist;
+        const inward = p.vx * nx + p.vy * ny; // < 0 when heading into the shield
+        let hit = false;
+        if (dist < shield.r) {
+            // Never inside: sit on the surface and lose the inward motion.
+            p.x = shield.x + nx * shield.r;
+            p.y = shield.y + ny * shield.r;
+            if (inward < 0) { p.vx -= nx * inward * 1.15; p.vy -= ny * inward * 1.15; hit = true; }
+        } else if (inward < 0) {
+            // The closer to the shield, the more of the inward motion turns sideways.
+            const falloff = 0.9 * Math.min(1, ((shield.r * SHIELD_REACH - dist) / (shield.r * (SHIELD_REACH - 1))) ** 1.6);
+            p.vx -= nx * inward * falloff;
+            p.vy -= ny * inward * falloff;
+            const tx = -ny;
+            const ty = nx;
+            const side = Math.sign(p.vx * tx + p.vy * ty) || 1;
+            const boost = -inward * falloff * 0.55;
+            p.vx += tx * side * boost;
+            p.vy += ty * side * boost;
+            if (dist < shield.r * 1.12) hit = true;
+        }
+        if (live && hit && impacts.length < MAX_IMPACTS && Math.random() < 0.6) {
+            impacts.push({ angle: Math.atan2(ny, nx), life: 1, span: 0.22 + Math.random() * 0.3, strength: Math.min(1, -inward / 260) });
+        }
+    };
+
+    const drawShield = (shield, dt) => {
+        if (!shield) { impacts = []; return; }
+        const [r, g, b] = accent;
+        // Barely-there rim so the shield reads as invisible until struck.
+        painter.beginPath();
+        painter.arc(shield.x, shield.y, shield.r, 0, Math.PI * 2);
+        painter.strokeStyle = `rgba(${r},${g},${b},0.07)`;
+        painter.lineWidth = 1;
+        painter.stroke();
+        impacts = impacts.filter((impact) => (impact.life -= dt * 2.2) > 0);
+        for (const impact of impacts) {
+            const alpha = impact.life * (0.25 + impact.strength * 0.55);
+            painter.beginPath();
+            painter.arc(shield.x, shield.y, shield.r + (1 - impact.life) * 3, impact.angle - impact.span, impact.angle + impact.span);
+            painter.strokeStyle = `rgba(${r},${g},${b},${alpha})`;
+            painter.lineWidth = 1.2 + impact.strength * 1.8;
+            painter.lineCap = 'round';
+            painter.stroke();
+        }
+    };
+
     const paint = (now, advance) => {
         const dt = advance ? Math.min(0.05, (now - last) / 1000 || 0.016) : 0;
         last = now;
         const t = (now - origin) / 1000;
         const gust = 0.7 + 0.45 * Math.sin(t / 1.4) + 0.2 * Math.sin(t / 0.53);
+        const shield = getShield();
         painter.clearRect(0, 0, width, height);
         const [r, g, b] = rgb;
+        const relax = Math.min(1, dt * 2.4);
         for (const p of particles) {
-            p.x += dx * p.speed * gust * dt;
-            p.y += dy * p.speed * gust * dt;
-            if (p.x < -p.len || p.y > height + p.len) Object.assign(p, spawn(false));
-            const stretch = 0.8 + gust * 0.3;
-            const tx = p.x - dx * p.len * stretch;
-            const ty = p.y - dy * p.len * stretch;
-            const gradient = painter.createLinearGradient(p.x, p.y, tx, ty);
+            // Velocity relaxes back toward the wind once past the shield.
+            p.vx += (dx * p.speed * gust - p.vx) * relax;
+            p.vy += (dy * p.speed * gust - p.vy) * relax;
+            if (shield) deflect(p, shield, advance);
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            if (shield) deflect(p, shield, advance); // keep the integrated position outside
+            if (p.x < -p.len || p.y > height + p.len || p.x > width + height + 120 || p.y < -120) Object.assign(p, spawn(false));
+            // Append the head and trim the trail to the streak length (stretched by gusts).
+            const head = p.trail[p.trail.length - 1];
+            if (Math.hypot(p.x - head.x, p.y - head.y) > 3) p.trail.push({ x: p.x, y: p.y });
+            else { head.x = p.x; head.y = p.y; }
+            const maxLength = p.len * (0.8 + gust * 0.3);
+            let length = 0;
+            let cut = 0;
+            for (let i = p.trail.length - 1; i > 0; i -= 1) {
+                length += Math.hypot(p.trail[i].x - p.trail[i - 1].x, p.trail[i].y - p.trail[i - 1].y);
+                if (length > maxLength) { cut = i - 1; break; }
+            }
+            if (cut > 0) p.trail.splice(0, cut);
+            const tail = p.trail[0];
+            const gradient = painter.createLinearGradient(p.x, p.y, tail.x, tail.y);
             gradient.addColorStop(0, `rgba(${r},${g},${b},${p.alpha})`);
             gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
             painter.strokeStyle = gradient;
             painter.lineWidth = p.thick;
             painter.lineCap = 'round';
+            painter.lineJoin = 'round';
             painter.beginPath();
             painter.moveTo(p.x, p.y);
-            painter.lineTo(tx, ty);
+            for (let i = p.trail.length - 2; i >= 0; i -= 1) painter.lineTo(p.trail[i].x, p.trail[i].y);
             painter.stroke();
         }
+        drawShield(shield, dt);
     };
     const loop = (now) => {
         if (!running || !canvas.isConnected) { running = false; frame = null; return; }
@@ -293,11 +392,30 @@ function startWind(canvas, ctx) {
     visibility.observe(canvas);
     const onVisibility = () => setRunning(!document.hidden && canvas.isConnected);
     document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-        setRunning(false);
-        resizeObserver.disconnect();
-        visibility.disconnect();
-        document.removeEventListener('visibilitychange', onVisibility);
+    return {
+        repaint: () => { if (!running) paint(performance.now(), false); },
+        stop() {
+            setRunning(false);
+            resizeObserver.disconnect();
+            visibility.disconnect();
+            document.removeEventListener('visibilitychange', onVisibility);
+        },
+    };
+}
+
+/** Shield centred on the selected step's emblem, a few px outside the art, in canvas coordinates. */
+function emblemShield(canvas, item) {
+    const art = item?.querySelector('.lq-cultivation__step-emblem, .lq-cultivation__step-origin');
+    if (!art) return null;
+    const box = canvas.getBoundingClientRect();
+    const rect = art.getBoundingClientRect();
+    if (!rect.width || !box.width || rect.right < box.left || rect.left > box.right) return null;
+    // Screen rects include any transform on the dialog; convert to canvas layout units.
+    const scale = canvas.clientWidth / box.width || 1;
+    return {
+        x: (rect.left + rect.width / 2 - box.left) * scale,
+        y: (rect.top + rect.height / 2 - box.top) * scale,
+        r: (Math.max(rect.width, rect.height) / 2) * scale + 7,
     };
 }
 
@@ -419,6 +537,7 @@ function renderPath(progress, ctx) {
         selected = Math.max(0, Math.min(nodes.length - 1, index));
         items.forEach((item, i) => item.classList.toggle('is-selected', i === selected));
         describe(nodes[selected], selected);
+        ctx.onSelect?.();
         if (scroll) items[selected].scrollIntoView({ block: 'nearest', inline: 'center', behavior: ctx.reducedMotion ? 'auto' : 'smooth' });
     };
     track.addEventListener('click', (event) => {
@@ -441,7 +560,19 @@ function renderPath(progress, ctx) {
     ctx.afterMount(() => {
         select(selected, false);
         items[selected].scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'auto' });
-        ctx.cleanups.push(startWind(canvas, ctx));
+        const wind = startWind(canvas, ctx, () => emblemShield(canvas, items[selected]));
+        ctx.cleanups.push(() => wind.stop());
+        // Reduced motion paints a static frame; refresh it when the selection or scroll moves.
+        if (ctx.reducedMotion) {
+            let pending = false;
+            const repaintSoon = () => {
+                if (pending) return;
+                pending = true;
+                requestAnimationFrame(() => { pending = false; wind.repaint(); });
+            };
+            track.addEventListener('scroll', repaintSoon, { passive: true });
+            ctx.onSelect = repaintSoon;
+        }
     });
     return section;
 }

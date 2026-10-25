@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import math
 from typing import Any
 
+from .ability_radar_service import build_ability_radar
 from .learning_progress_service import (
     build_student_public_cultivation_badge,
     clamp,
@@ -22,11 +22,6 @@ from .student_support_service import (
 )
 
 
-RADAR_SIZE = 168
-RADAR_CENTER = RADAR_SIZE / 2
-RADAR_RADIUS = 66
-RADAR_LABEL_RADIUS = 78
-COMPONENT_MAX_SCORES = {"material": 45, "task": 35, "interaction": 15, "consistency": 5}
 ALERT_SEVERITY_LABELS = {"L1": "提示", "L2": "关注", "L3": "干预"}
 ALERT_SEVERITY_RANK = {"L1": 1, "L2": 2, "L3": 3}
 ALERT_TONES = {"L1": "notice", "L2": "warning", "L3": "danger"}
@@ -111,39 +106,6 @@ def _task_status_label(row: dict[str, Any]) -> str:
     if str(row.get("status") or "") == "closed":
         return "已截止"
     return "待完成"
-
-
-def _radar_points(axes: list[dict[str, Any]]) -> str:
-    points: list[str] = []
-    count = max(len(axes), 1)
-    for index, axis in enumerate(axes):
-        ratio = clamp(safe_float(axis.get("score")) / 100)
-        angle = -math.pi / 2 + index * 2 * math.pi / count
-        x = RADAR_CENTER + math.cos(angle) * RADAR_RADIUS * ratio
-        y = RADAR_CENTER + math.sin(angle) * RADAR_RADIUS * ratio
-        points.append(f"{x:.1f},{y:.1f}")
-    return " ".join(points)
-
-
-def _radar_grid_points(ratio: float, count: int = 6) -> str:
-    points: list[str] = []
-    for index in range(count):
-        angle = -math.pi / 2 + index * 2 * math.pi / count
-        x = RADAR_CENTER + math.cos(angle) * RADAR_RADIUS * ratio
-        y = RADAR_CENTER + math.sin(angle) * RADAR_RADIUS * ratio
-        points.append(f"{x:.1f},{y:.1f}")
-    return " ".join(points)
-
-
-def _radar_label_position(index: int, count: int = 6) -> dict[str, float]:
-    angle = -math.pi / 2 + index * 2 * math.pi / count
-    x = RADAR_CENTER + math.cos(angle) * RADAR_LABEL_RADIUS
-    y = RADAR_CENTER + math.sin(angle) * RADAR_LABEL_RADIUS
-    return {"label_x": round(x, 1), "label_y": round(y, 1)}
-
-
-def _radar_axis_points(axes: list[dict[str, Any]], *, score_key: str = "score") -> str:
-    return _radar_points([{"score": axis.get(score_key, 0)} for axis in axes])
 
 
 def _load_teacher_student_row(conn, *, teacher_id: int, student_id: int) -> dict[str, Any] | None:
@@ -589,82 +551,6 @@ def _build_student_cultivation_timeline(
     )
 
 
-def _component_axis_percent(component_value: Any, component: str) -> float:
-    max_score = COMPONENT_MAX_SCORES.get(component) or 1
-    return clamp(safe_float(component_value) / max_score) * 100
-
-
-def _load_class_radar_average(
-    conn,
-    *,
-    offerings: list[dict[str, Any]],
-    class_id: int,
-) -> dict[str, Any]:
-    offering_ids = [int(item["class_offering_id"]) for item in offerings]
-    if not offering_ids:
-        return {"available": False, "student_count": 0, "axes": []}
-    student_rows = conn.execute(
-        """
-        SELECT id
-        FROM students
-        WHERE class_id = ?
-          AND COALESCE(enrollment_status, 'active') = 'active'
-        """,
-        (int(class_id),),
-    ).fetchall()
-    student_ids = [int(row["id"]) for row in student_rows]
-    if len(student_ids) <= 1:
-        return {"available": False, "student_count": len(student_ids), "axes": []}
-    placeholders = ",".join("?" for _ in offering_ids)
-    rows = conn.execute(
-        f"""
-        SELECT student_id, score, components_json
-        FROM learning_progress_snapshots
-        WHERE class_offering_id IN ({placeholders})
-          AND student_id IN ({",".join("?" for _ in student_ids)})
-        """,
-        [*offering_ids, *student_ids],
-    ).fetchall()
-    per_student: dict[int, dict[str, list[float]]] = {}
-    for row in rows:
-        item = dict(row)
-        student_id = int(item["student_id"])
-        bucket = per_student.setdefault(
-            student_id,
-            {"material": [], "task": [], "interaction": [], "consistency": [], "cultivation": []},
-        )
-        components = json_loads(item.get("components_json"), {})
-        if isinstance(components, dict):
-            for component in ("material", "task", "interaction", "consistency"):
-                bucket[component].append(_component_axis_percent(components.get(component), component))
-        bucket["cultivation"].append(clamp(safe_float(item.get("score")) / 100) * 100)
-    if len(per_student) <= 1:
-        return {"available": False, "student_count": len(student_ids), "axes": []}
-    axis_totals = {"material": 0.0, "task": 0.0, "interaction": 0.0, "consistency": 0.0, "cultivation": 0.0}
-    axis_counts = {key: 0 for key in axis_totals}
-    for values in per_student.values():
-        for key, samples in values.items():
-            if not samples:
-                continue
-            axis_totals[key] += sum(samples) / len(samples)
-            axis_counts[key] += 1
-    average_task = axis_totals["task"] / axis_counts["task"] if axis_counts["task"] else 0.0
-    axes = {
-        "material": axis_totals["material"] / axis_counts["material"] if axis_counts["material"] else 0.0,
-        "task": average_task,
-        "quality": average_task,
-        "interaction": axis_totals["interaction"] / axis_counts["interaction"] if axis_counts["interaction"] else 0.0,
-        "consistency": axis_totals["consistency"] / axis_counts["consistency"] if axis_counts["consistency"] else 0.0,
-        "cultivation": axis_totals["cultivation"] / axis_counts["cultivation"] if axis_counts["cultivation"] else 0.0,
-    }
-    return {
-        "available": True,
-        "student_count": len(student_ids),
-        "sample_count": len(per_student),
-        "axes": {key: round(value) for key, value in axes.items()},
-    }
-
-
 def _build_course_progress(
     conn,
     *,
@@ -743,47 +629,6 @@ def _build_task_summary(task_rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _build_radar_axes(
-    *,
-    courses: list[dict[str, Any]],
-    task_summary: dict[str, Any],
-    activity_summary: dict[str, Any],
-    class_average: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    if courses:
-        material_score = sum(_percent((item["metrics"].get("material") or {}).get("ratio", 0)) for item in courses) / len(courses)
-        task_score = sum(safe_float(item.get("task_completion_percent")) for item in courses) / len(courses)
-        interaction_score = sum(safe_float(item.get("interaction_percent")) for item in courses) / len(courses)
-        consistency_score = sum(safe_float(item.get("consistency_percent")) for item in courses) / len(courses)
-        cultivation_score = sum(safe_float(item.get("score")) for item in courses) / len(courses)
-    else:
-        material_score = task_score = interaction_score = consistency_score = cultivation_score = 0
-    quality_score = safe_float(task_summary.get("average_score")) if task_summary.get("average_score") is not None else task_score
-    activity_boost = min(safe_int(activity_summary.get("active_days")), 8) / 8 * 18
-    consistency_score = clamp((consistency_score + activity_boost) / 100) * 100
-    axes = [
-        {"key": "material", "label": "材料吸收", "short_label": "材", "score": round(material_score)},
-        {"key": "task", "label": "任务执行", "short_label": "任", "score": round(task_score)},
-        {"key": "quality", "label": "成绩质量", "short_label": "绩", "score": round(quality_score)},
-        {"key": "interaction", "label": "互动表达", "short_label": "互", "score": round(interaction_score)},
-        {"key": "consistency", "label": "学习稳定", "short_label": "稳", "score": round(consistency_score)},
-        {"key": "cultivation", "label": "修为推进", "short_label": "修", "score": round(cultivation_score)},
-    ]
-    class_axes = (class_average or {}).get("axes") or {}
-    has_class_average = bool((class_average or {}).get("available") and class_axes)
-    for index, axis in enumerate(axes):
-        axis.update(_radar_label_position(index, len(axes)))
-        axis["class_average_score"] = safe_int(class_axes.get(axis["key"])) if has_class_average else None
-    return {
-        "axes": axes,
-        "points": _radar_points(axes),
-        "class_average_points": _radar_axis_points(axes, score_key="class_average_score") if has_class_average else "",
-        "has_class_average": has_class_average,
-        "class_average": class_average or {"available": False, "student_count": 0, "axes": []},
-        "grid_points": [_radar_grid_points(0.33), _radar_grid_points(0.66), _radar_grid_points(1.0)],
-    }
-
-
 def _load_latest_student_support_profile(conn, *, student_id: int, class_id: int) -> dict[str, Any] | None:
     row = conn.execute(
         """
@@ -842,16 +687,17 @@ def build_teacher_student_insight(conn, teacher_id: int, student_id: int) -> dic
         offering_ids=offering_ids,
         student_id=int(student_id),
     )
-    class_radar_average = _load_class_radar_average(
+    # Same six-axis definition as the student's own profile radar; the peer
+    # outline is each classroom's class mean, averaged over these classrooms.
+    radar = build_ability_radar(
         conn,
-        offerings=offerings,
-        class_id=int(student["class_id"]),
-    )
-    radar = _build_radar_axes(
-        courses=courses,
-        task_summary=task_summary,
-        activity_summary=activity_summary,
-        class_average=class_radar_average,
+        student_id=int(student_id),
+        offering_ids=offering_ids,
+        self_states={
+            int(course["class_offering_id"]): {"metrics": course.get("metrics") or {}, "score": course.get("score")}
+            for course in courses
+        },
+        peer_label="班级均值",
     )
     public_badge = build_student_public_cultivation_badge(conn, int(student_id))
     raw_support_profile = _load_latest_student_support_profile(

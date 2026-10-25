@@ -64,6 +64,20 @@
             </section>
             {% endif %}
 
+            {% if profile.role == 'student' and overview.ability_radar %}
+            <section data-lq-component="surface" class="lq-surface profile-band profile-radar-band profile-reveal" aria-labelledby="profile-radar-title">
+                <div class="profile-band__head">
+                    <div>
+                        <h3 id="profile-radar-title">能力雷达</h3>
+                        <p>综合你所有课堂的学习表现；每门课先与本课同门比较，再取各课平均。虚线为同门均值，数值后为“本人 / 均值”。</p>
+                    </div>
+                </div>
+                {% set ability_radar = overview.ability_radar %}
+                {% set radar_self_label = '本人' %}
+                {% include 'partials/ability_radar.html' %}
+            </section>
+            {% endif %}
+
             <section class="profile-overview-grid">
                 <div class="profile-overview-primary">
                     <section class="profile-chart-grid">

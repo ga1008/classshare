@@ -243,6 +243,10 @@
       "hits": 4
      },
      {
+      "path": "templates/partials/profile/overview.html",
+      "hits": 4
+     },
+     {
       "path": "templates/student_login_v4.html",
       "hits": 4
      },
@@ -352,10 +356,6 @@
      },
      {
       "path": "templates/partials/exams/board.html",
-      "hits": 3
-     },
-     {
-      "path": "templates/partials/profile/overview.html",
       "hits": 3
      },
      {
@@ -733,6 +733,36 @@
      {
       "path": "templates/teacher_evaluation_editor.html",
       "hits": 1
+     }
+    ]
+   }
+  },
+  "ability-radar": {
+   "css": "static/css/lq/components/ability-radar.css",
+   "roots": [
+    "lq-radar"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {},
+    "python": null,
+    "react": []
+   },
+   "title": "ability-radar",
+   "layer": "component",
+   "notes": {
+    "summary": "",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 1,
+    "files": [
+     {
+      "path": "templates/partials/ability_radar.html",
+      "hits": 27
      }
     ]
    }
@@ -2558,6 +2588,10 @@
       "hits": 4
      },
      {
+      "path": "templates/partials/profile/overview.html",
+      "hits": 4
+     },
+     {
       "path": "classroom_app/services/document_render_service.py",
       "hits": 3
      },
@@ -2647,10 +2681,6 @@
      },
      {
       "path": "templates/partials/exams/board.html",
-      "hits": 3
-     },
-     {
-      "path": "templates/partials/profile/overview.html",
       "hits": 3
      },
      {
@@ -3053,7 +3083,7 @@
     "files": [
      {
       "path": "static/js/cultivation_emblems.js",
-      "hits": 14
+      "hits": 20
      }
     ]
    }
@@ -4993,7 +5023,7 @@
     "summary": "头像堆叠与三种小型统计图；数据色是内容槽位。",
     "params": "",
     "states": "",
-    "rules": ""
+    "rules": " 六边形能力雷达用共享 partials/ability_radar.html（数据来自 ability_radar_service.build_ability_radar，样式 components/ability-radar.css），教师学生洞察与学生个人中心共用；不要再手写雷达 SVG。"
    },
    "consumers": {
     "count": 3,
@@ -7902,6 +7932,9 @@
    "declarative",
    "forms",
    "materials"
+  ],
+  "templates/partials/ability_radar.html": [
+   "ability-radar"
   ],
   "templates/partials/academic_sync_dialog.html": [
    "button",

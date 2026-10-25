@@ -79,3 +79,13 @@
 - **null 修复**：境界详情行把 `null` 当子节点 append 导致显示 “null”，改为过滤后 `replaceChildren`。
 - **宗门实力排行**（原全班山峰）：`build_student_class_position` 返回 `leader{is_tianjiao, rank, level, anonymous}`、`ranking`（前 5 名公开修士，含本课境界标志）、`hidden_count`、`self_hidden`、`current_level`。真正第一名公开时称“本宗天骄”；若其隐藏修为则顺位第二名领先，但只称“宗门领先”。
 - 验证：`tests/test_cultivation_display.py`（7：跨课堂最高境界与分、旧快照分走曲线、隐藏即无标志与缓存失效、天骄规则/隐藏顺位/本人隐藏仍见名次、路由 self 解析与开关、非法载荷与教师 403）；P03 隔离环境播种 5 名合成同学验证天梯拖动、罡风、排行（隐藏/公开两种）、头像标志与悬停、隐藏开关即时生效。
+
+## 7. 第三轮（2026-10-25）：护盾罡风、共享能力雷达
+
+- **罡风护盾**：`cultivation_panel.js` 的 `startWind(canvas, ctx, getShield)` 每帧读取选中境界标志的位置（`emblemShield`，标志外缘 +7px 的无形护盾）。进入护盾影响区（2.4 倍半径）的粒子，其朝向护盾的速度分量按距离逐步转为切向，绕行通过；触及护盾时被推回表面并在命中点闪出一段弧光；离开后速度逐步回归风向。每条风线沿粒子真实轨迹绘制（不再按速度反推直线尾巴），所以会弯曲绕行、不会穿入护盾。画布尺寸改用 `clientWidth/clientHeight`：弹窗打开时有 scale 动画，`getBoundingClientRect` 会让画布小约 2%，导致粒子与标志错位约 9px（已修）。弧光颜色取画布 `outline-color`（令牌 `--ls-c-sky-400`）。
+- **共享能力雷达**：`classroom_app/services/ability_radar_service.py` + `templates/partials/ability_radar.html` + `static/css/lq/components/ability-radar.css`。六轴统一取自各课堂快照 `metrics_json`：材料吸收=material.ratio、任务执行=assignments.completion_ratio、成绩质量=assignments.score_ratio（有批改才计）、互动表达=interaction_ratio、学习稳定=consistency_ratio、修为推进=score。同门值=该课**除本人外**在读同学的均值，且每轴至少 3 名其他同学有数据才显示（小班不会暴露某位同学的数值）；本人值=各课平均；与同门的差=只在“本人与同门都有值”的课上逐课求差再平均，虚线画在“本人值−差”处，三者始终一致；某轴缺值时轮廓取另一条线的位置，不会塌到 0。每课数据缓存 5 分钟。
+  - 教师端学生洞察（含课堂“班级成员→成员详情”）：范围=该教师名下的该生课堂，虚线=班级均值；修正了旧实现“任务执行”与均值口径不一致、“成绩质量”均值直接复制任务分的问题；旧 `.student-radar*` 私有样式已整块删除。
+  - 学生个人中心总览：新增“能力雷达”，范围=该生全部课堂，虚线=同门均值；可选面板，计算失败不影响页面。
+  - 版式：容器宽时“雷达图 | 优势/待加强 + 六轴明细（本人值、与均值差、均值刻度）”并排，窄时上下；轴标签直接写“本人 / 均值”。
+- 代码审查后修复：小班均值泄露个人数值、跨课比较口径不一致、缺值画成 0、减少动效时弧光累积、滚动重绘。
+- 验证：`tests/test_ability_radar.py`（8：同门排除本人、小班隐藏、跨课只比可比课、单课比较、多课逐课比较后平均、无快照不可用、新鲜状态优先、优势/待加强、模板渲染两条轮廓与 6 行无 None）；P03 隔离环境核对教师与学生两处雷达、护盾物理（120 帧内无粒子头/轨迹点进入护盾）与画布尺寸。
