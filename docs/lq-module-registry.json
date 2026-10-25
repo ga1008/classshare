@@ -359,6 +359,10 @@
       "hits": 3
      },
      {
+      "path": "templates/partials/profile/settings.html",
+      "hits": 3
+     },
+     {
       "path": "templates/partials/teacher_onboarding_modal.html",
       "hits": 3
      },
@@ -488,10 +492,6 @@
      },
      {
       "path": "templates/partials/materials/library_card.html",
-      "hits": 2
-     },
-     {
-      "path": "templates/partials/profile/settings.html",
       "hits": 2
      },
      {
@@ -2044,6 +2044,10 @@
       "hits": 6
      },
      {
+      "path": "static/js/cultivation_panel.js",
+      "hits": 6
+     },
+     {
       "path": "static/js/materials_explorer.js",
       "hits": 5
      },
@@ -2065,10 +2069,6 @@
      },
      {
       "path": "static/js/academic_schedule_sync.js",
-      "hits": 3
-     },
-     {
-      "path": "static/js/cultivation_panel.js",
       "hits": 3
      },
      {
@@ -2654,6 +2654,10 @@
       "hits": 3
      },
      {
+      "path": "templates/partials/profile/settings.html",
+      "hits": 3
+     },
+     {
       "path": "templates/partials/teacher_onboarding_modal.html",
       "hits": 3
      },
@@ -2747,10 +2751,6 @@
      },
      {
       "path": "templates/partials/materials/library_card.html",
-      "hits": 2
-     },
-     {
-      "path": "templates/partials/profile/settings.html",
       "hits": 2
      },
      {
@@ -3024,6 +3024,38 @@
    "consumers": {
     "count": 0,
     "files": []
+   }
+  },
+  "cultivation-emblem": {
+   "css": "static/css/lq/components/cultivation-emblem.css",
+   "roots": [
+    "lq-cultivation-emblem",
+    "lq-cultivation-emblem-img",
+    "lq-cultivation-host"
+   ],
+   "extraRoots": [],
+   "entries": {
+    "macros": {},
+    "js": {},
+    "python": null,
+    "react": []
+   },
+   "title": "cultivation-emblem",
+   "layer": "component",
+   "notes": {
+    "summary": "",
+    "params": "",
+    "states": "",
+    "rules": ""
+   },
+   "consumers": {
+    "count": 1,
+    "files": [
+     {
+      "path": "static/js/cultivation_emblems.js",
+      "hits": 14
+     }
+    ]
    }
   },
   "declarative": {
@@ -4151,7 +4183,7 @@
      },
      {
       "path": "templates/partials/profile/settings.html",
-      "hits": 61
+      "hits": 62
      },
      {
       "path": "static/js/collaboration.js",
@@ -4860,7 +4892,7 @@
     "summary": "`lq-badge`（计数/点）、`lq-avatar`（首字或图片）、`lq-spinner`、`lq-progress`（条/环）；都是只读呈现。",
     "params": "badge: `value, tone, dot, label`；avatar: `name, src, size(24|32|40|56)`；progress: `label, value, max, variant`。",
     "states": "",
-    "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。"
+    "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem=\"off\"。"
    },
    "consumers": {
     "count": 13,
@@ -6195,8 +6227,12 @@
     "rules": ""
    },
    "consumers": {
-    "count": 1,
+    "count": 2,
     "files": [
+     {
+      "path": "static/js/cultivation_emblems.js",
+      "hits": 2
+     },
      {
       "path": "templates/dev/lq_interactions.html",
       "hits": 1
@@ -6676,6 +6712,10 @@
   "static/js/course_schedule_styles.js": [
    "button",
    "chip"
+  ],
+  "static/js/cultivation_emblems.js": [
+   "cultivation-emblem",
+   "tooltips"
   ],
   "static/js/cultivation_identity.js": [
    "button",

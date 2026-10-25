@@ -59,6 +59,7 @@ from .cultivation_growth_service import (
 )
 from ..db.savepoint import best_effort
 from .stage_exam_guidance_service import build_stage_exam_guidance_block, build_tier_profile
+from .cultivation_display_service import emblem_for_level, hidden_student_ids, is_cultivation_hidden
 from .resource_access_service import student_can_read_assignment
 
 
@@ -2812,6 +2813,31 @@ def _class_learning_score_rows(
     return score_rows
 
 
+SECT_RANKING_LIMIT = 5
+
+
+def _offering_certificate_tiers(conn, class_offering_id: int, student_ids: set[int]) -> dict[int, int]:
+    ids = sorted(int(item) for item in student_ids)
+    if not ids:
+        return {}
+    placeholders = ",".join("?" for _ in ids)
+    rows = conn.execute(
+        f"""
+        SELECT student_id, MAX(tier) AS tier
+        FROM learning_certificates
+        WHERE class_offering_id = ? AND student_id IN ({placeholders})
+        GROUP BY student_id
+        """,
+        (int(class_offering_id), *ids),
+    ).fetchall()
+    return {int(row["student_id"]): safe_int(row["tier"]) for row in rows}
+
+
+def _sect_level(tier: int) -> dict[str, Any] | None:
+    level = next((item for item in LEARNING_LEVELS if int(item["tier"]) == int(tier or 0)), None)
+    return emblem_for_level(level)
+
+
 def build_student_class_position(
     conn,
     class_offering_id: int,
@@ -2839,9 +2865,21 @@ def build_student_class_position(
     if current is None:
         return None
 
-    leader = ranked[0]
+    # 宗门实力排行: students who hide their cultivation are never named. The top
+    # visible student leads the ranking; only the true #1 is titled 本宗天骄.
+    hidden_ids = hidden_student_ids(conn, [item["id"] for item in ranked])
+    visible = [item for item in ranked if int(item["id"]) not in hidden_ids]
+    leader_visible = bool(visible)
+    # Nobody visible: the viewer leads their own view; no other student is exposed.
+    leader = visible[0] if visible else current
+    showcase = visible[:SECT_RANKING_LIMIT]
+    tier_ids = {int(item["id"]) for item in showcase} | {int(leader["id"]), int(current["id"])}
+    tiers = _offering_certificate_tiers(conn, int(class_offering_id), tier_ids)
+    # The mountain only carries visible students and the viewer: a hidden
+    # classmate's score never leaves the server, not even anonymously.
+    charted = [item for item in ranked if int(item["id"]) not in hidden_ids or item.get("is_self")]
     ascending = sorted(
-        ranked,
+        charted,
         key=lambda item: (safe_float(item.get("score")), int(item["rank"]), int(item["id"])),
     )
     min_score = safe_float(ascending[0].get("score")) if ascending else 0.0
@@ -2874,11 +2912,28 @@ def build_student_class_position(
             "x": x_by_id.get(int(current["id"]), 50.0),
         },
         "leader": {
-            "name": leader.get("name") or "同学",
+            "name": (leader.get("name") or "同学") if leader_visible else (current.get("name") or "你"),
             "score": safe_float(leader.get("score")),
             "x": x_by_id.get(int(leader["id"]), 50.0),
             "is_self": bool(leader.get("is_self")),
+            "rank": int(leader["rank"]),
+            "is_tianjiao": leader_visible and int(leader["rank"]) == 1,
+            "anonymous": False,
+            "level": _sect_level(tiers.get(int(leader["id"]), 0)) if leader_visible else None,
         },
+        "ranking": [
+            {
+                "rank": int(item["rank"]),
+                "name": item.get("name") or "同学",
+                "score": safe_float(item.get("score")),
+                "is_self": bool(item.get("is_self")),
+                "level": _sect_level(tiers.get(int(item["id"]), 0)),
+            }
+            for item in showcase
+        ],
+        "hidden_count": len(hidden_ids),
+        "self_hidden": int(current["id"]) in hidden_ids,
+        "current_level": _sect_level(tiers.get(int(current["id"]), 0)),
         "mountain": {
             "min_score": min_score,
             "max_score": max_score,
@@ -2971,6 +3026,7 @@ def serialize_student_learning_progress(conn, class_offering_id: int, student_id
         int(student_id),
         weeks=8,
     )
+    state["display"] = {"hidden": is_cultivation_hidden(conn, int(student_id))}
     return state
 
 

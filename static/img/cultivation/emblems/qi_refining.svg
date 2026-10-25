@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img"><title>基础成形</title><style>.spin{transform-box:view-box;transform-origin:32px 32px;animation:spin 24s linear infinite}
+.spin-r{transform-box:view-box;transform-origin:32px 32px;animation:spin 18s linear infinite reverse}
+.spin-f{transform-box:view-box;transform-origin:32px 32px;animation:spin 12s linear infinite}
+.pulse{transform-box:fill-box;transform-origin:center;animation:pulse 2.6s ease-in-out infinite}
+.glint{animation:glint 2.4s ease-in-out infinite}
+.flick{transform-box:fill-box;transform-origin:50% 100%;animation:flick 1.6s ease-in-out infinite}
+.twinkle{transform-box:fill-box;transform-origin:center;animation:twinkle 1.8s ease-in-out infinite}
+.sweep{animation:sweep 3.6s ease-in-out infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+@keyframes glint{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes flick{0%,100%{transform:scale(1,1)}35%{transform:scale(.96,1.06)}70%{transform:scale(1.03,.95)}}
+@keyframes twinkle{0%,100%{opacity:.2;transform:scale(.7)}50%{opacity:1;transform:scale(1)}}
+@keyframes sweep{0%{transform:translateX(-70px)}60%,100%{transform:translateX(70px)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}</style><defs><radialGradient id="base" cx="50%" cy="40%" r="65%"><stop offset="0" stop-color="#124a47"/><stop offset="1" stop-color="#05201e"/></radialGradient><linearGradient id="rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#99f6e4"/><stop offset="1" stop-color="#0d9488"/></linearGradient></defs><polygon points="32.00,1.50 58.41,16.75 58.41,47.25 32.00,62.50 5.59,47.25 5.59,16.75" fill="url(#base)" stroke="url(#rim)" stroke-width="3" stroke-linejoin="round"/><polygon points="32.00,8.00 52.78,20.00 52.78,44.00 32.00,56.00 11.22,44.00 11.22,20.00" fill="none" stroke="#2dd4bf" stroke-opacity=".35" stroke-width="1.2"/><g class="spin"><circle cx="32" cy="32" r="13" fill="none" stroke="#2dd4bf" stroke-width="2.2"/><path d="M32 19 A6.5 6.5 0 0 1 32 32 A6.5 6.5 0 0 0 32 45" fill="none" stroke="#ccfbf1" stroke-width="2.6"/><circle cx="32" cy="25.5" r="2.3" fill="#ccfbf1"/><circle cx="32" cy="38.5" r="2.3" fill="#14b8a6"/></g></svg>

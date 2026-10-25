@@ -32,6 +32,7 @@
 | [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 6 |
 | [Composer 输入区](#composer) | component | `lq-composer` | 宏 / JS / Py | 4 |
 | [Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）](#content) | component | `lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list` … | 宏 / JS / Py / React | 165 |
+| [cultivation-emblem](#cultivation-emblem) | component | `lq-cultivation-emblem`, `lq-cultivation-emblem-img`, `lq-cultivation-host` | 仅 CSS | 1 |
 | [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 23 |
 | [EmojiPicker 表情选择器](#emoji-picker) | component | `.emoji-picker`, `.emoji-picker-item`, `.emoji-picker-grid`, `createEmojiPicker` | JS | 4 |
 | [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 170 |
@@ -49,7 +50,7 @@
 | [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 15 |
 | [Table / Pager / BulkBar / ResultCount](#tables) | component | `lq-bulk-bar`, `lq-pager`, `lq-result-count`, `lq-table`, `lq-table-shell` | 宏 / JS / Py / React | 11 |
 | [Toast 通知](#toast) | component | `lq-toast`, `lq-toast-fallback`, `lq-toasts` | JS | 2 |
-| [Tooltip 提示](#tooltips) | component | `lq-tooltip` | 宏 / JS / Py | 1 |
+| [Tooltip 提示](#tooltips) | component | `lq-tooltip` | 宏 / JS / Py | 2 |
 | [Upload / Dropzone / FileChip](#upload) | component | `lq-dropzone`, `lq-file-chip`, `lq-upload` | 宏 / JS / Py | 1 |
 | [Workspace Split / Viewer](#workspace) | component | `lq-domain-workspace`, `lq-split`, `lq-viewer` | 宏 / JS / Py | 2 |
 | [Shells 页面壳（Topbar / Sidebar / Dock / Editor / PageLayout / FAB / Crumbs / Steps）](#shells) | composite | `lq-crumbs`, `lq-dock`, `lq-editor`, `lq-fab`, `lq-nav-item`, `lq-page-layout` … | 宏 / JS / Py | 9 |
@@ -397,6 +398,7 @@
 - `templates/partials/classroom_members/workspace.html` ×3
 - `templates/partials/exams/board.html` ×3
 - `templates/partials/profile/overview.html` ×3
+- `templates/partials/profile/settings.html` ×3
 - `templates/partials/teacher_onboarding_modal.html` ×3
 - `templates/permission_denied.html` ×3
 - `templates/points_shop.html` ×3
@@ -430,7 +432,6 @@
 - `templates/partials/exams/control_panel.html` ×2
 - `templates/partials/feedback_modal.html` ×2
 - `templates/partials/materials/library_card.html` ×2
-- `templates/partials/profile/settings.html` ×2
 - `templates/resume/job_targets.html` ×2
 - `templates/student_auth_flow_v4.html` ×2
 - `templates/teacher_register_v4.html` ×2
@@ -873,13 +874,13 @@
 - `static/js/materials_sync_report.js` ×14
 - `static/js/materials_library_cards.js` ×13
 - `static/js/course_schedule_deck.js` ×6
+- `static/js/cultivation_panel.js` ×6
 - `static/js/materials_explorer.js` ×5
 - `static/js/materials_manage.js` ×4
 - `static/js/message_center.js` ×4
 - `templates/dev/lq_presentation.html` ×4
 - `templates/manage/system/password_resets.html` ×4
 - `static/js/academic_schedule_sync.js` ×3
-- `static/js/cultivation_panel.js` ×3
 - `templates/achievements.html` ×3
 - `templates/partials/materials/library_card.html` ×3
 - `frontend/src/islands/classroom-workspace.tsx` ×2
@@ -1073,6 +1074,7 @@
 - `templates/partials/classroom_members/workspace.html` ×3
 - `templates/partials/exams/board.html` ×3
 - `templates/partials/profile/overview.html` ×3
+- `templates/partials/profile/settings.html` ×3
 - `templates/partials/teacher_onboarding_modal.html` ×3
 - `static/js/classroom_page.js` ×2
 - `static/js/course_schedule_deck.js` ×2
@@ -1097,7 +1099,6 @@
 - `templates/partials/exams/control_panel.html` ×2
 - `templates/partials/feedback_modal.html` ×2
 - `templates/partials/materials/library_card.html` ×2
-- `templates/partials/profile/settings.html` ×2
 - `templates/resume/job_targets.html` ×2
 - `templates/student_login_v4.html` ×2
 - `static/js/academic_final_materials.js` ×1
@@ -1154,6 +1155,19 @@
 - `templates/status.html` ×1
 - `templates/teacher_evaluation_editor.html` ×1
 - `templates/teacher_login_v4.html` ×1
+
+</details>
+
+### cultivation-emblem
+
+**cultivation-emblem** · 层：component · CSS：`static/css/lq/components/cultivation-emblem.css`
+
+- **根类**：`lq-cultivation-emblem`, `lq-cultivation-emblem-img`, `lq-cultivation-host`
+- **消费者**：1 个文件
+
+<details><summary>消费者清单（按命中次数）</summary>
+
+- `static/js/cultivation_emblems.js` ×14
 
 </details>
 
@@ -1238,7 +1252,7 @@
 - `templates/partials/profile/email.html` ×88
 - `templates/exam_editor.html` ×84
 - `templates/assignment_detail_teacher.html` ×68
-- `templates/partials/profile/settings.html` ×61
+- `templates/partials/profile/settings.html` ×62
 - `static/js/collaboration.js` ×60
 - `templates/manage/system/blog_crawler.html` ×58
 - `static/js/teacher_onboarding.js` ×52
@@ -1413,7 +1427,7 @@
 
 - **设计摘要**：`lq-badge`（计数/点）、`lq-avatar`（首字或图片）、`lq-spinner`、`lq-progress`（条/环）；都是只读呈现。
 - **参数 / 变体**：badge: `value, tone, dot, label`；avatar: `name, src, size(24|32|40|56)`；progress: `label, value, max, variant`。
-- **规则**：放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。
+- **规则**：放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem="off"。
 - **根类**：`lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner`
 - **Jinja 宏** `templates/macros/lq/indicators.html`：`lq_badge`, `lq_avatar`, `lq_spinner`, `lq_progress`
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
@@ -1778,10 +1792,11 @@
 - **Jinja 宏** `templates/macros/lq/tooltips.html`：`lq_tooltip`
 - **JS 入口** `static/js/lq/tooltips.js`：`bindTooltip`, `createTooltip`, `tooltipMarkup`, `tooltipProps`
 - **Python props** `classroom_app/lq_menu_tooltip.py`
-- **消费者**：1 个文件
+- **消费者**：2 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
+- `static/js/cultivation_emblems.js` ×2
 - `templates/dev/lq_interactions.html` ×1
 
 </details>

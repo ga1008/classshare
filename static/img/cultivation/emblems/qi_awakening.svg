@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img"><title>启蒙入门</title><style>.spin{transform-box:view-box;transform-origin:32px 32px;animation:spin 24s linear infinite}
+.spin-r{transform-box:view-box;transform-origin:32px 32px;animation:spin 18s linear infinite reverse}
+.spin-f{transform-box:view-box;transform-origin:32px 32px;animation:spin 12s linear infinite}
+.pulse{transform-box:fill-box;transform-origin:center;animation:pulse 2.6s ease-in-out infinite}
+.glint{animation:glint 2.4s ease-in-out infinite}
+.flick{transform-box:fill-box;transform-origin:50% 100%;animation:flick 1.6s ease-in-out infinite}
+.twinkle{transform-box:fill-box;transform-origin:center;animation:twinkle 1.8s ease-in-out infinite}
+.sweep{animation:sweep 3.6s ease-in-out infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+@keyframes glint{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes flick{0%,100%{transform:scale(1,1)}35%{transform:scale(.96,1.06)}70%{transform:scale(1.03,.95)}}
+@keyframes twinkle{0%,100%{opacity:.2;transform:scale(.7)}50%{opacity:1;transform:scale(1)}}
+@keyframes sweep{0%{transform:translateX(-70px)}60%,100%{transform:translateX(70px)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}</style><defs><radialGradient id="base" cx="50%" cy="40%" r="65%"><stop offset="0" stop-color="#163f5c"/><stop offset="1" stop-color="#07131f"/></radialGradient><linearGradient id="rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#bae6fd"/><stop offset="1" stop-color="#0284c7"/></linearGradient></defs><circle cx="32" cy="32" r="30" fill="url(#base)"/><circle cx="32" cy="32" r="28.5" fill="none" stroke="url(#rim)" stroke-width="3"/><path d="M19 47 Q32 52 45 47" fill="none" stroke="#0ea5e9" stroke-width="2.4" stroke-linecap="round"/><path d="M32 48 C32 42 32 37 32 31" fill="none" stroke="#7dd3fc" stroke-width="2.8" stroke-linecap="round"/><path d="M32 40 C24 39 20 33 21 27 C28 28 32 33 32 40Z" fill="#38bdf8"/><path d="M32 35 C39 33 44 27 43 20 C36 21 32 27 32 35Z" fill="#7dd3fc"/><circle cx="32" cy="17" r="3" fill="#e0f2fe" class="glint"/></svg>

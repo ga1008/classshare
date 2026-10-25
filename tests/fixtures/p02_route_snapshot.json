@@ -2801,6 +2801,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/cultivation/emblems",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_cultivation_emblems",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/dashboard/calendar",
     "methods": [
       "GET"
@@ -5982,6 +5990,22 @@
       "GET"
     ],
     "name": "api_profile_bootstrap",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/cultivation-visibility",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_cultivation_visibility",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/profile/cultivation-visibility",
+    "methods": [
+      "PUT"
+    ],
+    "name": "put_cultivation_visibility",
     "include_in_schema": true
   },
   {

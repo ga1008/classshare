@@ -69,3 +69,13 @@
 ## 5. 真源索引
 
 `classroom_app/services/cultivation_growth_service.py`、`stage_exam_guidance_service.py`、`learning_progress_service.py`（`_material_unit_signals`、`_load_assignment_metrics`、`_class_offers_live_activities`、`_load_live_participation_count`、`_load_interaction_metrics`、`_build_learning_metrics`、`_build_learning_state_from_metrics`、`get_student_learning_state`、`_class_learning_score_rows`、`_build_stage_exam_prompt`、`generate_personal_stage_exam_from_attempt`）、`templates/partials/cultivation_panel.html`、`static/js/cultivation_panel.js`、`static/css/lq/pages/cultivation.css`、`static/js/learning_progress.js`、`templates/classroom_main_v4.html`、`templates/partials/profile/overview.html`、`templates/partials/profile/scripts.html`；规范 `docs/ai-and-agent-engineering-standard.md` §10；目标文档 `docs/cultivation-system-improvement-goals.md` v1.1。
+
+## 6. 第二轮（2026-10-25）：境界标志、隐藏修为、修行天梯、宗门实力排行
+
+- **十枚境界标志**：`tools/ui/build_cultivation_emblems.py` 单一真源生成 `static/img/cultivation/emblems/<level_key>.svg`（64×64，自带深色底，亮/暗页面都可读；层级越高越炫：启蒙嫩芽 → 基础太极六边形 → 筑基塔盾 → 迁移旋环灵种 → 融会八芒金丹 → 掌握烈焰剑笔 → 贯通三轨星核 → 完全莲台元婴双光环 → 自主凤翼流光 → 师者极光日冠；动效全在 SVG 内，`prefers-reduced-motion` 停止）。改图只改脚本再运行。
+- **头像旁标志**（`static/js/cultivation_emblems.js`，`base.html` 对已登录页面加载）：自动识别 `img[src*="/api/profile/avatar"]`（`role=student&user_id=N` 或无参数=本人）与 `[data-cultivation-student-id]`（课堂研讨室首字头像由 `chat.js` 打标）；批量 `GET /api/cultivation/emblems?students=self,12,…`（服务端 60 秒缓存、单次≤200，前端 sessionStorage 2 分钟）；显示**所有课堂最高境界**（证书 tier），悬停/聚焦用 LQ Tooltip 显示“境界 · 第 N 境 · 修为 x · 持「证书」”。`data-cultivation-emblem="off"` 可退出；修为面板内部不装饰。共享修炼卡 `partials/cultivation_card.html` 的境界印记也换成标志。
+- **隐藏修为**：个人中心 → 基础信息 → “修为展示”开关（`PUT /api/profile/cultivation-visibility`，运行时表 `cultivation_display_settings`，不进 `classroom_app/db`）。隐藏后：头像旁无标志（他人无法探查），宗门排行不列名，协作区成员卡不显示修为值；本人修为面板照常并提示“修为已隐藏 · 设置”。
+- **修行天梯**：台阶式（每境台阶抬高、石阶面色随境界）、云海底、`canvas` 罡风粒子从右上吹向左下（阵风强弱变化，离屏/切后台/关闭面板即停，减少动效时静态）；按住鼠标拖动平移（拖动不触发点击），箭头/方向键/点击台阶切换境界详情；文案改为“越高越难”。
+- **null 修复**：境界详情行把 `null` 当子节点 append 导致显示 “null”，改为过滤后 `replaceChildren`。
+- **宗门实力排行**（原全班山峰）：`build_student_class_position` 返回 `leader{is_tianjiao, rank, level, anonymous}`、`ranking`（前 5 名公开修士，含本课境界标志）、`hidden_count`、`self_hidden`、`current_level`。真正第一名公开时称“本宗天骄”；若其隐藏修为则顺位第二名领先，但只称“宗门领先”。
+- 验证：`tests/test_cultivation_display.py`（7：跨课堂最高境界与分、旧快照分走曲线、隐藏即无标志与缓存失效、天骄规则/隐藏顺位/本人隐藏仍见名次、路由 self 解析与开关、非法载荷与教师 403）；P03 隔离环境播种 5 名合成同学验证天梯拖动、罡风、排行（隐藏/公开两种）、头像标志与悬停、隐藏开关即时生效。

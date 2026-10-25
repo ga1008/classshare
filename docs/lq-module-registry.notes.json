@@ -104,7 +104,7 @@
         "LqAvatar"
       ]
     },
-    "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。"
+    "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem=\"off\"。"
   },
   "skeleton": {
     "title": "Skeleton 骨架屏",

@@ -18,8 +18,14 @@
 {#- embedded: the card sits inside a host card/panel that already paints the glass and the inset;
     the shared Surface then paints nothing (data-lq-surface="embedded"). #}
 <div data-lq-component="surface" class="lq-surface cultivation-card cultivation-card--{{ variant }}"{% if card.embedded %} data-lq-surface="embedded"{% endif %} data-theme="{{ card.theme or level.theme or level.level_key or level.key or 'mortal' }}">
-    <div class="cultivation-card__mark" aria-hidden="true">
+    {% set mark_key = level.level_key or level.key or '' %}
+    {% set mark_tier = (level.tier or 0) | int %}
+    <div class="cultivation-card__mark{% if mark_tier >= 1 and mark_key %} has-emblem{% endif %}" aria-hidden="true">
+        {% if mark_tier >= 1 and mark_key %}
+        <img class="cultivation-card__emblem" src="/static/img/cultivation/emblems/{{ mark_key }}.svg" alt="" width="40" height="40" decoding="async">
+        {% else %}
         <span>{{ card.level_short or level.short_name or '未入道' }}</span>
+        {% endif %}
     </div>
     <div class="cultivation-card__body">
         <div class="cultivation-card__topline">

@@ -10,6 +10,7 @@
 import { apiFetch } from './api.js';
 import { showToast } from './ui.js';
 import { createDomainModal } from './lq/domain-modal.js';
+import { emblemImage, emblemUrl } from './cultivation_emblems.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const STATUS_LABELS = {
@@ -115,8 +116,10 @@ function renderHero(progress, ctx) {
     const score = Number(progress.score) || 0;
     const theme = level.theme || level.level_key || level.key || 'mortal';
 
-    const mark = el('div', { class: 'lq-cultivation__mark', 'data-theme': theme, 'aria-hidden': 'true' }, [
-        el('span', { text: level.short_name || '未入道' }),
+    const levelKey = level.level_key || level.key || 'mortal';
+    const markEmblem = Number(level.tier) >= 1 ? emblemImage({ key: levelKey, name: level.level_name || level.name }, { size: 88 }) : null;
+    const mark = el('div', { class: `lq-cultivation__mark${markEmblem ? ' has-emblem' : ''}`, 'data-theme': theme, 'aria-hidden': 'true' }, [
+        markEmblem || el('span', { text: level.short_name || '未入道' }),
     ]);
     const identity = el('div', { class: 'lq-cultivation__identity' }, [
         el('p', { class: 'lq-cultivation__eyebrow', text: ctx.courseName ? `${ctx.courseName} · 当前境界` : '当前境界' }),
@@ -125,6 +128,9 @@ function renderHero(progress, ctx) {
         el('div', { class: 'lq-cultivation__chips' }, [
             growth.phase_label ? chip(growth.phase_label.split(' · ')[0], 'info') : null,
             eligible ? chip(`可破境 · ${eligible.name}`, 'primary') : (next ? chip(`下一境 · ${next.name}`, 'neutral') : chip('十境圆满', 'success')),
+            progress.display?.hidden
+                ? el('a', { class: 'lq-chip lq-chip--status lq-chip--sm', 'data-lq-component': 'chip', 'data-tone': 'neutral', href: '/profile?section=settings', text: '修为已隐藏 · 设置' })
+                : null,
         ]),
     ]);
     const scoreBlock = el('div', { class: 'lq-cultivation__score' }, [
@@ -202,79 +208,241 @@ function renderStageAction(progress, ctx) {
     return card;
 }
 
+const WIND_ANGLE = 28 * Math.PI / 180;
+
+/** 罡风: streaks blowing from the upper right toward the lower left of the ladder. */
+function startWind(canvas, ctx) {
+    const painter = canvas.getContext('2d');
+    if (!painter) return () => {};
+    const dx = -Math.cos(WIND_ANGLE);
+    const dy = Math.sin(WIND_ANGLE);
+    let width = 0;
+    let height = 0;
+    let particles = [];
+    let frame = null;
+    let running = false;
+    let last = 0;
+    let rgb = [148, 163, 184];
+    const origin = performance.now();
+
+    const shape = () => ({ len: 16 + Math.random() * 54, speed: 150 + Math.random() * 280, alpha: 0.1 + Math.random() * 0.36, thick: 0.6 + Math.random() * 1.2 });
+    const readColor = () => {
+        const match = String(getComputedStyle(canvas).color || '').match(/\d+(\.\d+)?/g);
+        if (match && match.length >= 3) rgb = match.slice(0, 3).map(Number);
+    };
+    const spawn = (scatter) => {
+        if (scatter) return { x: Math.random() * width * 1.2, y: Math.random() * height, ...shape() };
+        const fromTop = Math.random() < width / ((width + height) || 1);
+        return {
+            x: fromTop ? Math.random() * (width + height * 0.8) : width + Math.random() * 60,
+            y: fromTop ? -Math.random() * 40 : Math.random() * height * 0.9,
+            ...shape(),
+        };
+    };
+    const resize = () => {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        width = rect.width;
+        height = rect.height;
+        canvas.width = Math.max(1, Math.round(width * dpr));
+        canvas.height = Math.max(1, Math.round(height * dpr));
+        painter.setTransform(dpr, 0, 0, dpr, 0, 0);
+        readColor();
+        const count = Math.min(72, Math.max(16, Math.round(width / 15)));
+        particles = Array.from({ length: count }, () => spawn(true));
+    };
+    const paint = (now, advance) => {
+        const dt = advance ? Math.min(0.05, (now - last) / 1000 || 0.016) : 0;
+        last = now;
+        const t = (now - origin) / 1000;
+        const gust = 0.7 + 0.45 * Math.sin(t / 1.4) + 0.2 * Math.sin(t / 0.53);
+        painter.clearRect(0, 0, width, height);
+        const [r, g, b] = rgb;
+        for (const p of particles) {
+            p.x += dx * p.speed * gust * dt;
+            p.y += dy * p.speed * gust * dt;
+            if (p.x < -p.len || p.y > height + p.len) Object.assign(p, spawn(false));
+            const stretch = 0.8 + gust * 0.3;
+            const tx = p.x - dx * p.len * stretch;
+            const ty = p.y - dy * p.len * stretch;
+            const gradient = painter.createLinearGradient(p.x, p.y, tx, ty);
+            gradient.addColorStop(0, `rgba(${r},${g},${b},${p.alpha})`);
+            gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
+            painter.strokeStyle = gradient;
+            painter.lineWidth = p.thick;
+            painter.lineCap = 'round';
+            painter.beginPath();
+            painter.moveTo(p.x, p.y);
+            painter.lineTo(tx, ty);
+            painter.stroke();
+        }
+    };
+    const loop = (now) => {
+        if (!running || !canvas.isConnected) { running = false; frame = null; return; }
+        paint(now, true);
+        frame = requestAnimationFrame(loop);
+    };
+    const setRunning = (on) => {
+        if (ctx.reducedMotion) { paint(performance.now(), false); return; }
+        if (on && !running) { running = true; last = performance.now(); frame = requestAnimationFrame(loop); }
+        if (!on && running) { running = false; if (frame) cancelAnimationFrame(frame); frame = null; }
+    };
+    const resizeObserver = new ResizeObserver(() => { resize(); if (!running) paint(performance.now(), false); });
+    resizeObserver.observe(canvas);
+    const visibility = new IntersectionObserver((entries) => setRunning(entries.some((entry) => entry.isIntersecting) && !document.hidden));
+    visibility.observe(canvas);
+    const onVisibility = () => setRunning(!document.hidden && canvas.isConnected);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+        setRunning(false);
+        resizeObserver.disconnect();
+        visibility.disconnect();
+        document.removeEventListener('visibilitychange', onVisibility);
+    };
+}
+
+/** Press-and-drag to pan the ladder; a drag never turns into a click. */
+function enableDragPan(track) {
+    let start = null;
+    let dragged = false;
+    track.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0 || event.pointerType === 'touch') return;
+        start = { x: event.clientX, left: track.scrollLeft, id: event.pointerId };
+        dragged = false;
+    });
+    track.addEventListener('pointermove', (event) => {
+        if (!start || event.pointerId !== start.id) return;
+        const delta = event.clientX - start.x;
+        if (!dragged && Math.abs(delta) < 5) return;
+        if (!dragged) {
+            dragged = true;
+            track.classList.add('is-dragging');
+            try { track.setPointerCapture(start.id); } catch { /* pointer already released */ }
+        }
+        track.scrollLeft = start.left - delta;
+        event.preventDefault();
+    });
+    const end = (event) => {
+        if (!start || (event && event.pointerId !== start.id)) return;
+        try { track.releasePointerCapture(start.id); } catch { /* not captured */ }
+        start = null;
+        if (dragged) {
+            // The click (if any) fires right after pointerup; clear the flag afterwards
+            // so a drag that produced no click cannot swallow the next real click.
+            window.setTimeout(() => { track.classList.remove('is-dragging'); dragged = false; }, 0);
+        }
+    };
+    track.addEventListener('pointerup', end);
+    track.addEventListener('pointercancel', end);
+    track.addEventListener('click', (event) => {
+        if (!dragged) return;
+        dragged = false;
+        event.preventDefault();
+        event.stopPropagation();
+    }, true);
+    track.addEventListener('dragstart', (event) => event.preventDefault());
+}
+
 function renderPath(progress, ctx) {
     const stages = Array.isArray(progress.stages) ? progress.stages : [];
     const effort = new Map((progress.stage_effort || []).map((row) => [row.key, row]));
     const firstOpen = stages.findIndex((stage) => stage.status !== 'passed');
-    const currentIndex = firstOpen === -1 ? stages.length : firstOpen; // index into `nodes` after the starter
-    const section = el('section', { class: 'lq-cultivation__path', 'aria-labelledby': 'cultivation-path-title' });
-    const head = el('div', { class: 'lq-cultivation__section-head' }, [
-        el('h3', { id: 'cultivation-path-title', text: '修行之路' }),
-        el('p', { text: '十境逐级攀登，每一境都要通过破境试炼；越往上，同样的努力换来的修为越少。' }),
-    ]);
-    const track = el('ol', { class: 'lq-cultivation__track', tabindex: 0, 'aria-label': '修行等级轨迹，左右方向键切换境界' });
-    const detail = el('div', { class: 'lq-cultivation__stage-detail', 'aria-live': 'polite' });
     const starter = {
         key: 'mortal', name: '未入道', short_name: '起点', tier: 0, unlock_score: 0, theme: 'mortal',
-        status: stages.length && stages[0].status === 'passed' ? 'passed' : 'available', description: '正在凝聚第一缕灵力',
+        status: 'passed', description: '正在凝聚第一缕灵力',
     };
     const nodes = [starter, ...stages];
-    let selected = Math.min(nodes.length - 1, currentIndex === stages.length ? stages.length : currentIndex + 1);
+    const standIndex = firstOpen === -1 ? nodes.length - 1 : firstOpen; // last passed step (0 = 起点)
+    let selected = firstOpen === -1 ? standIndex : firstOpen + 1;
 
-    const describe = (stage) => {
-        detail.textContent = '';
+    const section = el('section', { class: 'lq-cultivation__path', 'aria-labelledby': 'cultivation-path-title' });
+    const head = el('div', { class: 'lq-cultivation__section-head' }, [
+        el('h3', { id: 'cultivation-path-title', text: '修行天梯' }),
+        el('p', { text: '十境逐级攀登，每一境都要通过破境试炼；越高越难。按住拖动可左右浏览。' }),
+    ]);
+    const track = el('ol', { class: 'lq-cultivation__stairs', tabindex: 0, 'aria-label': '修行天梯，可拖动或用方向键切换境界' });
+    const detail = el('div', { class: 'lq-cultivation__stage-detail', 'aria-live': 'polite' });
+
+    const describe = (stage, index) => {
         const effortRow = effort.get(stage.key);
         const parts = [];
         if (stage.tier) parts.push(`第 ${stage.tier} 境`);
         if (Number(stage.unlock_score) > 0) parts.push(`解锁试炼 ${stage.unlock_score} 修为`);
         if (effortRow && Number(effortRow.raw_gap) > 0) parts.push(`较上一境多需约 ${fmt(effortRow.raw_gap)} 基础分`);
         if (stage.certificate?.issued_at) parts.push(`破境于 ${formatDate(stage.certificate.issued_at)}`);
-        detail.append(
-            el('strong', { text: `${stage.name}${stage.certificate_title ? ` · ${stage.certificate_title}` : ''}` }),
-            chip(STATUS_LABELS[stage.status] || '修炼中', stageTone(stage.status)),
-            el('p', { text: stage.description || '' }),
-            parts.length ? el('small', { text: parts.join(' · ') }) : null,
-        );
+        const statusText = index === standIndex ? '当前所在' : (index === 0 ? '起点' : STATUS_LABELS[stage.status] || '修炼中');
+        const statusTone = index === standIndex ? 'primary' : stageTone(stage.status);
+        const children = [
+            stage.tier ? emblemImage({ key: stage.key, name: stage.name }, { size: 44, className: 'lq-cultivation__detail-emblem' }) : null,
+            el('div', { class: 'lq-cultivation__detail-copy' }, [
+                el('div', { class: 'lq-cultivation__detail-title' }, [
+                    el('strong', { text: `${stage.name}${stage.certificate_title ? ` · ${stage.certificate_title}` : ''}` }),
+                    chip(statusText, statusTone),
+                ]),
+                stage.description ? el('p', { text: stage.description }) : null,
+                parts.length ? el('small', { text: parts.join(' · ') }) : null,
+            ]),
+        ].filter(Boolean);
+        detail.replaceChildren(...children);
     };
 
     const items = nodes.map((stage, index) => {
-        const isCurrent = index === selected;
+        const isStand = index === standIndex;
         const item = el('li', {
-            class: `lq-cultivation__node is-${stage.status}${isCurrent ? ' is-current' : ''}`,
-            'data-theme': stage.theme || stage.key, 'data-stage-key': stage.key,
-            style: `--step:${index};--steps:${nodes.length - 1}`,
-            'aria-current': isCurrent ? 'step' : null,
+            class: `lq-cultivation__step is-${stage.status}${isStand ? ' is-current' : ''}`,
+            'data-theme': stage.theme || stage.key,
+            'data-index': index,
+            style: `--step:${index}`,
+            'aria-current': isStand ? 'step' : null,
         });
-        item.append(el('button', {
-            class: 'lq-cultivation__node-button', type: 'button', tabindex: -1,
-            'aria-label': `${stage.name}，${STATUS_LABELS[stage.status] || '修炼中'}${stage.unlock_score ? `，解锁 ${stage.unlock_score} 修为` : ''}`,
-            onclick: () => { selected = index; select(); },
-        }, [
-            el('span', { class: 'lq-cultivation__orb', 'aria-hidden': 'true' }, [el('b', { text: stage.tier ? String(stage.tier) : '·' })]),
-            el('strong', { text: stage.short_name || stage.name }),
-            el('small', { text: stage.status === 'passed' ? '已破境' : (stage.unlock_score ? `${stage.unlock_score} 分` : '起点') }),
-        ]));
+        const art = stage.tier
+            ? emblemImage({ key: stage.key, name: stage.name }, { size: 52, className: 'lq-cultivation__step-emblem' })
+            : el('span', { class: 'lq-cultivation__step-origin', 'aria-hidden': 'true' }, [el('b', { text: '凡' })]);
+        item.append(
+            el('button', {
+                class: 'lq-cultivation__step-button', type: 'button', tabindex: -1,
+                'aria-label': `${stage.name}，${isStand ? '当前所在' : (STATUS_LABELS[stage.status] || '修炼中')}${stage.unlock_score ? `，解锁 ${stage.unlock_score} 修为` : ''}`,
+            }, [
+                isStand ? el('span', { class: 'lq-cultivation__here', text: '你在此' }) : null,
+                el('span', { class: 'lq-cultivation__step-aura', 'aria-hidden': 'true' }, [art]),
+            ]),
+            el('span', { class: 'lq-cultivation__tread', 'aria-hidden': 'true' }, [
+                el('strong', { text: stage.short_name || stage.name }),
+                el('small', { text: index === 0 ? '起点' : (stage.status === 'passed' ? '已破境' : `${stage.unlock_score} 修为`) }),
+            ]),
+        );
         return item;
     });
     track.append(...items);
 
-    const select = (scroll = true) => {
-        items.forEach((item, index) => item.classList.toggle('is-selected', index === selected));
-        describe(nodes[selected]);
+    const select = (index, scroll = true) => {
+        selected = Math.max(0, Math.min(nodes.length - 1, index));
+        items.forEach((item, i) => item.classList.toggle('is-selected', i === selected));
+        describe(nodes[selected], selected);
         if (scroll) items[selected].scrollIntoView({ block: 'nearest', inline: 'center', behavior: ctx.reducedMotion ? 'auto' : 'smooth' });
     };
-    const step = (direction) => { selected = Math.max(0, Math.min(nodes.length - 1, selected + direction)); select(); };
-    track.addEventListener('keydown', (event) => {
-        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') { step(1); event.preventDefault(); }
-        else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') { step(-1); event.preventDefault(); }
-        else if (event.key === 'Home') { selected = 0; select(); event.preventDefault(); }
-        else if (event.key === 'End') { selected = nodes.length - 1; select(); event.preventDefault(); }
+    track.addEventListener('click', (event) => {
+        const step = event.target.closest?.('.lq-cultivation__step');
+        if (step && track.contains(step)) select(Number(step.dataset.index));
     });
+    track.addEventListener('keydown', (event) => {
+        const moves = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+        if (event.key in moves) { select(selected + moves[event.key]); event.preventDefault(); }
+        else if (event.key === 'Home') { select(0); event.preventDefault(); }
+        else if (event.key === 'End') { select(nodes.length - 1); event.preventDefault(); }
+    });
+    enableDragPan(track);
 
-    const prev = el('button', { class: 'lq-btn lq-btn--glass lq-btn--sm lq-btn--icon lq-cultivation__nav', type: 'button', 'data-lq-component': 'button', 'aria-label': '上一境界', text: '‹', onclick: () => step(-1) });
-    const nextBtn = el('button', { class: 'lq-btn lq-btn--glass lq-btn--sm lq-btn--icon lq-cultivation__nav', type: 'button', 'data-lq-component': 'button', 'aria-label': '下一境界', text: '›', onclick: () => step(1) });
-    section.append(head, el('div', { class: 'lq-cultivation__viewport' }, [prev, track, nextBtn]), detail);
-    ctx.afterMount(() => select(true));
+    const canvas = el('canvas', { class: 'lq-cultivation__wind', 'aria-hidden': 'true' });
+    const sky = el('div', { class: 'lq-cultivation__sky' }, [track, canvas]);
+    const prev = el('button', { class: 'lq-btn lq-btn--glass lq-btn--sm lq-btn--icon lq-cultivation__nav', type: 'button', 'data-lq-component': 'button', 'aria-label': '向下一级台阶', text: '‹', onclick: () => select(selected - 1) });
+    const nextBtn = el('button', { class: 'lq-btn lq-btn--glass lq-btn--sm lq-btn--icon lq-cultivation__nav', type: 'button', 'data-lq-component': 'button', 'aria-label': '向上一级台阶', text: '›', onclick: () => select(selected + 1) });
+    section.append(head, el('div', { class: 'lq-cultivation__viewport' }, [prev, sky, nextBtn]), detail);
+    ctx.afterMount(() => {
+        select(selected, false);
+        items[selected].scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'auto' });
+        ctx.cleanups.push(startWind(canvas, ctx));
+    });
     return section;
 }
 
@@ -350,30 +518,32 @@ function renderTrend(progress) {
     return section;
 }
 
-function renderMountain(progress, ctx) {
+function renderSect(progress, ctx) {
     const position = progress.class_position;
     if (!position?.current || !position?.leader || !position?.mountain) return null;
-    const section = el('section', { class: 'lq-surface lq-cultivation__mountain', 'data-lq-component': 'surface', 'data-lq-surface': 'embedded' });
+    const leader = position.leader;
+    const current = position.current;
+    const section = el('section', { class: 'lq-surface lq-cultivation__sect', 'data-lq-component': 'surface', 'data-lq-surface': 'embedded' });
     section.append(el('div', { class: 'lq-cultivation__inline-head' }, [
-        el('h3', { text: '全班山峰' }),
-        el('span', { text: `第 ${position.current.rank} / ${position.total} 位 · 前 ${position.current.top_percent}%` }),
+        el('h3', { text: '宗门实力排行' }),
+        el('span', { text: `第 ${current.rank} / ${position.total} 位 · 前 ${current.top_percent}%` }),
     ]));
 
-    const width = 360, height = 150, baseY = 130, peakY = 18, peakX = 178, labelX = 274;
+    const width = 360, height = 150, baseY = 130, peakY = 22, peakX = 178, labelX = 274;
     const minScore = Number(position.mountain.min_score ?? 0);
     const maxScore = Number(position.mountain.max_score ?? 100);
     const range = Math.max(1, maxScore - minScore);
-    const current = Number(position.current.score ?? 0);
-    const leaderScore = Number(position.leader.score ?? maxScore);
-    const self = Boolean(position.leader.is_self);
+    const currentScore = Number(current.score ?? 0);
+    const leaderScore = Number(leader.score ?? maxScore);
     const compact = (text, max) => { const value = String(text || '').trim(); return value.length > max ? `${value.slice(0, max - 1)}…` : value; };
     const yFor = (score) => baseY - clamp01((Number(score) - minScore) / range) * (baseY - peakY);
-    const selfY = Math.max(peakY, Math.min(baseY, yFor(current)));
-    const selfLabel = self ? `修为 ${fmt(current)}` : `${compact(position.current.name || ctx.userName || '您', 5)} · ${fmt(current)}`;
+    const selfY = Math.max(peakY, Math.min(baseY, yFor(currentScore)));
+    const selfLabel = leader.is_self ? `你 · ${fmt(currentScore)}` : `${compact(current.name || ctx.userName || '你', 5)} · ${fmt(currentScore)}`;
     const selfLabelY = selfY <= peakY + 12 ? selfY + 18 : selfY - 6;
+    const leaderTitle = leader.is_tianjiao ? '本宗天骄' : (leader.anonymous ? '峰顶' : '宗门领先');
 
-    const svg = svgEl('svg', { viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': '全班修为山峰，山顶为最高修为，横向虚线为您的修为位置', class: 'lq-cultivation__mountain-svg' });
-    const ridge = `M 30 ${baseY} C 82 112, 116 60, ${peakX} ${peakY} C 238 58, 284 106, 330 ${baseY}`;
+    const svg = svgEl('svg', { viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': `宗门实力山峰：${leaderTitle} ${leader.name} 修为 ${fmt(leaderScore)}；虚线为你的修为位置`, class: 'lq-cultivation__mountain-svg' });
+    const ridge = `M 30 ${baseY} C 82 112, 116 64, ${peakX} ${peakY} C 238 62, 284 106, 330 ${baseY}`;
     svg.append(
         svgEl('path', { class: 'lq-cultivation__mountain-area', d: `${ridge} Z` }),
         svgEl('path', { class: 'lq-cultivation__mountain-ridge', d: ridge }),
@@ -381,8 +551,12 @@ function renderMountain(progress, ctx) {
         svgEl('path', { class: 'lq-cultivation__mountain-flag', d: `M ${peakX + 9} ${peakY - 15} L ${peakX + 38} ${peakY - 9} L ${peakX + 9} ${peakY - 2} Z` }),
         svgEl('circle', { class: 'lq-cultivation__mountain-peak', cx: peakX, cy: peakY, r: 4.8 }),
     );
+    const leaderEmblem = emblemUrl(leader.level?.key || '');
+    if (leaderEmblem) {
+        svg.append(svgEl('image', { href: leaderEmblem, x: peakX - 34, y: peakY - 20, width: 24, height: 24, class: 'lq-cultivation__mountain-emblem' }));
+    }
     const peakText = svgEl('text', { class: 'lq-cultivation__mountain-label', x: peakX, y: peakY + 24, 'text-anchor': 'middle' });
-    peakText.textContent = `${compact(position.leader.name || '同学', 6)} · ${fmt(leaderScore)}`;
+    peakText.textContent = `${leaderTitle} · ${compact(leader.name || '同学', 6)} · ${fmt(leaderScore)}`;
     svg.append(
         peakText,
         svgEl('line', { class: 'lq-cultivation__mountain-self-line', x1: 42, x2: labelX - 7, y1: selfY, y2: selfY }),
@@ -393,9 +567,40 @@ function renderMountain(progress, ctx) {
     const selfText = svgEl('text', { class: 'lq-cultivation__mountain-self-label', x: labelX + 5, y: selfLabelY });
     selfText.textContent = selfLabel;
     svg.append(selfText);
-    section.append(svg, el('p', { class: 'lq-cultivation__hint', text: self
-        ? `你站在山顶，修为 ${fmt(current)}。`
-        : `超过了 ${position.current.surpass_percent ?? ''}% 的同学；山顶 ${position.leader.name || '同学'} 修为 ${fmt(leaderScore)}。` }));
+    section.append(svg);
+
+    const rows = Array.isArray(position.ranking) ? position.ranking : [];
+    const rankRow = (row, extraClass = '') => {
+        const isTianjiao = Boolean(leader.is_tianjiao) && row.rank === 1;
+        const classes = `${row.is_self ? 'is-self' : ''} ${extraClass}`.trim();
+        return el('li', { class: classes || null, 'data-rank': row.rank }, [
+            el('span', { class: 'lq-cultivation__sect-rank', text: String(row.rank) }),
+            emblemImage(row.level, { size: 24 }) || el('span', { class: 'lq-cultivation__sect-noemblem', 'aria-hidden': 'true' }),
+            el('span', { class: 'lq-cultivation__sect-name' }, [
+                el('span', { text: row.is_self ? `${row.name}（你）` : row.name }),
+                isTianjiao ? chip('本宗天骄', 'warning') : null,
+            ]),
+            el('b', { text: fmt(row.score) }),
+        ]);
+    };
+    if (rows.length) {
+        const list = el('ol', { class: 'lq-cultivation__sect-list', 'aria-label': '宗门实力榜' }, rows.map((row) => rankRow(row)));
+        if (!rows.some((row) => row.is_self)) {
+            list.append(rankRow({ rank: current.rank, name: current.name || '你', score: current.score, is_self: true, level: position.current_level }, 'is-gap'));
+        }
+        section.append(list);
+    }
+    if (position.self_hidden) {
+        section.append(el('p', { class: 'lq-cultivation__hint' }, [
+            '你已隐藏修为：同门看不到你的名字与境界。',
+            el('a', { href: '/profile?section=settings', text: '修改设置' }),
+        ]));
+    }
+    const othersHidden = Number(position.hidden_count || 0) - (position.self_hidden ? 1 : 0);
+    if (othersHidden > 0) section.append(el('p', { class: 'lq-cultivation__hint', text: `另有 ${othersHidden} 位同门隐世修炼，未列入榜单。` }));
+    section.append(el('p', { class: 'lq-cultivation__hint', text: leader.is_self && leader.is_tianjiao
+        ? `你就是本宗天骄，修为 ${fmt(currentScore)}。`
+        : `你超过了 ${current.surpass_percent ?? 0}% 的同门。` }));
     return section;
 }
 
@@ -451,6 +656,7 @@ function createContext(panel, options) {
         reducedMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
         courseName: options.courseName || '',
         userName: options.userName || '',
+        cleanups: panel.cleanups,
         afterMount: (callback) => mounted.push(callback),
         runMounted: () => { while (mounted.length) mounted.shift()?.(); },
         reload: () => panel.reload(),
@@ -463,7 +669,7 @@ function renderBody(body, progress, ctx) {
     body.textContent = '';
     body.removeAttribute('aria-busy');
     const main = el('div', { class: 'lq-cultivation__main' }, [renderBreakdown(progress), renderGrowthNote(progress)]);
-    const aside = el('div', { class: 'lq-cultivation__aside' }, [renderMountain(progress, ctx), renderTrend(progress), renderOpportunities(progress), renderLedger(progress)]);
+    const aside = el('div', { class: 'lq-cultivation__aside' }, [renderSect(progress, ctx), renderTrend(progress), renderOpportunities(progress), renderLedger(progress)]);
     body.append(renderHero(progress, ctx), renderPath(progress, ctx), el('div', { class: 'lq-cultivation__grid' }, [main, aside]));
     ctx.runMounted();
 }
@@ -504,7 +710,7 @@ function createPanel(root) {
             body.append(el('p', { class: 'lq-cultivation__loading', text: '正在读取修为…' }));
             owner ??= createDomainModal(root, {
                 type: 'modal', surface, initialFocus: closeBtn,
-                onClose: () => { root.hidden = true; current.trigger?.setAttribute?.('aria-expanded', 'false'); },
+                onClose: () => { panel.teardown(); root.hidden = true; current.trigger?.setAttribute?.('aria-expanded', 'false'); },
             });
             root.hidden = false;
             current.trigger?.setAttribute?.('aria-expanded', 'true');
@@ -520,7 +726,14 @@ function createPanel(root) {
         close(reason = 'programmatic') {
             return owner ? owner.close(reason) : Promise.resolve(false);
         },
+        cleanups: [],
+        teardown() {
+            while (panel.cleanups.length) {
+                try { panel.cleanups.pop()?.(); } catch { /* best effort */ }
+            }
+        },
         render(progress) {
+            panel.teardown();
             try {
                 renderBody(body, progress, createContext(panel, current.options));
             } catch (error) {

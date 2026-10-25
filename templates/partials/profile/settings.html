@@ -38,6 +38,18 @@
                             </div>
                         </div>
                     </section>
+
+                    {% if profile.role == 'student' %}
+                    {% from 'macros/lq/forms.html' import lq_switch %}
+                    <section data-lq-component="surface" class="lq-surface profile-band profile-cultivation-privacy profile-reveal" data-cultivation-visibility>
+                        <div class="profile-band__head">
+                            <div>
+                                <h3>修为展示</h3>
+                            </div>
+                        </div>
+                        {{ lq_switch('profile-cultivation-hidden', '隐藏修为', disabled=true, help='开启后，头像旁不再显示境界标志，他人无法探查你的境界和修为值，宗门实力排行也不会公开你的名字。自己的修为面板不受影响。', attrs={'data-cultivation-visibility-input': ''}) }}
+                    </section>
+                    {% endif %}
                 </aside>
 
                 <section class="profile-band profile-form-band profile-reveal">

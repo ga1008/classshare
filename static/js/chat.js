@@ -2228,6 +2228,10 @@ export class ClassroomChat {
         avatar.className = 'chat-avatar';
         avatar.setAttribute('aria-hidden', 'true');
         avatar.textContent = initials;
+        // Student avatars carry their id so cultivation_emblems.js can add the level emblem.
+        if (role === 'student' && normalizedMessage.user_id != null && /^\d+$/.test(String(normalizedMessage.user_id))) {
+            avatar.dataset.cultivationStudentId = String(normalizedMessage.user_id);
+        }
         row.appendChild(avatar);
 
         // The message body is a shared LQ Bubble (own messages outgoing, others incoming,

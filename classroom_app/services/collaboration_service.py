@@ -1671,10 +1671,14 @@ def _load_member_public_map(conn, class_offering_id: int, student_ids: Iterable[
         """,
         (int(class_offering_id), *ids),
     ).fetchall()
+    from .cultivation_display_service import hidden_student_ids
+
+    hidden = hidden_student_ids(conn, ids)
     result: dict[int, dict[str, Any]] = {}
     for row in rows:
         item = dict(row)
-        score_value = item.get("cultivation_score")
+        # 隐藏修为: classmates never see a hidden student's cultivation score.
+        score_value = None if int(item["id"]) in hidden else item.get("cultivation_score")
         result[int(item["id"])] = {
             "avatar_url": _avatar_url("student", item["id"], item.get("avatar_file_hash")),
             "cultivation_score": round(float(score_value), 1) if score_value is not None else None,

@@ -113,6 +113,7 @@ from .routers import points_shop
 from .routers import global_search
 from .routers import material_knowledge_search
 from .routers import chat_actions
+from .routers import cultivation_display
 from .routers import polls
 from .routers import material_whiteboards
 from .routers import classroom_closeout
@@ -725,6 +726,7 @@ app.include_router(points_shop.router)
 app.include_router(global_search.router)
 app.include_router(material_knowledge_search.router)
 app.include_router(chat_actions.router)
+app.include_router(cultivation_display.router)
 app.include_router(resume_console.router)
 app.include_router(classroom_interactions.router)
 app.include_router(polls.router)
