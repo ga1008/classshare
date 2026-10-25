@@ -63,6 +63,8 @@ def _table_statements(id_column: str) -> list[str]:
             last_active_at TEXT,
             origin TEXT NOT NULL DEFAULT 'seed',
             created_by_review_id INTEGER,
+            avatar_file TEXT NOT NULL DEFAULT '',
+            avatar_silhouette TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
@@ -160,6 +162,9 @@ _INDEX_STATEMENTS = (
 ADDED_COLUMNS = (
     ("wanderer_agents", "origin", "TEXT NOT NULL DEFAULT 'seed'"),  # 'seed' | 'dao'
     ("wanderer_agents", "created_by_review_id", "INTEGER"),
+    # Avatar chain (design §11): illustrated file under static/img/wanderers/, then a silhouette key.
+    ("wanderer_agents", "avatar_file", "TEXT NOT NULL DEFAULT ''"),
+    ("wanderer_agents", "avatar_silhouette", "TEXT NOT NULL DEFAULT ''"),
 )
 
 

@@ -1,1 +1,30 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="散修头像"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(191, 62%, 46%)"/><stop offset="1" stop-color="hsl(255, 58%, 30%)"/></linearGradient></defs><rect width="96" height="96" fill="url(#g)"/><circle cx="48.0" cy="48.0" r="26" fill="none" stroke="hsl(191, 90%, 88%)" stroke-opacity=".35" stroke-width="1.5"/><polygon points="61.54,65.34 35.69,66.23 26.86,41.92 47.24,26.01 68.68,40.49" fill="hsl(255, 80%, 82%)" fill-opacity=".9"/><polygon points="41.85,40.12 51.75,38.73 57.90,46.61 54.15,55.88 44.25,57.27 38.10,49.39" fill="hsl(255, 58%, 30%)" fill-opacity=".85"/><circle cx="71.37" cy="59.40" r="2.60" fill="hsl(191, 90%, 88%)"/><circle cx="58.57" cy="71.76" r="2.60" fill="hsl(191, 90%, 88%)"/><circle cx="40.83" cy="72.99" r="2.60" fill="hsl(191, 90%, 88%)"/><circle cx="26.44" cy="62.53" r="2.60" fill="hsl(191, 90%, 88%)"/><circle cx="22.14" cy="45.28" r="2.60" fill="hsl(191, 90%, 88%)"/><circle cx="29.94" cy="29.29" r="2.60" fill="hsl(191, 90%, 88%)"/><circle cx="46.19" cy="22.06" r="2.60" fill="hsl(191, 90%, 88%)"/><circle cx="63.29" cy="26.97" r="2.60" fill="hsl(191, 90%, 88%)"/><circle cx="73.23" cy="41.72" r="2.60" fill="hsl(191, 90%, 88%)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="害羞脸红、双爪相贴的灰白小猫">
+  <defs>
+    <clipPath id="avatar">
+      <circle cx="128" cy="128" r="128"/>
+    </clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#F0C4CF"/>
+  <g clip-path="url(#avatar)">
+    <path fill="#A5AFBC" d="M53 126 51 72Q50 53 65 62Q89 76 107 108Z"/>
+    <path fill="#A5AFBC" d="M149 108Q167 76 191 62Q206 53 205 72L203 126Z"/>
+    <path fill="#E8879F" d="M64 112 62 82Q62 76 68 81L91 108Z"/>
+    <path fill="#E8879F" d="m165 108 23-27Q194 76 194 82L192 112Z"/>
+    <path fill="#A5AFBC" d="M42 153C40 117 72 94 105 96Q128 89 151 96C184 94 216 117 214 153C219 196 184 229 128 229S37 196 42 153Z"/>
+    <path fill="#FFF8EF" d="M47 153C47 132 69 119 91 124C109 128 111 143 128 143S147 128 165 124C187 119 209 132 209 153C214 193 181 225 128 225S42 193 47 153Z"/>
+    <ellipse cx="94" cy="159" rx="18" ry="22" fill="#394553"/>
+    <ellipse cx="162" cy="159" rx="18" ry="22" fill="#394553"/>
+    <circle cx="89" cy="151" r="6" fill="#FFF8EF"/>
+    <circle cx="157" cy="151" r="6" fill="#FFF8EF"/>
+    <circle cx="100" cy="166" r="2.5" fill="#FFF8EF"/>
+    <circle cx="168" cy="166" r="2.5" fill="#FFF8EF"/>
+    <ellipse cx="71" cy="184" rx="17" ry="10" fill="#E8879F"/>
+    <ellipse cx="185" cy="184" rx="17" ry="10" fill="#E8879F"/>
+    <path fill="#E8879F" d="M123 178Q128 175 133 178Q134 181 128 184Q122 181 123 178Z"/>
+    <path fill="#394553" d="M124 189Q128 191 132 189Q133 195 128 195Q123 195 124 189Z"/>
+    <path fill="#A5AFBC" d="M81 256C73 241 77 222 91 216C103 211 115 222 126 231Q132 237 126 245L114 264Z"/>
+    <path fill="#FFF8EF" d="M85 261C78 247 81 231 93 225C103 220 113 229 123 236Q127 240 121 245L111 265Z"/>
+    <path fill="#A5AFBC" d="M175 256C183 241 179 222 165 216C153 211 141 222 130 231Q124 237 130 245L142 264Z"/>
+    <path fill="#FFF8EF" d="M171 261C178 247 175 231 163 225C153 220 143 229 133 236Q129 240 135 245L145 265Z"/>
+  </g>
+</svg>

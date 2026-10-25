@@ -65,7 +65,9 @@ _INT_FIELDS = (
 
 _SELECT_WANDERER = """
     SELECT w.*, s.student_id_number AS student_id_number, s.class_id AS class_id,
-           s.description AS public_intro, s.avatar_file_hash AS avatar_file_hash
+           s.description AS public_intro, s.avatar_file_hash AS avatar_file_hash,
+           s.avatar_mime_type AS avatar_mime_type,
+           s.gender AS gender
     FROM wanderer_agents w
     JOIN students s ON s.id = w.student_id
 """

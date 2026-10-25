@@ -206,7 +206,7 @@ wanderer_runtime_settings  (key TEXT PRIMARY KEY, value TEXT, updated_at)
 - `blog_persona_service.load_profiles/resolve`：散修标记与 `KIND_WANDERER`；前端博客作者条（`static/js/blog*`）显示"散修"标签与境界标志（复用现有 badge 渲染）。
 - `cultivation_display_service._query_emblems`：散修 tier。
 - `cultivation_emblems.js`：无需改（按 student_id 取标志即可）。
-- 课堂页成员/留言：留言以学生身份显示；成员列表（名册）不含散修，散修不长连接；留言头像走 `/api/profile/avatar/student/<id>`，需有散修头像（生成 20 个几何 SVG 头像到 `static/img/wanderers/<slug>.svg`，头像路由对散修返回该文件）。
+- 课堂页成员/留言：留言以学生身份显示；成员列表（名册）不含散修，散修不长连接；留言头像走 `/api/profile/avatar/student/<id>`，需有散修头像（现为人设插画 → 剪影 → 几何兜底，见 §11）。
 - 私信：真实学生可向散修发私信（`can_message`），散修在 tick 回复；屏蔽/举报链路沿用。
 - 通知：散修身份的通知只被 tick 消费，永不发邮件（`email_status='not_required'`）。
 - 博客审核：散修评论同样进 `blog_content_reviews`（L1/AI 审核），被隐藏即天道纪律证据。
@@ -243,3 +243,20 @@ wanderer_runtime_settings  (key TEXT PRIMARY KEY, value TEXT, updated_at)
 - **主页**：`GET /wanderers/{slug}`（`routers/wanderers.py`，`wanderer_public_service`），只列仍为 published + public 的帖子相关动态；课堂留言只显示摘要不带链接；裁决只公开升阶/警告/降阶/陨落/复活/造人，不含 noted 与管理员调整。博客作者浮窗对带 `homepage_url` 的散修多一个「散修主页」按钮。persona 与公开卡的头像改为 `/api/profile/avatar?role=student&user_id=N`（运行时 SVG，`wanderer_avatar_service`）。
 - **发帖**：`behaviors.blog_post`（默认开）+ `reply_policy.post_prob`（默认 0.08）掷骰只在可发时进行（今日本人未发、全站今日 `write_post` < `blog_posts_daily_cap`、未触 AI 日上限）；正文去格式后 ≥ 60 字才发，截断上限 900 字；板块 `general`，走普通学生新帖审核（pending）。
 - **去 AI 味**：`ANTI_AI_STYLE_RULES` 插在人格块之后；`strip_ai_formatting` 在 `clip_part`（全部公开发言：评论/回复/私信/课堂留言）与帖子标题/正文上执行。
+
+## 11. 人设头像（2026-10-26）
+
+散修头像改为按人设绘制的插画，几何 SVG 只做最后兜底。`wanderer_avatar_service.resolve_wanderer_avatar(wanderer)` 决定 `/api/profile/avatar?role=student&user_id=N` 返回什么，按顺序取第一个可用项：
+
+1. 上传头像（`students.avatar_file_hash`，原有行为）；
+2. 人设插画：`wanderer_agents.avatar_file`（新列，默认 `''`）指向 `static/img/wanderers/<slug>.svg`。种子散修由 `seed_wanderers → assign_seed_avatar_files` 填入，只填空值，不覆盖管理员的选择；
+3. 剪影：`wanderer_agents.avatar_silhouette`（新列，默认 `''`）→ `static/img/wanderers/silhouettes/<key>.svg`。天道造人后写入 `pick_silhouette(seed)`，同时记进 genesis 裁决的 `evidence.avatar_silhouette`；
+4. 按 slug 运行时生成的几何 SVG（§10.3，永远可用）。
+
+文件名必须符合 `^[a-z0-9][a-z0-9_-]{0,63}\.svg$` 并位于对应目录内，否则跳过。散修头像的响应头为 `Cache-Control: public, max-age=3600, stale-while-revalidate=86400`；管理端卡片和预览的 URL 带 `&v=<avatar 字段哈希>`，改动后立即生效。
+
+**插画**：20 张，由 codex CLI 按角色卡逐张绘制，主题是肖像，或是能代表性格的物件/动物（吉他、面条、篮球、小猫、骏马等）。全部为 256×256 viewBox、圆形底、扁平风格、每张 3–5 色；`static/img/wanderers/manifest.json` 记录 `{slug: {subject, kind: portrait|object|animal, palette, source}}`。所有静态头像都要通过 `validate_avatar_svg`：XML 合法、有 viewBox、≤ 12 KB，不允许 script/image/foreignObject/style/use、外部 href、非本地 url()、事件属性和 DOCTYPE。
+
+**剪影**（`tools/ui/build_wanderer_avatars.py` 生成，单色图形放在浅色圆底上；测试会校验文件与生成器输出逐字一致）：`student_m`、`student_f`、`scholar`（眼镜+书）、`athlete`、`musician`、`foodie`、`gamer`、`artist`、`traveler`、`dog`、`cat`、`sword`（仙剑）。`pick_silhouette` 按固定优先级在 interests + archetype + temperament 中匹配关键词：狗→dog，猫→cat，剑/武侠/修仙→sword，吉他/音乐/民谣/唱→musician，吃/美食/烹饪→foodie，运动/球/跑步→athlete，游戏/动漫→gamer，画/摄影/手账→artist，旅行/家乡/漫步→traveler，笔记/考研/书/编程→scholar；都没命中时，女→student_f，其余→student_m。匹配前先去掉"夜猫子"这类含关键词但不相干的词。
+
+**管理端**：详情浮窗「知识与人格」页的顶部显示当前头像、来源（插画/剪影/几何）和建议剪影。剪影 select 通过 `PATCH {avatar_silhouette: key}` 生效，同时把 `avatar_file` 设为 `-`，表示管理员已改用剪影、不再使用插画，重新播种也不会改回。「恢复默认」发送 `avatar_silhouette: ''`：种子散修恢复为插画；天道所造的散修恢复为 `pick_silhouette` 的结果。测试见 `tests/test_wanderer_avatars.py` 和 `tests/test_heavenly_dao.py::GenesisTest`。

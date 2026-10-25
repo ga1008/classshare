@@ -681,10 +681,10 @@
 - `static/js/dashboard.js` ×28
 - `static/js/dashboard_agenda_widget.js` ×28
 - `templates/assessment_plan_editor.html` ×28
+- `templates/manage/system/wanderers.html` ×28
 - `templates/partials/learning_material_selector.html` ×28
 - `templates/teacher_evaluation_editor.html` ×28
 - `static/js/ai_chat_component.js` ×27
-- `templates/manage/system/wanderers.html` ×26
 - `static/js/materials_library_cards.js` ×25
 - `static/js/app_files.js` ×24
 - `static/js/cultivation_panel.js` ×24
@@ -1290,7 +1290,7 @@
 - `templates/manage/signatures.html` ×52
 - `templates/partials/materials/modals_generate.html` ×50
 - `templates/manage/classes.html` ×46
-- `templates/manage/system/wanderers.html` ×40
+- `templates/manage/system/wanderers.html` ×42
 - `templates/manage/attendance_reports.html` ×38
 - `templates/blog.html` ×37
 - `templates/student_login_v4.html` ×36

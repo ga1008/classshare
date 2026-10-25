@@ -1,0 +1,242 @@
+{
+  "linwanzhou": {
+    "subject": "crescent moon over a small night boat with a glowing lantern",
+    "kind": "object",
+    "palette": [
+      "#E6BB68",
+      "#282D50",
+      "#202541",
+      "#F8DC94",
+      "#AB7A61"
+    ],
+    "source": "codex"
+  },
+  "atai": {
+    "subject": "basketball with a sweatband and speed streaks",
+    "kind": "object",
+    "palette": [
+      "#F4CD67",
+      "#B85E33",
+      "#D65C4A",
+      "#E99442",
+      "#F5B25B"
+    ],
+    "source": "codex"
+  },
+  "suqinghe": {
+    "subject": "neat girl with a bob cut, round glasses and a pencil tucked behind her ear",
+    "kind": "portrait",
+    "palette": [
+      "#B8DDD0",
+      "#303B3B",
+      "#D78978",
+      "#F5D7B8",
+      "#E6BA5A"
+    ],
+    "source": "codex"
+  },
+  "laozhou": {
+    "subject": "steady older-brother type with a crew cut holding a mug, wheat ears behind",
+    "kind": "portrait",
+    "palette": [
+      "#E8D5AC",
+      "#C9954D",
+      "#394B47",
+      "#E8B293",
+      "#CC846F"
+    ],
+    "source": "codex"
+  },
+  "xiaoman": {
+    "subject": "shy kitten peeking out with blushing cheeks",
+    "kind": "animal",
+    "palette": [
+      "#F0C4CF",
+      "#A5AFBC",
+      "#E8879F",
+      "#FFF8EF",
+      "#394553"
+    ],
+    "source": "codex"
+  },
+  "hezhiyuan": {
+    "subject": "sharp debater with a raised eyebrow and a hand-on-chin thinking pose",
+    "kind": "portrait",
+    "palette": [
+      "#7895AA",
+      "#28343E",
+      "#F7F3E9",
+      "#D99179",
+      "#F0BF99"
+    ],
+    "source": "codex"
+  },
+  "gunian": {
+    "subject": "vintage film camera with falling plane-tree leaves",
+    "kind": "object",
+    "palette": [
+      "#D4A078",
+      "#B96743",
+      "#AB7B5B",
+      "#60473C",
+      "#F3E5CA"
+    ],
+    "source": "codex"
+  },
+  "dazhuang": {
+    "subject": "steaming bowl of noodles with chopsticks",
+    "kind": "object",
+    "palette": [
+      "#F6D995",
+      "#FFF4DA",
+      "#D46550",
+      "#D9A338",
+      "#6E945A"
+    ],
+    "source": "codex"
+  },
+  "chenmo": {
+    "subject": "quiet coder in a hoodie with big headphones and square glasses",
+    "kind": "portrait",
+    "palette": [
+      "#35575B",
+      "#28333D",
+      "#A5C8B7",
+      "#E7B8A5",
+      "#C98D86"
+    ],
+    "source": "codex"
+  },
+  "lele": {
+    "subject": "bubbly girl with double space buns and a huge grin",
+    "kind": "portrait",
+    "palette": [
+      "#F47773",
+      "#FFF2D8",
+      "#45324F",
+      "#FFD3AD",
+      "#5C9F98"
+    ],
+    "source": "codex"
+  },
+  "bailu": {
+    "subject": "lidded tea cup (gaiwan) with a floating tea leaf and herbs",
+    "kind": "object",
+    "palette": [
+      "#A9C0AC",
+      "#E6EFDF",
+      "#63866A",
+      "#41644F",
+      "#BDD0BA"
+    ],
+    "source": "codex"
+  },
+  "jiangye": {
+    "subject": "acoustic folk guitar with a travel strap",
+    "kind": "object",
+    "palette": [
+      "#84708F",
+      "#D8A366",
+      "#B96F72",
+      "#4A3B49",
+      "#BE815C"
+    ],
+    "source": "codex"
+  },
+  "fangqiushi": {
+    "subject": "determined exam-prep girl with a high ponytail, glasses and a book stack",
+    "kind": "portrait",
+    "palette": [
+      "#E6DFF2",
+      "#49415F",
+      "#D58A91",
+      "#F4CAA9",
+      "#7BA8A1"
+    ],
+    "source": "codex"
+  },
+  "cenxiaolu": {
+    "subject": "curious little whale spouting under stars",
+    "kind": "animal",
+    "palette": [
+      "#C7ECE7",
+      "#FFF1BC",
+      "#64B5D4",
+      "#3D829F",
+      "#EAABA3"
+    ],
+    "source": "codex"
+  },
+  "zhaoguodong": {
+    "subject": "calligraphy brushes in a brush pot beside an ink stone",
+    "kind": "object",
+    "palette": [
+      "#F1E7D3",
+      "#FBF3E2",
+      "#A75F4C",
+      "#88A99A",
+      "#3D5048"
+    ],
+    "source": "codex"
+  },
+  "momo": {
+    "subject": "anime-fan girl with cat-ear headphones and big sparkly eyes",
+    "kind": "portrait",
+    "palette": [
+      "#BDDFF1",
+      "#655071",
+      "#C79AC3",
+      "#FFE6D6",
+      "#EBA2B5"
+    ],
+    "source": "codex"
+  },
+  "tangyinuo": {
+    "subject": "clipboard with a checklist and a small megaphone",
+    "kind": "object",
+    "palette": [
+      "#C6E9F5",
+      "#61A98A",
+      "#FFFFFF",
+      "#7B8E9D",
+      "#F2A362"
+    ],
+    "source": "codex"
+  },
+  "hanbing": {
+    "subject": "cool girl with straight black hair, half-lidded eyes and a scarf, snowflake nearby",
+    "kind": "portrait",
+    "palette": [
+      "#DCE8ED",
+      "#FFF9F4",
+      "#242B33",
+      "#D8A09E",
+      "#81ACBF"
+    ],
+    "source": "codex"
+  },
+  "abu": {
+    "subject": "friendly grassland horse with a braided mane",
+    "kind": "animal",
+    "palette": [
+      "#87C9DC",
+      "#6FA98D",
+      "#FFF0D6",
+      "#754832",
+      "#B96F48"
+    ],
+    "source": "codex"
+  },
+  "lurenjia": {
+    "subject": "sleepy slacker guy with messy hair and droopy eyes, melting smile",
+    "kind": "portrait",
+    "palette": [
+      "#9B9F7E",
+      "#BEC3B8",
+      "#E8B796",
+      "#C68F78",
+      "#424A41"
+    ],
+    "source": "codex"
+  }
+}

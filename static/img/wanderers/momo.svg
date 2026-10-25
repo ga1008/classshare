@@ -1,1 +1,34 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="散修头像"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(261, 62%, 46%)"/><stop offset="1" stop-color="hsl(15, 58%, 30%)"/></linearGradient></defs><rect width="96" height="96" fill="url(#g)"/><circle cx="48.0" cy="48.0" r="33" fill="none" stroke="hsl(261, 90%, 88%)" stroke-opacity=".35" stroke-width="1.5"/><polygon points="34.04,30.99 59.86,29.47 69.29,53.55 49.30,69.96 27.51,56.02" fill="hsl(15, 80%, 82%)" fill-opacity=".9"/><polygon points="54.34,55.73 44.48,57.36 38.13,49.63 41.66,40.27 51.52,38.64 57.87,46.37" fill="hsl(15, 58%, 30%)" fill-opacity=".85"/><circle cx="33.89" cy="77.83" r="2.60" fill="hsl(261, 90%, 88%)"/><circle cx="18.17" cy="33.89" r="2.60" fill="hsl(261, 90%, 88%)"/><circle cx="62.11" cy="18.17" r="2.60" fill="hsl(261, 90%, 88%)"/><circle cx="77.83" cy="62.11" r="2.60" fill="hsl(261, 90%, 88%)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="戴猫耳耳机和星星发夹的粉紫长发动漫少女">
+  <defs>
+    <clipPath id="portrait"><circle cx="128" cy="128" r="128"/></clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#BDDFF1"/>
+  <g clip-path="url(#portrait)">
+    <path fill="#655071" d="M58 109C57 66 84 46 128 46C172 46 199 67 198 109L205 202C207 226 181 236 161 223H94C72 238 49 224 52 201Z"/>
+    <path fill="#C79AC3" d="M65 110C64 71 89 52 128 52C167 52 191 73 191 110L197 200C200 220 181 225 164 215H94C77 228 58 219 60 200Z"/>
+    <path fill="#655071" d="M38 256L42 229C45 208 65 196 93 190L163 190C191 196 211 208 214 229L218 256Z"/>
+    <path fill="#BDDFF1" d="M80 205Q128 187 176 205L185 256H71Z"/>
+    <path fill="#FFE6D6" d="M111 164H145L148 195Q128 218 108 195Z"/>
+    <path fill="#FFE6D6" d="M78 108C78 81 98 69 128 69C158 69 178 81 178 108L175 140C172 165 151 181 128 181C105 181 84 165 81 140Z"/>
+    <path fill="#C79AC3" d="M73 111C71 80 88 62 115 61C146 55 180 72 183 111C159 108 141 97 129 82C120 103 98 113 73 115Z"/>
+    <path fill="#C79AC3" d="M68 140L83 146C83 173 89 191 101 208C105 214 99 220 92 216C72 204 66 180 68 140Z"/>
+    <path fill="#C79AC3" d="M187 140L173 146C172 174 168 194 156 210C152 215 159 221 166 216C186 203 191 178 187 140Z"/>
+    <path fill="#BDDFF1" d="M57 119V98C57 58 88 38 128 38C168 38 199 58 199 98V119H186V98C186 68 161 51 128 51C95 51 70 68 70 98V119Z"/>
+    <path fill="#BDDFF1" d="M65 66L64 32Q64 24 71 29L101 50Z"/>
+    <path fill="#BDDFF1" d="M191 66L192 32Q192 24 185 29L155 50Z"/>
+    <path fill="#EBA2B5" d="M73 55L72 39Q72 36 75 39L89 49Z"/>
+    <path fill="#EBA2B5" d="M183 55L184 39Q184 36 181 39L167 49Z"/>
+    <rect x="54" y="105" width="23" height="47" rx="11" fill="#BDDFF1"/>
+    <rect x="179" y="105" width="23" height="47" rx="11" fill="#BDDFF1"/>
+    <ellipse cx="108" cy="128" rx="12" ry="17" fill="#655071"/>
+    <ellipse cx="148" cy="128" rx="12" ry="17" fill="#655071"/>
+    <circle cx="104" cy="122" r="5" fill="#FFE6D6"/>
+    <circle cx="112" cy="135" r="2.5" fill="#FFE6D6"/>
+    <circle cx="144" cy="122" r="5" fill="#FFE6D6"/>
+    <circle cx="152" cy="135" r="2.5" fill="#FFE6D6"/>
+    <ellipse cx="92" cy="148" rx="8" ry="5" fill="#EBA2B5"/>
+    <ellipse cx="164" cy="148" rx="8" ry="5" fill="#EBA2B5"/>
+    <path fill="#655071" d="M118 151Q121 158 128 153Q135 158 138 151L136 150Q133 154 129 150Q128 149 127 150Q123 154 120 150Z"/>
+    <path fill="#FFE6D6" d="M167 83L170 89L177 90L172 95L173 102L167 99L161 102L162 95L157 90L164 89Z"/>
+  </g>
+</svg>

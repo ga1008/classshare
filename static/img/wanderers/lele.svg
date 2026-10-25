@@ -1,1 +1,33 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="散修头像"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(180, 62%, 46%)"/><stop offset="1" stop-color="hsl(254, 58%, 30%)"/></linearGradient></defs><rect width="96" height="96" fill="url(#g)"/><circle cx="48.0" cy="48.0" r="33" fill="none" stroke="hsl(180, 90%, 88%)" stroke-opacity=".35" stroke-width="1.5"/><polygon points="69.97,49.08 58.05,67.57 36.08,66.49 26.03,46.92 37.95,28.43 59.92,29.51" fill="hsl(254, 80%, 82%)" fill-opacity=".9"/><polygon points="38.01,47.51 53.42,39.60 52.57,56.90" fill="hsl(254, 58%, 30%)" fill-opacity=".85"/><circle cx="80.99" cy="48.81" r="2.60" fill="hsl(180, 90%, 88%)"/><circle cx="57.42" cy="79.63" r="2.60" fill="hsl(180, 90%, 88%)"/><circle cx="20.83" cy="66.74" r="2.60" fill="hsl(180, 90%, 88%)"/><circle cx="21.79" cy="27.95" r="2.60" fill="hsl(180, 90%, 88%)"/><circle cx="58.96" cy="16.87" r="2.60" fill="hsl(180, 90%, 88%)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="双丸子头的乐乐挥手开怀大笑">
+  <defs>
+    <clipPath id="circle"><circle cx="128" cy="128" r="128"/></clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#F47773"/>
+  <g clip-path="url(#circle)">
+    <path d="M36 93 Q39 104 49 107 Q39 110 36 121 Q33 110 23 107 Q33 104 36 93Z" fill="#FFF2D8"/>
+    <path d="M218 66 Q220 75 230 78 Q220 81 218 90 Q215 81 206 78 Q215 75 218 66Z" fill="#FFF2D8"/>
+    <path d="M38 173 Q40 180 47 182 Q40 184 38 191 Q36 184 29 182 Q36 180 38 173Z" fill="#FFF2D8"/>
+    <circle cx="76" cy="62" r="27" fill="#45324F"/>
+    <circle cx="174" cy="62" r="27" fill="#45324F"/>
+    <path d="M62 124 C59 81 84 58 124 58 C167 58 190 85 188 126 L194 189 Q181 204 157 198 L91 198 Q67 204 55 189Z" fill="#45324F"/>
+    <path d="M163 204 Q177 222 191 205 L207 168 Q197 166 191 156 L179 135 Q175 129 180 126 Q185 123 189 130 L198 144 L192 117 Q190 110 196 108 Q202 107 203 114 L208 139 L208 115 Q208 108 214 109 Q220 109 220 116 L219 144 L222 133 Q224 127 229 130 Q233 132 231 139 L228 156 Q227 168 218 176 L204 213 Q191 240 171 226Z" fill="#FFD3AD"/>
+    <path d="M43 256 C44 221 66 198 101 193 L146 193 C176 197 193 220 199 256Z" fill="#5C9F98"/>
+    <path d="M154 195 Q166 191 176 199 L188 212 Q181 225 169 229 L151 213Z" fill="#5C9F98"/>
+    <path d="M106 174 L144 174 L144 196 Q126 217 106 196Z" fill="#FFD3AD"/>
+    <path d="M104 191 Q111 203 125 206 Q115 218 104 211 L94 199Z" fill="#FFF2D8"/>
+    <path d="M146 191 L155 199 L146 211 Q135 218 125 206 Q139 203 146 191Z" fill="#FFF2D8"/>
+    <circle cx="73" cy="133" r="12" fill="#FFD3AD"/>
+    <circle cx="177" cy="133" r="12" fill="#FFD3AD"/>
+    <path d="M74 111 C74 81 97 73 125 73 C156 73 177 88 177 116 L175 143 C172 171 152 188 125 188 C98 188 77 170 74 143Z" fill="#FFD3AD"/>
+    <path d="M69 116 C65 80 89 65 124 65 C158 65 182 82 181 116 Q166 111 157 93 Q153 107 141 110 Q130 108 120 94 Q111 111 99 111 Q94 109 94 102 Q84 115 69 116Z" fill="#45324F"/>
+    <ellipse cx="103" cy="128" rx="9" ry="11" fill="#45324F"/>
+    <ellipse cx="147" cy="128" rx="9" ry="11" fill="#45324F"/>
+    <path d="M102 120 L104 124 L108 126 L104 128 L102 132 L100 128 L96 126 L100 124Z" fill="#FFF2D8"/>
+    <path d="M146 120 L148 124 L152 126 L148 128 L146 132 L144 128 L140 126 L144 124Z" fill="#FFF2D8"/>
+    <circle cx="87" cy="148" r="10" fill="#F47773"/>
+    <circle cx="163" cy="148" r="10" fill="#F47773"/>
+    <path d="M99 147 Q125 155 151 147 C150 167 140 179 125 179 C110 179 100 167 99 147Z" fill="#45324F"/>
+    <path d="M103 151 Q125 157 147 151 L144 159 Q125 165 106 159Z" fill="#FFF2D8"/>
+    <path d="M112 172 Q125 163 138 172 Q125 181 112 172Z" fill="#F47773"/>
+  </g>
+</svg>

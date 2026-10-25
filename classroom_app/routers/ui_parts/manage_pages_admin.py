@@ -10,6 +10,7 @@ from ...services.feedback_conversation_service import list_feedback
 from .manage_pages_shared import _table_has_column, _password_reset_login_summary_sql, _academic_event_label
 from .. import wanderers as wanderers_router
 from ...services.heavenly_dao_rules import HEAVENLY_DAO_RULES
+from ...services.wanderer_avatar_service import SILHOUETTES as WANDERER_SILHOUETTES
 from ...services.wanderer_admin_service import build_wanderer_overview, get_settings as get_wanderer_settings, list_wanderer_cards
 
 
@@ -215,6 +216,7 @@ async def get_manage_system_wanderers_page(request: Request, user: dict = Depend
                 "wanderer_cards": cards,
                 "wanderer_settings": settings,
                 "heavenly_dao_rules": HEAVENLY_DAO_RULES,
+                "wanderer_silhouettes": WANDERER_SILHOUETTES,
             },
         ),
     )

@@ -12,7 +12,7 @@ from classroom_app.app import app
 from classroom_app.dependencies import get_current_user
 from classroom_app.services import blog_service
 from classroom_app.services.heavenly_dao_service import demote
-from classroom_app.services.wanderer_avatar_service import render_wanderer_avatar_svg
+from classroom_app.services.wanderer_avatar_service import AVATAR_DIR, render_wanderer_avatar_svg
 from classroom_app.services.wanderer_identity_service import log_wanderer_action
 from classroom_app.services.wanderer_public_service import build_wanderer_home
 from tests.wanderer_test_support import WandererDbTestCase
@@ -70,13 +70,14 @@ class WandererPublicHomeTest(WandererDbTestCase):
         self.assertEqual([review["label"] for review in home["reviews"]], ["天道降阶"])
         self.assertTrue(home["avatar_url"].startswith("/api/profile/avatar?role=student&user_id="))
 
-    def test_avatar_endpoint_renders_svg_at_runtime(self):
+    def test_avatar_endpoint_serves_the_persona_illustration(self):
         with self.connect() as conn:
             wanderer = self.wanderer(conn, "suqinghe")
         response = self.client.get(f"/api/profile/avatar?role=student&user_id={wanderer['student_id']}")
         self.assertEqual(response.status_code, 200)
         self.assertIn("image/svg+xml", response.headers["content-type"])
-        self.assertEqual(response.text, render_wanderer_avatar_svg("suqinghe"))
+        # design 11: seeded wanderers serve their persona illustration; geometric stays the last resort.
+        self.assertEqual(response.content, (AVATAR_DIR / "suqinghe.svg").read_bytes())
         self.assertEqual(render_wanderer_avatar_svg("anyslug"), render_wanderer_avatar_svg("anyslug"))
         self.assertNotEqual(render_wanderer_avatar_svg("anyslug"), render_wanderer_avatar_svg("other"))
 

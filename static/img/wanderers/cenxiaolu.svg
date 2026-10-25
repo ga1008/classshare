@@ -1,1 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="散修头像"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(9, 62%, 46%)"/><stop offset="1" stop-color="hsl(97, 58%, 30%)"/></linearGradient></defs><rect width="96" height="96" fill="url(#g)"/><circle cx="48.0" cy="48.0" r="29" fill="none" stroke="hsl(9, 90%, 88%)" stroke-opacity=".35" stroke-width="1.5"/><polygon points="29.41,59.77 36.23,29.41 66.59,36.23 59.77,66.59" fill="hsl(97, 80%, 82%)" fill-opacity=".9"/><polygon points="56.45,42.65 56.86,52.64 48.41,57.99 39.55,53.35 39.14,43.36 47.59,38.01" fill="hsl(97, 58%, 30%)" fill-opacity=".85"/><circle cx="56.08" cy="75.85" r="2.60" fill="hsl(9, 90%, 88%)"/><circle cx="20.15" cy="56.08" r="2.60" fill="hsl(9, 90%, 88%)"/><circle cx="39.92" cy="20.15" r="2.60" fill="hsl(9, 90%, 88%)"/><circle cx="75.85" cy="39.92" r="2.60" fill="hsl(9, 90%, 88%)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="星月下喷水的好奇小蓝鲸">
+  <defs>
+    <clipPath id="circle">
+      <circle cx="128" cy="128" r="128"/>
+    </clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#C7ECE7"/>
+  <g clip-path="url(#circle)">
+    <path fill="#FFF1BC" d="M190 38C174 34 164 49 171 61C176 71 190 73 200 63C184 68 175 49 190 38Z"/>
+    <path fill="#FFF1BC" d="M141 36Q143 45 150 47Q143 49 141 58Q139 49 132 47Q139 45 141 36Z"/>
+    <path fill="#FFF1BC" d="M216 78Q218 85 224 87Q218 89 216 96Q214 89 208 87Q214 85 216 78Z"/>
+    <path fill="#64B5D4" d="M99 104C94 96 95 81 101 76C108 81 109 96 105 104Q102 109 99 104Z"/>
+    <path fill="#64B5D4" d="M87 83C77 81 71 72 75 67C81 64 89 73 91 79Q92 84 87 83Z"/>
+    <path fill="#64B5D4" d="M113 85C113 77 119 67 125 70C131 74 124 84 118 87Q114 89 113 85Z"/>
+    <path fill="#64B5D4" d="M43 158C43 126 69 108 105 108C141 108 163 125 177 147C187 161 193 164 199 163C195 148 199 130 215 122C219 138 215 150 210 157C219 149 232 149 240 154C233 169 220 175 205 176C194 207 157 221 116 219C73 218 43 197 43 158Z"/>
+    <path fill="#3D829F" d="M59 190C91 214 154 206 186 187C169 209 145 220 116 219C90 218 70 208 59 190Z"/>
+    <path fill="#3D829F" d="M132 176C146 178 155 188 157 202Q158 210 151 207C136 202 126 191 127 181Q127 175 132 176Z"/>
+    <ellipse cx="83" cy="151" rx="11" ry="13" fill="#3D829F"/>
+    <circle cx="80" cy="147" r="4" fill="#FFF1BC"/>
+    <ellipse cx="70" cy="173" rx="10" ry="7" fill="#EAABA3"/>
+    <path fill="#3D829F" d="M92 171Q102 179 113 170Q115 168 115 172C112 183 97 185 91 175Q89 171 92 171Z"/>
+  </g>
+</svg>

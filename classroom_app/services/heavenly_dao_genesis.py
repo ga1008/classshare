@@ -23,6 +23,8 @@ full-scope reviews only) and from the admin "立即造人" button.
   (``ensure_wanderer_students_detailed`` + ``seed_initial_knowledge``) with
   tier 0, cultivation 0, ``origin='dao'``, plus a
   ``wanderer_dao_reviews(review_kind='genesis', verdict='created')`` row.
+  The new wanderer gets ``avatar_silhouette = pick_silhouette(seed)`` (recorded
+  in the review evidence), see design §11.
 
 Real student names are never sent to the model; the clash check is local.
 """
@@ -35,6 +37,7 @@ from typing import Any, Callable, Optional
 from ..time_utils import local_iso, local_now
 from .heavenly_dao_rules import HEAVENLY_DAO_SYSTEM_PROMPT
 from .wanderer_ai_service import DAO_KIND_GENESIS, AiCaller, dao_judge
+from .wanderer_avatar_service import pick_silhouette
 from .wanderer_identity_service import (
     ORIGIN_DAO,
     WANDERER_ENROLLMENT_STATUS,
@@ -278,18 +281,20 @@ def persist_genesis_seed(conn: Any, seed: dict[str, Any], *, rationale: str, act
     if seed["slug"] not in detail["created"] or wanderer is None:
         return None
     seed_initial_knowledge(conn, wanderer, seed)
+    silhouette = pick_silhouette(seed)
     review_id = insert_dao_review(
         conn, wanderer_id=int(wanderer["id"]), review_kind=GENESIS_REVIEW_KIND, verdict=GENESIS_VERDICT,
         from_tier=0, to_tier=0, reason=rationale or "平台冷清，天道造人。",
-        evidence={"activity": activity, "seed_summary": _seed_summary(seed)}, created_by=created_by,
+        evidence={"activity": activity, "seed_summary": _seed_summary(seed), "avatar_silhouette": silhouette},
+        created_by=created_by,
     )
     now = local_iso()
     # The birth record is history, not a verdict to reflect on.
     conn.execute("UPDATE wanderer_dao_reviews SET acknowledged_at = ? WHERE id = ?", (now, review_id))
     conn.execute(
         "UPDATE wanderer_agents SET cultivation_score = 0, created_by_review_id = ?, last_review_id = ?, "
-        "last_review_at = ?, updated_at = ? WHERE id = ?",
-        (review_id, review_id, now, now, int(wanderer["id"])),
+        "last_review_at = ?, avatar_silhouette = ?, updated_at = ? WHERE id = ?",
+        (review_id, review_id, now, silhouette, now, int(wanderer["id"])),
     )
     invalidate_wanderer_cache([wanderer["student_id"]])
     return int(wanderer["id"])

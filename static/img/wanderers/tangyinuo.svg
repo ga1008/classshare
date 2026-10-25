@@ -1,1 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="散修头像"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(188, 62%, 46%)"/><stop offset="1" stop-color="hsl(300, 58%, 30%)"/></linearGradient></defs><rect width="96" height="96" fill="url(#g)"/><circle cx="48.0" cy="48.0" r="28" fill="none" stroke="hsl(188, 90%, 88%)" stroke-opacity=".35" stroke-width="1.5"/><polygon points="69.68,44.24 40.42,68.65 33.90,31.11" fill="hsl(300, 80%, 82%)" fill-opacity=".9"/><polygon points="38.15,49.71 41.59,40.32 51.45,38.61 57.85,46.29 54.41,55.68 44.55,57.39" fill="hsl(300, 58%, 30%)" fill-opacity=".85"/><circle cx="20.10" cy="50.40" r="2.60" fill="hsl(188, 90%, 88%)"/><circle cx="37.09" cy="22.21" r="2.60" fill="hsl(188, 90%, 88%)"/><circle cx="69.16" cy="29.66" r="2.60" fill="hsl(188, 90%, 88%)"/><circle cx="71.98" cy="62.45" r="2.60" fill="hsl(188, 90%, 88%)"/><circle cx="41.66" cy="75.27" r="2.60" fill="hsl(188, 90%, 88%)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="唐一诺的清单夹板与橙色小喇叭">
+  <defs>
+    <clipPath id="avatar">
+      <circle cx="128" cy="128" r="128"/>
+    </clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#C6E9F5"/>
+  <g clip-path="url(#avatar)">
+    <g transform="rotate(-6 124 133)">
+      <rect x="60" y="48" width="128" height="170" rx="17" fill="#61A98A"/>
+      <rect x="70" y="59" width="108" height="147" rx="10" fill="#FFFFFF"/>
+      <path d="M103 47V43C103 35 111 31 124 31C137 31 145 35 145 43V47H148C152 47 155 50 155 54V61C155 65 152 68 148 68H100C96 68 93 65 93 61V54C93 50 96 47 100 47Z" fill="#7B8E9D"/>
+      <rect x="114" y="39" width="20" height="7" rx="3.5" fill="#FFFFFF"/>
+      <path d="M80 97C78 95 81 92 83 94L87 98L95 88C97 86 101 89 99 91L90 103C89 105 86 105 84 103Z" fill="#61A98A"/>
+      <rect x="110" y="94" width="49" height="9" rx="4.5" fill="#7B8E9D"/>
+      <path d="M80 132C78 130 81 127 83 129L87 133L95 123C97 121 101 124 99 126L90 138C89 140 86 140 84 138Z" fill="#61A98A"/>
+      <rect x="110" y="129" width="40" height="9" rx="4.5" fill="#7B8E9D"/>
+      <path d="M80 167C78 165 81 162 83 164L87 168L95 158C97 156 101 159 99 161L90 173C89 175 86 175 84 173Z" fill="#61A98A"/>
+      <rect x="110" y="164" width="46" height="9" rx="4.5" fill="#7B8E9D"/>
+    </g>
+    <g transform="rotate(-18 179 174)">
+      <path d="M162 179H177L180 208C181 213 177 216 173 216H169C166 216 164 214 164 211Z" fill="#F2A362"/>
+      <rect x="146" y="158" width="29" height="27" rx="9" fill="#7B8E9D"/>
+      <path d="M163 158C176 156 188 150 201 143C205 141 208 143 208 147V196C208 200 205 202 201 200C188 193 176 187 163 185Z" fill="#F2A362"/>
+      <ellipse cx="207" cy="171.5" rx="10" ry="28.5" fill="#7B8E9D"/>
+      <ellipse cx="209" cy="171.5" rx="4.5" ry="19" fill="#FFFFFF"/>
+    </g>
+  </g>
+</svg>

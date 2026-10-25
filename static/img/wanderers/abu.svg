@@ -1,1 +1,34 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="散修头像"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(232, 62%, 46%)"/><stop offset="1" stop-color="hsl(2, 58%, 30%)"/></linearGradient></defs><rect width="96" height="96" fill="url(#g)"/><circle cx="48.0" cy="48.0" r="28" fill="none" stroke="hsl(232, 90%, 88%)" stroke-opacity=".35" stroke-width="1.5"/><polygon points="40.59,68.71 27.29,40.59 55.41,27.29 68.71,55.41" fill="hsl(2, 80%, 82%)" fill-opacity=".9"/><polygon points="51.37,38.58 57.84,46.21 54.47,55.63 44.63,57.42 38.16,49.79 41.53,40.37" fill="hsl(2, 58%, 30%)" fill-opacity=".85"/><circle cx="64.12" cy="70.89" r="2.60" fill="hsl(232, 90%, 88%)"/><circle cx="36.24" cy="73.41" r="2.60" fill="hsl(232, 90%, 88%)"/><circle cx="20.11" cy="50.52" r="2.60" fill="hsl(232, 90%, 88%)"/><circle cx="31.88" cy="25.11" r="2.60" fill="hsl(232, 90%, 88%)"/><circle cx="59.76" cy="22.59" r="2.60" fill="hsl(232, 90%, 88%)"/><circle cx="75.89" cy="45.48" r="2.60" fill="hsl(232, 90%, 88%)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="伊犁草原上扎着彩穗鬃辫的开朗栗色小马">
+  <defs>
+    <clipPath id="circle"><circle cx="128" cy="128" r="128"/></clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#87C9DC"/>
+  <g clip-path="url(#circle)">
+    <path fill="#6FA98D" d="M0 205Q43 173 96 201T184 201Q223 177 256 190V256H0Z"/>
+    <path fill="#FFF0D6" d="M20 202Q22 198 27 195L45 183Q48 181 51 183L71 196Q76 199 77 203V222H20Z"/>
+    <path fill="#754832" d="M43 222V210Q43 203 49 203T55 210V222Z"/>
+    <path fill="#B96F48" d="M108 82Q100 61 99 42Q99 33 106 38Q125 51 129 74Z"/>
+    <path fill="#754832" d="M110 66L106 47Q117 57 120 70Z"/>
+    <path fill="#B96F48" d="M136 77Q139 56 149 36Q153 30 157 37Q167 58 158 83Z"/>
+    <path fill="#754832" d="M147 69Q147 57 153 45Q157 58 153 73Z"/>
+    <path fill="#B96F48" d="M83 105Q88 75 117 72Q145 64 165 80Q180 92 185 108L213 132Q227 144 224 158Q222 174 206 177Q184 179 165 161Q157 172 159 190Q161 215 180 246H52Q55 220 66 195Q78 165 75 140Q72 121 83 105Z"/>
+    <path fill="#754832" d="M153 162L165 161Q157 173 159 190Q161 215 180 246H158Q142 211 144 188Q145 173 153 162Z"/>
+    <path fill="#FFF0D6" d="M145 77Q154 77 160 84Q163 99 174 112L191 133L178 142Q170 123 158 111Q149 99 145 77Z"/>
+    <path fill="#FFF0D6" d="M191 128Q204 126 215 135Q228 146 224 159Q221 173 207 175Q193 175 180 163Q174 157 178 148Z"/>
+    <path fill="#754832" d="M156 108Q158 97 167 97Q174 97 177 105Q166 100 156 108Z"/>
+    <ellipse cx="213" cy="144" rx="4" ry="5" fill="#754832" transform="rotate(-25 213 144)"/>
+    <path fill="#754832" d="M194 158Q205 166 215 157Q213 167 205 168Q197 168 194 158Z"/>
+    <path fill="#6FA98D" d="M127 81Q143 116 183 142L188 135Q150 109 136 78Z"/>
+    <path fill="#6FA98D" d="M186 116Q194 120 201 127L184 152Q179 149 175 144Z"/>
+    <circle cx="181" cy="142" r="7" fill="#FFF0D6"/>
+    <circle cx="181" cy="142" r="3" fill="#B96F48"/>
+    <path fill="#754832" d="M126 73Q107 65 91 78Q78 89 77 108Q75 119 82 126Q70 132 79 149Q68 158 79 175Q68 183 79 199L79 211Q83 221 89 212L94 199Q108 188 94 175Q108 164 95 150Q109 137 96 125Q99 101 110 88Q119 89 131 85Q138 83 137 79Z"/>
+    <path fill="#B96F48" d="M81 130Q90 129 98 139Q90 144 85 138ZM80 155Q90 154 98 165Q90 170 84 163ZM80 181Q89 179 97 190Q89 196 83 188Z"/>
+    <path fill="#FFF0D6" d="M78 145Q87 148 96 145L96 151Q87 155 78 151Z"/>
+    <path fill="#87C9DC" d="M78 173Q86 177 95 173L95 179Q86 183 78 179Z"/>
+    <path fill="#6FA98D" d="M79 198Q85 201 92 198L92 204Q85 208 79 204Z"/>
+    <path fill="#6FA98D" d="M79 149Q72 151 68 160Q68 165 72 166Q80 163 83 152Z"/>
+    <path fill="#FFF0D6" d="M79 178Q70 180 68 190Q69 195 73 194Q80 191 83 181Z"/>
+    <path fill="#87C9DC" d="M82 204Q75 210 77 219Q80 223 84 219Q89 214 87 205Z"/>
+  </g>
+</svg>

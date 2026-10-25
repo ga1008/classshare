@@ -1,1 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="散修头像"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(288, 62%, 46%)"/><stop offset="1" stop-color="hsl(66, 58%, 30%)"/></linearGradient></defs><rect width="96" height="96" fill="url(#g)"/><circle cx="48.0" cy="48.0" r="26" fill="none" stroke="hsl(288, 90%, 88%)" stroke-opacity=".35" stroke-width="1.5"/><polygon points="49.62,69.94 26.06,49.62 46.38,26.06 69.94,46.38" fill="hsl(66, 80%, 82%)" fill-opacity=".9"/><polygon points="47.26,38.03 57.00,52.35 39.73,53.62" fill="hsl(66, 58%, 30%)" fill-opacity=".85"/><circle cx="67.05" cy="65.70" r="2.60" fill="hsl(288, 90%, 88%)"/><circle cx="42.20" cy="73.34" r="2.60" fill="hsl(288, 90%, 88%)"/><circle cx="23.15" cy="55.65" r="2.60" fill="hsl(288, 90%, 88%)"/><circle cx="28.95" cy="30.30" r="2.60" fill="hsl(288, 90%, 88%)"/><circle cx="53.80" cy="22.66" r="2.60" fill="hsl(288, 90%, 88%)"/><circle cx="72.85" cy="40.35" r="2.60" fill="hsl(288, 90%, 88%)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="青瓷笔筒、毛笔与砚台">
+  <defs>
+    <clipPath id="circle">
+      <circle cx="128" cy="128" r="128"/>
+    </clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#F1E7D3"/>
+  <g clip-path="url(#circle)">
+    <path d="M51 96H201Q215 96 215 110V205Q215 217 202 217H51Q43 217 43 209V104Q43 96 51 96Z" fill="#FBF3E2"/>
+    <path d="M201 96Q215 96 215 110V205Q215 217 202 217H193Q204 212 204 201V111Q204 102 196 102H187V96Z" fill="#F1E7D3"/>
+    <rect x="148" y="110" width="23" height="23" rx="2" fill="#A75F4C"/>
+    <path d="M43 144C43 125 131 125 131 144L125 207Q122 226 87 226Q52 226 49 207Z" fill="#88A99A"/>
+    <ellipse cx="87" cy="143" rx="35" ry="9" fill="#3D5048"/>
+    <rect x="80" y="74" width="14" height="85" rx="5" fill="#A75F4C"/>
+    <path d="M87 31C86 47 72 55 72 69C72 80 78 85 87 85C96 85 102 79 102 69C102 56 93 43 87 31Z" fill="#3D5048"/>
+    <path d="M43 144Q87 164 131 144L125 207Q122 226 87 226Q52 226 49 207Z" fill="#88A99A"/>
+    <ellipse cx="187" cy="205" rx="43" ry="29" fill="#3D5048"/>
+    <path d="M175 184C191 177 211 183 219 195C206 188 193 186 180 189Q173 191 175 184Z" fill="#88A99A"/>
+    <g transform="rotate(48 191 167)">
+      <path d="M191 106C181 106 181 122 191 122C201 122 201 106 191 106ZM191 110C195 110 195 118 191 118C187 118 187 110 191 110Z" fill="#A75F4C" fill-rule="evenodd"/>
+      <rect x="185" y="120" width="12" height="65" rx="5" fill="#A75F4C"/>
+      <path d="M185 180H197C203 192 201 204 195 215L191 230C187 218 178 207 179 197Q179 187 185 180Z" fill="#3D5048"/>
+    </g>
+  </g>
+</svg>

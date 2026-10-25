@@ -506,14 +506,24 @@ async def api_upload_profile_avatar(
     }
 
 
-def _wanderer_avatar_svg(conn, student_id: int):
-    """The runtime-generated geometric avatar of a 散修 without an uploaded photo, else None."""
-    from ..services.wanderer_avatar_service import render_wanderer_avatar_svg
+WANDERER_AVATAR_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400"
+
+
+def _wanderer_avatar_response(conn, student_id: int):
+    """The 散修 avatar (upload → illustration → silhouette → geometric), or None for non-wanderers."""
+    from pathlib import Path as _Path
+
+    from ..services.wanderer_avatar_service import resolve_wanderer_avatar
     from ..services.wanderer_identity_service import load_wanderers_by_student_ids
 
     wanderer = load_wanderers_by_student_ids(conn, [student_id]).get(int(student_id))
-    slug = str((wanderer or {}).get("slug") or "").strip()
-    return render_wanderer_avatar_svg(slug) if slug else None
+    if not wanderer or not str(wanderer.get("slug") or "").strip():
+        return None
+    body, mime = resolve_wanderer_avatar(wanderer)
+    headers = {"Cache-Control": WANDERER_AVATAR_CACHE_CONTROL, "X-Content-Type-Options": "nosniff"}
+    if isinstance(body, _Path):
+        return FileResponse(body, media_type=mime, headers=headers)
+    return Response(content=body, media_type=mime, headers=headers)
 
 
 @router.get("/api/profile/avatar")
@@ -531,14 +541,13 @@ def api_profile_avatar(
             profile = _load_avatar_profile(conn, role=requested_role, user_id=requested_user_id)
             if profile is None:
                 raise HTTPException(status_code=404, detail="头像用户不存在。")
-            if requested_role == "student" and not str(profile.get("avatar_file_hash") or "").strip():
-                wanderer_avatar = _wanderer_avatar_svg(conn, requested_user_id)
+            if requested_role == "student":
+                wanderer_avatar = _wanderer_avatar_response(conn, requested_user_id)
         else:
             profile = get_user_profile(conn, user)
 
     if wanderer_avatar is not None:
-        return Response(content=wanderer_avatar, media_type="image/svg+xml",
-                        headers={"Cache-Control": "public, max-age=86400"})
+        return wanderer_avatar
 
     file_hash = str(profile.get("avatar_file_hash") or "").strip()
     if file_hash:

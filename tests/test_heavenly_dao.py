@@ -287,6 +287,10 @@ class GenesisTest(WandererWorldTestCase):
         evidence = json.loads(review["evidence_json"])
         self.assertIn("real_actions_24h", evidence["activity"])
         self.assertEqual(evidence["seed_summary"]["display_name"], "许小雨")
+        # §11: no hobby keyword in this seed, so 天道 picks the gender silhouette and records it.
+        self.assertEqual(agent["avatar_silhouette"], "student_f")
+        self.assertEqual(evidence["avatar_silhouette"], "student_f")
+        self.assertEqual(agent["avatar_file"], "")
         knowledge = self.rows("SELECT * FROM wanderer_knowledge_entries WHERE wanderer_id = ?", (agent["id"],))
         self.assertEqual(len(knowledge), 3)
         student = self.rows("SELECT * FROM students WHERE id = ?", (agent["student_id"],))[0]
@@ -295,6 +299,13 @@ class GenesisTest(WandererWorldTestCase):
                                      "WHERE review_kind = 'daily_audit'")[0]["evidence_json"])
         self.assertIn("real_posts_24h", audit["activity"])
         self.assertEqual(audit["counts"]["created"], 1)
+
+    def test_genesis_picks_a_silhouette_from_the_seed_interests(self):
+        seed = make_seed("gouzi", "狗子", interests=["柯基", "遛狗", "摄影"], gender="男")
+        self.genesis(StubCaller(genesis_reply(seed)), manual=True)
+        agent = self.dao_rows()[0]
+        self.assertEqual(agent["avatar_silhouette"], "dog")
+        self.assertEqual(json.loads(self.genesis_reviews()[0]["evidence_json"])["avatar_silhouette"], "dog")
 
     def test_single_wanderer_review_never_creates(self):
         atai = self.set_wanderer("atai", tier=1)

@@ -345,6 +345,8 @@ class WandererAdminApiTest(WandererDbTestCase):
         self.assertIn("散修管理", response.text)
         self.assertIn("wd-card-grid", response.text)
         self.assertIn("manage_wanderers", response.text)
+        self.assertIn("data-wd-avatar-form", response.text)  # design 11: silhouette select
+        self.assertIn('<option value="sword">', response.text)
         # HTML 403 is turned into a redirect to the login page by app.py.
         denied = self.plain_client().get("/manage/system/wanderers", follow_redirects=False)
         self.assertIn(denied.status_code, {303, 401, 403})

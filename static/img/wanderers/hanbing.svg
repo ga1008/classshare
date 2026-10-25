@@ -1,1 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="散修头像"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(113, 62%, 46%)"/><stop offset="1" stop-color="hsl(209, 58%, 30%)"/></linearGradient></defs><rect width="96" height="96" fill="url(#g)"/><circle cx="48.0" cy="48.0" r="29" fill="none" stroke="hsl(113, 90%, 88%)" stroke-opacity=".35" stroke-width="1.5"/><polygon points="27.89,39.08 42.43,26.72 61.17,30.38 69.99,47.31 62.25,64.76 43.78,69.59 28.49,58.17" fill="hsl(209, 80%, 82%)" fill-opacity=".9"/><polygon points="57.14,52.05 43.95,57.14 38.86,43.95 52.05,38.86" fill="hsl(209, 58%, 30%)" fill-opacity=".85"/><circle cx="41.99" cy="76.37" r="2.60" fill="hsl(113, 90%, 88%)"/><circle cx="20.43" cy="56.98" r="2.60" fill="hsl(113, 90%, 88%)"/><circle cx="26.43" cy="28.61" r="2.60" fill="hsl(113, 90%, 88%)"/><circle cx="54.01" cy="19.63" r="2.60" fill="hsl(113, 90%, 88%)"/><circle cx="75.57" cy="39.02" r="2.60" fill="hsl(113, 90%, 88%)"/><circle cx="69.57" cy="67.39" r="2.60" fill="hsl(113, 90%, 88%)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="韩冰，黑色齐刘海、半垂眼与冰蓝围巾的清冷女生">
+  <defs>
+    <clipPath id="avatar-clip">
+      <circle cx="128" cy="128" r="128"/>
+    </clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#DCE8ED"/>
+  <g clip-path="url(#avatar-clip)">
+    <g fill="#FFF9F4">
+      <rect x="34" y="76" width="6" height="28" rx="3"/>
+      <rect x="34" y="76" width="6" height="28" rx="3" transform="rotate(60 37 90)"/>
+      <rect x="34" y="76" width="6" height="28" rx="3" transform="rotate(120 37 90)"/>
+      <rect x="217" y="120" width="4" height="20" rx="2"/>
+      <rect x="217" y="120" width="4" height="20" rx="2" transform="rotate(60 219 130)"/>
+      <rect x="217" y="120" width="4" height="20" rx="2" transform="rotate(120 219 130)"/>
+    </g>
+    <path fill="#242B33" d="M60 105C60 59 86 34 128 34S196 59 196 105L202 222Q167 237 128 232Q88 237 54 222Z"/>
+    <path fill="#FFF9F4" d="M79 85Q128 60 177 85V122C177 155 155 176 128 179C101 176 79 155 79 122Z"/>
+    <path fill="#242B33" d="M73 96V83C73 53 97 39 128 39S183 56 183 86V97H165Q162 97 162 94L160 83L158 97H99L97 85L95 97H77Q73 97 73 96Z"/>
+    <path fill="#242B33" d="M95 116H111C111 125 95 125 95 116ZM145 116H161C161 125 145 125 145 116Z"/>
+    <g fill="#D8A09E">
+      <circle cx="91" cy="136" r="5"/>
+      <circle cx="165" cy="136" r="5"/>
+    </g>
+    <path fill="#242B33" d="M120 147H130Q133 147 136 144Q138 143 138 145Q135 150 130 150H120Q117 149 120 147Z"/>
+    <path fill="#FFF9F4" d="M34 256C37 218 63 198 92 193H164C193 198 219 218 222 256Z"/>
+    <path fill="#81ACBF" d="M126 195L170 197L173 238Q173 246 165 247H139Q131 247 130 239Z"/>
+    <path fill="#81ACBF" d="M78 159Q128 172 178 159C189 156 197 166 196 180L194 190Q191 202 178 205Q128 218 78 205Q64 202 62 190L60 179Q59 162 71 159Q75 158 78 159Z"/>
+    <path fill="#DCE8ED" d="M67 177Q126 195 190 176L189 184Q127 203 68 185Z"/>
+  </g>
+</svg>

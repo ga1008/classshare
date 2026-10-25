@@ -690,4 +690,29 @@ def seed_wanderers(conn: Any) -> dict[str, Any]:
         "students": detail["students"],
         "created": list(detail["created"]),
         "knowledge_added": knowledge_added,
+        "avatars_assigned": assign_seed_avatar_files(conn),
     }
+
+
+def assign_seed_avatar_files(conn: Any) -> int:
+    """Point seeded wanderers at their persona illustration (design §11).
+
+    Only fills an empty ``avatar_file`` whose ``<slug>.svg`` exists, so an
+    admin's choice (a silhouette sets ``avatar_file`` to the opt-out marker)
+    survives restarts. Returns the number of rows updated.
+    """
+    from .wanderer_avatar_service import default_avatar_file
+    from .wanderer_identity_service import invalidate_wanderer_cache
+
+    updated = 0
+    for seed in WANDERER_SEEDS:
+        avatar_file = default_avatar_file(seed["slug"])
+        if not avatar_file:
+            continue
+        cursor = conn.execute(
+            "UPDATE wanderer_agents SET avatar_file = ? WHERE slug = ? AND COALESCE(avatar_file, '') = ''",
+            (avatar_file, seed["slug"]),
+        )
+        updated += max(0, int(getattr(cursor, "rowcount", 0) or 0))
+    invalidate_wanderer_cache()
+    return updated

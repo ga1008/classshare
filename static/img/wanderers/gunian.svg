@@ -1,1 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="散修头像"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(257, 62%, 46%)"/><stop offset="1" stop-color="hsl(48, 58%, 30%)"/></linearGradient></defs><rect width="96" height="96" fill="url(#g)"/><circle cx="48.0" cy="48.0" r="26" fill="none" stroke="hsl(257, 90%, 88%)" stroke-opacity=".35" stroke-width="1.5"/><polygon points="43.18,26.53 61.78,30.85 70.00,48.08 61.66,65.25 43.03,69.43 28.15,57.48 28.21,38.39" fill="hsl(48, 80%, 82%)" fill-opacity=".9"/><polygon points="50.19,57.76 39.40,53.10 40.49,41.39 51.96,38.82 57.96,48.93" fill="hsl(48, 58%, 30%)" fill-opacity=".85"/><circle cx="31.75" cy="68.30" r="2.60" fill="hsl(257, 90%, 88%)"/><circle cx="22.16" cy="50.87" r="2.60" fill="hsl(257, 90%, 88%)"/><circle cx="27.70" cy="31.75" r="2.60" fill="hsl(257, 90%, 88%)"/><circle cx="45.13" cy="22.16" r="2.60" fill="hsl(257, 90%, 88%)"/><circle cx="64.25" cy="27.70" r="2.60" fill="hsl(257, 90%, 88%)"/><circle cx="73.84" cy="45.13" r="2.60" fill="hsl(257, 90%, 88%)"/><circle cx="68.30" cy="64.25" r="2.60" fill="hsl(257, 90%, 88%)"/><circle cx="50.87" cy="73.84" r="2.60" fill="hsl(257, 90%, 88%)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="秋日梧桐落叶间的奶油棕色复古胶片相机">
+  <defs>
+    <clipPath id="frame">
+      <circle cx="128" cy="128" r="128"/>
+    </clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#D4A078"/>
+  <g clip-path="url(#frame)">
+    <g transform="translate(55 55) rotate(-24) scale(0.8)">
+      <path fill="#B96743" d="M0-24 Q2-25 4-16 L7-10 15-15 Q18-16 16-12 L15-4 23-3 Q26-2 22 1 L16 7 20 11 Q22 14 17 14 L9 15 Q4 16 2 21 L2 28 Q1 30-1 28 L-1 21 Q-4 16-10 15 L-18 13 Q-22 12-18 9 L-15 6-22 0 Q-25-3-21-3 L-13-4-15-13 Q-16-17-12-14 L-6-10-2-20 Q-1-24 0-24Z"/>
+      <path fill="#AB7B5B" d="M0-14 Q4-1 2 13 L2 28 Q1 30-1 28 L-1 21 Q-4 16-10 15 L-18 13 Q-22 12-18 9 L-15 6 Q-5 9-2 4Z"/>
+    </g>
+    <g transform="translate(193 55) rotate(24)">
+      <path fill="#B96743" d="M0-24 Q2-25 4-16 L7-10 15-15 Q18-16 16-12 L15-4 23-3 Q26-2 22 1 L16 7 20 11 Q22 14 17 14 L9 15 Q4 16 2 21 L2 28 Q1 30-1 28 L-1 21 Q-4 16-10 15 L-18 13 Q-22 12-18 9 L-15 6-22 0 Q-25-3-21-3 L-13-4-15-13 Q-16-17-12-14 L-6-10-2-20 Q-1-24 0-24Z"/>
+      <path fill="#AB7B5B" d="M0-14 Q4-1 2 13 L2 28 Q1 30-1 28 L-1 21 Q-4 16-10 15 L-18 13 Q-22 12-18 9 L-15 6 Q-5 9-2 4Z"/>
+    </g>
+    <rect x="61" y="84" width="26" height="13" rx="5" fill="#60473C"/>
+    <path fill="#AB7B5B" d="M91 96 97 80 Q99 74 106 74 H146 Q153 74 155 80 L161 96Z"/>
+    <rect x="38" y="93" width="180" height="116" rx="22" fill="#F3E5CA"/>
+    <path fill="#AB7B5B" d="M38 129 H218 V187 Q218 209 196 209 H60 Q38 209 38 187Z"/>
+    <path fill="#60473C" d="M38 181 Q38 198 60 198 H196 Q218 198 218 181 V187 Q218 209 196 209 H60 Q38 209 38 187Z"/>
+    <rect x="112" y="80" width="31" height="12" rx="4" fill="#60473C"/>
+    <rect x="117" y="83" width="9" height="4" rx="2" fill="#F3E5CA"/>
+    <circle cx="189" cy="111" r="5" fill="#B96743"/>
+    <circle cx="128" cy="152" r="45" fill="#60473C"/>
+    <circle cx="128" cy="152" r="37" fill="#F3E5CA"/>
+    <circle cx="128" cy="152" r="29" fill="#AB7B5B"/>
+    <circle cx="125" cy="149" r="24" fill="#60473C"/>
+    <ellipse cx="117" cy="140" rx="10" ry="6" transform="rotate(-40 117 140)" fill="#F3E5CA"/>
+    <circle cx="137" cy="163" r="4" fill="#AB7B5B"/>
+  </g>
+</svg>

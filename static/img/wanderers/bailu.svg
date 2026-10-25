@@ -1,1 +1,36 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="散修头像"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(123, 62%, 46%)"/><stop offset="1" stop-color="hsl(195, 58%, 30%)"/></linearGradient></defs><rect width="96" height="96" fill="url(#g)"/><circle cx="48.0" cy="48.0" r="32" fill="none" stroke="hsl(123, 90%, 88%)" stroke-opacity=".35" stroke-width="1.5"/><polygon points="54.90,27.11 68.63,40.37 66.83,59.38 50.85,69.82 32.72,63.83 26.10,45.92 35.97,29.58" fill="hsl(195, 80%, 82%)" fill-opacity=".9"/><polygon points="44.86,57.50 41.35,40.54 57.79,45.97" fill="hsl(195, 58%, 30%)" fill-opacity=".85"/><circle cx="22.07" cy="66.75" r="2.60" fill="hsl(123, 90%, 88%)"/><circle cx="29.25" cy="22.07" r="2.60" fill="hsl(123, 90%, 88%)"/><circle cx="73.93" cy="29.25" r="2.60" fill="hsl(123, 90%, 88%)"/><circle cx="66.75" cy="73.93" r="2.60" fill="hsl(123, 90%, 88%)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="白露的青瓷盖碗、茶叶与草药">
+  <defs>
+    <clipPath id="round">
+      <circle cx="128" cy="128" r="128"/>
+    </clipPath>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#A9C0AC"/>
+  <g clip-path="url(#round)">
+    <path fill="#E6EFDF" d="M100 80C87 73 88 64 96 57C102 51 102 46 98 41C107 45 110 53 103 61C96 68 94 72 100 80Z"/>
+    <path fill="#E6EFDF" d="M129 77C118 70 122 62 128 56C134 50 133 44 130 39C140 44 141 52 134 60C128 67 125 71 129 77Z"/>
+    <path fill="#63866A" d="M157 69C151 53 165 42 183 42C181 59 173 69 157 69Z"/>
+    <path fill="#41644F" d="M157 69C166 59 173 50 183 42C181 59 173 69 157 69Z"/>
+    <ellipse cx="127" cy="205" rx="88" ry="17" fill="#E6EFDF"/>
+    <ellipse cx="127" cy="202" rx="66" ry="10" fill="#BDD0BA"/>
+    <path fill="#E6EFDF" d="M104 182H150L153 199Q128 210 101 199Z"/>
+    <path fill="#BDD0BA" d="M138 184H150L153 199Q145 203 133 203Q143 198 138 184Z"/>
+    <path fill="#E6EFDF" d="M54 132C58 157 73 183 97 192Q127 202 157 192C181 183 196 157 200 132Z"/>
+    <path fill="#BDD0BA" d="M182 136L200 132C196 157 181 183 157 192Q141 198 125 197C157 188 176 164 182 136Z"/>
+    <ellipse cx="127" cy="132" rx="73" ry="15" fill="#E6EFDF"/>
+    <ellipse cx="127" cy="132" rx="61" ry="9" fill="#41644F"/>
+    <path fill="#63866A" d="M78 132Q98 124 117 129Q99 136 78 132Z"/>
+    <g transform="rotate(-9 127 107)">
+      <ellipse cx="127" cy="112" rx="64" ry="8" fill="#BDD0BA"/>
+      <path fill="#E6EFDF" d="M63 111C83 108 98 98 113 94Q127 90 141 94C156 98 171 108 191 111Q166 117 127 117Q88 117 63 111Z"/>
+      <path fill="#BDD0BA" d="M132 93Q137 93 141 94C156 98 171 108 191 111Q178 114 164 115C154 105 145 99 132 93Z"/>
+      <path fill="#E6EFDF" d="M120 94L118 87Q127 82 136 87L134 94Q127 97 120 94Z"/>
+      <ellipse cx="127" cy="86" rx="10" ry="4" fill="#E6EFDF"/>
+    </g>
+    <path fill="#41644F" d="M186 204C196 187 206 164 211 145Q214 143 214 146C209 168 199 190 190 205Q187 208 186 204Z"/>
+    <path fill="#63866A" d="M210 158C201 150 204 136 216 130C221 141 218 153 210 158Z"/>
+    <path fill="#63866A" d="M205 172C192 172 184 162 185 152C198 152 205 159 205 172Z"/>
+    <path fill="#63866A" d="M204 175C206 162 216 156 229 159C227 171 217 178 204 175Z"/>
+    <path fill="#63866A" d="M196 190C183 189 178 180 179 170C191 171 197 178 196 190Z"/>
+    <path fill="#63866A" d="M195 193C199 181 209 177 221 182C216 193 207 198 195 193Z"/>
+  </g>
+</svg>

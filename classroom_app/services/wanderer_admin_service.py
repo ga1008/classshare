@@ -9,6 +9,7 @@ PostgreSQL 同跑；调用方负责 commit。
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -18,8 +19,17 @@ from typing import Any, Optional
 from ..db.schema_wanderers import ensure_wanderer_schema
 from ..time_utils import local_iso, local_now
 from .cultivation_display_service import emblem_for_level, invalidate_emblem_cache
+from .wanderer_avatar_service import (
+    SILHOUETTES,
+    SOURCE_LABELS as AVATAR_SOURCE_LABELS,
+    avatar_source,
+    default_avatar_file,
+    normalize_silhouette,
+    pick_silhouette,
+)
 from .wanderer_identity_service import (
     MAX_TIER,
+    ORIGIN_DAO,
     STATUS_ACTIVE,
     STATUS_DEAD,
     STATUS_PAUSED,
@@ -94,7 +104,12 @@ _JSON_PATCH_FIELDS = {
     "behaviors_json": dict,
     "interests_json": list,
 }
-_PATCH_FIELDS = frozenset({"persona_prompt", "activity_level", "daily_action_budget", *_JSON_PATCH_FIELDS})
+_AVATAR_PATCH_FIELD = "avatar_silhouette"
+_PATCH_FIELDS = frozenset({"persona_prompt", "activity_level", "daily_action_budget", _AVATAR_PATCH_FIELD,
+                           *_JSON_PATCH_FIELDS})
+# ``avatar_file`` marker meaning "admin chose a silhouette": not a file name, so
+# the illustration is skipped and seeding never refills it (design §11).
+AVATAR_FILE_OPT_OUT = "-"
 _SETTING_FIELDS = frozenset({
     SETTING_ENABLED, SETTING_DAILY_AI_CALL_CAP, SETTING_TICK_BATCH_SIZE, SETTING_CLASSROOM_VISITS,
     SETTING_DAO_REVIEW_HOUR, SETTING_GENESIS_ENABLED, *GENESIS_INT_SETTINGS,
@@ -157,6 +172,13 @@ def _count(conn: Any, sql: str, params: tuple) -> int:
 
 def avatar_url(student_id: Any) -> str:
     return f"/api/profile/avatar?role=student&user_id={_as_int(student_id)}"
+
+
+def _versioned_avatar_url(wanderer: dict[str, Any]) -> str:
+    """Avatar URL with a token of the avatar fields, so an admin change bypasses the 1 h HTTP cache."""
+    token = "|".join(str(wanderer.get(key) or "") for key in ("avatar_file", "avatar_silhouette", "avatar_file_hash"))
+    digest = hashlib.sha1(token.encode("utf-8")).hexdigest()[:8]
+    return f"{avatar_url(wanderer['student_id'])}&v={digest}"
 
 
 def homepage_url(slug: Any) -> str:
@@ -370,7 +392,7 @@ def _card(wanderer: dict[str, Any], today_count: int, last_action: Optional[dict
         "last_active_at": wanderer.get("last_active_at") or "",
         "last_action_preview": action.get("content_preview") or action.get("action_label") or "",
         "last_action_at": action.get("created_at", ""),
-        "avatar_url": avatar_url(wanderer["student_id"]),
+        "avatar_url": _versioned_avatar_url(wanderer),
         "origin": origin,
         "origin_label": ORIGIN_LABELS.get(origin, origin),
         "homepage_url": homepage_url(wanderer.get("slug")),
@@ -446,6 +468,27 @@ def _profile_payload(wanderer: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _avatar_payload(wanderer: dict[str, Any]) -> dict[str, Any]:
+    source = avatar_source(wanderer)
+    return {
+        "source": source,
+        "source_label": AVATAR_SOURCE_LABELS.get(source, source),
+        "silhouette": str(wanderer.get("avatar_silhouette") or ""),
+        "has_illustration": bool(default_avatar_file(wanderer.get("slug"))),
+        "suggested_silhouette": pick_silhouette(wanderer),
+        "silhouettes": [{"key": key, "label": label} for key, label in SILHOUETTES.items()],
+    }
+
+
+def _avatar_columns(wanderer: dict[str, Any], value: Any) -> dict[str, Any]:
+    """A silhouette key overrides the illustration; '' restores the default for this wanderer."""
+    key = normalize_silhouette(value)
+    if key:
+        return {"avatar_silhouette": key, "avatar_file": AVATAR_FILE_OPT_OUT}
+    default_silhouette = pick_silhouette(wanderer) if str(wanderer.get("origin") or "") == ORIGIN_DAO else ""
+    return {"avatar_silhouette": default_silhouette, "avatar_file": default_avatar_file(wanderer.get("slug"))}
+
+
 def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
     wanderer = require_wanderer(conn, wanderer_id)
     number = int(wanderer["id"])
@@ -461,6 +504,7 @@ def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
         },
         "knowledge": knowledge_summary(conn, wanderer),
         "profile": _profile_payload(wanderer),
+        "avatar": _avatar_payload(wanderer),
         "reviews": [_serialize_review(row) for row in _recent(conn, "wanderer_dao_reviews", number, DETAIL_RECENT_REVIEWS)],
         "actions": [_serialize_action(row) for row in _recent(conn, "wanderer_action_log", number, DETAIL_RECENT_ACTIONS)],
     }
@@ -585,6 +629,8 @@ def _update_columns(conn: Any, wanderer_id: int, columns: dict[str, Any]) -> Non
 def update_wanderer(conn: Any, wanderer_id: Any, patch: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
     wanderer = require_wanderer(conn, wanderer_id)
     columns = _validate_patch(patch)
+    if _AVATAR_PATCH_FIELD in patch:
+        columns.update(_avatar_columns(wanderer, patch[_AVATAR_PATCH_FIELD]))
     _update_columns(conn, int(wanderer["id"]), columns)
     _invalidate(wanderer)
     return build_wanderer_detail(conn, wanderer["id"])

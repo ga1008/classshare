@@ -211,6 +211,26 @@
                     <section class="lq-tabs__panel" role="tabpanel" id="wd-tabs--lq-panel-actions" aria-labelledby="wd-tabs--lq-tab-actions" tabindex="0" data-wd-panel="actions" hidden></section>
                     <section class="lq-tabs__panel" role="tabpanel" id="wd-tabs--lq-panel-reviews" aria-labelledby="wd-tabs--lq-tab-reviews" tabindex="0" data-wd-panel="reviews" hidden></section>
                     <section class="lq-tabs__panel" role="tabpanel" id="wd-tabs--lq-panel-persona" aria-labelledby="wd-tabs--lq-tab-persona" tabindex="0" data-wd-panel="persona" hidden>
+                        <form class="wd-avatar-form" data-wd-avatar-form>
+                            <img class="wd-avatar-form__preview" data-wd-avatar-preview src="data:," alt="" width="64" height="64" decoding="async">
+                            <div class="wd-avatar-form__meta">
+                                <span class="form-label">头像</span>
+                                <p class="wd-muted" data-wd-avatar-source>当前来源：读取中</p>
+                            </div>
+                            <label class="form-group">
+                                <span class="form-label">剪影头像</span>
+                                <select data-lq-dropdown data-lq-component="select" class="lq-select form-select" name="avatar_silhouette" aria-label="剪影头像">
+                                    <option value="">未选择剪影</option>
+                                    {%- for key, label in wanderer_silhouettes.items() %}
+                                    <option value="{{ key }}">{{ label }}</option>
+                                    {%- endfor %}
+                                </select>
+                            </label>
+                            <div class="wd-inline-form__actions">
+                                {{ lq_btn('使用剪影', variant='glass', size='sm', type='submit') }}
+                                {{ lq_btn('恢复默认', variant='ghost', size='sm', attrs={'data-wd-avatar-reset': ''}) }}
+                            </div>
+                        </form>
                         <div class="wd-knowledge" data-wd-knowledge></div>
                         <form class="wd-persona-form" data-wd-persona-form>
                             <label class="form-group">

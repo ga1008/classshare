@@ -1195,6 +1195,10 @@
       "hits": 28
      },
      {
+      "path": "templates/manage/system/wanderers.html",
+      "hits": 28
+     },
+     {
       "path": "templates/partials/learning_material_selector.html",
       "hits": 28
      },
@@ -1205,10 +1209,6 @@
      {
       "path": "static/js/ai_chat_component.js",
       "hits": 27
-     },
-     {
-      "path": "templates/manage/system/wanderers.html",
-      "hits": 26
      },
      {
       "path": "static/js/materials_library_cards.js",
@@ -4309,7 +4309,7 @@
      },
      {
       "path": "templates/manage/system/wanderers.html",
-      "hits": 40
+      "hits": 42
      },
      {
       "path": "templates/manage/attendance_reports.html",

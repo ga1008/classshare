@@ -75,6 +75,9 @@ const detailEls = {
     personaForm: $('[data-wd-persona-form]', els.detailRoot),
     personaError: $('[data-wd-persona-error]', els.detailRoot),
     behaviors: $('[data-wd-behaviors]', els.detailRoot),
+    avatarForm: $('[data-wd-avatar-form]', els.detailRoot),
+    avatarPreview: $('[data-wd-avatar-preview]', els.detailRoot),
+    avatarSource: $('[data-wd-avatar-source]', els.detailRoot),
 };
 let modal = null;
 let tabController = null;
@@ -533,6 +536,50 @@ async function submitPersona(event) {
     });
 }
 
+/* ---------------------------------------------------------------- detail: avatar (design §11) */
+
+function fillAvatarForm(detail) {
+    const avatar = detail.avatar || {};
+    detailEls.avatarPreview.src = detail.card.avatar_url;
+    detailEls.avatarPreview.alt = `${detail.card.display_name}的头像`;
+    const suggestion = avatar.suggested_silhouette ? `，建议剪影：${silhouetteLabel(avatar, avatar.suggested_silhouette)}` : '';
+    detailEls.avatarSource.textContent = `当前来源：${avatar.source_label || '几何'}${avatar.has_illustration ? '（有人设插画）' : ''}${suggestion}`;
+    detailEls.avatarForm.elements.avatar_silhouette.value = avatar.silhouette || '';
+}
+
+function silhouetteLabel(avatar, key) {
+    return (avatar.silhouettes || []).find(item => item.key === key)?.label || key;
+}
+
+async function patchAvatar(value, control, okMessage) {
+    await withBusy(control, async () => {
+        try {
+            const data = await apiFetch(`${API_ROOT}/${state.detailId}`, {
+                method: 'PATCH', body: { avatar_silhouette: value }, silent: true,
+            });
+            applyDetail(data.detail, { keepForm: true });
+            showToast(okMessage, 'success');
+        } catch (error) {
+            showToast(errorMessage(error, '头像保存失败'), 'error', 5000);
+        }
+    });
+}
+
+function submitAvatar(event) {
+    event.preventDefault();
+    const value = detailEls.avatarForm.elements.avatar_silhouette.value;
+    if (!value) {
+        showToast('请先选择一个剪影；恢复人设插画请点「恢复默认」', 'warning');
+        return;
+    }
+    patchAvatar(value, detailEls.avatarForm.querySelector('[type="submit"]'), '已改用剪影头像');
+}
+
+function onAvatarReset(event) {
+    const control = event.target.closest('[data-wd-avatar-reset]');
+    if (control && state.detail) patchAvatar('', control, '头像已恢复默认');
+}
+
 /* ---------------------------------------------------------------- detail: actions */
 
 function actionButton(name) {
@@ -554,6 +601,7 @@ function applyDetail(detail, { keepForm = false } = {}) {
     detailEls.title.textContent = detail.card.display_name;
     detailEls.subtitle.textContent = `${detail.card.archetype} · ${detail.card.slug}`;
     renderOverviewTab(detail);
+    fillAvatarForm(detail);
     if (!keepForm) fillPersonaForm(detail.profile);
     syncActionButtons(detail.card);
     replaceCard(detail.card);
@@ -652,6 +700,8 @@ function bindDetail() {
     els.detailRoot.addEventListener('click', onDetailClick);
     detailEls.tierForm.addEventListener('submit', onTierSubmit);
     detailEls.personaForm.addEventListener('submit', submitPersona);
+    detailEls.avatarForm.addEventListener('submit', submitAvatar);
+    detailEls.avatarForm.addEventListener('click', onAvatarReset);
     detailEls.close?.addEventListener('click', () => modal?.close('button'));
 }
 
