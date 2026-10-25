@@ -52,7 +52,7 @@ adoptDomainControl(existingInput, { kind: 'input' });
 
 平台选择列表声明 `data-lq-dropdown`，由共享 Dropdown 呈现；原生 select 继续独占值、表单与校验。已有 Selection 或筛选代理的作者入口标记 `data-lq-selection-owner`，React 等显式生命周期标记 `data-lq-dropdown-manual`，同一 select 只能有一个呈现所有者；动态领域 owner 调用 `enhanceDropdowns(root)`，不自行实现第二套下拉。
 
-复合选择卡使用 `kind='choice'` 和作者内容槽，并声明 `data-lq-shape="surface"`，不得用胶囊包裹多行内容；原 `aria-pressed/selected` 与领域选择状态保持一致。颜色样本使用 `data-lq-visual='color'`，其颜色是用户数据，不能被普通玻璃 fill 覆盖。普通动态标签按钮应由当前子文本命名，不能把初次标签永久写入 aria-label；纯图标按钮必须提供稳定而准确的名称。
+复合选择卡使用 `kind='choice'` 和作者内容槽，并声明 `data-lq-shape="surface"`，不得用胶囊包裹多行内容；其高度由内容决定（模板保持 `min-height: auto`），放入有界滚动列时由列滚动而不是压缩卡片，消费者不得为卡片补固定高度；原 `aria-pressed/selected` 与领域选择状态保持一致。颜色样本使用 `data-lq-visual='color'`，其颜色是用户数据，不能被普通玻璃 fill 覆盖。普通动态标签按钮应由当前子文本命名，不能把初次标签永久写入 aria-label；纯图标按钮必须提供稳定而准确的名称。
 
 领域已有选中状态的 Surface 用 `data-lq-selected="true"` 选择共享填充、配对前景和边界，取消选择时移除此属性。业务控制器仍负责真实选择状态，组件不额外绑定点击或键盘事件；旧 `is-active` 类保留并不自动证明选中态仍可辨认。透明关闭时保留不透明背景，通过边界与文字继续区分选择。
 

@@ -3058,7 +3058,7 @@
     "summary": "按钮/芯片的胶囊半径、三档尺寸高度、44px 触控最小命中区；多行内容的选择卡用 `data-lq-shape=\"surface\"` 退出胶囊。",
     "params": "",
     "states": "",
-    "rules": "大块内容不得被画成胶囊；改尺寸要同时看 composer / toolbar / 表格里的小按钮。 2026-10-24：复合按钮（两组及以上内容、至少一组上下叠放）自动改为卡片圆角 + 充足内边距 + 柔和选中态，不再塞进胶囊；被套上胶囊圆角的旧控件若边缘带圆点/计数/徽标，至少留出 12px 内边距。"
+    "rules": "大块内容不得被画成胶囊；改尺寸要同时看 composer / toolbar / 表格里的小按钮。 2026-10-24：复合按钮（两组及以上内容、至少一组上下叠放）自动改为卡片圆角 + 充足内边距 + 柔和选中态，不再塞进胶囊；被套上胶囊圆角的旧控件若边缘带圆点/计数/徽标，至少留出 12px 内边距。 2026-10-26：复合卡片与 `data-lq-shape=\"surface\"` 选择卡的高度由内容决定（`min-height: auto`），不再继承胶囊高度下限——显式下限会成为 flex 收缩目标，放进有界滚动列（申诉与申请抽屉、AI 历史列表）时整列卡片被压扁叠在一起；列表容器只负责滚动，不得给卡片设固定高度。回归：`tests/e2e/components/lq-content-card-scroll.spec.ts`。"
    },
    "consumers": {
     "count": 0,
@@ -3161,7 +3161,7 @@
     "summary": "`data-lq-component` 显式声明把服务端/领域 DOM 的填充、前景、描边锁定到共享配方，防止晚加载的旧样式夺回外观；也提供 `lq-domain-toolbar`（组合边界）、`lq-domain-choice`（选择卡）、`lq-domain-raised`（浮层材质）、`data-lq-selected` Surface 选中态、`lq-disclosure-popover`（原生 details 浮层）。",
     "params": "`data-lq-component=\"button|input|select|surface|toolbar|choice|popover|…\"`、`data-lq-padding=\"none|sm|md|lg\"`、`data-lq-selected=\"true\"`、`data-lq-align/placement`。；`data-lq-surface=\"embedded\"`（2026-10-24：宿主里的分组，不铺底、不描边、不成为模糊宿主，内边距由宿主负责）。",
     "states": "",
-    "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface=\"embedded\"`，否则声明的 `!important` 底色会铺回来，形成\"有底无边距\"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。"
+    "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface=\"embedded\"`，否则声明的 `!important` 底色会铺回来，形成\"有底无边距\"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。 `lq-domain-choice[data-lq-shape=\"surface\"]` 退出胶囊后高度即内容高度（2026-10-26），在滚动列里不会被压缩；需要固定格高的网格单元（学期日历）在 domain-controls.css 以更高特异性自设 min-height。"
    },
    "consumers": {
     "count": 149,

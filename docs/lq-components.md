@@ -519,7 +519,7 @@ Popup 复用 LQ.layer 的 portal、父子关系、焦点、关闭及反向打开
 来源、扫描结果与证据见 [界面模板收敛与全站扫描](lq-ui-template-sweep-2026-10-13.md)。
 
 - **Toast**：raised 填充 + thick 实时模糊，栈上限 3 使采样宿主有界；`:root:has(.lq-topbar)` 时下移到顶栏下方（`--lq-toast-top-offset`）。图标为 32px tone 小胶囊（soft 填充 + fg 前景成对）。`lq-s8-ovl` 断言改为 toast 采样。
-- **选择卡**（`static/css/lq/components/declarative.css`）：承载标题/说明/徽标的整块可点内容用 `data-lq-component="choice" data-lq-shape="surface"` + `lq-domain-choice`，不再被 capsule 几何包裹；选中（aria-pressed/selected/current、`.is-active`）与按下为 soft primary + 主色描边。`lq-btn--ghost` 选择卡是 `data-lq-selected` Surface 的可点主体，自身各态透明，选中由 Surface 表达。
+- **选择卡**（`static/css/lq/components/declarative.css`）：承载标题/说明/徽标的整块可点内容用 `data-lq-component="choice" data-lq-shape="surface"` + `lq-domain-choice`，不再被 capsule 几何包裹；选中（aria-pressed/selected/current、`.is-active`）与按下为 soft primary + 主色描边。`lq-btn--ghost` 选择卡是 `data-lq-selected` Surface 的可点主体，自身各态透明，选中由 Surface 表达。 2026-10-26 补充：选择卡与复合按钮卡片（`control-geometry.css`）的高度由内容决定（`min-height: auto`），不继承胶囊高度下限；因此放进任何有界滚动的 flex 列（右侧抽屉、历史列表、搜索结果）时由列滚动，卡片不会被 flex 收缩压扁。消费者的列表容器只写 `overflow` 与 `gap`，不要给卡片写固定高度或 `flex-shrink`。回归用例 `tests/e2e/components/lq-content-card-scroll.spec.ts`。
 - **搜索**（新文件 `components/search.css`）：任何 `.lq-input[type="search"]` 自带放大镜，作为共享控件底色 `--lq-control-background` 的首层，亮/暗与 `data-lq-tone` 成对；粗指针保持 44px。`.lq-search` 包装只清除包装层底色并提供 `.lq-search__end` 尾部槽（清空等），非 search 类型也可用。页面不得再自画搜索图标或外框。
 - **表单自适应**（`forms.css`）：载体内 form/fieldset 隐式列 `minmax(0,1fr)`、直接子项可收缩，零特异性，作者声明的 min-width 仍优先。
 - **FilterBar**（`content.css`）：字段行为 auto-fit 网格（多行时搜索与首行顶对齐、操作贴底）；直接放在背景上的 FilterBar 自带 content 材质与成对前景，在载体内保持扁平。

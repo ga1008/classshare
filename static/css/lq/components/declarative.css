@@ -112,6 +112,13 @@
  * (several are registered grids). A ghost choice is the clickable
  * body of a selectable Surface (data-lq-selected); that Surface paints the
  * selection, so the choice itself stays clear in every state. */
+/* A surface-shaped choice has left the capsule, so the capsule height floor
+   does not apply either: its height is its content. Keeping `min-height: auto`
+   also preserves the flex automatic minimum, so a bounded scrolling column of
+   such cards scrolls instead of squeezing each card onto the next (2026-10-26).
+   Registered grid cells that set their own min-height keep it (higher
+   specificity, domain-controls.css). */
+.lq-domain-choice[data-lq-shape="surface"] { min-height: auto; }
 :root .lq-domain-choice:is([aria-pressed="true"], [aria-selected="true"], [aria-current="true"], [aria-current="page"], .is-active, :active):not(:disabled, [aria-disabled="true"], [data-lq-disabled="true"]) {
     --lq-control-background: linear-gradient(hsl(var(--ls-primary-soft)), hsl(var(--ls-primary-soft))), hsl(var(--lq-control-fill, var(--ls-glass-fill-control)));
     --lq-control-color: hsl(var(--ls-on-primary-soft));

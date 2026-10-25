@@ -28,12 +28,17 @@
    real inset, keeps the consumer's layout, and its selected state is the soft
    primary pair (declarative.css) so nested text stays readable. Single-group
    and two-line centred labels (topbar actions) remain capsules. Shared Button
-   parts (icon, label, badge, spinner) and aria-hidden glyphs are not groups. */
+   parts (icon, label, badge, spinner) and aria-hidden glyphs are not groups.
+   A card is sized by its content: min-height stays `auto` so that, as a flex
+   item in a bounded scrolling column (申诉与申请 drawer, AI history), it keeps
+   the automatic content minimum and the column scrolls. An explicit floor
+   became the shrink target and every card collapsed onto the next one
+   (2026-10-26); the inset below already gives a sparse card its body. */
 :root:root .lq-btn:has(> :not(.lq-btn__icon, .lq-btn__label, .lq-btn__badge, .lq-btn__spinner, [aria-hidden="true"], svg, .lq-icon, br)
         ~ :not(.lq-btn__icon, .lq-btn__label, .lq-btn__badge, .lq-btn__spinner, [aria-hidden="true"], svg, .lq-icon, br)):has(> * > * + *) {
     border-radius: var(--ls-r-md) !important;
     height: auto;
-    min-height: calc(var(--ls-s-10) + var(--ls-s-2));
+    min-height: auto;
     padding: var(--ls-s-3) var(--ls-s-4);
     white-space: normal;
     text-align: start;

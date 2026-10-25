@@ -122,6 +122,40 @@ test('approval detail stays within narrow screens in both appearances',async({pa
   expect(errors).toEqual([]);
 });
 
+test('a long request list scrolls inside the drawer instead of compressing its cards', async ({ page }) => {
+  const errors = await mount(page);
+  await page.setViewportSize({ width: 1280, height: 640 });
+  await page.evaluate(() => {
+    const w = window as any;
+    const base = w.fixture.server.items[0];
+    w.fixture.server.items = Array.from({ length: 24 }, (_, i) => ({
+      ...base, id: i + 1, title: '申请 ' + (i + 1), status: i % 3 ? 'approved' : 'pending', status_label: i % 3 ? '已通过' : '待审批',
+      applicant_name: '学生' + (i + 1), reason: '想继续修改答案，错太多了，希望老师允许我重新提交一次完整的作业',
+    }));
+    w.panel = w.fixture.approval.mountPanel(document.getElementById('panel'), { startOpen: true });
+  });
+  await expect(page.locator('[data-apr-open]')).toHaveCount(24);
+  const report = await page.locator('.apr-list').evaluate((list) => {
+    const cards = [...list.querySelectorAll<HTMLElement>('.apr-item')];
+    const heights = cards.map(card => card.getBoundingClientRect().height);
+    return {
+      scrolls: list.scrollHeight > list.clientHeight,
+      overflowing: cards.filter(card => card.scrollHeight > card.clientHeight + 1).length,
+      minHeight: Math.min(...heights),
+      // Every card shows type + badge, name, two reason lines and a date.
+      fits: cards.every(card => [...card.children].every(part => {
+        const partRect = part.getBoundingClientRect(), cardRect = card.getBoundingClientRect();
+        return partRect.bottom <= cardRect.bottom + 1 && partRect.top >= cardRect.top - 1;
+      })),
+    };
+  });
+  expect(report.scrolls).toBe(true);
+  expect(report.overflowing).toBe(0);
+  expect(report.fits).toBe(true);
+  expect(report.minHeight).toBeGreaterThan(80);
+  expect(errors).toEqual([]);
+});
+
 test('review disclosure keeps its native toggle and embedded review URL', async ({ page }) => {
   const errors = await mount(page);
   await page.evaluate(() => { (window as any).fixture.server.items[0].detail.review_url = 'about:blank#student-review'; });
