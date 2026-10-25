@@ -629,10 +629,14 @@ def _load_user_profile_snapshot(conn, role: str, user_pk: int) -> dict[str, str]
         ).fetchone()
         if row is None:
             return {"name": "", "nickname": "", "class_name": ""}
+        from .wanderer_identity_service import WANDERER_CLASS_NAME
+
+        class_name = str(row["class_name"] or "")
         return {
             "name": str(row["name"] or ""),
             "nickname": str(row["nickname"] or ""),
-            "class_name": str(row["class_name"] or ""),
+            # 散修 have no sect/class: their placeholder class never becomes a post tag.
+            "class_name": "" if class_name == WANDERER_CLASS_NAME else class_name,
         }
 
     return {"name": "", "nickname": "", "class_name": ""}

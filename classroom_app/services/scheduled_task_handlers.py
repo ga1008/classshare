@@ -709,3 +709,19 @@ from .material_search_index_service import (  # noqa: E402
 )
 
 register_task_handler(TASK_KIND_MATERIAL_SEARCH_INDEX, handle_material_search_index_task)
+
+from .heavenly_dao_mention import (  # noqa: E402
+    TASK_KIND_DAO_MENTION_REPLY,
+    handle_dao_mention_reply,
+)
+from .wanderer_behavior_service import (  # noqa: E402
+    TASK_KIND_WANDERER_DAO_DAILY,
+    TASK_KIND_WANDERER_TICK,
+    handle_wanderer_dao_daily_review,
+    handle_wanderer_tick,
+)
+
+# 散修 tick (10 min) + 天道 daily review + @天道 replies; all no-op while disabled.
+register_task_handler(TASK_KIND_WANDERER_TICK, handle_wanderer_tick)
+register_task_handler(TASK_KIND_WANDERER_DAO_DAILY, handle_wanderer_dao_daily_review)
+register_task_handler(TASK_KIND_DAO_MENTION_REPLY, handle_dao_mention_reply)

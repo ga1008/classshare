@@ -675,6 +675,17 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         required_flag="super_admin",
     ),
     ManageNavItem(
+        key="system_wanderers",
+        domain=MANAGE_ADMIN_DOMAIN,
+        group="平台管理",
+        label="散修管理",
+        icon="users",
+        href="/manage/system/wanderers",
+        search_text="散修 电子学生 AI 自由体 天道 wanderer",
+        ai_hint="散修管理：超管教师查看与控制 20 个 AI 电子学生（散修）的人格、行为记录、天道裁决与运行开关。",
+        required_flag="super_admin",
+    ),
+    ManageNavItem(
         key="system_blog_review",
         domain=MANAGE_ADMIN_DOMAIN,
         group="平台管理",

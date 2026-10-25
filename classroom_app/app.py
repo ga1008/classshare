@@ -127,6 +127,7 @@ from .routers import document_renderer
 from .routers import resume_console
 from .routers import prompt_pool
 from .routers import academic_evaluations
+from .routers import wanderer_internal
 
 
 class CacheControlStaticFiles(StaticFiles):
@@ -176,6 +177,29 @@ async def favicon():
 # 生命周期事件
 # -----------------
 
+def _seed_wanderers_best_effort() -> None:
+    """Ensure the 20 散修 rows once per startup; never blocks or fails startup."""
+    from .services.wanderer_persona_seeds import seed_wanderers
+
+    try:
+        with get_db_connection() as wanderer_conn:
+            report = seed_wanderers(wanderer_conn)
+            wanderer_conn.commit()
+        if report.get("created"):
+            print(f"[WANDERER] seeded {len(report['created'])} wanderer(s)")
+    except Exception as exc:  # noqa: BLE001 - seeding is optional (e.g. no teacher yet); retried next startup
+        print(f"[WANDERER] seeding skipped: {exc}")
+    from .services.wanderer_behavior_service import ensure_wanderer_scheduled_tasks
+
+    try:
+        # The tick / daily review tasks exist even while disabled; their handlers no-op until enabled.
+        with get_db_connection() as wanderer_conn:
+            ensure_wanderer_scheduled_tasks(wanderer_conn)
+            wanderer_conn.commit()
+    except Exception as exc:  # noqa: BLE001 - arming is retried on the next startup
+        print(f"[WANDERER] scheduler arming skipped: {exc}")
+
+
 @app.on_event("startup")
 async def startup_event():
     """应用启动时执行"""
@@ -205,6 +229,7 @@ async def startup_event():
 
         ensure_chat_action_schema(search_conn)
         search_conn.commit()
+    _seed_wanderers_best_effort()
 
     # 确保静态目录存在
     STATIC_DIR.mkdir(exist_ok=True)
@@ -755,4 +780,5 @@ app.include_router(feedback.router)
 
 app.include_router(session_router.router)
 app.include_router(mp_router.router)
+app.include_router(wanderer_internal.router)
 

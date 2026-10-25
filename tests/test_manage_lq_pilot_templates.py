@@ -153,8 +153,10 @@ class ManageLqPilotTemplateTests(unittest.TestCase):
         # 2026-09-27: the toolbar is the page's header, so it is not a page_head caller.
         # +1 on 2026-10-12: manage/system/blog_review.html (博客审核台, blog closed-loop P3),
         # gated like every other manage page.
-        self.assertEqual(40, count)
-        self.assertEqual(40, len(explicit))
+        # +1 (41) from an earlier gated manage page that landed without bumping this count, and
+        # +1 on 2026-10-25: manage/system/wanderers.html (散修管理), gated like every other manage page.
+        self.assertEqual(42, count)
+        self.assertEqual(42, len(explicit))
 
     def test_shell_switch_has_exactly_one_controller_and_each_header_node(self):
         old, pilot = self.render_shell(), self.render_shell(True)

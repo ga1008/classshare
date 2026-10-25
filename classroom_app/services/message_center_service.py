@@ -1310,7 +1310,8 @@ def _resolve_contact(
     parsed_identity = parse_identity(contact_identity)
     if parsed_identity["role"] == AI_ASSISTANT_ROLE and normalized_scope is None:
         normalized_scope = int(parsed_identity["class_offering_id"])
-    if normalized_scope is not None and parsed_identity["role"] in {"student", "teacher"}:
+    wanderer_side = _involves_wanderer(conn, user, parsed_identity)
+    if normalized_scope is not None and parsed_identity["role"] in {"student", "teacher"} and not wanderer_side:
         accessible_scope = _load_accessible_classroom_private_scope(conn, user, int(normalized_scope))
         if accessible_scope is None:
             return None
@@ -1321,13 +1322,34 @@ def _resolve_contact(
         )
         if scoped_contact and scoped_contact["identity"] != _ensure_user_identity(user)[2]:
             return scoped_contact
-    for contact in list_private_message_contacts(conn, user):
-        if contact["identity"] == contact_identity and int(contact["class_offering_id"] or 0) == int(normalized_scope or 0):
-            return contact
+    listed = next(
+        (
+            contact for contact in list_private_message_contacts(conn, user)
+            if contact["identity"] == contact_identity
+            and int(contact["class_offering_id"] or 0) == int(normalized_scope or 0)
+        ),
+        None,
+    )
+    # A 散修 conversation never turns into a read-only "历史联系人": either side may keep writing.
+    if listed is not None and (listed.get("can_send") or not wanderer_side):
+        return listed
     direct_contact = _resolve_direct_user_contact(conn, contact_identity, class_offering_id=normalized_scope)
     if direct_contact and direct_contact["identity"] != _ensure_user_identity(user)[2]:
-        return direct_contact
+        return {**direct_contact, "is_blocked": bool(listed and listed.get("is_blocked"))}
     return None
+
+
+def _involves_wanderer(conn, user: dict, parsed_identity: dict[str, Any]) -> bool:
+    """The sender is a 散修 (tick) or the student contact is one."""
+    if user.get("is_wanderer"):
+        return True
+    if str(parsed_identity.get("role") or "") != "student" or parsed_identity.get("user_pk") is None:
+        return False
+    row = conn.execute(
+        "SELECT enrollment_status FROM students WHERE id = ? LIMIT 1", (int(parsed_identity["user_pk"]),),
+    ).fetchone()
+    status = row["enrollment_status"] if row is not None else None
+    return isinstance(status, str) and status == "wanderer"
 
 
 def _resolve_direct_user_contact(
@@ -1348,24 +1370,29 @@ def _resolve_direct_user_contact(
         scoped_contact = _load_scoped_student_contact(conn, int(parsed["user_pk"]), class_offering_id)
         if scoped_contact is not None:
             return scoped_contact
+        # 散修 (enrollment_status='wanderer') are reachable by anyone; the tick replies.
         row = conn.execute(
             """
-            SELECT s.id, s.name, s.student_id_number, c.name AS class_name
+            SELECT s.id, s.name, s.student_id_number, c.name AS class_name,
+                   COALESCE(s.enrollment_status, 'active') AS enrollment_status
             FROM students s
             LEFT JOIN classes c ON c.id = s.class_id
             WHERE s.id = ?
-              AND COALESCE(s.enrollment_status, 'active') = 'active'
+              AND COALESCE(s.enrollment_status, 'active') IN ('active', 'wanderer')
             LIMIT 1
             """,
             (parsed["user_pk"],),
         ).fetchone()
         if row is None:
             return None
-        subtitle_parts = ["跨班联系人"]
-        if row["class_name"]:
-            subtitle_parts.append(str(row["class_name"]))
-        if row["student_id_number"]:
-            subtitle_parts.append(f"学号 {row['student_id_number']}")
+        if str(row["enrollment_status"]) == "wanderer":
+            subtitle_parts = ["散修"]
+        else:
+            subtitle_parts = ["跨班联系人"]
+            if row["class_name"]:
+                subtitle_parts.append(str(row["class_name"]))
+            if row["student_id_number"]:
+                subtitle_parts.append(f"学号 {row['student_id_number']}")
         return _build_contact_entry(
             identity=build_user_identity("student", row["id"]),
             role="student",

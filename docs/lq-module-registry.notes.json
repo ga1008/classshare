@@ -302,6 +302,16 @@
     "layer": "component",
     "summary": "`bindOverflowLabels(owner)`：仅精细指针 hover / 键盘 focus-visible 时测量一次，确有溢出才做一次内部文字 transform。"
   },
+  "_pages": {
+    "wanderers": {
+      "title": "散修管理页 static/css/lq/pages/wanderers.css",
+      "layer": "composite",
+      "summary": "管理端「散修管理」(/manage/system/wanderers，templates/manage/system/wanderers.html + static/js/manage_wanderers.js)：工具栏、统计 Surface、散修选择卡网格、运行设置、天道规则折叠，以及 createDomainModal 托管的 lq-dialog 详情浮窗（四个 Tabs）。",
+      "params": "复用：Button(lq_btn / createComponent)、Choice 选择卡(data-lq-shape=surface)、Chip(状态/境界/警告)、Checkbox/Switch(createForm)、Input/Textarea、Collapsible、Tabs(navigation.tabs)、Insights(insight_meter 知识容量、insight_bars columns 七日动作 / rows 动作分布)、Content list/empty、cultivation-emblem 图像类。",
+      "states": "卡片：active/paused/dead（dead 降低不透明度，详情只显示「复活」）；按钮 busy 时 native disabled + aria-busy；分页/详情请求带代次号，旧响应不覆盖新打开的散修；人格保存失败保留输入并在 role=alert 中显示；抹除两步确认。",
+      "rules": "页面 CSS 只做网格、间距和尺寸；文字色只读 --lq-material-ink/muted，错误文字用 --ls-tone-danger-fg；不声明背景、边框色、滤镜或动效；不新增私有按钮/面板。改动先跑 npm run inventory:lq-modules。"
+    }
+  },
   "_tools": {
     "probe": "tools/ui/probe_layout_readability.cjs —— 隔离合成环境里按亮/暗外观遍历路由（可带点击步骤），统计\"有底无内边距 / 板块相贴 / 文字对比不足 / 浮层无磨砂\"四类候选；npm run probe:lq-layout。 2026-10-24 增加 capsule 检查：胶囊里文字超过两行，或嵌套的带底色元素离圆角端小于半个圆角。",
     "adaptive-fills": "tools/ui/adaptive_light_fills.py —— 把遗留 CSS 与模板内联 <style> 里写死的浅色底（含 --ls-c-* 调色板常量）改成 light-dark(原值, 同色相深色玻璃)，并把只为亮色写的语义色文字改成自适应；亮色外观逐像素不变，旧浏览器回退原值；幂等；npm run fix:lq-light-fills。"

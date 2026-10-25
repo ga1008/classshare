@@ -1,0 +1,728 @@
+"""管理端「散修管理」的读写服务（docs/wanderer-ai-free-agents-2026-10-25.md §6）。
+
+只做聚合与受控写入：身份、知识、裁决的真源仍在 Phase A 的
+``wanderer_identity_service`` / ``wanderer_knowledge_service`` /
+``wanderer_settings_service``。SQL 只用 ``?`` 占位与通用函数，SQLite 与
+PostgreSQL 同跑；调用方负责 commit。
+
+错误约定：散修不存在 → ``LookupError``；参数非法 → ``ValueError``。
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+from datetime import timedelta
+from typing import Any, Optional
+
+from ..db.schema_wanderers import ensure_wanderer_schema
+from ..time_utils import local_iso, local_now
+from .cultivation_display_service import emblem_for_level, invalidate_emblem_cache
+from .wanderer_identity_service import (
+    MAX_TIER,
+    STATUS_ACTIVE,
+    STATUS_DEAD,
+    STATUS_PAUSED,
+    clamp_tier,
+    insert_dao_review,
+    invalidate_wanderer_cache,
+    list_wanderers,
+    load_wanderer,
+    load_wanderer_by_student_id,
+    mark_dead,
+    tier_level,
+)
+from .wanderer_knowledge_service import forget_all, knowledge_summary
+from .wanderer_settings_service import (
+    SETTING_DAILY_AI_CALL_CAP,
+    SETTING_ENABLED,
+    SETTING_LAST_MANUAL_REVIEW_SUMMARY,
+    SETTING_LAST_MANUAL_TICK_SUMMARY,
+    daily_ai_calls,
+    daily_cap,
+    is_wanderer_runtime_enabled,
+    wanderer_runtime_setting_get,
+    wanderer_runtime_setting_set,
+)
+
+STATUS_LABELS = {STATUS_ACTIVE: "活跃", STATUS_PAUSED: "暂停", STATUS_DEAD: "陨落"}
+ACTION_LABELS = {
+    "browse_post": "浏览帖子", "like_post": "点赞帖子", "like_comment": "点赞评论", "comment": "评论",
+    "reply": "回复", "dm_reply": "回复私信", "classroom_visit": "旁听课堂", "classroom_message": "课堂留言",
+    "knowledge_read": "研读固化", "knowledge_forget": "遗忘知识", "request_promotion": "申请升阶",
+    "reflect": "反思", "skip": "跳过",
+}
+REVIEW_KIND_LABELS = {
+    "promotion": "升阶", "discipline": "纪律", "daily_audit": "日审", "mention_reply": "@天道",
+    "admin_override": "管理员调整", "revive": "复活", "death": "陨落",
+}
+VERDICT_LABELS = {
+    "approved": "批准", "rejected": "驳回", "warning": "警告", "demoted": "降阶",
+    "noted": "记录", "died": "陨落", "revived": "复活",
+}
+
+SETTING_TICK_BATCH_SIZE = "tick_batch_size"
+SETTING_CLASSROOM_VISITS = "classroom_visits_enabled"
+SETTING_DAO_REVIEW_HOUR = "dao_review_hour"
+SETTING_LAST_TICK_AT = "last_tick_at"
+SETTING_LAST_DAO_REVIEW_AT = "last_dao_review_at"
+DEFAULT_TICK_BATCH_SIZE = 6
+DEFAULT_DAO_REVIEW_HOUR = "03:30"
+DAILY_AI_CALL_CAP_RANGE = (0, 5000)
+TICK_BATCH_SIZE_RANGE = (1, 20)
+ACTIVITY_LEVEL_RANGE = (1, 5)
+DAILY_ACTION_BUDGET_RANGE = (0, 100)
+PERSONA_PROMPT_MAX_CHARS = 8000
+JSON_FIELD_MAX_CHARS = 8000
+TIER_REASON_MAX_CHARS = 300
+STATS_SERIES_DAYS = 7
+DEFAULT_PAGE_LIMIT = 30
+DEFAULT_KNOWLEDGE_PAGE_LIMIT = 50
+MAX_PAGE_LIMIT = 100
+DETAIL_RECENT_REVIEWS = 5
+DETAIL_RECENT_ACTIONS = 10
+_HOUR_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+_TRUTHY = {"1", "true", "yes", "on"}
+_JSON_PATCH_FIELDS = {
+    "schedule_json": dict,
+    "reply_policy_json": dict,
+    "behaviors_json": dict,
+    "interests_json": list,
+}
+_PATCH_FIELDS = frozenset({"persona_prompt", "activity_level", "daily_action_budget", *_JSON_PATCH_FIELDS})
+_SETTING_FIELDS = frozenset({
+    SETTING_ENABLED, SETTING_DAILY_AI_CALL_CAP, SETTING_TICK_BATCH_SIZE, SETTING_CLASSROOM_VISITS,
+    SETTING_DAO_REVIEW_HOUR,
+})
+
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+def _row_dict(row: Any) -> dict[str, Any]:
+    if isinstance(row, dict):
+        return dict(row)
+    try:
+        return {key: row[key] for key in row.keys()}
+    except AttributeError:
+        return dict(row)
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _loads(raw: Any, kind: type) -> Any:
+    try:
+        value = json.loads(raw) if isinstance(raw, str) and raw.strip() else None
+    except ValueError:
+        value = None
+    return value if isinstance(value, kind) else kind()
+
+
+def _today_start() -> str:
+    return f"{local_now().date().isoformat()}T00:00:00"
+
+
+def _actor_label(actor: Optional[dict[str, Any]]) -> str:
+    return f"teacher:{_as_int((actor or {}).get('id'))}"
+
+
+def require_wanderer(conn: Any, wanderer_id: Any) -> dict[str, Any]:
+    number = _as_int(wanderer_id, -1)
+    wanderer = load_wanderer(conn, number) if number > 0 else None
+    if wanderer is None:
+        raise LookupError("散修不存在")
+    return wanderer
+
+
+def _invalidate(wanderer: dict[str, Any]) -> None:
+    invalidate_wanderer_cache([wanderer["student_id"]])
+    invalidate_emblem_cache([wanderer["student_id"]])
+
+
+def _count(conn: Any, sql: str, params: tuple) -> int:
+    row = conn.execute(sql, params).fetchone()
+    return _as_int(_row_dict(row).get("n")) if row is not None else 0
+
+
+def avatar_url(student_id: Any) -> str:
+    return f"/api/profile/avatar?role=student&user_id={_as_int(student_id)}"
+
+
+def tier_payload(tier: Any, score: Any = None) -> dict[str, Any]:
+    level = tier_level(tier)
+    try:
+        shown = float(score) if score is not None else None
+    except (TypeError, ValueError):
+        shown = None
+    return {
+        "tier": clamp_tier(tier),
+        "tier_name": str(level.get("name") or ""),
+        "tier_key": str(level.get("key") or ""),
+        "emblem": emblem_for_level(level, shown),
+    }
+
+
+def _env_enabled() -> bool:
+    return str(os.getenv("WANDERER_ENABLED", "false")).strip().lower() in _TRUTHY
+
+
+def _runtime_enabled_flag(conn: Any) -> bool:
+    return str(wanderer_runtime_setting_get(conn, SETTING_ENABLED, "1")).strip().lower() in _TRUTHY
+
+
+# ---------------------------------------------------------------------------
+# action / review / knowledge serialization
+# ---------------------------------------------------------------------------
+
+def _action_href(item: dict[str, Any], detail: dict[str, Any]) -> str:
+    target_type = str(item.get("target_type") or "")
+    target_id = str(item.get("target_id") or "")
+    post_id = str(detail.get("post_id") or (target_id if target_type in {"blog_post", "post"} else ""))
+    if post_id.isdigit():
+        return f"/blog?post={post_id}"
+    offering_id = _as_int(item.get("class_offering_id"))
+    return f"/classroom/{offering_id}" if offering_id > 0 else ""
+
+
+def _serialize_action(row: Any) -> dict[str, Any]:
+    item = _row_dict(row)
+    kind = str(item.get("action_kind") or "")
+    detail = _loads(item.get("detail_json"), dict)
+    return {
+        "id": _as_int(item.get("id")),
+        "wanderer_id": _as_int(item.get("wanderer_id")),
+        "action_kind": kind,
+        "action_label": ACTION_LABELS.get(kind, kind),
+        "target_type": str(item.get("target_type") or ""),
+        "target_id": str(item.get("target_id") or ""),
+        "class_offering_id": _as_int(item.get("class_offering_id")) or None,
+        "content_preview": str(item.get("content_preview") or ""),
+        "ai_calls": _as_int(item.get("ai_calls")),
+        "mood": str(item.get("mood") or ""),
+        "outcome": str(item.get("outcome") or "ok"),
+        "created_at": str(item.get("created_at") or ""),
+        "detail": detail,
+        "href": _action_href(item, detail),
+    }
+
+
+def _optional_int(value: Any) -> Optional[int]:
+    return None if value is None else _as_int(value)
+
+
+def _serialize_review(row: Any) -> dict[str, Any]:
+    item = _row_dict(row)
+    kind = str(item.get("review_kind") or "")
+    verdict = str(item.get("verdict") or "")
+    return {
+        "id": _as_int(item.get("id")),
+        "wanderer_id": _optional_int(item.get("wanderer_id")),
+        "review_kind": kind,
+        "review_kind_label": REVIEW_KIND_LABELS.get(kind, kind),
+        "verdict": verdict,
+        "verdict_label": VERDICT_LABELS.get(verdict, verdict),
+        "from_tier": _optional_int(item.get("from_tier")),
+        "to_tier": _optional_int(item.get("to_tier")),
+        "reason": str(item.get("reason") or ""),
+        "advice": str(item.get("advice") or ""),
+        "created_by": str(item.get("created_by") or ""),
+        "acknowledged_at": item.get("acknowledged_at"),
+        "created_at": str(item.get("created_at") or ""),
+    }
+
+
+def _serialize_knowledge(row: Any) -> dict[str, Any]:
+    item = _row_dict(row)
+    return {
+        "id": _as_int(item.get("id")),
+        "source_kind": str(item.get("source_kind") or ""),
+        "source_ref": str(item.get("source_ref") or ""),
+        "title": str(item.get("title") or ""),
+        "digest": str(item.get("digest") or ""),
+        "chars": _as_int(item.get("chars")),
+        "tags": _loads(item.get("tags_json"), list),
+        "status": str(item.get("status") or ""),
+        "use_count": _as_int(item.get("use_count")),
+        "created_at": str(item.get("created_at") or ""),
+    }
+
+
+# ---------------------------------------------------------------------------
+# overview + cards
+# ---------------------------------------------------------------------------
+
+def _status_counts(conn: Any) -> tuple[dict[str, int], int]:
+    rows = conn.execute(
+        "SELECT status, COUNT(*) AS n, SUM(promotion_requested) AS promo FROM wanderer_agents GROUP BY status"
+    ).fetchall()
+    counts = {STATUS_ACTIVE: 0, STATUS_PAUSED: 0, STATUS_DEAD: 0}
+    promotion = 0
+    for row in rows:
+        item = _row_dict(row)
+        status = str(item.get("status") or "")
+        counts = {**counts, status: _as_int(item.get("n"))}
+        if status != STATUS_DEAD:
+            promotion += _as_int(item.get("promo"))
+    return counts, promotion
+
+
+def build_wanderer_overview(conn: Any) -> dict[str, Any]:
+    ensure_wanderer_schema(conn)
+    counts, promotion = _status_counts(conn)
+    warnings_today = _count(
+        conn,
+        "SELECT COUNT(*) AS n FROM wanderer_dao_reviews WHERE verdict = ? AND created_at >= ?",
+        ("warning", _today_start()),
+    )
+    return {
+        "env_enabled": _env_enabled(),
+        "runtime_enabled": _runtime_enabled_flag(conn),
+        "running": is_wanderer_runtime_enabled(conn),
+        "ai_calls_today": daily_ai_calls(conn),
+        "daily_ai_call_cap": daily_cap(conn),
+        "counts": {**counts, "total": sum(counts.values())},
+        "promotion_requested": promotion,
+        "warnings_today": warnings_today,
+        "last_tick_at": wanderer_runtime_setting_get(conn, SETTING_LAST_TICK_AT, "") or "",
+        "last_dao_review_at": wanderer_runtime_setting_get(conn, SETTING_LAST_DAO_REVIEW_AT, "") or "",
+        "last_manual_tick": _loads(wanderer_runtime_setting_get(conn, SETTING_LAST_MANUAL_TICK_SUMMARY), dict),
+        "last_manual_review": _loads(wanderer_runtime_setting_get(conn, SETTING_LAST_MANUAL_REVIEW_SUMMARY), dict),
+    }
+
+
+def _today_action_counts(conn: Any) -> dict[int, int]:
+    rows = conn.execute(
+        "SELECT wanderer_id, COUNT(*) AS n FROM wanderer_action_log "
+        "WHERE created_at >= ? AND action_kind <> ? GROUP BY wanderer_id",
+        (_today_start(), "skip"),
+    ).fetchall()
+    pairs = [_row_dict(row) for row in rows]
+    return {_as_int(item.get("wanderer_id")): _as_int(item.get("n")) for item in pairs}
+
+
+def _latest_actions(conn: Any) -> dict[int, dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT l.* FROM wanderer_action_log l "
+        "JOIN (SELECT wanderer_id, MAX(id) AS mid FROM wanderer_action_log GROUP BY wanderer_id) m "
+        "ON l.id = m.mid"
+    ).fetchall()
+    latest = [_serialize_action(row) for row in rows]
+    return {item["wanderer_id"]: item for item in latest}
+
+
+def _card(wanderer: dict[str, Any], today_count: int, last_action: Optional[dict[str, Any]]) -> dict[str, Any]:
+    status = str(wanderer.get("status") or STATUS_ACTIVE)
+    action = last_action or {}
+    return {
+        "id": int(wanderer["id"]),
+        "student_id": int(wanderer["student_id"]),
+        "slug": str(wanderer.get("slug") or ""),
+        "display_name": str(wanderer.get("display_name") or ""),
+        "archetype": str(wanderer.get("archetype") or ""),
+        **tier_payload(wanderer.get("tier"), wanderer.get("cultivation_score")),
+        "cultivation_score": round(float(wanderer.get("cultivation_score") or 0), 1),
+        "status": status,
+        "status_label": STATUS_LABELS.get(status, status),
+        "today_actions": today_count,
+        "daily_action_budget": int(wanderer.get("daily_action_budget") or 0),
+        "warnings_count": int(wanderer.get("warnings_count") or 0),
+        "promotion_requested": bool(wanderer.get("promotion_requested")),
+        "last_active_at": wanderer.get("last_active_at") or "",
+        "last_action_preview": action.get("content_preview") or action.get("action_label") or "",
+        "last_action_at": action.get("created_at", ""),
+        "avatar_url": avatar_url(wanderer["student_id"]),
+    }
+
+
+def list_wanderer_cards(conn: Any) -> list[dict[str, Any]]:
+    wanderers = list_wanderers(conn)
+    today = _today_action_counts(conn)
+    latest = _latest_actions(conn)
+    return [_card(item, today.get(int(item["id"]), 0), latest.get(int(item["id"]))) for item in wanderers]
+
+
+def _card_for(conn: Any, wanderer_id: int) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    today = _count(
+        conn,
+        "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND created_at >= ? AND action_kind <> ?",
+        (int(wanderer_id), _today_start(), "skip"),
+    )
+    row = conn.execute(
+        "SELECT * FROM wanderer_action_log WHERE wanderer_id = ? ORDER BY id DESC LIMIT 1", (int(wanderer_id),)
+    ).fetchone()
+    return _card(wanderer, today, _serialize_action(row) if row is not None else None)
+
+
+# ---------------------------------------------------------------------------
+# detail + paged lists
+# ---------------------------------------------------------------------------
+
+def _action_totals(conn: Any, wanderer_id: int) -> dict[str, int]:
+    rows = conn.execute(
+        "SELECT action_kind, COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? GROUP BY action_kind",
+        (wanderer_id,),
+    ).fetchall()
+    pairs = [_row_dict(row) for row in rows]
+    return {str(item.get("action_kind")): _as_int(item.get("n")) for item in pairs}
+
+
+def _daily_series(conn: Any, wanderer_id: int) -> list[dict[str, Any]]:
+    today = local_now().date()
+    days = [today - timedelta(days=offset) for offset in range(STATS_SERIES_DAYS - 1, -1, -1)]
+    rows = conn.execute(
+        "SELECT created_at FROM wanderer_action_log WHERE wanderer_id = ? AND created_at >= ? AND action_kind <> ?",
+        (wanderer_id, f"{days[0].isoformat()}T00:00:00", "skip"),
+    ).fetchall()
+    tally: dict[str, int] = {}
+    for row in rows:
+        key = str(_row_dict(row).get("created_at") or "")[:10]
+        tally[key] = tally.get(key, 0) + 1
+    return [{"date": day.isoformat(), "label": f"{day.month}/{day.day}", "count": tally.get(day.isoformat(), 0)}
+            for day in days]
+
+
+def _recent(conn: Any, table: str, wanderer_id: int, limit: int) -> list[Any]:
+    return conn.execute(
+        f"SELECT * FROM {table} WHERE wanderer_id = ? ORDER BY id DESC LIMIT ?", (wanderer_id, int(limit))
+    ).fetchall()
+
+
+def _profile_payload(wanderer: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "persona_prompt": str(wanderer.get("persona_prompt") or ""),
+        "public_intro": str(wanderer.get("public_intro") or ""),
+        "activity_level": int(wanderer.get("activity_level") or 0),
+        "daily_action_budget": int(wanderer.get("daily_action_budget") or 0),
+        "schedule": dict(wanderer.get("schedule") or {}),
+        "reply_policy": dict(wanderer.get("reply_policy") or {}),
+        "behaviors": dict(wanderer.get("behaviors") or {}),
+        "interests": list(wanderer.get("interests") or []),
+        "promotion_note": str(wanderer.get("promotion_note") or ""),
+    }
+
+
+def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    number = int(wanderer["id"])
+    totals = _action_totals(conn, number)
+    by_kind = sorted(totals.items(), key=lambda pair: -pair[1])
+    return {
+        "card": _card_for(conn, number),
+        "stats": {
+            "total_actions": sum(totals.values()),
+            "by_kind": [{"kind": kind, "label": ACTION_LABELS.get(kind, kind), "count": count} for kind, count in by_kind],
+            "daily": _daily_series(conn, number),
+            "cached": dict(wanderer.get("stats") or {}),
+        },
+        "knowledge": knowledge_summary(conn, wanderer),
+        "profile": _profile_payload(wanderer),
+        "reviews": [_serialize_review(row) for row in _recent(conn, "wanderer_dao_reviews", number, DETAIL_RECENT_REVIEWS)],
+        "actions": [_serialize_action(row) for row in _recent(conn, "wanderer_action_log", number, DETAIL_RECENT_ACTIONS)],
+    }
+
+
+def _page_bounds(page: Any, limit: Any, default_limit: int) -> tuple[int, int, int]:
+    page_number = max(1, _as_int(page, 1))
+    size = max(1, min(MAX_PAGE_LIMIT, _as_int(limit, default_limit)))
+    return page_number, size, (page_number - 1) * size
+
+
+def _paged(conn: Any, table: str, wanderer_id: int, page: Any, limit: Any, default_limit: int) -> tuple[list[Any], dict[str, int]]:
+    page_number, size, offset = _page_bounds(page, limit, default_limit)
+    total = _count(conn, f"SELECT COUNT(*) AS n FROM {table} WHERE wanderer_id = ?", (wanderer_id,))
+    rows = conn.execute(
+        f"SELECT * FROM {table} WHERE wanderer_id = ? ORDER BY id DESC LIMIT ? OFFSET ?", (wanderer_id, size, offset)
+    ).fetchall()
+    return rows, {"page": page_number, "limit": size, "total": total, "pages": max(1, -(-total // size))}
+
+
+def list_actions(conn: Any, wanderer_id: Any, *, page: Any = 1, limit: Any = DEFAULT_PAGE_LIMIT) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    rows, meta = _paged(conn, "wanderer_action_log", int(wanderer["id"]), page, limit, DEFAULT_PAGE_LIMIT)
+    return {"items": [_serialize_action(row) for row in rows], **meta}
+
+
+def list_reviews(conn: Any, wanderer_id: Any, *, page: Any = 1, limit: Any = DEFAULT_PAGE_LIMIT) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    rows, meta = _paged(conn, "wanderer_dao_reviews", int(wanderer["id"]), page, limit, DEFAULT_PAGE_LIMIT)
+    return {"items": [_serialize_review(row) for row in rows], **meta}
+
+
+def list_knowledge(conn: Any, wanderer_id: Any, *, page: Any = 1, limit: Any = DEFAULT_KNOWLEDGE_PAGE_LIMIT) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    rows, meta = _paged(conn, "wanderer_knowledge_entries", int(wanderer["id"]), page, limit, DEFAULT_KNOWLEDGE_PAGE_LIMIT)
+    return {"items": [_serialize_knowledge(row) for row in rows], "summary": knowledge_summary(conn, wanderer), **meta}
+
+
+# ---------------------------------------------------------------------------
+# validation
+# ---------------------------------------------------------------------------
+
+def _bounded_int(value: Any, bounds: tuple[int, int], label: str) -> int:
+    if isinstance(value, bool) or (isinstance(value, float) and not value.is_integer()):
+        raise ValueError(f"{label}必须是整数")
+    try:
+        number = int(str(value).strip()) if isinstance(value, str) else int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label}必须是整数") from exc
+    low, high = bounds
+    if not low <= number <= high:
+        raise ValueError(f"{label}须在 {low}–{high} 之间")
+    return number
+
+
+def _json_patch_value(key: str, value: Any) -> str:
+    kind = _JSON_PATCH_FIELDS[key]
+    parsed = value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except ValueError as exc:
+            raise ValueError(f"{key} 不是合法 JSON") from exc
+    if not isinstance(parsed, kind):
+        raise ValueError(f"{key} 须为 JSON {'对象' if kind is dict else '数组'}")
+    text = json.dumps(parsed, ensure_ascii=False, sort_keys=True)
+    if len(text) > JSON_FIELD_MAX_CHARS:
+        raise ValueError(f"{key} 过长")
+    return text
+
+
+def _persona_prompt_value(value: Any) -> str:
+    prompt = str(value or "").strip()
+    if not prompt:
+        raise ValueError("人格提示词不能为空")
+    if len(prompt) > PERSONA_PROMPT_MAX_CHARS:
+        raise ValueError(f"人格提示词不能超过 {PERSONA_PROMPT_MAX_CHARS} 字")
+    return prompt
+
+
+def _validate_patch(patch: Any) -> dict[str, Any]:
+    if not isinstance(patch, dict) or not patch:
+        raise ValueError("没有可保存的字段")
+    unknown = sorted(set(patch) - _PATCH_FIELDS)
+    if unknown:
+        raise ValueError(f"不支持修改字段：{', '.join(unknown)}")
+    columns: dict[str, Any] = {}
+    if "persona_prompt" in patch:
+        columns["persona_prompt"] = _persona_prompt_value(patch["persona_prompt"])
+    if "activity_level" in patch:
+        columns["activity_level"] = _bounded_int(patch["activity_level"], ACTIVITY_LEVEL_RANGE, "活跃度")
+    if "daily_action_budget" in patch:
+        columns["daily_action_budget"] = _bounded_int(patch["daily_action_budget"], DAILY_ACTION_BUDGET_RANGE, "每日动作预算")
+    for key in _JSON_PATCH_FIELDS:
+        if key in patch:
+            columns[key] = _json_patch_value(key, patch[key])
+    return columns
+
+
+def _tier_reason(reason: Any) -> str:
+    note = str(reason or "").strip()
+    if not note:
+        raise ValueError("调整境界需要填写理由")
+    if len(note) > TIER_REASON_MAX_CHARS:
+        raise ValueError(f"理由不能超过 {TIER_REASON_MAX_CHARS} 字")
+    return note
+
+
+# ---------------------------------------------------------------------------
+# writes
+# ---------------------------------------------------------------------------
+
+def _update_columns(conn: Any, wanderer_id: int, columns: dict[str, Any]) -> None:
+    # Column names come only from this module's validated whitelists.
+    assignments = ", ".join(f"{column} = ?" for column in columns)
+    conn.execute(
+        f"UPDATE wanderer_agents SET {assignments}, updated_at = ? WHERE id = ?",
+        (*columns.values(), local_iso(), int(wanderer_id)),
+    )
+
+
+def update_wanderer(conn: Any, wanderer_id: Any, patch: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    columns = _validate_patch(patch)
+    _update_columns(conn, int(wanderer["id"]), columns)
+    _invalidate(wanderer)
+    return build_wanderer_detail(conn, wanderer["id"])
+
+
+def set_status(conn: Any, wanderer_id: Any, status: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    wanted = str(status or "").strip()
+    if wanted not in {STATUS_ACTIVE, STATUS_PAUSED}:
+        raise ValueError("状态只能设为 active 或 paused")
+    if wanderer.get("is_dead"):
+        raise ValueError("散修已陨落，请使用「复活」")
+    _update_columns(conn, int(wanderer["id"]), {"status": wanted})
+    _invalidate(wanderer)
+    return _card_for(conn, int(wanderer["id"]))
+
+
+def set_tier(conn: Any, wanderer_id: Any, tier: Any, reason: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    target = _bounded_int(tier, (0, MAX_TIER), "境界")
+    note = _tier_reason(reason)
+    if wanderer.get("is_dead"):
+        raise ValueError("散修已陨落，请先复活")
+    review_id = insert_dao_review(
+        conn, wanderer_id=int(wanderer["id"]), review_kind="admin_override", verdict="noted",
+        from_tier=clamp_tier(wanderer.get("tier")), to_tier=target, reason=note, created_by=_actor_label(actor),
+    )
+    _update_columns(conn, int(wanderer["id"]), {"tier": target, "last_review_id": review_id, "last_review_at": local_iso()})
+    _invalidate(wanderer)
+    return {"review_id": review_id, "card": _card_for(conn, int(wanderer["id"]))}
+
+
+def reset_warnings(conn: Any, wanderer_id: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    _update_columns(conn, int(wanderer["id"]), {"warnings_count": 0})
+    _invalidate(wanderer)
+    return _card_for(conn, int(wanderer["id"]))
+
+
+def wipe(conn: Any, wanderer_id: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    if wanderer.get("is_dead"):
+        raise ValueError("散修已陨落")
+    forgotten = forget_all(conn, int(wanderer["id"]))
+    _update_columns(conn, int(wanderer["id"]), {"tier": 0, "cultivation_score": 0, "promotion_requested": 0})
+    mark_dead(conn, int(wanderer["id"]), f"管理员抹除（{_actor_label(actor)}）")
+    _invalidate(wanderer)
+    return {"forgotten": forgotten, "card": _card_for(conn, int(wanderer["id"]))}
+
+
+def revive(conn: Any, wanderer_id: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
+    from .wanderer_persona_seeds import get_seed, seed_initial_knowledge
+
+    wanderer = require_wanderer(conn, wanderer_id)
+    if not wanderer.get("is_dead"):
+        raise ValueError("只有已陨落的散修可以复活")
+    _update_columns(conn, int(wanderer["id"]), {
+        "status": STATUS_ACTIVE, "tier": 0, "warnings_count": 0, "promotion_requested": 0,
+    })
+    seed = get_seed(str(wanderer.get("slug") or ""))
+    seeded = seed_initial_knowledge(conn, require_wanderer(conn, wanderer["id"]), seed) if seed else 0
+    insert_dao_review(
+        conn, wanderer_id=int(wanderer["id"]), review_kind="revive", verdict="revived",
+        from_tier=clamp_tier(wanderer.get("tier")), to_tier=0, reason="管理员复活，恢复初始人格知识。",
+        created_by=_actor_label(actor), evidence={"seed_knowledge": seeded},
+    )
+    _invalidate(wanderer)
+    return {"seeded_knowledge": seeded, "card": _card_for(conn, int(wanderer["id"]))}
+
+
+# ---------------------------------------------------------------------------
+# runtime settings
+# ---------------------------------------------------------------------------
+
+def _flag(value: Optional[str], default: bool) -> bool:
+    if value is None or str(value).strip() == "":
+        return default
+    return str(value).strip().lower() in _TRUTHY
+
+
+def get_settings(conn: Any) -> dict[str, Any]:
+    ensure_wanderer_schema(conn)
+    batch = _as_int(wanderer_runtime_setting_get(conn, SETTING_TICK_BATCH_SIZE), DEFAULT_TICK_BATCH_SIZE)
+    hour = str(wanderer_runtime_setting_get(conn, SETTING_DAO_REVIEW_HOUR, "") or DEFAULT_DAO_REVIEW_HOUR)
+    low, high = TICK_BATCH_SIZE_RANGE
+    return {
+        "enabled": _runtime_enabled_flag(conn),
+        "env_enabled": _env_enabled(),
+        "daily_ai_call_cap": daily_cap(conn),
+        "tick_batch_size": max(low, min(high, batch)),
+        "classroom_visits_enabled": _flag(wanderer_runtime_setting_get(conn, SETTING_CLASSROOM_VISITS), True),
+        "dao_review_hour": hour if _HOUR_RE.match(hour) else DEFAULT_DAO_REVIEW_HOUR,
+    }
+
+
+def _bool_setting(value: Any, label: str) -> str:
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    text = str(value).strip()
+    if text in {"0", "1"}:
+        return text
+    raise ValueError(f"{label}须为 0 或 1")
+
+
+def _hour_setting(value: Any) -> str:
+    hour = str(value or "").strip()
+    if not _HOUR_RE.match(hour):
+        raise ValueError("天道审核时间须为 HH:MM")
+    return hour
+
+
+def _validate_settings(patch: Any) -> dict[str, str]:
+    if not isinstance(patch, dict) or not patch:
+        raise ValueError("没有可保存的设置")
+    unknown = sorted(set(patch) - _SETTING_FIELDS)
+    if unknown:
+        raise ValueError(f"不支持的设置：{', '.join(unknown)}")
+    validators = {
+        SETTING_ENABLED: lambda v: _bool_setting(v, "启用开关"),
+        SETTING_CLASSROOM_VISITS: lambda v: _bool_setting(v, "旁听课堂"),
+        SETTING_DAILY_AI_CALL_CAP: lambda v: str(_bounded_int(v, DAILY_AI_CALL_CAP_RANGE, "每日 AI 调用上限")),
+        SETTING_TICK_BATCH_SIZE: lambda v: str(_bounded_int(v, TICK_BATCH_SIZE_RANGE, "每轮散修数")),
+        SETTING_DAO_REVIEW_HOUR: _hour_setting,
+    }
+    return {key: validators[key](value) for key, value in patch.items()}
+
+
+def update_settings(conn: Any, patch: Any) -> dict[str, Any]:
+    values = _validate_settings(patch)
+    previous_hour = get_settings(conn)["dao_review_hour"]
+    for key, value in values.items():
+        wanderer_runtime_setting_set(conn, key, value)
+    settings = get_settings(conn)
+    if settings["dao_review_hour"] != previous_hour:
+        from .wanderer_behavior_service import ensure_wanderer_scheduled_tasks
+
+        ensure_wanderer_scheduled_tasks(conn)  # re-arms the daily review at the new hour
+    return settings
+
+
+def reseed(conn: Any) -> dict[str, Any]:
+    from .wanderer_persona_seeds import seed_wanderers
+
+    report = seed_wanderers(conn)
+    invalidate_wanderer_cache()
+    invalidate_emblem_cache()
+    return {
+        "created": list(report.get("created") or []),
+        "knowledge_added": int(report.get("knowledge_added") or 0),
+        "total": len(report.get("students") or {}),
+    }
+
+
+# ---------------------------------------------------------------------------
+# public card
+# ---------------------------------------------------------------------------
+
+def public_card(conn: Any, student_id: Any) -> Optional[dict[str, Any]]:
+    number = _as_int(student_id, -1)
+    if number <= 0:
+        return None
+    wanderer = load_wanderer_by_student_id(conn, number)
+    if wanderer is None:
+        return None
+    status = str(wanderer.get("status") or STATUS_ACTIVE)
+    tier = tier_payload(wanderer.get("tier"))
+    return {
+        "is_wanderer": True,
+        "student_id": number,
+        "display_name": str(wanderer.get("display_name") or ""),
+        "archetype": str(wanderer.get("archetype") or ""),
+        "tier": tier["tier"],
+        "tier_name": tier["tier_name"],
+        "emblem": tier["emblem"],
+        "status": status,
+        "status_label": STATUS_LABELS.get(status, status),
+        "description": str(wanderer.get("public_intro") or ""),
+        "avatar_url": avatar_url(number),
+    }

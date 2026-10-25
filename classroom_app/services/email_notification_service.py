@@ -1219,6 +1219,18 @@ def _insert_email_outbox_job_if_absent(
     return int(row["id"]) if row else None
 
 
+def _is_wanderer_student(conn, student_id: int) -> bool:
+    """散修 are ``students`` rows with ``enrollment_status='wanderer'`` (core column, always present)."""
+    row = conn.execute("SELECT enrollment_status FROM students WHERE id = ? LIMIT 1", (int(student_id),)).fetchone()
+    if row is None:
+        return False
+    try:
+        status = row["enrollment_status"]
+    except (TypeError, KeyError, IndexError):
+        status = row[0]
+    return isinstance(status, str) and status == "wanderer"
+
+
 def queue_notification_email_if_applicable(conn, *, notification_id: int, payload: dict[str, Any]) -> bool:
     category = str(payload.get("category") or "").strip().lower()
     severity = str(payload.get("severity") or notification_severity_for_category(category)).strip().lower()
@@ -1230,6 +1242,10 @@ def queue_notification_email_if_applicable(conn, *, notification_id: int, payloa
     recipient_user_pk = _safe_int(payload.get("recipient_user_pk"))
     if recipient_role not in {"student", "teacher"} or not recipient_user_pk:
         _mark_notification_email_status(conn, int(notification_id), EMAIL_STATUS_SKIPPED)
+        return False
+    if recipient_role == "student" and _is_wanderer_student(conn, recipient_user_pk):
+        # 散修 notifications are consumed by the tick only and never emailed.
+        _mark_notification_email_status(conn, int(notification_id), EMAIL_STATUS_NOT_REQUIRED)
         return False
 
     recipient = _load_recipient_email(conn, role=recipient_role, user_pk=recipient_user_pk)

@@ -167,7 +167,31 @@ def _emblem_payload(tier: int, score: float, curved: bool) -> dict[str, Any] | N
     return emblem_for_level(level, shown)
 
 
+def _wanderer_emblems(conn: Any, ids: list[int]) -> dict[int, dict[str, Any] | None]:
+    """散修 tiers come from ``wanderer_agents.tier``, not classroom certificates."""
+    from .learning_progress_service import LEARNING_LEVELS
+    from .wanderer_identity_service import load_wanderers_by_student_ids
+
+    emblems: dict[int, dict[str, Any] | None] = {}
+    for student_id, wanderer in load_wanderers_by_student_ids(conn, ids).items():
+        tier = int(wanderer.get("tier") or 0)
+        level = next((item for item in LEARNING_LEVELS if int(item["tier"]) == tier), None)
+        payload = emblem_for_level(level, float(wanderer.get("cultivation_score") or 0))
+        emblems[student_id] = {**payload, "wanderer": True, "sect": None} if payload else None
+    return emblems
+
+
 def _query_emblems(conn: Any, ids: list[int]) -> dict[int, dict[str, Any] | None]:
+    wanderer_emblems: dict[int, dict[str, Any] | None] = {}
+    with best_effort(conn, "cultivation_wanderer_emblems"):
+        wanderer_emblems = _wanderer_emblems(conn, ids)
+    ids = [student_id for student_id in ids if student_id not in wanderer_emblems]
+    if not ids:
+        return wanderer_emblems
+    return {**_query_certificate_emblems(conn, ids), **wanderer_emblems}
+
+
+def _query_certificate_emblems(conn: Any, ids: list[int]) -> dict[int, dict[str, Any] | None]:
     placeholders = ",".join("?" for _ in ids)
     tiers: dict[tuple[int, int], int] = {}
     for row in conn.execute(

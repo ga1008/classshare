@@ -8,9 +8,14 @@ from ...services.offering_hub_service import build_offering_hub_context
 from ...services.profile_service import build_profile_page_context
 from ...services.feedback_conversation_service import list_feedback
 from .manage_pages_shared import _table_has_column, _password_reset_login_summary_sql, _academic_event_label
+from .. import wanderers as wanderers_router
+from ...services.heavenly_dao_rules import HEAVENLY_DAO_RULES
+from ...services.wanderer_admin_service import build_wanderer_overview, get_settings as get_wanderer_settings, list_wanderer_cards
 
 
 router = APIRouter()
+# 散修管理 API（/api/manage/system/wanderers/* 与公开卡 /api/wanderers/{id}/card）随本页一并挂载。
+router.include_router(wanderers_router.router)
 
 
 @router.get("/manage/system", response_class=HTMLResponse)
@@ -183,6 +188,33 @@ async def get_manage_system_agent_keys_page(request: Request, user: dict = Depen
             active_page="system_agent_keys",
             extra={
                 "agent_key_dashboard": dashboard,
+            },
+        ),
+    )
+
+
+@router.get("/manage/system/wanderers", response_class=HTMLResponse)
+async def get_manage_system_wanderers_page(request: Request, user: dict = Depends(get_current_teacher)):
+    """散修（AI 电子学生）管理页面：总览、卡片网格、运行设置与天道规则。"""
+    with get_db_connection() as conn:
+        _ensure_manage_super_admin(conn, user)
+        overview = build_wanderer_overview(conn)
+        cards = list_wanderer_cards(conn)
+        settings = get_wanderer_settings(conn)
+
+    return templates.TemplateResponse(
+        request,
+        "manage/system/wanderers.html",
+        _build_manage_template_context(
+            request,
+            user,
+            page_title="散修管理",
+            active_page="system_wanderers",
+            extra={
+                "wanderer_overview": overview,
+                "wanderer_cards": cards,
+                "wanderer_settings": settings,
+                "heavenly_dao_rules": HEAVENLY_DAO_RULES,
             },
         ),
     )

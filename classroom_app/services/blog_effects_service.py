@@ -46,8 +46,21 @@ def _trigger_snapshot(conn, trigger_type: str, trigger_id: int) -> dict[str, Any
     return dict(row) if row else None
 
 
+def _enqueue_dao_mention_best_effort(conn, user: dict, *, trigger_type: str, trigger_id: int) -> None:
+    """@天道 rides the same commit as the post/comment; a failure never blocks the author."""
+    from ..db.savepoint import best_effort
+    from .heavenly_dao_mention import enqueue_dao_mention
+
+    with best_effort(conn, "dao_mention", log_prefix="[DAO]"):
+        enqueue_dao_mention(conn, user, trigger_type=trigger_type, trigger_id=trigger_id)
+
+
 def enqueue_blog_mention(conn, user: dict, *, trigger_type: str, trigger_id: int) -> int | None:
-    """No commit or model work: caller owns the blog mutation transaction."""
+    """No commit or model work: caller owns the blog mutation transaction.
+
+    Also schedules the @天道 reply (separate channel) when the trigger mentions it.
+    """
+    _enqueue_dao_mention_best_effort(conn, user, trigger_type=trigger_type, trigger_id=trigger_id)
     source = _trigger_snapshot(conn, trigger_type, trigger_id)
     identity = f"{user.get('role')}:{user.get('id')}"
     if not source or source["author_identity"] != identity:

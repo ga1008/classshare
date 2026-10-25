@@ -24,7 +24,7 @@ _SCHEMA_MODULES = (
     "lessondoc_editor", "lesson_plans", "life_tips", "material_whiteboards",
     "offering_class_links", "offering_merge", "polls", "resume", "retake",
     "scheduler", "session_learning_materials", "signature_workflow",
-    "smart_schedule", "study_group_scheme", "teacher_evaluations", "wechat_mp",
+    "smart_schedule", "study_group_scheme", "teacher_evaluations", "wanderers", "wechat_mp",
 )
 _SERVICE_MODULES = (
     "student_achievement_service", "student_points_service", "student_streak_service",

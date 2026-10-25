@@ -138,6 +138,8 @@ services:
       <<: *lanshare-timezone
       SCHEDULER_WORKER_ID: scheduler-compose
       SCHEDULER_POLL_SECONDS: "20"
+      AI_ASSISTANT_URL: http://ai:8001
+      MAIN_APP_INTERNAL_URL: http://app:8000
     healthcheck:
       test:
         - CMD

@@ -3185,6 +3185,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/internal/wanderers/classroom-broadcast",
+    "methods": [
+      "POST"
+    ],
+    "name": "wanderer_classroom_broadcast",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/internal/wanderers/rooms",
+    "methods": [
+      "GET"
+    ],
+    "name": "wanderer_rooms",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/learning-path/bootstrap",
     "methods": [
       "GET"
@@ -5022,6 +5038,142 @@
       "POST"
     ],
     "name": "api_revoke_teacher_account_super_admin",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_wanderers",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/reseed",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_reseed_wanderers",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/review-now",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_wanderer_dao_review_all",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/settings",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_wanderer_settings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/settings",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_update_wanderer_settings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/tick-now",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_wanderer_tick_now",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_get_wanderer",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "api_patch_wanderer",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/actions",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_wanderer_actions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/knowledge",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_wanderer_knowledge",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/reset-warnings",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_reset_wanderer_warnings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/review-now",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_wanderer_review_now",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/reviews",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_wanderer_reviews",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/revive",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_revive_wanderer",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/status",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_set_wanderer_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/tier",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_set_wanderer_tier",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/wipe",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_wipe_wanderer",
     "include_in_schema": true
   },
   {
@@ -7185,6 +7337,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/wanderers/{student_id:int}/card",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_wanderer_public_card",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/work-inbox",
     "methods": [
       "GET"
@@ -7934,6 +8094,14 @@
       "GET"
     ],
     "name": "get_manage_system_users_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/system/wanderers",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_manage_system_wanderers_page",
     "include_in_schema": true
   },
   {

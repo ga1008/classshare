@@ -382,6 +382,8 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "schema_offering_class_links.py",
             "schema_offering_merge.py",
             "schema_polls.py",
+            # 散修（AI 电子学生）：仿 polls 的运行时 engine-aware 建表。
+            "schema_wanderers.py",
             # 博客闭环（审核回执/申诉/敏感词/评论媒体/作者日统计/通知偏好）：运行时 engine-aware 建表。
             "schema_blog_closed_loop.py",
             "schema_prompt_pool.py",

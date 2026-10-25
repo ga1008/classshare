@@ -506,6 +506,19 @@ async def api_upload_profile_avatar(
     }
 
 
+def _wanderer_avatar_path(conn, student_id: int):
+    """The generated geometric avatar of a 散修 without an uploaded photo, else None."""
+    from ..config import STATIC_DIR
+    from ..services.wanderer_identity_service import load_wanderers_by_student_ids
+
+    wanderer = load_wanderers_by_student_ids(conn, [student_id]).get(int(student_id))
+    slug = "".join(ch for ch in str((wanderer or {}).get("slug") or "") if ch.isalnum() or ch in "_-")
+    if not slug:
+        return None
+    path = STATIC_DIR / "img" / "wanderers" / f"{slug}.svg"
+    return path if path.is_file() else None
+
+
 @router.get("/api/profile/avatar")
 def api_profile_avatar(
     role: str | None = None,
@@ -515,13 +528,19 @@ def api_profile_avatar(
     requested_role = str(role or "").strip().lower()
     requested_user_id = int(user_id) if user_id is not None else None
 
+    wanderer_avatar = None
     with get_db_connection() as conn:
         if requested_role in {"teacher", "student"} and requested_user_id is not None:
             profile = _load_avatar_profile(conn, role=requested_role, user_id=requested_user_id)
             if profile is None:
                 raise HTTPException(status_code=404, detail="头像用户不存在。")
+            if requested_role == "student" and not str(profile.get("avatar_file_hash") or "").strip():
+                wanderer_avatar = _wanderer_avatar_path(conn, requested_user_id)
         else:
             profile = get_user_profile(conn, user)
+
+    if wanderer_avatar is not None:
+        return FileResponse(wanderer_avatar, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
 
     file_hash = str(profile.get("avatar_file_hash") or "").strip()
     if file_hash:
