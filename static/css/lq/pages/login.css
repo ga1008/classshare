@@ -71,6 +71,8 @@ body.lq-centered-page .lq-login-card {
 /* Labels belong to the card's scene material. The legacy scene stylesheet
    also styles labels, so keep this composition at the same body scope. */
 body.lq-centered-page .lq-login-card :is(.lq-field,.lq-field__label,.form-text) { color: hsl(var(--lq-material-ink)); }
+/* A field's help line is secondary copy on the same material: paired muted ink, never theme grey. */
+body.lq-centered-page .lq-login-card .lq-field__help { color: hsl(var(--lq-material-muted)); }
 .lq-centered-page .lq-field__label { text-align: start; }
 .lq-centered-page .login-panel { text-align: start; }
 .lq-centered-page .login-panel[hidden] { display: none; }

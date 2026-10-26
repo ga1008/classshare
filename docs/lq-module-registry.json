@@ -4792,6 +4792,10 @@
       "hits": 3
      },
      {
+      "path": "templates/partials/login_remember.html",
+      "hits": 3
+     },
+     {
       "path": "templates/partials/profile/appearance.html",
       "hits": 3
      },
@@ -4913,10 +4917,6 @@
      },
      {
       "path": "templates/partials/learning_material_selector.html",
-      "hits": 2
-     },
-     {
-      "path": "templates/partials/login_remember.html",
       "hits": 2
      },
      {

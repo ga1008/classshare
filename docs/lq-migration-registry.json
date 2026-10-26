@@ -1231,26 +1231,28 @@
           },
           {
             "path": "templates/student_login_v4.html",
-            "sha256": "6c1667732ea20eb6d8b7e5387912df51f9032fc531219ecc83826683480433bf",
-            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：保留原生登录/注册/返回路径、字段、校验与条件；centered SSR 6 项及 auth fallback 19 项通过。登录模式 body 为继承场景配对的布局 region，密码弹窗内容面为共享 raised；逐帧材料切换及 tier B 像素专项 6 项、centered 完整浏览器 27 项通过，包含明暗真实照片、原生 POST、提交重试和状态页可达性。",
+            "sha256": "d770d15111e693a602b0e06124e49cf8f50d1d27b131c8b353a15cdb1eff812d",
+            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：保留原生登录/注册/返回路径、字段、校验与条件；centered SSR 6 项及 auth fallback 19 项通过。登录模式 body 为继承场景配对的布局 region，密码弹窗内容面为共享 raised；逐帧材料切换及 tier B 像素专项 6 项、centered 完整浏览器 27 项通过，包含明暗真实照片、原生 POST、提交重试和状态页可达性。 2026-10-26 保持登录复核：表单新增共享 partials/login_remember.html，LQ 分支使用 lq_checkbox 组件（标签读卡片场景墨色、help 行读配对 muted 墨色，经 aria-describedby 关联）；脚本仅增加本浏览器勾选偏好（localStorage，只存偏好）。明/暗场景下保持登录文字与字段标签逐值一致；centered 组件 27 项与声明式契约 4 项浏览器测试、centered SSR 与 auth fallback、保持登录 19 项通过。",
             "tests": [
               "tests/test_lq_centered.py",
               "tests/test_auth_form_fallback.py",
               "tests/e2e/components/lq-centered.spec.ts",
               "tests/e2e/specs/lq-s4-auth.spec.ts",
-              "tests/e2e/components/lq-declarative-contracts.spec.ts"
+              "tests/e2e/components/lq-declarative-contracts.spec.ts",
+              "tests/test_remember_login.py"
             ]
           },
           {
             "path": "templates/teacher_login_v4.html",
-            "sha256": "b8e243701add641e3c315cee8c18b56232610d238823b8078976a2d95be70e9e",
-            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：保留原生登录/注册/返回路径、字段、校验与条件；centered SSR 6 项及 auth fallback 19 项通过。登录模式 body 为继承场景配对的布局 region，密码弹窗内容面为共享 raised；逐帧材料切换及 tier B 像素专项 6 项、centered 完整浏览器 27 项通过，包含明暗真实照片、原生 POST、提交重试和状态页可达性。",
+            "sha256": "b9737d0616b68f87c7cdcb96d7cb15c8a45ac540b052d5da31ffed5db6b63bed",
+            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：保留原生登录/注册/返回路径、字段、校验与条件；centered SSR 6 项及 auth fallback 19 项通过。登录模式 body 为继承场景配对的布局 region，密码弹窗内容面为共享 raised；逐帧材料切换及 tier B 像素专项 6 项、centered 完整浏览器 27 项通过，包含明暗真实照片、原生 POST、提交重试和状态页可达性。 2026-10-26 保持登录复核：表单新增共享 partials/login_remember.html，LQ 分支使用 lq_checkbox 组件（标签读卡片场景墨色、help 行读配对 muted 墨色，经 aria-describedby 关联）；脚本仅增加本浏览器勾选偏好（localStorage，只存偏好）。明/暗场景下保持登录文字与字段标签逐值一致；centered 组件 27 项与声明式契约 4 项浏览器测试、centered SSR 与 auth fallback、保持登录 19 项通过。",
             "tests": [
               "tests/test_lq_centered.py",
               "tests/test_auth_form_fallback.py",
               "tests/e2e/components/lq-centered.spec.ts",
               "tests/e2e/specs/lq-s4-auth.spec.ts",
-              "tests/e2e/components/lq-declarative-contracts.spec.ts"
+              "tests/e2e/components/lq-declarative-contracts.spec.ts",
+              "tests/test_remember_login.py"
             ]
           },
           {
@@ -1326,24 +1328,26 @@
           },
           {
             "path": "static/js/student_login.js",
-            "sha256": "83626371f50420003e1c9e2eb2a49efdf9e9aa60f55a4cb25087bc63cab32f49",
-            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
+            "sha256": "1600ab48fad7d73e55e1e95743cd30bd103124f04d5157eb094c1a3239b2c995",
+            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-10-26 保持登录复核：表单新增共享 partials/login_remember.html，LQ 分支使用 lq_checkbox 组件（标签读卡片场景墨色、help 行读配对 muted 墨色，经 aria-describedby 关联）；脚本仅增加本浏览器勾选偏好（localStorage，只存偏好）。明/暗场景下保持登录文字与字段标签逐值一致；centered 组件 27 项与声明式契约 4 项浏览器测试、centered SSR 与 auth fallback、保持登录 19 项通过。",
             "tests": [
               "tests/test_lq_centered.py",
               "tests/test_auth_form_fallback.py",
               "tests/e2e/components/lq-centered.spec.ts",
-              "tests/e2e/specs/lq-s4-auth.spec.ts"
+              "tests/e2e/specs/lq-s4-auth.spec.ts",
+              "tests/test_remember_login.py"
             ]
           },
           {
             "path": "static/js/teacher_login.js",
-            "sha256": "15e66b16b84420478ffb1cae9f8392b3ec31607931de29c07542bd42ee9603d5",
-            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。",
+            "sha256": "e00b184da8fcdba26e91cfffd3cb645ba3706b66bb65307d5dd4b414b940e3d7",
+            "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-10-26 保持登录复核：表单新增共享 partials/login_remember.html，LQ 分支使用 lq_checkbox 组件（标签读卡片场景墨色、help 行读配对 muted 墨色，经 aria-describedby 关联）；脚本仅增加本浏览器勾选偏好（localStorage，只存偏好）。明/暗场景下保持登录文字与字段标签逐值一致；centered 组件 27 项与声明式契约 4 项浏览器测试、centered SSR 与 auth fallback、保持登录 19 项通过。",
             "tests": [
               "tests/test_lq_centered.py",
               "tests/test_auth_form_fallback.py",
               "tests/e2e/components/lq-centered.spec.ts",
-              "tests/e2e/specs/lq-s4-auth.spec.ts"
+              "tests/e2e/specs/lq-s4-auth.spec.ts",
+              "tests/test_remember_login.py"
             ]
           }
         ]

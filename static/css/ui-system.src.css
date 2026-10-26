@@ -60531,7 +60531,7 @@ body.ls-lightbox-open { overflow: hidden; }
 /* 保持登录（partials/login_remember.html, partials/profile/security.html）。
    Layout only, loaded in both legacy and LQ modes; colours come from tokens. */
 .login-remember { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin: 4px 0 12px; font-size: 13px; text-align: left; }
-.login-remember__label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.login-remember__label { display: inline-flex; align-items: center; gap: 8px; color: inherit; cursor: pointer; }
 .login-remember__label input { margin: 0; }
 .login-remember__hint { opacity: .7; }
 .login-remember__notice { margin: 0 0 12px; padding: 10px 12px; border: 1px solid currentColor; border-radius: 10px; font-size: 13px; line-height: 1.5; text-align: left; overflow-wrap: anywhere; }

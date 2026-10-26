@@ -1,13 +1,21 @@
 {#- 保持登录 controls shared by the student and teacher login forms.
-    mode = 'notice' renders the account notice; mode = 'toggle' the opt-in checkbox. -#}
+    mode = 'notice' renders the account notice; mode = 'toggle' the opt-in checkbox.
+    LQ mode uses the shared lq_checkbox component so the label and help line take
+    the card's scene ink like every other login field (docs/lq-scene-ink-2026-09-26.md). -#}
+{% from 'macros/lq/forms.html' import lq_checkbox %}
 {% if mode == 'notice' %}
 {% if remember_notice|default('') %}<p class="lq-login-feedback login-remember__notice" role="status" data-remember-notice>{{ remember_notice }}</p>{% endif %}
 {% elif remember_login_enabled|default(false) %}
+{% if _lq_centered|default(false) %}
+{{ lq_checkbox('remember-login', (remember_login_days|default(30))|string ~ ' 天内保持登录', name='remember_me', value='1',
+               help='公共电脑、机房电脑请勿勾选', attrs={'data-remember-login': ''}) }}
+{% else %}
 <div class="login-remember" data-remember-login-row>
     <label class="login-remember__label">
-        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="remember_me" value="1" data-remember-login>
+        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="remember_me" value="1" data-remember-login aria-describedby="remember-login-hint">
         <span>{{ remember_login_days|default(30) }} 天内保持登录</span>
     </label>
-    <span class="login-remember__hint">公共电脑、机房电脑请勿勾选</span>
+    <span class="login-remember__hint" id="remember-login-hint">公共电脑、机房电脑请勿勾选</span>
 </div>
+{% endif %}
 {% endif %}

@@ -1411,6 +1411,7 @@
 - `static/js/session_knowledge_tree.js` ×3
 - `static/js/signature_multi_select.js` ×3
 - `templates/macros/manage_page.html` ×3
+- `templates/partials/login_remember.html` ×3
 - `templates/partials/profile/appearance.html` ×3
 - `static/js/academic_sync_dialog.js` ×2
 - `static/js/agent_workbench_render.js` ×2
@@ -1442,7 +1443,6 @@
 - `templates/partials/academic_sync_dialog.html` ×2
 - `templates/partials/assessment_kind_control.html` ×2
 - `templates/partials/learning_material_selector.html` ×2
-- `templates/partials/login_remember.html` ×2
 - `templates/partials/semester_calendar_panel.html` ×2
 - `templates/resume/home.html` ×2
 - `templates/resume/list.html` ×2
