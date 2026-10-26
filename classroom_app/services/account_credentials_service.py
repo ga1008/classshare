@@ -93,7 +93,12 @@ def actor_authority_changed(conn, *, role: str, user_id: int, reason: str,
         "UPDATE agent_persistent_authorizations SET status='revoked',revoked_at=?,revoke_reason=? "
         "WHERE actor_role=? AND actor_id=? AND status='active'", (now, reason, role, user_id),
     ).rowcount
+    # 保持登录 devices never survive a credential/authority transition; the
+    # caller may re-remember the device the user is using (self password change).
+    from .remember_login_service import revoke_remember_tokens
+    remembered = revoke_remember_tokens(conn, str(user_id), role, reason)
     if invalidate_sessions:
         from ..dependencies import invalidate_session_for_user
         invalidate_session_for_user(str(user_id), role, conn=conn)
-    return {"delegations_revoked": grants, "persistent_authorizations_revoked": persistent}
+    return {"delegations_revoked": grants, "persistent_authorizations_revoked": persistent,
+            "remembered_devices_revoked": remembered}

@@ -68,3 +68,15 @@
                 </aside>
             </section>
 
+            <section class="profile-band profile-reveal profile-remembered" data-remembered-devices>
+                <div class="profile-band__head">
+                    <div>
+                        <h3>保持登录的设备</h3>
+                        <p class="profile-remembered__hint">登录时勾选「保持登录」的设备会自动续登。在公共电脑上勾选过，可以在这里取消；修改密码会让其他设备全部失效。</p>
+                    </div>
+                    {% if _profile_lq %}{{ lq_btn('退出所有设备', variant='glass', type='button', attrs={'data-remembered-revoke-all': ''}) }}{% else %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-outline" data-remembered-revoke-all>退出所有设备</button>{% endif %}
+                </div>
+                <ul class="profile-remembered__list" data-remembered-list aria-live="polite">
+                    <li class="profile-remembered__empty">正在读取…</li>
+                </ul>
+            </section>

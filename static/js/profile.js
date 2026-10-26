@@ -326,6 +326,77 @@ function initMoodEditor() {
     }
 }
 
+function formatRememberTime(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function renderRememberedDevices(list, payload) {
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    if (!payload?.enabled) {
+        list.innerHTML = '<li class="profile-remembered__empty">平台暂未开启保持登录。</li>';
+        return;
+    }
+    if (!items.length) {
+        list.innerHTML = '<li class="profile-remembered__empty">暂无保持登录的设备。登录时勾选「保持登录」后会显示在这里。</li>';
+        return;
+    }
+    list.innerHTML = items.map((item) => `
+        <li class="profile-remembered__item" data-remembered-id="${Number(item.id)}">
+            <div class="profile-remembered__main">
+                <strong>${escapeHtml(item.device_label || '未识别设备')}${item.current ? '<span class="profile-remembered__current">本机</span>' : ''}</strong>
+                <span>最近使用 ${escapeHtml(formatRememberTime(item.last_used_at))}${item.ip ? ` · ${escapeHtml(item.ip)}` : ''}</span>
+                <span>保持到 ${escapeHtml(formatRememberTime(item.expires_at))}</span>
+            </div>
+            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--ghost" data-remembered-revoke="${Number(item.id)}">取消保持</button>
+        </li>`).join('');
+}
+
+async function loadRememberedDevices(list) {
+    try {
+        const payload = await apiFetch('/api/session/remembered', { silent: true });
+        renderRememberedDevices(list, payload);
+    } catch (error) {
+        list.innerHTML = `<li class="profile-remembered__empty">${escapeHtml(error.message || '读取失败，请稍后刷新。')}</li>`;
+    }
+}
+
+function initRememberedDevices() {
+    const section = document.querySelector('[data-remembered-devices]');
+    const list = section?.querySelector('[data-remembered-list]');
+    if (!section || !list) return;
+    void loadRememberedDevices(list);
+    list.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-remembered-revoke]');
+        if (!button) return;
+        button.disabled = true;
+        try {
+            const result = await apiFetch(`/api/session/remembered/${encodeURIComponent(button.dataset.rememberedRevoke)}`, { method: 'DELETE' });
+            showToast(result.message || '已取消该设备的保持登录。', 'success');
+            await loadRememberedDevices(list);
+        } catch (error) {
+            button.disabled = false;
+            showToast(error.message || '操作失败', 'error');
+        }
+    });
+    section.querySelector('[data-remembered-revoke-all]')?.addEventListener('click', async (event) => {
+        if (!window.confirm('退出所有设备后，包括本机在内都需要重新登录。确定吗？')) return;
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+            const result = await apiFetch('/api/session/remembered/revoke-all', { method: 'POST' });
+            showToast(result.message || '已退出所有设备。', 'success');
+            window.location.assign(result.redirect_to || '/student/login');
+        } catch (error) {
+            button.disabled = false;
+            showToast(error.message || '操作失败', 'error');
+        }
+    });
+}
+
 function initPasswordForm() {
     const form = document.getElementById('profile-password-form');
     if (!form) {
@@ -1085,6 +1156,7 @@ if (root) {
     initIdentityEditor();
     initMoodEditor();
     initPasswordForm();
+    initRememberedDevices();
     initEmailConfigPanel();
     initPortfolioSwitcher();
     initPortfolioPanel();

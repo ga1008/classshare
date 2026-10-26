@@ -157,6 +157,12 @@ async def deployment_cache_middleware(request: Request, call_next):
     return response
 
 
+# 保持登录：会话过期后用设备凭据静默续登（docs/remember-login-2026-10-26.md）。
+from .services.remember_login_middleware import remember_login_middleware  # noqa: E402
+
+app.middleware("http")(remember_login_middleware)
+
+
 _FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 <rect width="64" height="64" rx="14" fill="#0f766e"/>
 <path fill="#fff" d="M18 16h20a8 8 0 0 1 8 8v24H26a8 8 0 0 1-8-8V16Zm8 8v16h12V24H26Z"/>

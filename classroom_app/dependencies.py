@@ -528,9 +528,16 @@ def invalidate_session_for_user(
     role: Optional[str] = None,
     *,
     conn: sqlite3.Connection | None = None,
+    revoke_remembered: bool = True,
 ) -> bool:
+    """End the live session. By default also forget every 保持登录 device, because
+    callers are account-level events (disabled, removed, forced offline,
+    credentials changed); a deliberate logout passes ``revoke_remembered=False``
+    and forgets only its own device."""
     raw_user_id = str(user_id).strip()
     normalized_role = role.strip().lower() if role else None
+    if revoke_remembered:
+        _revoke_remembered_devices(raw_user_id, normalized_role, conn=conn)
     removed_count = delete_user_sessions(raw_user_id, normalized_role, conn=conn)
     removed_cache_count = _drop_cached_sessions_for_user(raw_user_id, normalized_role)
     _drop_identity_cache_for_user(raw_user_id, normalized_role)
@@ -540,6 +547,17 @@ def invalidate_session_for_user(
         return True
 
     return False
+
+
+def _revoke_remembered_devices(user_id: str, role: Optional[str], *, conn=None) -> None:
+    try:
+        from .services.remember_login_service import revoke_remember_tokens, revoke_remember_tokens_standalone
+        if conn is not None:
+            revoke_remember_tokens(conn, user_id, role, "session_invalidated")
+        else:
+            revoke_remember_tokens_standalone(user_id, role, "session_invalidated")
+    except Exception as exc:  # noqa: BLE001 - never block ending a session
+        print(f"[REMEMBER] revoke on invalidate failed for {role}:{user_id}: {exc}")
 
 
 def get_client_ip(request: Request) -> str:

@@ -1,0 +1,13 @@
+{#- 保持登录 controls shared by the student and teacher login forms.
+    mode = 'notice' renders the account notice; mode = 'toggle' the opt-in checkbox. -#}
+{% if mode == 'notice' %}
+{% if remember_notice|default('') %}<p class="lq-login-feedback login-remember__notice" role="status" data-remember-notice>{{ remember_notice }}</p>{% endif %}
+{% elif remember_login_enabled|default(false) %}
+<div class="login-remember" data-remember-login-row>
+    <label class="login-remember__label">
+        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="remember_me" value="1" data-remember-login>
+        <span>{{ remember_login_days|default(30) }} 天内保持登录</span>
+    </label>
+    <span class="login-remember__hint">公共电脑、机房电脑请勿勾选</span>
+</div>
+{% endif %}

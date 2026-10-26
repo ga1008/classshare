@@ -20,6 +20,7 @@
             {% if _lq_centered or login_error|default('') %}<p id="teacher-login-form-feedback" class="lq-login-feedback" data-login-feedback role="alert" tabindex="-1"{% if not login_error|default('') %} hidden{% endif %}>{{ login_error|default('') }}</p>{% endif %}
         <input type="hidden" name="next" value="{{ next_url }}">
         <div class="{{ 'lq-field' if _lq_centered else 'form-group text-left' }}">
+            {% with mode='notice' %}{% include 'partials/login_remember.html' %}{% endwith %}
             <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="email">邮箱或职工号</label>
             <input data-lq-component="input" type="text" id="email" name="email" class="lq-input {{ 'lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请输入教师邮箱或职工号" required autofocus autocomplete="username" autocapitalize="none" spellcheck="false" value="{{ login_email|default('') }}">
         </div>
@@ -31,7 +32,8 @@
             <label class="{{ 'lq-field__label' if _lq_centered else 'form-label' }}" for="password">密码</label>
             <input data-lq-component="input" type="password" id="password" name="password" class="lq-input {{ 'lq-control--lg' if _lq_centered else 'form-control' }}" placeholder="请输入密码" required autocomplete="current-password">
         </div>
-        {% if _lq_centered %}{{ lq_btn('登录', variant="prominent", size="lg", type="submit") }}{% else %}<button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success w-full btn-lg">登录</button>{% endif %}
+        {% with mode='toggle' %}{% include 'partials/login_remember.html' %}{% endwith %}
+            {% if _lq_centered %}{{ lq_btn('登录', variant="prominent", size="lg", type="submit") }}{% else %}<button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success w-full btn-lg">登录</button>{% endif %}
     </form>
 
     <div class="footer-links footer-links-subtle">

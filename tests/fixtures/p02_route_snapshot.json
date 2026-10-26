@@ -6729,6 +6729,30 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/session/remembered",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_my_remembered_devices",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/session/remembered/revoke-all",
+    "methods": [
+      "POST"
+    ],
+    "name": "sign_out_everywhere",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/session/remembered/{token_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "revoke_my_remembered_device",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/signatures",
     "methods": [
       "GET"

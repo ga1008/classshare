@@ -279,7 +279,10 @@ def _build_login_page_context(
     login_email: str = "",
 ) -> dict:
     safe_next = sanitize_next_path(next_url, fallback="/dashboard")
+    from ...services.remember_login_service import login_page_remember_context, notice_for_request
     return {
+        **login_page_remember_context(),
+        "remember_notice": notice_for_request(request),
         "request": request,
         "next_url": safe_next,
         "teacher_entry_url": build_login_url("/teacher/login", safe_next),
@@ -505,6 +508,8 @@ def _build_student_login_json_response(
     client_ip: str,
     safe_next: str,
     login_count: int,
+    request: Optional[Request] = None,
+    remember: bool = False,
 ) -> JSONResponse:
     _ensure_student_can_login(student_row)
     access_token, _ = _build_student_login_token(student_row, client_ip)
@@ -532,6 +537,9 @@ def _build_student_login_json_response(
         "login_tip": login_tip,
     })
     apply_access_token_cookie(response, access_token)
+    if request is not None:
+        from ...services.remember_login_service import update_remember_after_login
+        update_remember_after_login(request, response, access_token, remember)
     return response
 
 

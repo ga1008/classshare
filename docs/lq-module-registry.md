@@ -36,7 +36,7 @@
 | [cultivation-emblem](#cultivation-emblem) | component | `lq-cultivation-emblem`, `lq-cultivation-emblem-img`, `lq-cultivation-host` | 仅 CSS | 4 |
 | [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 25 |
 | [EmojiPicker 表情选择器](#emoji-picker) | component | `.emoji-picker`, `.emoji-picker-item`, `.emoji-picker-grid`, `createEmojiPicker` | JS | 4 |
-| [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 172 |
+| [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 173 |
 | [Indicators 徽标 / 头像 / 进度 / 加载](#indicators) | component | `lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner` | 宏 / JS / Py / React | 14 |
 | [Insights 统计（AvatarStack / Ring / Bars / Meter）](#insights) | component | `lq-avatar-stack`, `lq-bars`, `lq-insight`, `lq-meter`, `lq-ring` | 宏 / JS / Py | 4 |
 | [Layer 层栈](#layers) | component | — | JS | 24 |
@@ -698,6 +698,7 @@
 - `templates/manage/student_detail.html` ×24
 - `templates/manage/system/diagnostics.html` ×24
 - `frontend/src/islands/exam-assign-sync.tsx` ×23
+- `static/js/profile.js` ×22
 - `frontend/src/islands/assignment-authoring-sync.tsx` ×21
 - `static/js/signature_pad.js` ×21
 - `templates/manage/system/password_resets.html` ×21
@@ -723,7 +724,6 @@
 - `templates/partials/session_material_ai_modal.html` ×20
 - `static/js/manage_semesters.js` ×19
 - `templates/partials/profile/settings.html` ×19
-- `static/js/profile.js` ×18
 - `templates/manage/system/gongwen_integrations.html` ×18
 - `templates/manage/system/users.html` ×18
 - `static/js/manage_blog_crawler.js` ×16
@@ -771,6 +771,7 @@
 - `static/js/academic_sync_dialog.js` ×10
 - `static/js/manage_users.js` ×10
 - `static/js/whiteboard/toolbar.js` ×10
+- `templates/partials/profile/security.html` ×10
 - `static/js/agent_workbench.js` ×9
 - `static/js/chat.js` ×9
 - `templates/manage/lq_utility.html` ×9
@@ -809,7 +810,6 @@
 - `static/js/manage_wanderers.js` ×5
 - `templates/error.html` ×5
 - `templates/partials/cultivation_panel.html` ×5
-- `templates/partials/profile/security.html` ×5
 - `templates/student_auth_flow_v4.html` ×5
 - `templates/teacher_login_v4.html` ×5
 - `templates/teacher_register_v4.html` ×5
@@ -1275,7 +1275,7 @@
 - **JS 入口** `static/js/lq/forms.js`：`checkbox`, `createForm`, `enhanceForms`, `errorSummary`, `field`, `focusFirstError`, `formActions`, `formKinds`, `formMarkup`, `formProps`, `formSection`, `html`, `input`, `nativeSelect` …
 - **Python props** `classroom_app/lq_forms.py`
 - **React 适配器**：`LqField`, `LqNativeInput`, `LqNativeTextarea`, `LqNativeSelect`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：172 个文件
+- **消费者**：173 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1442,6 +1442,7 @@
 - `templates/partials/academic_sync_dialog.html` ×2
 - `templates/partials/assessment_kind_control.html` ×2
 - `templates/partials/learning_material_selector.html` ×2
+- `templates/partials/login_remember.html` ×2
 - `templates/partials/semester_calendar_panel.html` ×2
 - `templates/resume/home.html` ×2
 - `templates/resume/list.html` ×2

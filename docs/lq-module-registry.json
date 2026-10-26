@@ -1263,6 +1263,10 @@
       "hits": 23
      },
      {
+      "path": "static/js/profile.js",
+      "hits": 22
+     },
+     {
       "path": "frontend/src/islands/assignment-authoring-sync.tsx",
       "hits": 21
      },
@@ -1361,10 +1365,6 @@
      {
       "path": "templates/partials/profile/settings.html",
       "hits": 19
-     },
-     {
-      "path": "static/js/profile.js",
-      "hits": 18
      },
      {
       "path": "templates/manage/system/gongwen_integrations.html",
@@ -1555,6 +1555,10 @@
       "hits": 10
      },
      {
+      "path": "templates/partials/profile/security.html",
+      "hits": 10
+     },
+     {
       "path": "static/js/agent_workbench.js",
       "hits": 9
      },
@@ -1704,10 +1708,6 @@
      },
      {
       "path": "templates/partials/cultivation_panel.html",
-      "hits": 5
-     },
-     {
-      "path": "templates/partials/profile/security.html",
       "hits": 5
      },
      {
@@ -4261,7 +4261,7 @@
     "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。"
    },
    "consumers": {
-    "count": 172,
+    "count": 173,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -4913,6 +4913,10 @@
      },
      {
       "path": "templates/partials/learning_material_selector.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/login_remember.html",
       "hits": 2
      },
      {
@@ -8201,6 +8205,9 @@
    "declarative",
    "forms",
    "materials"
+  ],
+  "templates/partials/login_remember.html": [
+   "forms"
   ],
   "templates/partials/lq_app_bottomnav.html": [
    "shells"

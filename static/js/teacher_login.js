@@ -34,8 +34,20 @@ function shakeLoginCard() {
     window.setTimeout(() => card.classList.remove('login-card--shake'), 620);
 }
 
+// 保持登录：记住本浏览器上一次的选择（只记偏好，不记任何凭据）。
+const REMEMBER_PREF_KEY = 'lanshare.rememberLogin';
+function bindRememberPreference(form) {
+    const box = form?.querySelector('[data-remember-login]');
+    if (!box) return;
+    try { box.checked = window.localStorage.getItem(REMEMBER_PREF_KEY) === '1'; } catch (_) { /* private mode */ }
+    box.addEventListener('change', () => {
+        try { window.localStorage.setItem(REMEMBER_PREF_KEY, box.checked ? '1' : '0'); } catch (_) { /* private mode */ }
+    });
+}
+
 function initTeacherLogin() {
     const form = document.getElementById('teacher-login-form');
+    bindRememberPreference(form);
     if (!form) {
         return;
     }

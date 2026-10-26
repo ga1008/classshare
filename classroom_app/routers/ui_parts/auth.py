@@ -3,6 +3,21 @@ from fastapi import Response
 from fastapi.routing import APIRoute
 from starlette.datastructures import MutableHeaders
 from ...services.student_auth_service import build_password_reset_class_hint, matches_password_reset_class
+from ...services.remember_login_service import clear_remember_cookie, update_remember_after_login
+from ...services.remember_login_service import current_selector as _remember_selector
+from ...services.remember_login_service import revoke_remember_selector as _revoke_remember_selector
+
+
+def forget_this_device(request) -> None:
+    selector = _remember_selector(request)
+    if not selector:
+        return
+    try:
+        with get_db_connection() as conn:
+            _revoke_remember_selector(conn, selector, "logout")
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001 - logout must always succeed
+        print(f"[REMEMBER] logout revoke failed: {exc}")
 
 
 class _AuthRoute(APIRoute):
@@ -34,10 +49,16 @@ def _login_form_error(request, *, role, next_url, message, identifier="", email=
     )
 
 
-def _student_login_redirect(student_row, client_ip, safe_next):
+def _wants_remember(value) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "on", "yes"}
+
+
+def _student_login_redirect(student_row, client_ip, safe_next, *, request=None, remember=False):
     access_token, _ = _build_student_login_token(student_row, client_ip)
     response = RedirectResponse(url=safe_next, status_code=status.HTTP_303_SEE_OTHER)
     apply_access_token_cookie(response, access_token)
+    if request is not None:
+        update_remember_after_login(request, response, access_token, remember)
     response.set_cookie("cultivation_reveal", "1", max_age=60, httponly=False, samesite="lax")
     return response
 
@@ -114,7 +135,7 @@ def handle_student_password_setup(
             next_url=next or (payload or {}).get("next"), error=str(exc.detail),
             status_code=exc.status_code, setup_token=setup_token if retry else "",
         )
-    return _student_login_redirect(student_row, client_ip, safe_next)
+    return _student_login_redirect(student_row, client_ip, safe_next, request=request, remember=False)
 
 
 @router.get("/student/password/forgot", response_class=HTMLResponse)
@@ -160,8 +181,20 @@ async def root(request: Request, user: Optional[dict] = Depends(get_current_user
     return RedirectResponse(url="/student/login", status_code=status.HTTP_303_SEE_OTHER)
 
 
+def _already_signed_in_redirect(user: Optional[dict], role: str, next_url: Optional[str]):
+    """保持登录 makes a login page reachable while signed in; go on to ``next``."""
+    if not user or str(user.get("role") or "") != role:
+        return None
+    return RedirectResponse(url=sanitize_next_path(next_url, fallback="/dashboard"),
+                            status_code=status.HTTP_303_SEE_OTHER)
+
+
 @router.get("/student/login", response_class=HTMLResponse)
-async def student_login_page(request: Request, next: Optional[str] = None):
+async def student_login_page(request: Request, next: Optional[str] = None,
+                             user: Optional[dict] = Depends(get_current_user_optional)):
+    redirect = _already_signed_in_redirect(user, "student", next)
+    if redirect is not None:
+        return redirect
     # V4.0 不再需要 class_name 和 course_name
     return templates.TemplateResponse(
         request,
@@ -171,7 +204,11 @@ async def student_login_page(request: Request, next: Optional[str] = None):
 
 
 @router.get("/teacher/login", response_class=HTMLResponse)
-async def teacher_login_page(request: Request, next: Optional[str] = None):
+async def teacher_login_page(request: Request, next: Optional[str] = None,
+                             user: Optional[dict] = Depends(get_current_user_optional)):
+    redirect = _already_signed_in_redirect(user, "teacher", next)
+    if redirect is not None:
+        return redirect
     return templates.TemplateResponse(
         request,
         "teacher_login_v4.html",
@@ -237,6 +274,7 @@ def api_student_password_login(
     identifier: str = Form(),
     password: str = Form(),
     next: Optional[str] = Form(default=None),
+    remember_me: Optional[str] = Form(default=None),
 ):
     """学生密码登录（姓名或学号 + 密码）。"""
     safe_next = sanitize_next_path(next, fallback="/dashboard")
@@ -258,6 +296,8 @@ def api_student_password_login(
         client_ip=client_ip,
         safe_next=safe_next,
         login_count=login_count,
+        request=request,
+        remember=_wants_remember(remember_me),
     )
 
 
@@ -335,6 +375,7 @@ def api_student_password_setup(
     return _build_student_login_json_response(
         student_row=student_row, client_ip=client_ip,
         safe_next=safe_next, login_count=login_count,
+        request=request, remember=False,
     )
 
 
@@ -462,6 +503,7 @@ def _perform_student_password_forgot(request, name, student_id_number, class_nam
 
 @router.post("/api/student/password/change", response_class=JSONResponse)
 def api_student_password_change(
+    request: Request,
     current_password: str = Form(),
     new_password: str = Form(),
     confirm_password: str = Form(),
@@ -477,6 +519,9 @@ def api_student_password_change(
     password_error = validate_student_password(new_password)
     if password_error:
         raise HTTPException(status_code=400, detail=password_error)
+    from ...services.remember_login_service import current_device_remembered, reissue_for_current_device
+    # A password change forgets every remembered device; keep the one in use.
+    remembered_until = current_device_remembered(request, user)
 
     with get_db_connection() as conn:
         prepare_credentials_change(conn, role="student", user_id=int(user["id"]))
@@ -499,7 +544,10 @@ def api_student_password_change(
         )
         conn.commit()
 
-    return {"status": "success", "message": "密码修改成功。"}
+    response = JSONResponse({"status": "success", "message": "密码修改成功。其他设备的保持登录已失效。"})
+    if remembered_until:
+        reissue_for_current_device(request, response, user, remembered_until)
+    return response
 
 
 @router.post("/student/login")
@@ -510,6 +558,7 @@ def handle_student_login(
     name: Optional[str] = Form(default=None),
     student_id_number: Optional[str] = Form(default=None),
     next: Optional[str] = Form(default=None),
+    remember_me: Optional[str] = Form(default=None),
 ):
     """兼容表单提交流程，优先支持密码登录。"""
     safe_next = sanitize_next_path(next, fallback="/dashboard")
@@ -535,7 +584,9 @@ def handle_student_login(
                 message=str(exc.detail), identifier=identifier, status_code=exc.status_code,
             )
 
-        return _student_login_redirect(student_row, client_ip, safe_next)
+        return _student_login_redirect(
+            student_row, client_ip, safe_next, request=request, remember=_wants_remember(remember_me),
+        )
 
     if name and student_id_number:
         return _login_form_error(
@@ -574,6 +625,7 @@ def handle_teacher_login(
     identifier: str = Form(default=""),
     school_name: str = Form(default=""),
     school_code: str = Form(default=""),
+    remember_me: Optional[str] = Form(default=None),
 ):
     """Email or a school-scoped employee identity, followed by password."""
     from ...dependencies import get_client_ip
@@ -622,6 +674,7 @@ def handle_teacher_login(
         status_code=status.HTTP_303_SEE_OTHER,
     )
     apply_access_token_cookie(response, access_token)
+    update_remember_after_login(request, response, access_token, _wants_remember(remember_me))
     # 教师登录后同样播放"人生一言"加载屏（教师池，无修为徽章）。
     response.set_cookie("cultivation_reveal", "1", max_age=60, httponly=False, samesite="lax")
     return response
@@ -653,9 +706,12 @@ def logout(request: Request):
     # 获取当前用户并使其会话失效
     user = get_active_user_from_request(request)
     if user and user.get('id'):
-        invalidate_session_for_user(str(user['id']), user.get('role'))
+        invalidate_session_for_user(str(user['id']), user.get('role'), revoke_remembered=False)
         print(f"[SESSION] 用户 {user.get('name')} 主动注销")
+    forget_this_device(request)
 
-    response = RedirectResponse(url="/student/login", status_code=status.HTTP_303_SEE_OTHER)
+    login_path = "/teacher/login" if (user or {}).get("role") == "teacher" else "/student/login"
+    response = RedirectResponse(url=login_path, status_code=status.HTTP_303_SEE_OTHER)
     clear_access_token_cookie(response)
+    clear_remember_cookie(response)
     return response

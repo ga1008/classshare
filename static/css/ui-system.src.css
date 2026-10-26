@@ -60527,3 +60527,21 @@ body.ls-lightbox-open { overflow: hidden; }
     }
 }
 /* End S1 reader/AI fixed-light compatibility. */
+
+/* 保持登录（partials/login_remember.html, partials/profile/security.html）。
+   Layout only, loaded in both legacy and LQ modes; colours come from tokens. */
+.login-remember { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; margin: 4px 0 12px; font-size: 13px; text-align: left; }
+.login-remember__label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.login-remember__label input { margin: 0; }
+.login-remember__hint { opacity: .7; }
+.login-remember__notice { margin: 0 0 12px; padding: 10px 12px; border: 1px solid currentColor; border-radius: 10px; font-size: 13px; line-height: 1.5; text-align: left; overflow-wrap: anywhere; }
+.profile-remembered { margin-top: 16px; }
+.profile-remembered .profile-band__head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.profile-remembered__hint { margin: 4px 0 0; font-size: 13px; opacity: .75; max-width: 52ch; }
+.profile-remembered__list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 4px; }
+.profile-remembered__item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 0; border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+.profile-remembered__item:first-child { border-top: 0; }
+.profile-remembered__main { display: grid; gap: 2px; min-width: 0; }
+.profile-remembered__main span { font-size: 13px; opacity: .75; overflow-wrap: anywhere; }
+.profile-remembered__current { margin-left: 8px; padding: 1px 8px; border: 1px solid currentColor; border-radius: 999px; font-size: 12px; font-weight: 600; opacity: .85; }
+.profile-remembered__empty { font-size: 13px; opacity: .75; }

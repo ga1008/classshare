@@ -585,6 +585,9 @@ async def api_change_profile_password(request: Request, user: dict = Depends(get
     role = str(user.get("role") or "").strip().lower()
     user_id = int(user["id"])
     now_value = datetime.now().isoformat()
+    from ..services.remember_login_service import current_device_remembered, reissue_for_current_device
+    # A password change forgets every remembered device; keep the one in use.
+    remembered_until = current_device_remembered(request, user)
 
     with get_db_connection() as conn:
         prepare_credentials_change(conn, role=role, user_id=user_id)
@@ -632,7 +635,7 @@ async def api_change_profile_password(request: Request, user: dict = Depends(get
             )
         conn.commit()
 
-    return {
-        "status": "success",
-        "message": "密码已更新。",
-    }
+    response = JSONResponse({"status": "success", "message": "密码已更新。其他设备的保持登录已失效。"})
+    if remembered_until:
+        reissue_for_current_device(request, response, user, remembered_until)
+    return response
