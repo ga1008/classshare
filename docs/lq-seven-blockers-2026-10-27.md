@@ -56,4 +56,12 @@
 
 最终资源图：`29b8c08ba16d7d87c190ca4f5d4520cb3b02a8212591126b5f133b014de83cdb`。各轮使用不可变正式资源，后续改动按影响范围复测；管理壳最后18+18项验证后仅材料CSS/控制器改变，相关管理壳CSS/JS已核对字节一致。材料最终证据：`.codex-temp/lq-materials/accepted-29b8`；门禁：`.codex-temp/lq-seven/lint-final.json`、`native-pg-gate.json`。
 
-部署与Git推送结果在上线只读核验完成后追加，不能把dry-run编号当作已发布版本。
+## 生产发布结果
+
+- 发布源码：`f61f8bf3ca9bbfe587fba13cb5aa3dac7ee7d103`；专用工作树冻结，Git内容过滤后的源指纹核对通过，部署脚本与主工作目录逐字节一致。
+- Dry-run与实际部署均退出0。实际版本：`20261027-235524-aba3815d7c98`；dry-run版本不计作上线。
+- 停写后备份：`/tmp/lanshare-deploy-backups/db-cutover-20261027-235538.sql.gz`；沿用现有部署流程，未上传或替换 `/lanshare/data`、`.env`、`docker.env`。原数据目录3.4G，磁盘剩余32G。
+- 迁移结果182/182必要表、失败索引0、跳过步骤0。8个Compose服务均running，所有有健康检查的服务healthy；主站和AI health均ok，grading_queue保留。
+- 生产只读核验：12个变更源文件哈希、8个公开资源哈希、完整534项资源清单与本地冻结一致；学生/教师登录200，release header正确，Clear-Site-Data仅cache。原社交接口匿名401，既有服务器邮件配置可用。没有创建生产测试账号或写入业务测试数据。
+- 历史后台统计仍含918次累计失败，因此总字段background_tasks.ok=false；当前逐类状态均ok、stale=0，部署日志NO_RECENT_ERROR_LOGS。未把历史统计误报为本次上线故障。
+- 证据：`.codex-temp/lq-seven-release/{state.json,dry-run.log,deploy.log,postflight.json}`。最终Git远端核验保存到同目录 `git-postflight.json`；`dev`采用快进推送，保留主工作目录其他未跟踪资料。
