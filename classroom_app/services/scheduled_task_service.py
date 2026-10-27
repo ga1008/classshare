@@ -19,7 +19,6 @@ import asyncio
 import json
 import os
 import socket
-import time
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
@@ -409,4 +408,4 @@ async def run_scheduler_worker_forever(worker_id: str = "scheduler", poll_second
                 update_scheduler_heartbeat(worker_id, status="error", last_error=error)
             except Exception:
                 pass
-        time.sleep(interval)
+        await asyncio.sleep(interval)

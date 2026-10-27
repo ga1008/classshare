@@ -38,7 +38,11 @@ async def _run(args) -> None:
         print(f"[SCHEDULER] processed one batch: {result}")
         return
 
-    await run_scheduler_worker_forever(worker_id=worker_id, poll_seconds=args.poll_seconds)
+    from classroom_app.services.wanderer_inbox_worker import run_forever as run_wanderer_inbox
+    await asyncio.gather(
+        run_scheduler_worker_forever(worker_id=worker_id, poll_seconds=args.poll_seconds),
+        run_wanderer_inbox(),
+    )
 
 
 def main() -> None:

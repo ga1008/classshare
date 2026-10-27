@@ -6,8 +6,8 @@ call, no sleep. The scheduler container does the work later
 (``wanderer_actions_social`` / ``wanderer_social_friends``):
 
 * ``wanderer_friend_request``  per (wanderer, requester), immediate or delayed by personality / active window;
-* ``wanderer_social_reply``    per (wanderer, conversation), delayed 20 s–10 min
-  (or to the next active window), bursts coalesce into the pending task;
+* private replies use the durable ``wanderer_social_inbox`` (2 second coalescing);
+* ``wanderer_social_reply`` remains the scheduled group response and compatibility handoff;
 * ``wanderer_group_watch``     per group, debounced 30–120 s; when it fires each
   wanderer in the group decides independently and is staggered.
 
@@ -219,10 +219,8 @@ def on_message_created(conn: Any, parsed: dict[str, Any], sender: str, *, rng: O
         if not wanderers or not _enabled(conn):
             return []
         wanderer = wanderers[peer]
-        delay = delay_with_wakeup(wanderer, reply_delay(wanderer, rng), moment, rng)
-        if delay is None:
-            return []  # no preferred activity window within the bounded lookahead
-        return [schedule_social_reply(conn, wanderer, parsed["key"], delay_seconds=delay, now=moment)]
+        from .wanderer_inbox_service import enqueue_social
+        return [enqueue_social(conn, wanderer, parsed["key"], sender)]
     from .social_relations import group_member_identities
 
     members = [item for item in group_member_identities(conn, parsed["group_id"]) if item != sender]

@@ -8,16 +8,16 @@
  */
 import { createComponent } from '../lq/components.js';
 import { createForm } from '../lq/forms.js';
-import { confirm } from '../lq/dialogs.js';
+import { confirm as confirmDialog } from '../lq/dialogs.js';
 import { bindMenu, createMenu } from '../lq/menus.js';
 import { socialApi, errorText } from './social_api.js';
-import { el, emptyState, formatRelative, formatSize, lqAvatar, lqButton, notify } from './social_dom.js';
+import { el, emptyState, formatRelative, lqAvatar, lqButton, notify } from './social_dom.js';
+import { createGroupSettings } from './group_settings.js';
+import { createGroupInvite } from './group_invite.js';
+import { createGroupFiles } from './group_files.js';
 
 const ROLE_LABEL = { owner: '群主', admin: '管理员', member: '成员' };
-const FILE_KINDS = [['', '全部'], ['image', '图片'], ['video', '视频'], ['audio', '语音'], ['file', '文件']];
 const REMARK_MAX = 30;
-const ANNOUNCEMENT_MAX = 500;
-const NICKNAME_MAX = 20;
 
 const section = (title, children) => el('section', { class: 'social-side__section' }, [
     el('h3', { class: 'social-section-title', text: title }), ...children,
@@ -31,10 +31,10 @@ function safeLink(url) {
 export function createChatSidebar({ client, onChanged }) {
     const element = el('div', { class: 'social-side__inner' });
     let token = 0;
-    let fileKind = '';
-    let files = null; // { holder, groupId } of the group sidebar on screen
+    let group = null;
     let menus = [];
     const clearMenus = () => { menus.forEach((menu) => menu.destroy()); menus = []; };
+    const clearGroup = () => { group?.settings.destroy(); group?.invite.destroy(); group?.files.destroy(); group = null; };
 
     async function guarded(button, task) {
         if (button) button.disabled = true;
@@ -45,7 +45,7 @@ export function createChatSidebar({ client, onChanged }) {
     /* ------------------------------------------------------------ DM */
     async function showDm(identity, ctx) {
         clearMenus();
-        files = null;
+        clearGroup();
         const ticket = ++token;
         element.replaceChildren(el('p', { class: 'social-hint', text: '正在读取资料…' }));
         let profile;
@@ -125,12 +125,12 @@ export function createChatSidebar({ client, onChanged }) {
     }
 
     async function removeFriend(button, profile) {
-        if (!await confirm({ title: '删除好友', message: `删除后聊天记录会保留，但不能再给「${profile.name}」发消息。`, confirmLabel: '删除', danger: true })) return;
+        if (!await confirmDialog({ title: '删除好友', message: `删除后聊天记录会保留，但不能再给「${profile.name}」发消息。`, confirmLabel: '删除', danger: true })) return;
         await guarded(button, async () => { await socialApi.deleteFriend(profile.identity); notify('已删除好友。', 'success'); onChanged?.('unfriended'); });
     }
 
     async function blockUser(button, profile) {
-        if (!await confirm({ title: '拉黑', message: `拉黑「${profile.name}」会同时解除好友，对方无法再加你或给你发消息。可在黑名单中移出。`, confirmLabel: '拉黑', danger: true })) return;
+        if (!await confirmDialog({ title: '拉黑', message: `拉黑「${profile.name}」会同时解除好友，对方无法再加你或给你发消息。可在黑名单中移出。`, confirmLabel: '拉黑', danger: true })) return;
         await guarded(button, async () => { await socialApi.block(profile.identity); notify('已拉黑。', 'success'); onChanged?.('blocked'); });
     }
 
@@ -167,121 +167,88 @@ export function createChatSidebar({ client, onChanged }) {
         ]);
     }
 
-    async function renderFiles(holder, groupId) {
-        holder.replaceChildren(el('p', { class: 'social-hint', text: '读取中…' }));
-        try {
-            const data = await socialApi.groupFiles(groupId, fileKind);
-            const items = data.items || [];
-            holder.replaceChildren(items.length ? el('ul', { class: 'social-side__links', role: 'list' }, items.map((item) => el('li', {}, [
-                item.expired || !item.server_ready
-                    ? el('span', { text: `${item.filename || '文件'}（${item.expired ? '已过期' : '补传中'}）` })
-                    : el('a', { href: `${item.url}?download=true`, download: item.filename || 'file', text: item.filename || '文件' }),
-                el('small', { text: [formatSize(item.size), item.sender_name, formatRelative(item.sent_at)].filter(Boolean).join(' · ') }),
-            ]))) : el('p', { class: 'social-hint', text: '还没有群文件' }));
-        } catch (failure) {
-            holder.replaceChildren(el('p', { class: 'social-hint', role: 'alert', text: errorText(failure) }));
-        }
+    function groupCard(title, children, action = null, name = '') {
+        return el('section', { class: 'lq-surface social-group-card', 'data-lq-component': 'surface', 'data-lq-surface': 'embedded', 'data-group-card': name }, [
+            el('div', { class: 'social-group-card__head' }, [el('h3', { class: 'social-section-title', text: title }), action]),
+            ...children,
+        ]);
     }
 
     function showGroup(detail, ctx) {
-        clearMenus();
         token += 1;
-        const manage = ['owner', 'admin'].includes(detail.my_role);
-        const blocks = [el('div', { class: 'social-side__profile' }, [
-            lqAvatar(detail.name, null, 56),
-            el('div', { class: 'social-side__who' }, [
-                el('strong', { text: detail.name }),
-                el('small', { text: `${detail.member_count} 人 · ${detail.online_count} 人在线 · 我是${ROLE_LABEL[detail.my_role] || '成员'}` }),
-            ]),
-        ])];
-
-        if (manage) {
-            const name = createForm('input', { id: 'social-group-rename', label: '群名称', name: 'name', value: detail.name, maxLength: 30 });
-            const announcement = createForm('textarea', { id: 'social-group-announcement', label: '群公告', name: 'announcement', value: detail.announcement || '', rows: 3, maxLength: ANNOUNCEMENT_MAX, placeholder: '写点什么告诉大家' });
-            const form = el('form', { class: 'social-side__form' }, [name, announcement, lqButton({ label: '保存群资料', variant: 'soft', type: 'submit' })]);
-            form.addEventListener('submit', (event) => {
-                event.preventDefault();
-                void guarded(form.querySelector('[type="submit"]'), async () => {
-                    await socialApi.updateGroup(detail.id, { name: form.elements.name.value.trim(), announcement: form.elements.announcement.value });
-                    notify('群资料已更新。', 'success');
-                    onChanged?.('group');
-                });
-            });
-            blocks.push(section('公告', [form]));
-        } else {
-            blocks.push(section('公告', [el('p', { class: 'social-side__announcement', text: detail.announcement || '暂无公告' })]));
+        const id = Number(detail.id);
+        if (group?.id !== id) {
+            clearMenus(); clearGroup();
+            const current = { id, detail, key: ctx.key };
+            const changed = (reason, payload) => {
+                if (group !== current) return;
+                if (payload?.detail) showGroup(payload.detail, { key: current.key });
+                onChanged?.(reason, payload || { groupId: id, key: current.key });
+            };
+            const unavailable = () => {
+                if (group !== current) return;
+                clearMenus(); clearGroup(); element.replaceChildren(emptyState('群聊暂不可用', '你可能已离开本群，正在重新确认成员身份。'));
+                onChanged?.('unavailable', { groupId: id, key: current.key });
+            };
+            current.settings = createGroupSettings({ client, detail, onChanged: changed, onUnavailable: unavailable });
+            current.invite = createGroupInvite({ detail, onChanged: changed, onUnavailable: unavailable });
+            current.files = createGroupFiles({ groupId: id, onUnavailable: unavailable });
+            current.title = el('strong', { class: 'social-group-card__title' });
+            current.canonical = el('small', { class: 'social-hint' });
+            current.counts = el('small', { class: 'social-hint' });
+            current.avatar = el('span');
+            const settings = lqButton({ label: '设置', variant: 'ghost', attrs: { 'data-group-settings-open': '', 'aria-haspopup': 'dialog' }, onClick: event => current.settings.open(event.currentTarget) });
+            const invite = lqButton({ label: '邀请好友', icon: 'plus', variant: 'soft', attrs: { 'data-group-invite-open': '', 'aria-haspopup': 'dialog' }, onClick: event => current.invite.open(event.currentTarget) });
+            current.memberTitle = el('span', { class: 'social-hint' });
+            current.members = el('ul', { class: 'social-members', role: 'list', 'aria-label': '群成员' });
+            group = current;
+            element.replaceChildren(
+                groupCard('群信息', [el('div', { class: 'social-side__profile' }, [current.avatar,
+                    el('div', { class: 'social-side__who' }, [current.title, current.canonical, current.counts])])], settings, 'info'),
+                groupCard('成员', [current.memberTitle, current.members], invite, 'members'),
+                groupCard('群文件', [current.files.element], null, 'files'),
+            );
+            void current.files.refresh();
         }
-
-        const members = el('ul', { class: 'social-members', role: 'list', 'aria-label': '群成员' }, (detail.members || []).map((member) => memberRow(member, detail, client.me)));
-        blocks.push(section(`成员（${detail.member_count}）`, [members]));
-
-        const filesHolder = el('div', { class: 'social-side__files' });
-        files = { holder: filesHolder, groupId: detail.id };
-        const filters = el('div', { class: 'social-side__filters', role: 'group', 'aria-label': '按类型筛选群文件' }, FILE_KINDS.map(([kind, label]) => createComponent('chip', {
-            label, kind: 'filter', size: 'sm', pressed: kind === fileKind, attrs: { 'data-file-kind': kind },
-        })));
-        filters.addEventListener('click', (event) => {
-            const chip = event.target.closest('[data-file-kind]');
-            if (!chip) return;
-            fileKind = chip.dataset.fileKind;
-            filters.querySelectorAll('[data-file-kind]').forEach((node) => node.setAttribute('aria-pressed', String(node === chip)));
-            void renderFiles(filesHolder, detail.id);
-        });
-        blocks.push(section('群文件', [filters, filesHolder]));
-        void renderFiles(filesHolder, detail.id);
-
-        const nickname = createForm('input', { id: 'social-group-nickname', label: '我的群昵称', name: 'nickname', value: detail.me?.nickname || '', maxLength: NICKNAME_MAX });
-        const muted = createForm('switch', { id: 'social-group-muted', label: '消息免打扰', name: 'muted', checked: Boolean(detail.me?.muted) });
-        const mine = el('form', { class: 'social-side__form' }, [nickname, muted, lqButton({ label: '保存我的设置', variant: 'soft', type: 'submit' })]);
-        mine.addEventListener('submit', (event) => {
-            event.preventDefault();
-            void guarded(mine.querySelector('[type="submit"]'), async () => {
-                await socialApi.updateMe(detail.id, { nickname: mine.elements.nickname.value.trim(), muted: mine.elements.muted.checked });
-                client.setMuted(ctx.key, mine.elements.muted.checked);
-                notify('已保存。', 'success');
-                client.refreshCounts();
-                onChanged?.('me');
-            });
-        });
-        blocks.push(section('我的设置', [mine, el('p', { class: 'social-hint', text: '免打扰只关闭浮窗提醒，消息中心与未读数字照常保留。' })]));
-        blocks.push(el('div', { class: 'social-side__actions social-side__actions--danger' }, [
-            detail.my_role === 'owner'
-                ? lqButton({ label: '解散群组', variant: 'destructive', onClick: (event) => leaveOrDissolve(event.currentTarget, detail, true) })
-                : lqButton({ label: '退出群组', variant: 'destructive', onClick: (event) => leaveOrDissolve(event.currentTarget, detail, false) }),
-        ]));
-        element.replaceChildren(...blocks);
+        group.detail = detail;
+        group.title.textContent = detail.display_name || detail.name;
+        group.canonical.textContent = `群名：${detail.name}`;
+        group.canonical.hidden = !detail.display_name || detail.display_name === detail.name;
+        group.counts.textContent = `${detail.member_count} 人 · ${detail.online_count} 人在线 · 我是${ROLE_LABEL[detail.my_role] || '成员'}`;
+        group.memberTitle.textContent = `${detail.member_count} 位成员 · ${detail.online_count} 人在线`;
+        group.avatar.replaceChildren(lqAvatar(detail.name, detail.avatar_url, 56));
+        clearMenus();
+        group.members.replaceChildren(...(detail.members || []).map(member => memberRow(member, detail, client.me)));
+        group.settings.update(detail);
+        group.invite.update(detail);
     }
 
     async function memberAction(button, detail, ctx) {
         const identity = button.dataset.identity;
         const act = button.dataset.memberAct;
         if (act === 'nudge') { await guarded(button, () => socialApi.nudge(ctx.key, identity)); return; }
-        if (act === 'kick' && !await confirm({ title: '移出成员', message: `确定把「${button.dataset.name}」移出本群吗？`, confirmLabel: '移出', danger: true })) return;
-        if (act === 'transfer' && !await confirm({ title: '转让群主', message: `转让后你将成为普通成员，「${button.dataset.name}」成为群主。`, confirmLabel: '转让', danger: true })) return;
+        if (act === 'kick' && !await confirmDialog({ title: '移出成员', message: `确定把「${button.dataset.name}」移出本群吗？`, confirmLabel: '移出', danger: true })) return;
+        if (act === 'transfer' && !await confirmDialog({ title: '转让群主', message: `转让后你将成为普通成员，「${button.dataset.name}」成为群主。`, confirmLabel: '转让', danger: true })) return;
         await guarded(button, async () => {
             if (act === 'kick') await socialApi.removeMember(detail.id, identity);
             else if (act === 'transfer') await socialApi.transferGroup(detail.id, identity);
             else if (act === 'admin') await socialApi.setAdmin(detail.id, identity, button.dataset.admin === '1');
-            onChanged?.('group');
-        });
-    }
-
-    async function leaveOrDissolve(button, detail, dissolve) {
-        const ok = await confirm(dissolve
-            ? { title: '解散群组', message: `解散后所有成员都不能再在「${detail.name}」中发言，且无法恢复。`, confirmLabel: '解散', danger: true }
-            : { title: '退出群组', message: `确定退出「${detail.name}」吗？`, confirmLabel: '退出', danger: true });
-        if (!ok) return;
-        await guarded(button, async () => {
-            if (dissolve) await socialApi.dissolveGroup(detail.id); else await socialApi.leaveGroup(detail.id);
-            notify(dissolve ? '群组已解散。' : '已退出群组。', 'success');
-            onChanged?.('left');
+            onChanged?.('group', { groupId: Number(detail.id), key: ctx.key });
         });
     }
 
     return {
         element, showDm, showGroup,
         /** A new attachment arrived in the open group: reload its file list. */
-        refreshFiles(groupId) { if (files?.holder.isConnected && files.groupId === groupId) void renderFiles(files.holder, groupId); },
-        clear() { token += 1; clearMenus(); files = null; element.replaceChildren(); },
+        refreshFiles(groupId) { if (group?.id === Number(groupId)) void group.files.refresh(); },
+        updatePreferences(key, preferences) {
+            const input = element.querySelector('#social-dm-muted');
+            if (input) input.checked = Boolean(preferences.muted);
+            if (group?.key === key) {
+                group.detail.me = { ...group.detail.me, muted: Boolean(preferences.muted) };
+                group.settings.updatePreferences(preferences);
+            }
+        },
+        clear() { token += 1; clearMenus(); clearGroup(); element.replaceChildren(); },
     };
 }

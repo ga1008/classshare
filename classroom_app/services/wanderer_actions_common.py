@@ -129,6 +129,8 @@ def _capped_result() -> dict[str, Any]:
 
 async def run_turn(
     ctx: ActionContext, *, scene: dict[str, Any], thread_key: str, suffix: str, user_message: str = "",
+    interactive: bool = False,
+    strict: bool = False,
 ) -> dict[str, Any]:
     """Assemble the prompt (short transaction), then make one AI call with no connection held.
 
@@ -146,6 +148,8 @@ async def run_turn(
     result = await generate_turn(
         ctx.conn_factory, ctx.wanderer, system_prompt=system_prompt, user_message=message,
         task_label_suffix=suffix, ai_caller=ctx.ai_caller,
+        interactive=interactive,
+        strict=strict,
     )
     if result.get("status") == "capped":
         ctx.capped = True
@@ -293,6 +297,8 @@ def today_action_count(conn: Any, wanderer_id: int, now: datetime) -> int:
 
 def bump_stats(conn: Any, wanderer_id: int, deltas: dict[str, int], *, visited_offering: Optional[int] = None) -> None:
     """Add to the cached counters in ``stats_json`` and touch ``last_active_at``. Caller commits."""
+    # A row lock serializes the read/modify/write with concurrent inbox lanes.
+    conn.execute("UPDATE wanderer_agents SET stats_json=stats_json WHERE id=?", (int(wanderer_id),))
     row = conn.execute("SELECT stats_json FROM wanderer_agents WHERE id = ?", (int(wanderer_id),)).fetchone()
     try:
         stats = json.loads(_row_value(row, "stats_json") or "{}") if row is not None else {}

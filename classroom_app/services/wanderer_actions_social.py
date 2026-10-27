@@ -1,6 +1,9 @@
 """散修聊天：好友私聊回复与群聊观察 (docs/social-friends-groups-2026-10-27.md §10).
 
-Scheduler-side handlers for the tasks registered by ``wanderer_social_triggers``:
+Group handlers and shared scene helpers. Private replies run in ``wanderer_inbox_worker``.
+Old persisted DM tasks only hand off to that inbox.
+
+Scheduler-side group handlers registered by ``wanderer_social_triggers``:
 
 * ``wanderer_social_reply`` — one wanderer, one conversation. Reads the last
   30 messages + the memory thread ``social:<conversation_key>``, marks them read
@@ -542,6 +545,18 @@ async def handle_wanderer_social_reply(task: dict[str, Any], *, ai_caller: Any =
     key = str(payload.get("conversation_key") or "")
     if not key:
         return "skipped: missing conversation"
+    if key.startswith("dm:"):
+        # Compatibility with tasks persisted before the durable inbox release.
+        # This handler only hands off; the dedicated lane owns model work.
+        from .wanderer_inbox_service import enqueue_social
+        from .social_common import dm_peer, parse_conversation_key
+        with _connect(conn_factory) as conn:
+            wanderer = load_wanderer(conn, as_int(payload.get("wanderer_id")))
+            if wanderer:
+                peer = dm_peer(parse_conversation_key(key), f"student:{wanderer['student_id']}")
+                enqueue_social(conn, wanderer, key, peer)
+                conn.commit()
+        return "queued: durable dm inbox"
     ctx, reason = social_context(payload.get("wanderer_id"), conn_factory=conn_factory, ai_caller=ai_caller,
                                  sleep=sleep, rng=rng)
     if ctx is None:

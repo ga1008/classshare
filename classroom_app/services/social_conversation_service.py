@@ -394,7 +394,8 @@ def list_conversations(conn: Any, user: dict) -> list[dict[str, Any]]:
         last_id = group_last.get(group_id, 0)
         items.append({
             "conversation_key": group_key(group_id), "type": "group",
-            "title": str(membership["group_name"] or ""),
+            "title": str(membership.get("alias") or membership["group_name"] or ""),
+            "group_name": str(membership["group_name"] or ""),
             "avatar_url": None,
             "last_message": last_message_summary(rows, kinds, last_id),
             "unread": group_unread(conn, me, membership),

@@ -216,7 +216,8 @@ async def social_group_detail(group_id: int, user: dict = Depends(get_current_us
 @router.patch("/groups/{group_id}")
 async def social_update_group(group_id: int, data: dict = Body(default={}), user: dict = Depends(get_current_user)):
     return await _run(lambda conn, events: groups.update_group(
-        conn, user, group_id, name=_field(data, "name"), announcement=_field(data, "announcement"), events=events))
+        conn, user, group_id, name=_field(data, "name"), announcement=_field(data, "announcement"),
+        expected_updated_at=_field(data, "expected_updated_at"), events=events))
 
 
 @router.post("/groups/{group_id}/members")
@@ -257,7 +258,8 @@ async def social_set_group_admin(group_id: int, data: dict = Body(default={}), u
 async def social_update_my_group_settings(group_id: int, data: dict = Body(default={}),
                                           user: dict = Depends(get_current_user)):
     return await _run(lambda conn, events: groups.update_me(
-        conn, user, group_id, nickname=_field(data, "nickname"), muted=_field(data, "muted"), events=events))
+        conn, user, group_id, nickname=_field(data, "nickname"), muted=_field(data, "muted"),
+        alias=_field(data, "alias"), events=events))
 
 
 @router.get("/groups/{group_id}/files")

@@ -26,6 +26,7 @@ ONLY_BLOG = {"blog_browse": 1, "blog_like": 1, "blog_comment": 1, "reply": 1, "d
              "classroom_visit": 0, "classroom_message": 0, "knowledge_read": 0, "promotion": 0, "blog_post": 0}
 ONLY_CLASSROOM = {**{key: 0 for key in ONLY_BLOG}, "classroom_visit": 1, "classroom_message": 1}
 _RESET_TABLES = (
+    "wanderer_social_inbox",
     "wanderer_action_log", "wanderer_memory_threads", "wanderer_dao_reviews", "message_center_notifications",
     "private_messages", "chat_logs", "blog_likes", "blog_comments", "blog_posts", "scheduled_tasks",
     "material_search_chunks", "material_search_documents", "course_material_assignments", "course_materials",
@@ -33,7 +34,8 @@ _RESET_TABLES = (
 
 
 def turn(action="reply", parts=("好",), like=False, mood="平静") -> str:
-    return json.dumps({"action": action, "parts": list(parts), "mood": mood, "like": like}, ensure_ascii=False)
+    return json.dumps({"action": action, "parts": list(parts), "mood": mood, "like": like,
+                       "reason": "想安静一会儿" if action == "skip" else "想和对方聊聊"}, ensure_ascii=False)
 
 
 class StubCaller:

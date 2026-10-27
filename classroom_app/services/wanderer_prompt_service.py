@@ -182,7 +182,7 @@ def _roster_line(person: dict[str, Any]) -> str:
         tier_name = str(person.get("tier_name") or "")
         return f"- {name}（散修{'，境界：' + tier_name if tier_name else ''}）——可以调侃"
     if str(person.get("role") or "") == "teacher":
-        return f"- {name}（老师）——说话要尊重、礼貌，不调侃、不顶撞"
+        return f"- {name}（老师）——尊重对方身份，可以诚实表达不同意见，不必迎合"
     return f"- {name}（真实学生）——是真实的人，说话要有分寸"
 
 
@@ -209,6 +209,10 @@ def _scene_block(scene: dict[str, Any]) -> str:
         quoted.append(f"正文：\n{_clip(scene['body'], SCENE_BODY_MAX_CHARS)}")
     if scene.get("friend_context"):
         quoted.append(_clip(scene["friend_context"], 16_000))
+    if scene.get("relationship_emotion"):
+        emotion = scene["relationship_emotion"]
+        quoted.append("你在这段关系里上一次的心情与原因（会随新交流变化，不是永远不变的判断）："
+                      + _clip(emotion.get("mood"), 40) + "；" + _clip(emotion.get("reason"), 400))
     if scene.get("conversation_text"):
         quoted.append(str(scene["conversation_text"]))  # already bounded at complete-message boundaries
     context_lines = [str(item) for item in scene.get("context_lines") or [] if str(item or "").strip()]

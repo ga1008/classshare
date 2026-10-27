@@ -10,6 +10,7 @@ import uuid
 from classroom_app.db.postgres import LanSharePostgresConnection, sqlite_compatible_dict_row
 from classroom_app.db import schema_social
 from classroom_app.services import social_message_service as messages
+from classroom_app.services import social_group_service as groups
 from classroom_app.services import social_conversation_service as conversations
 from classroom_app.services import social_notification_service as attention
 from classroom_app.services.social_common import SocialError
@@ -123,3 +124,78 @@ class SocialAttentionPostgresTest(unittest.TestCase):
             messages.mark_read(conn, {'role': 'student', 'id': 2}, 'dm:student:1|student:2', first)
             conn.commit()
             self.assertIsNone(conn.execute('SELECT read_at FROM message_center_notifications').fetchone()[0])
+
+    def seed_group(self, group_id=1, *, maximum=3):
+        with self.connect() as conn:
+            conn.execute("INSERT INTO social_groups(id,name,owner_identity,max_members,created_at,updated_at) "
+                         "VALUES(?, 'Synthetic group', 'student:2', ?, '2026-10-28', 'v1')", (group_id, maximum))
+            conn.execute("INSERT INTO social_group_members(group_id,member_identity,role,joined_at) "
+                         "VALUES(?, 'student:2', 'owner', '2026-10-28')", (group_id,))
+            conn.commit()
+        self.enterContext(patch.object(groups, 'load_people', side_effect=lambda conn, ids:
+            {identity: {'name': identity, 'active': True} for identity in ids}))
+
+    def invite(self, group_id, target):
+        with self.connect() as conn:
+            result = groups.add_members(conn, {'role': 'student', 'id': 2}, group_id, [target])
+            conn.commit()
+            return result
+
+    def test_group_parallel_invites_respect_capacity_and_idempotence(self):
+        self.seed_group(maximum=2)
+        results = self.race(6, lambda i: self.invite(1, 'student:1' if i % 2 else 'student:3'))
+        self.assertEqual(sum(len(result['added']) for result in results), 1)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM social_group_members WHERE group_id=1').fetchone()[0], 2)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM social_messages').fetchone()[0], 1)
+
+    def test_parallel_invitations_across_groups_respect_person_limit(self):
+        self.seed_group(1)
+        self.seed_group(2)
+        with patch.object(groups, 'MAX_GROUPS_PER_PERSON', 1):
+            results = self.race(2, lambda i: self.invite(i + 1, 'student:1'))
+        self.assertEqual(sum(len(result['added']) for result in results), 1)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM social_group_members "
+                                          "WHERE member_identity='student:1'").fetchone()[0], 1)
+
+    def test_group_compare_and_swap_only_one_admin_update_wins(self):
+        self.seed_group()
+        # Projection is covered by real SQLite HTTP tests; native PG here tests
+        # actual cross-connection advisory locks and the persisted version.
+        with patch.object(groups, 'group_detail', return_value={}):
+            def update(index):
+                with self.connect() as conn:
+                    try:
+                        groups.update_group(conn, {'role': 'student', 'id': 2}, 1,
+                                            name=f'edit {index}', expected_updated_at='v1')
+                        conn.commit()
+                        return 200
+                    except SocialError as error:
+                        conn.rollback()
+                        return error.status_code
+            results = self.race(4, update)
+        self.assertEqual(results.count(200), 1)
+        self.assertEqual(results.count(409), 3)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM social_messages').fetchone()[0], 1)
+
+    def test_alias_additive_migration_keeps_existing_member_data(self):
+        self.seed_group()
+        with self.connect() as conn:
+            conn.execute("UPDATE social_group_members SET nickname='public nickname', muted=1")
+            conn.execute('ALTER TABLE social_group_members DROP COLUMN alias')
+            conn.commit()
+            before = dict(conn.execute('SELECT * FROM social_group_members').fetchone())
+            with patch.object(schema_social, '_SCHEMA_READY', False):
+                schema_social.ensure_social_schema(conn)
+            conn.commit()
+            after = dict(conn.execute('SELECT * FROM social_group_members').fetchone())
+            self.assertEqual(after.pop('alias'), '')
+            self.assertEqual(after, before)
+            groups.update_me(conn, {'role': 'student', 'id': 2}, 1, alias='private')
+            conn.commit()
+            with patch.object(schema_social, '_SCHEMA_READY', False):
+                schema_social.ensure_social_schema(conn)
+            conn.commit()
+            self.assertEqual(conn.execute('SELECT alias FROM social_group_members').fetchone()[0], 'private')

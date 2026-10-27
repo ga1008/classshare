@@ -307,15 +307,18 @@ class PendingReplyTest(WandererWorldTestCase):
         self.assertTrue(emailed)
         self.assertTrue(all(row["email_status"] != "queued" for row in emailed))
         caller = StubCaller(turn("reply", ["当然看！最近在追新番～"]))
-        with patch.dict(wanderer_behavior_service.ACTIONS, {"blog": _noop}):
-            self.tick(caller, [momo["id"]])
+        from classroom_app.services.wanderer_inbox_worker import process_once
+        with self.connect() as conn:
+            conn.execute("UPDATE wanderer_social_inbox SET run_at='2000-01-01'")
+            conn.commit()
+        asyncio.run(process_once(factory=self.connect, ai_caller=caller, sleep=ZeroSleep()))
         replies = self.rows("SELECT * FROM private_messages WHERE sender_identity = ?", (wanderer_identity,))
         self.assertEqual([row["content"] for row in replies], ["当然看！最近在追新番～"])
         self.assertEqual(replies[0]["recipient_identity"], f"student:{self.student_pk}")
         unread = self.rows("SELECT * FROM private_messages WHERE recipient_identity = ? AND read_at IS NULL",
                            (wanderer_identity,))
         self.assertEqual(unread, [])
-        self.assertEqual(caller.labels, ["wanderer:momo:dm_reply"])
+        self.assertEqual(caller.labels, ["wanderer:momo:dm_inbox"])
         self.assertIn("dm_reply", [row["action_kind"] for row in self.actions(momo["id"])])
         # The conversation stays open both ways (no read-only "历史联系人").
         with self.connect() as conn:

@@ -140,10 +140,37 @@ def _table_statements(id_column: str) -> list[str]:
             updated_at TEXT
         )
         """,
+        f"""
+        CREATE TABLE IF NOT EXISTS wanderer_social_inbox (
+            {id_column},
+            wanderer_id INTEGER NOT NULL,
+            source TEXT NOT NULL,
+            conversation_key TEXT NOT NULL,
+            peer_identity TEXT NOT NULL,
+            class_offering_id INTEGER,
+            latest_message_id INTEGER NOT NULL DEFAULT 0,
+            handled_message_id INTEGER NOT NULL DEFAULT 0,
+            snapshot_message_id INTEGER NOT NULL DEFAULT 0,
+            state TEXT NOT NULL DEFAULT 'pending',
+            run_at TEXT NOT NULL,
+            lease_token TEXT NOT NULL DEFAULT '',
+            lease_until TEXT NOT NULL DEFAULT '',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            response_json TEXT NOT NULL DEFAULT '',
+            next_part INTEGER NOT NULL DEFAULT 0,
+            mood TEXT NOT NULL DEFAULT '',
+            decision_reason TEXT NOT NULL DEFAULT '',
+            last_error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (wanderer_id, source, conversation_key)
+        )
+        """,
     ]
 
 
 _INDEX_STATEMENTS = (
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_inbox_due ON wanderer_social_inbox (state, run_at)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_agents_status ON wanderer_agents (status, id)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_knowledge_active "
     "ON wanderer_knowledge_entries (wanderer_id, status, use_count, created_at)",

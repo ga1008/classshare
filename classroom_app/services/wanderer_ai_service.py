@@ -19,6 +19,7 @@ the AI service JSON (``{"status": "success", "response_text": "..."}``).
 from __future__ import annotations
 
 import json
+import asyncio
 import uuid
 from typing import Any, Awaitable, Callable, Optional
 
@@ -72,14 +73,21 @@ def _connection(conn_factory: ConnFactory) -> Any:
     return get_db_connection()
 
 
-def _reserve_call(conn_factory: ConnFactory, *, enforce_cap: bool) -> tuple[bool, int, int]:
+def _reserve_call(conn_factory: ConnFactory, *, enforce_cap: bool, interactive: bool = False) -> tuple[bool, int, int]:
     """Count one call; with ``enforce_cap`` an over-cap reservation is rolled back."""
     with _connection(conn_factory) as conn:
         cap = daily_cap(conn)
-        if enforce_cap and daily_ai_calls(conn) >= cap:
+        available = cap
+        if enforce_cap and not interactive:
+            waiting = conn.execute("SELECT 1 FROM wanderer_social_inbox i WHERE i.state IN ('pending','running','retry') "
+                "AND i.latest_message_id>i.handled_message_id AND NOT EXISTS (SELECT 1 FROM wanderer_agents w "
+                "WHERE i.peer_identity='student:' || CAST(w.student_id AS TEXT)) LIMIT 1").fetchone()
+            if waiting:
+                available = max(0, cap - min(20, max(1, cap // 10)))
+        if enforce_cap and daily_ai_calls(conn) >= available:
             return False, daily_ai_calls(conn), cap
         total = increment_daily_ai_calls(conn)
-        if enforce_cap and total > cap:
+        if enforce_cap and total > available:
             conn.rollback()
             return False, total - 1, cap
         conn.commit()
@@ -145,12 +153,14 @@ async def generate_turn(
     user_message: str,
     task_label_suffix: str,
     ai_caller: Optional[AiCaller] = None,
+    interactive: bool = False,
+    strict: bool = False,
 ) -> dict[str, Any]:
     """One decision+generation call. Returns ``{"status", "turn", "raw_text", "ai_calls", ...}``.
 
     status: ``ok`` | ``capped`` (not sent) | ``failed`` (sent, unusable; turn = skip).
     """
-    reserved, used, cap = _reserve_call(conn_factory_or_none, enforce_cap=True)
+    reserved, used, cap = _reserve_call(conn_factory_or_none, enforce_cap=True, interactive=interactive)
     if not reserved:
         return {"status": "capped", "turn": default_turn(), "raw_text": "", "ai_calls": 0,
                 "daily_calls": used, "daily_cap": cap, "error": ""}
@@ -165,16 +175,27 @@ async def generate_turn(
         logical_call_id=logical_call_id,
     )
     caller = ai_caller or _gateway_caller
+    if interactive:
+        payload["task_priority"] = "interactive"
     base = {"ai_calls": 1, "daily_calls": used, "daily_cap": cap, "logical_call_id": logical_call_id}
     try:
-        data = await caller(
-            AI_CHAT_ENDPOINT, payload, timeout=TURN_TIMEOUT_SECONDS, task_type="wanderer_turn", priority="P2",
+        call = caller(
+            AI_CHAT_ENDPOINT, payload, timeout=TURN_TIMEOUT_SECONDS, task_type="wanderer_turn",
+            priority="P0" if interactive else "P2",
             student_id=int(wanderer["student_id"]), source_ref=logical_call_id,
         )
+        data = await asyncio.wait_for(call, timeout=TURN_TIMEOUT_SECONDS + 5)
         raw_text = _response_text(data)
     except Exception as exc:  # noqa: BLE001 - a failed turn degrades to skip, never raises into the tick
         return {**base, "status": "failed", "turn": default_turn(), "raw_text": "", "error": str(exc)[:300]}
     turn = parse_turn_output(raw_text, max_parts=max_parts_for(wanderer))
+    if interactive or strict:
+        parsed = extract_json_object(raw_text)
+        if (not parsed or parsed.get("action") not in {"skip", "emoji", "reply", "multi"}
+                or (parsed.get("action") != "skip" and not turn["parts"])):
+            return {**base, "status": "failed", "turn": default_turn(), "raw_text": raw_text,
+                    "error": "invalid conversation decision"}
+        turn["reason"] = str(parsed.get("reason") or "")[:400]
     return {**base, "status": "ok", "turn": turn, "raw_text": raw_text, "error": ""}
 
 

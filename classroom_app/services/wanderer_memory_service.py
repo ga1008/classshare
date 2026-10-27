@@ -199,6 +199,8 @@ def append_turn(
     counterpart_identity: str = "",
 ) -> dict[str, Any]:
     """Append one turn (DB keeps the last 40; disk keeps everything). Caller commits."""
+    from .social_common import serialize_on
+    serialize_on(conn, "wanderer-memory", [f"{wanderer['id']}:{thread_key}"])
     clean_text = str(text or "").strip()[:TURN_MAX_CHARS]
     thread = _read_thread(conn, int(wanderer["id"]), str(thread_key))  # writes never trust the cache
     turn = {"at": local_iso(), "who": str(who or "")[:80], "text": clean_text}
@@ -252,6 +254,8 @@ def compact_thread(
     A summarizer failure leaves the thread untouched and re-raises, so a broken
     model call can never erase memory.
     """
+    from .social_common import serialize_on
+    serialize_on(conn, "wanderer-memory", [f"{wanderer['id']}:{thread_key}"])
     thread = _read_thread(conn, int(wanderer["id"]), str(thread_key))  # writes never trust the cache
     if expected_thread is not None and (thread.get("summary") != expected_thread.get("summary")
             or thread.get("history") != expected_thread.get("history")):

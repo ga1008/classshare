@@ -156,7 +156,7 @@ export function renderMarkdown(body, format = 'md') {
  * A persistent LQ dialog: built once by the shared factory, owned by
  * createDomainModal (LQ.layer holds stack, focus, inert and scroll lock).
  */
-export function createSocialDialog({ id, title, size = 'xl', body, className = '', onClose, initialFocus }) {
+export function createSocialDialog({ id, title, size = 'xl', body, className = '', onClose, onDestroy, initialFocus, beforeClose, returnFocus }) {
     const root = createDialog({ id, title, size, body, closeLabel: `关闭${title}` });
     const surface = root.querySelector('.lq-dialog__surface');
     surface.classList.add('social-dialog', ...className.split(/\s+/).filter(Boolean));
@@ -165,7 +165,10 @@ export function createSocialDialog({ id, title, size = 'xl', body, className = '
     const owner = createDomainModal(root, {
         surface,
         initialFocus,
+        beforeClose,
+        returnFocus,
         onClose: (...args) => { isOpen = false; onClose?.(...args); },
+        onDestroy: (...args) => { isOpen = false; (onDestroy || onClose)?.(...args); },
     });
     root.addEventListener('click', (event) => {
         if (event.target.closest?.('[data-lq-dialog-close]')) { event.preventDefault(); void owner.close('button'); }
@@ -177,6 +180,7 @@ export function createSocialDialog({ id, title, size = 'xl', body, className = '
         open(trigger) { isOpen = true; return owner.open({ trigger }); },
         close(reason = 'programmatic') { return owner.close(reason); },
         isOpen: () => isOpen,
+        destroy() { isOpen = false; owner.destroy(); root.remove(); },
     };
 }
 

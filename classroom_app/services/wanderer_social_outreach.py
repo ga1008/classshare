@@ -46,6 +46,11 @@ async def start_friend_conversation(ctx: ActionContext) -> list[dict[str, Any]]:
         window = None
         quota = 0
         for peer in candidates[:12]:
+            queued = conn.execute("SELECT 1 FROM wanderer_social_inbox WHERE wanderer_id=? AND source='social' "
+                "AND conversation_key=? AND (latest_message_id>handled_message_id OR state='running') LIMIT 1",
+                (ctx.wanderer_id, dm_key(ctx.identity, peer))).fetchone()
+            if queued:
+                continue
             candidate = load_window(conn, ctx.identity, dm_key(ctx.identity, peer))
             if candidate is None or candidate["new"]:
                 continue  # incoming messages have their own reply task

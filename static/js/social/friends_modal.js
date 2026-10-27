@@ -139,7 +139,7 @@ export function createFriendsModal(client, { openChat }) {
         const meta = [`${group.member_count} 人 · ${group.online_count} 人在线`, group.my_role === 'owner' ? '群主' : (group.my_role === 'admin' ? '管理员' : ''),
             group.last_message?.preview || ''].filter(Boolean).join(' · ');
         return row({
-            title: group.name, meta,
+            title: group.display_name || group.name, meta: [group.display_name && group.display_name !== group.name ? `群名：${group.name}` : '', meta].filter(Boolean).join(' · '),
             actions: [{ label: '进入群聊', variant: 'soft', attrs: { 'data-act': 'open-group', 'data-key': group.conversation_key } }],
             lead: lqAvatar(group.name, null, 40),
             trail: [lqBadge(group.unread)].filter(Boolean),

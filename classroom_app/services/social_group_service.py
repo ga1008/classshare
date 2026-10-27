@@ -45,6 +45,7 @@ MAX_CREATED_GROUPS = 10
 NAME_MAX = 30
 ANNOUNCEMENT_MAX = 500
 NICKNAME_MAX = 20
+ALIAS_MAX = 30
 FILES_PAGE = 50
 ROLE_OWNER, ROLE_ADMIN, ROLE_MEMBER = "owner", "admin", "member"
 MEDIA_KINDS = ("image", "video", "audio", "file")
@@ -119,7 +120,7 @@ def _add_member_row(conn: Any, group_id: int, identity: str, role: str, existing
     last_id = as_int(last_row["n"]) if last_row else 0
     if existing:
         conn.execute(
-            "UPDATE social_group_members SET role = ?, left_at = NULL, joined_at = ?, muted = 0, nickname = '', "
+            "UPDATE social_group_members SET role = ?, left_at = NULL, joined_at = ?, muted = 0, nickname = '', alias = '', "
             "last_read_message_id = ? WHERE id = ?",
             (role, timestamp, last_id, int(existing["id"])),
         )
@@ -186,6 +187,7 @@ def _cards(conn: Any, me: str, memberships: dict[int, dict[str, Any]]) -> list[d
         cards.append({
             "id": group_id,
             "name": str(membership.get("group_name") or ""),
+            "display_name": str(membership.get("alias") or membership.get("group_name") or ""),
             "avatar_url": None,
             "member_count": len(members),
             "online_count": sum(1 for item in presence.values() if item["online"]),
@@ -247,8 +249,10 @@ def group_detail(conn: Any, user: dict, group_id: int) -> dict[str, Any]:
         "owner_identity": str(group["owner_identity"]),
         "max_members": as_int(group["max_members"], GROUP_MAX_MEMBERS),
         "created_at": str(group["created_at"] or ""),
+        "updated_at": str(group["updated_at"] or ""),
         "members": _member_cards(conn, me, group_id),
-        "me": {"nickname": str(mine.get("nickname") or ""), "muted": bool(as_int(mine.get("muted")))},
+        "me": {"nickname": str(mine.get("nickname") or ""), "muted": bool(as_int(mine.get("muted"))),
+               "alias": str(mine.get("alias") or "")},
     })
     return detail
 
@@ -280,6 +284,9 @@ def create_group(conn: Any, user: dict, name: Any, member_identities: Any,
     wanted = [item for item in _identity_list(member_identities or []) if item != me]
     if not wanted:
         raise SocialError("建群至少需要选择 1 位好友。", 400)
+    # All joins take the same ordered person locks before a group lock. This
+    # protects per-person group caps even when different groups invite at once.
+    serialize_on(conn, "social-group-membership", [me, *wanted])
     if not any(are_friends(conn, me, item) for item in wanted):
         raise SocialError("只能拉自己的好友进群。", 400)
     if _groups_created(conn, me) >= MAX_CREATED_GROUPS:
@@ -303,32 +310,43 @@ def create_group(conn: Any, user: dict, name: Any, member_identities: Any,
 
 
 def update_group(conn: Any, user: dict, group_id: int, *, name: Any = None, announcement: Any = None,
-                 events: Optional[list] = None) -> dict[str, Any]:
+                 expected_updated_at: Any = None, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
-    _active_group(conn, group_id)
+    serialize_on(conn, "social-attention", [group_key(group_id)])
+    group = _active_group(conn, group_id)
     _require_member(conn, group_id, me, roles=(ROLE_OWNER, ROLE_ADMIN))
+    if expected_updated_at is not None and str(expected_updated_at) != str(group["updated_at"]):
+        raise SocialError("群资料已被其他成员更新，请重新载入后核对你的修改。", 409)
     actor = _display(conn, group_id, [me])
+    changed = False
     if name is not None:
         title = _clean_name(name)
-        conn.execute("UPDATE social_groups SET name = ?, updated_at = ? WHERE id = ?", (title, now_iso(), int(group_id)))
-        insert_system_message(conn, group_key(group_id), f"{actor} 将群名称修改为「{title}」", events)
+        if title != group["name"]:
+            conn.execute("UPDATE social_groups SET name = ?, updated_at = ? WHERE id = ?", (title, now_iso(), int(group_id)))
+            insert_system_message(conn, group_key(group_id), f"{actor} 将群名称修改为「{title}」", events)
+            changed = True
     if announcement is not None:
         text = str(announcement or "").strip()[:ANNOUNCEMENT_MAX]
-        conn.execute("UPDATE social_groups SET announcement = ?, updated_at = ? WHERE id = ?",
-                     (text, now_iso(), int(group_id)))
-        insert_system_message(conn, group_key(group_id),
-                              f"{actor} 更新了群公告：{text}" if text else f"{actor} 清空了群公告", events)
-    _changed(events, conn, group_id, "updated")
+        if text != str(group["announcement"] or ""):
+            conn.execute("UPDATE social_groups SET announcement = ?, updated_at = ? WHERE id = ?",
+                         (text, now_iso(), int(group_id)))
+            insert_system_message(conn, group_key(group_id),
+                                  f"{actor} 更新了群公告：{text}" if text else f"{actor} 清空了群公告", events)
+            changed = True
+    if changed:
+        _changed(events, conn, group_id, "updated")
     return group_detail(conn, user, group_id)
 
 
 def add_members(conn: Any, user: dict, group_id: int, identities: Any, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
-    group = _active_group(conn, group_id)
-    _require_member(conn, group_id, me)
     wanted = _identity_list(identities or [])
     if not wanted:
         raise SocialError("请选择要邀请的好友。", 400)
+    serialize_on(conn, "social-group-membership", [me, *wanted])
+    serialize_on(conn, "social-attention", [group_key(group_id)])
+    group = _active_group(conn, group_id)
+    _require_member(conn, group_id, me)
     result = _invite(conn, group, me, wanted)
     if result["added"]:
         text = f"{_display(conn, group_id, [me])} 邀请 {_display(conn, group_id, result['added'])} 加入了群聊"
@@ -431,23 +449,38 @@ def set_admin(conn: Any, user: dict, group_id: int, identity: Any, admin: Any,
     return {"group_id": int(group_id), "identity": target, "role": role}
 
 
-def update_me(conn: Any, user: dict, group_id: int, *, nickname: Any = None, muted: Any = None,
+def update_me(conn: Any, user: dict, group_id: int, *, nickname: Any = None, muted: Any = None, alias: Any = None,
               events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
-    _active_group(conn, group_id)
+    serialize_on(conn, "social-attention", [group_key(group_id)])
+    group = _active_group(conn, group_id)
     mine = _require_member(conn, group_id, me)
-    if nickname is not None:
+    # Validate the entire patch before changing anything (also for callers that
+    # intentionally retain an open transaction after a user-facing refusal).
+    if muted is not None and not isinstance(muted, bool):
+        raise SocialError("免打扰设置必须是开启或关闭。", 400)
+    if alias is not None:
+        if not isinstance(alias, str):
+            raise SocialError("群代称必须是文字。", 400)
+        alias = " ".join(alias.split())
+        if len(alias) > ALIAS_MAX:
+            raise SocialError(f"群代称最多 {ALIAS_MAX} 个字。", 400)
+    nick = str(nickname or "").strip()[:NICKNAME_MAX]
+    if nickname is not None and nick != str(mine.get("nickname") or ""):
         conn.execute("UPDATE social_group_members SET nickname = ? WHERE id = ?",
-                     (str(nickname or "").strip()[:NICKNAME_MAX], int(mine["id"])))
+                     (nick, int(mine["id"])))
+        _changed(events, conn, group_id, "nickname")
+    if alias is not None and alias != str(mine.get("alias") or ""):
+        conn.execute("UPDATE social_group_members SET alias = ? WHERE id = ?", (alias, int(mine["id"])))
+        add_event(events, [me], {"type": "group_changed", "group_id": int(group_id), "reason": "self_settings"})
     if muted is not None:
-        if not isinstance(muted, bool):
-            raise SocialError("免打扰设置必须是开启或关闭。", 400)
         conn.execute("UPDATE social_group_members SET muted = ? WHERE id = ?", (1 if bool(muted) else 0, int(mine["id"])))
         add_event(events, [me], {"type": "conversation_preferences", "conversation_key": group_key(group_id),
                                 "muted": muted})
     fresh = load_membership(conn, group_id, me) or {}
     return {"group_id": int(group_id), "nickname": str(fresh.get("nickname") or ""),
-            "muted": bool(as_int(fresh.get("muted")))}
+            "muted": bool(as_int(fresh.get("muted"))), "alias": str(fresh.get("alias") or ""),
+            "display_name": str(fresh.get("alias") or group["name"] or "")}
 
 
 def list_group_files(conn: Any, user: dict, group_id: int, *, kind: Any = None, before_id: Any = None) -> dict[str, Any]:

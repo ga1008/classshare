@@ -128,6 +128,24 @@ class WandererSocialTest(WandererWorldTestCase):
         return rows
 
     def run_reply(self, wanderer: dict, key: str, caller, *, rng=None, mentioned=False, sleep=None) -> str:
+        if key.startswith("dm:"):
+            from classroom_app.services import wanderer_inbox_service as inbox
+            from classroom_app.services.wanderer_inbox_worker import run_claim
+            from classroom_app.services.social_common import dm_peer, parse_conversation_key
+            ctx, reason = social_context(wanderer["id"])
+            if ctx is None:
+                return f"skipped: {reason}"
+            with self.connect() as conn:
+                inbox_id = inbox.enqueue_social(conn, wanderer, key, dm_peer(parse_conversation_key(key), self.ident(wanderer)))
+                conn.execute("UPDATE wanderer_social_inbox SET run_at='2000-01-01' WHERE id=?", (inbox_id,))
+                conn.commit()
+            tasks = inbox.claim(1, factory=self.connect, inbox_id=inbox_id)
+            if not tasks:
+                return "skipped: nothing new"
+            before = len(self.messages_from(self.ident(wanderer), key))
+            result = asyncio.run(run_claim(tasks[0], factory=self.connect, ai_caller=caller, sleep=sleep or ZeroSleep()))
+            parts = len(self.messages_from(self.ident(wanderer), key)) - before
+            return f"social reply: {'ok' if result == 'done' else result} parts={parts}"
         task = {"payload": {"wanderer_id": wanderer["id"], "conversation_key": key, "mentioned": mentioned}}
         return asyncio.run(handle_wanderer_social_reply(task, ai_caller=caller, sleep=sleep or ZeroSleep(),
                                                         rng=rng or FixedRandom(0.5)))
@@ -296,7 +314,7 @@ class WandererSocialTest(WandererWorldTestCase):
         key = self.befriend(self.real, self.atai)
         text = "这是完整的近期原文。" * 50 + "末尾约定：周五再一起试试。"
         message = self.send(self.real, key, text)
-        self.call(messages.mark_read, build_wanderer_user_dict(self.atai), key, message["id"])
+        self.run_reply(self.atai, key, StubCaller(turn("skip", [])))  # resolved inbox work, not merely a read receipt
         caller = StubCaller(turn("reply", ["刚试了个新的练习，想和你聊聊。 "]))
         ctx, _ = social_context(self.atai["id"], ai_caller=caller, sleep=ZeroSleep())
         result = asyncio.run(start_friend_conversation(ctx))
@@ -383,22 +401,22 @@ class WandererSocialTest(WandererWorldTestCase):
         key = self.befriend(self.real, self.atai)
         for body in ("在吗", "问你个事", "篮球赛去不去"):
             self.send(self.real, key, body)
-        tasks = self.tasks("wanderer_social_reply")
+        tasks = self.rows("SELECT * FROM wanderer_social_inbox")
         self.assertEqual(len(tasks), 1)
-        self.assertEqual(tasks[0]["payload"]["conversation_key"], key)
+        self.assertEqual(tasks[0]["conversation_key"], key)
         first_run_at = tasks[0]["run_at"]
-        delay = (datetime.fromisoformat(first_run_at) - datetime.now()).total_seconds()
-        self.assertTrue(0 <= delay <= 600, delay)
+        delay = (datetime.fromisoformat(first_run_at) - datetime.now().astimezone()).total_seconds()
+        self.assertTrue(0 <= delay <= 3, delay)
         self.send(self.real, key, "人呢")
-        self.assertEqual(self.tasks("wanderer_social_reply")[0]["run_at"], first_run_at)  # not pushed back
+        self.assertEqual(self.rows("SELECT run_at FROM wanderer_social_inbox")[0]["run_at"], first_run_at)
 
-    def test_asleep_wanderer_answers_in_its_next_window(self):
+    def test_asleep_wanderer_still_considers_human_dm_promptly(self):
         hour = (datetime.now() + timedelta(hours=2)).hour
         self.set_wanderer("atai", schedule_json={"active_hours": [[hour, hour + 1]], "weekday_weights": {}})
         key = self.befriend(self.real, self.atai)
         self.send(self.real, key, "睡了吗")
-        delay = (datetime.fromisoformat(self.tasks("wanderer_social_reply")[0]["run_at"]) - datetime.now())
-        self.assertTrue(timedelta(minutes=50) <= delay <= timedelta(hours=2, minutes=20), delay)
+        delay = (datetime.fromisoformat(self.rows("SELECT run_at FROM wanderer_social_inbox")[0]["run_at"]) - datetime.now().astimezone())
+        self.assertTrue(timedelta(0) <= delay <= timedelta(seconds=3), delay)
 
     def test_multi_part_reply_types_and_posts_each_part(self):
         self.set_wanderer("atai", reply_policy_json=ALWAYS_MULTI)
@@ -414,9 +432,7 @@ class WandererSocialTest(WandererWorldTestCase):
         typing = self.pushes.of_type("typing")
         self.assertEqual(len(typing), 3)
         self.assertEqual(typing[0][0], [self.real])
-        self.assertEqual(sleep.calls[:3], [typing_seconds(part) for part in parts])
-        self.assertEqual(sleep.calls[0], 1.0)
-        self.assertEqual(sleep.calls[2], round(len(parts[2]) * 0.12, 2))
+        self.assertEqual(sleep.calls[:3], [min(1.5, max(.3, len(part) * .025)) for part in parts])
         pushed = [item for item in self.pushes.of_type("message")
                   if item[1]["message"]["sender"]["identity"] == self.ident(self.atai)]
         self.assertEqual(len(pushed), 6)  # 3 messages x 2 participants
@@ -425,7 +441,7 @@ class WandererSocialTest(WandererWorldTestCase):
         self.assertIn("【聊天场景】这是好友私聊", prompt)
         self.assertIn("真实同学（真实学生）", prompt)
         self.assertIn("明天一起打球？", prompt)
-        self.assertEqual(caller.labels, ["wanderer:atai:social_chat"])
+        self.assertEqual(caller.labels, ["wanderer:atai:dm_inbox"])
         logged = [row for row in self.actions(self.atai["id"]) if row["action_kind"] == "social_message"]
         self.assertEqual(len(logged), 1)
         threads = self.rows("SELECT thread_key FROM wanderer_memory_threads WHERE wanderer_id = ?", (self.atai["id"],))
@@ -438,10 +454,10 @@ class WandererSocialTest(WandererWorldTestCase):
         self.run_reply(self.atai, key, StubCaller(turn("skip", [])))
         self.assertEqual([row for row in self.messages_from(self.ident(self.atai), key)
                           if row["message_type"] == "text"], [])
-        self.assertIn("turn:skip", self.reasons(self.atai))
+        self.assertIn("想安静一会儿", self.reasons(self.atai))
         self.assertEqual(self.pushes.of_type("typing"), [])
 
-    def test_daily_cap_degrades_dm_to_emoji_and_silences_groups(self):
+    def test_daily_cap_defers_dm_and_silences_groups(self):
         with self.connect() as conn:
             wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "0")
             conn.commit()
@@ -451,8 +467,8 @@ class WandererSocialTest(WandererWorldTestCase):
         self.run_reply(self.atai, key, caller)
         self.assertEqual(caller.calls, [])
         texts = [row["body"] for row in self.messages_from(self.ident(self.atai), key) if row["message_type"] == "text"]
-        self.assertEqual(len(texts), 1)
-        self.assertLessEqual(len(texts[0]), 2)  # an emoji, not a sentence
+        self.assertEqual(texts, [])
+        self.assertEqual(self.rows("SELECT state FROM wanderer_social_inbox WHERE conversation_key=?", (key,))[0]["state"], "retry")
         _group_id, group_key = self.make_group(self.lele)
         self.send(self.real, group_key, "大家好")
         self.run_reply(self.lele, group_key, caller, mentioned=True)
@@ -473,7 +489,7 @@ class WandererSocialTest(WandererWorldTestCase):
         caller = StubCaller(turn("reply", ["嘿嘿"]))
         self.run_reply(self.atai, key, caller)
         self.assertEqual(caller.calls, [])
-        self.assertIn("rate_limited", self.reasons(self.atai))
+        self.assertIn("rate limit", self.rows("SELECT last_error FROM wanderer_social_inbox WHERE conversation_key=?", (key,))[0]["last_error"])
 
     # -- groups -------------------------------------------------------------
 

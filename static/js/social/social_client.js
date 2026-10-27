@@ -274,7 +274,7 @@ class SocialClient {
             const entry = event.target.closest?.('[data-social-entry]');
             if (!entry) return;
             event.preventDefault();
-            void this.openFriends(entry);
+            void this.openChat(null, entry);
         });
         this.paintBadge();
     }
@@ -292,7 +292,7 @@ class SocialClient {
     }
 
     async openChat(key, trigger = null) {
-        try { (await this.loadUi()).openChat(key, trigger); } catch (error) {
+        try { await (await this.loadUi()).openChat(key, trigger); } catch (error) {
             console.error('[social] chat UI failed to load', error);
         }
     }

@@ -3108,6 +3108,10 @@ def create_private_message(
     _insert_private_message_audit(conn, message_row)
     if str(contact["role"]) in {"student", "teacher"}:
         _create_private_message_notification(conn, message_row, attachment_payloads)
+    from ..db.savepoint import best_effort
+    with best_effort(conn, "wanderer_private_inbox", log_prefix="[WANDERER_INBOX]"):
+        from .wanderer_inbox_service import enqueue_legacy
+        enqueue_legacy(conn, message_row)
 
     serialized = _serialize_private_message(
         message_row,

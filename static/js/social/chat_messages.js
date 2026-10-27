@@ -145,7 +145,7 @@ export function renderMessage(message, ctx, { connected = false } = {}) {
         mine && ctx.type === 'dm' ? el('small', { class: 'social-receipt', 'data-receipt': '' }) : null,
         actions,
     ]);
-    const showAvatar = !mine && !connected;
+    const showAvatar = !connected;
     return el('div', {
         class: `social-msg social-msg--${mine ? 'out' : 'in'}${connected ? ' is-connected' : ''}`,
         'data-message-id': String(message.id), 'data-sender': message.sender?.identity || '',

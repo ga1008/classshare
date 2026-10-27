@@ -18,11 +18,11 @@ export async function createSocialUi(client) {
     let lastTrigger = null;
 
     const openChat = async (key, trigger = null) => {
-        chat ||= createChatModal(client, { openFriends: () => openFriends(null) });
+        if (trigger && !trigger.closest('[data-lq-layer]')) lastTrigger = trigger;
+        chat ||= createChatModal(client, { openFriends: (trigger) => openFriends(trigger) });
         await chat.open(key, trigger || lastTrigger);
     };
     const openFriends = (trigger) => {
-        if (trigger) lastTrigger = trigger;
         friends ||= createFriendsModal(client, { openChat: (key) => openChat(key) });
         friends.open(trigger || lastTrigger);
     };

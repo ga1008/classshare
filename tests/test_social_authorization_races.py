@@ -103,3 +103,51 @@ class SocialAuthorizationRaceTest(SocialDbTestCase):
                 action(conn)
                 conn.commit()
             self.assertLess(order.index("social-send"), order.index("social-attention"))
+
+    def test_group_settings_recheck_authority_after_lock_wait(self):
+        self.run_service(groups.set_admin, self.user(self.a), self.group["id"], self.b, True)
+        original = groups.serialize_on
+        changed = False
+        def acquire(conn, namespace, values):
+            nonlocal changed
+            if not changed:
+                changed = True
+                conn.execute("UPDATE social_group_members SET role = 'member' WHERE group_id = ? AND member_identity = ?",
+                             (self.group["id"], self.b))
+            return original(conn, namespace, values)
+        with self.connect() as conn, patch.object(groups, "serialize_on", acquire):
+            with self.assertRaises(SocialError) as raised:
+                groups.update_group(conn, self.user(self.b), self.group["id"], name="不能保存")
+            self.assertEqual(raised.exception.status_code, 403)
+            self.assertNotEqual(conn.execute("SELECT name FROM social_groups WHERE id = ?", (self.group["id"],)).fetchone()[0], "不能保存")
+
+    def test_invite_rechecks_membership_after_group_lock(self):
+        self.befriend(self.b, self.c)
+        original = groups.serialize_on
+        locks = []
+        def acquire(conn, namespace, values):
+            locks.append(namespace)
+            if namespace == "social-attention":
+                conn.execute("UPDATE social_group_members SET left_at = '2026-10-28' "
+                             "WHERE group_id = ? AND member_identity = ?", (self.group["id"], self.b))
+            return original(conn, namespace, values)
+        with self.connect() as conn, patch.object(groups, "serialize_on", acquire):
+            with self.assertRaises(SocialError) as raised:
+                groups.add_members(conn, self.user(self.b), self.group["id"], [self.c])
+            self.assertEqual(raised.exception.status_code, 403)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM social_group_members WHERE group_id = ?",
+                                          (self.group["id"],)).fetchone()[0], 2)
+        self.assertEqual(locks, ["social-group-membership", "social-attention"])
+
+    def test_personal_settings_recheck_active_membership(self):
+        original = groups.serialize_on
+        def acquire(conn, namespace, values):
+            conn.execute("UPDATE social_groups SET dissolved_at = '2026-10-28' WHERE id = ?", (self.group["id"],))
+            return original(conn, namespace, values)
+        with self.connect() as conn, patch.object(groups, "serialize_on", acquire):
+            with self.assertRaises(SocialError) as raised:
+                groups.update_me(conn, self.user(self.b), self.group["id"], alias="不能保存", muted=True)
+            self.assertEqual(raised.exception.status_code, 404)
+            row = conn.execute("SELECT alias, muted FROM social_group_members WHERE group_id = ? AND member_identity = ?",
+                               (self.group["id"], self.b)).fetchone()
+            self.assertEqual(tuple(row), ("", 0))

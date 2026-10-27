@@ -95,9 +95,17 @@ async function mount(page: Page, options: { empty?: boolean; mobile?: boolean; d
     return state;
 }
 
+async function openFriendsManager(page: Page) {
+    await page.locator('[data-social-entry]').click();
+    await expect(page.locator('#social-chat')).toBeVisible();
+    const manage = page.locator('[data-social-manage-friends]');
+    if (!await manage.isVisible()) await page.locator('[data-chat-toggle=list]').click();
+    await manage.click();
+}
+
 test('LQ friends groups hide empty sections and nested new-friend window returns focus', async ({ page }) => {
     const state = await mount(page);
-    await page.locator('[data-social-entry]').click();
+    await openFriendsManager(page);
     await expect(page.locator('#social-friends [role=tab]')).toHaveCount(2);
     await expect(page.locator('#social-friends-accepted')).toHaveAttribute('open', '');
     await expect(page.getByRole('heading', { name: '互补搭档' })).toHaveCount(0);
@@ -118,15 +126,15 @@ test('LQ friends groups hide empty sections and nested new-friend window returns
 
 test('LQ empty friends page keeps only a single invitation and the two tabs', async ({ page }) => {
     await mount(page, { empty: true });
-    await page.locator('[data-social-entry]').click();
-    await expect(page.getByText('从一个招呼开始')).toBeVisible();
+    await openFriendsManager(page);
+    await expect(page.locator('#social-friends').getByText('从一个招呼开始')).toBeVisible();
     await expect(page.locator('#social-friends details')).toHaveCount(0);
     await expect(page.locator('#social-friends [role=tab]')).toHaveCount(2);
 });
 
 test('LQ friends and nested search fit a 360px viewport in dark appearance', async ({ page }) => {
     await mount(page, { mobile: true, dark: true });
-    await page.locator('[data-social-entry]').click();
+    await openFriendsManager(page);
     await expect(page.locator('#social-friends-accepted')).toBeVisible();
     expect(await page.locator('#social-friends .lq-dialog__surface').evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
     await page.screenshot({ path: '.codex-temp/social-redesign/friends-mobile-dark.png' });

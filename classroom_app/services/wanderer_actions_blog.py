@@ -3,8 +3,7 @@ and an occasional post of its own (``write_post``, design §10.4).
 
 Everything goes through the real platform entry points with the wanderer's
 student-shaped user dict (``build_wanderer_user_dict``): ``blog_service.list_posts``
-/ ``get_post_detail`` / ``add_comment`` / ``toggle_like`` and
-``message_center_service.create_private_message``. Visibility, rate limits, L1
+/ ``get_post_detail`` / ``add_comment`` / ``toggle_like``. Visibility, rate limits, L1
 safety rules, content review and notifications therefore apply exactly as they
 do for a real student.
 """
@@ -17,7 +16,6 @@ from . import blog_moderation_states as mod_states
 from .blog_notifications import notify_new_comment, notify_post_hot
 from .blog_section_service import DEFAULT_BLOG_SECTION_KEY
 from .blog_service import add_comment, create_post, get_post_detail, list_posts, toggle_like
-from .message_center_service import _mark_private_conversation_read, create_private_message
 from .wanderer_actions_common import (
     ActionContext,
     as_int,
@@ -45,7 +43,6 @@ from .wanderer_text_style import strip_ai_formatting
 REPLY_NOTIFICATION_CATEGORIES = ("blog_comment", "blog_like")
 PENDING_ITEMS_PER_ACTION = 2
 FLOOR_CONTEXT_LIMIT = 12
-DM_CONTEXT_LIMIT = 10
 RECENT_BROWSE_PENALTY = 0.2
 _POST_COLUMNS = (
     "id, title, summary, tags_json, section_key, author_identity, author_role, author_user_pk, "
@@ -289,7 +286,7 @@ async def browse_blog(ctx: ActionContext) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Pending replies (blog notifications + private messages)
+# Pending blog replies (DMs use wanderer_inbox_worker)
 # ---------------------------------------------------------------------------
 
 def pending_blog_notifications(conn: Any, identity: str, limit: int) -> list[dict[str, Any]]:
@@ -302,25 +299,9 @@ def pending_blog_notifications(conn: Any, identity: str, limit: int) -> list[dic
     return [_row_dict(row) for row in rows]
 
 
-def pending_dm_conversations(conn: Any, identity: str, limit: int) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT conversation_key, sender_identity, sender_role, sender_user_pk, class_offering_id,
-               MAX(id) AS last_id
-        FROM private_messages
-        WHERE recipient_identity = ? AND read_at IS NULL
-        GROUP BY conversation_key, sender_identity, sender_role, sender_user_pk, class_offering_id
-        ORDER BY last_id
-        LIMIT ?
-        """,
-        (identity, int(limit)),
-    ).fetchall()
-    return [_row_dict(row) for row in rows]
-
-
 def has_pending_work(ctx: ActionContext) -> bool:
     with ctx.connect() as conn:
-        return bool(pending_blog_notifications(conn, ctx.identity, 1) or pending_dm_conversations(conn, ctx.identity, 1))
+        return bool(pending_blog_notifications(conn, ctx.identity, 1))
 
 
 def _mark_notification_read(ctx: ActionContext, notification_id: int) -> None:
@@ -431,96 +412,11 @@ async def _handle_notification(ctx: ActionContext, note: dict[str, Any]) -> list
         _mark_notification_read(ctx, int(note["id"]))
 
 
-def _dm_history(conn: Any, conversation_key: str, own_identity: str) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        "SELECT sender_identity, sender_display_name, content FROM private_messages WHERE conversation_key = ? "
-        f"ORDER BY id DESC LIMIT {DM_CONTEXT_LIMIT}",
-        (conversation_key,),
-    ).fetchall()
-    return [
-        {"self": str(row["sender_identity"]) == own_identity, "name": str(row["sender_display_name"] or ""),
-         "text": str(row["content"] or "")}
-        for row in reversed(rows)
-    ]
-
-
-def _mark_dm_read(ctx: ActionContext, conv: dict[str, Any]) -> None:
-    with ctx.connect() as conn:
-        _mark_private_conversation_read(
-            conn, current_identity=ctx.identity, current_role="student", current_user_pk=ctx.student_id,
-            contact_identity=str(conv["sender_identity"]), class_offering_id=conv.get("class_offering_id"),
-        )
-        conn.commit()
-
-
-async def _send_dms(ctx: ActionContext, conv: dict[str, Any], parts: list[str], *, ai_calls: int,
-                    mood: str) -> list[dict[str, Any]]:
-    user = build_wanderer_user_dict(ctx.wanderer)
-    target = {"target_type": "private_message", "target_id": conv["sender_identity"]}
-    for index, part in enumerate(parts):
-        if index:
-            await ctx.pause()
-        try:
-            with ctx.connect() as conn:
-                create_private_message(conn, user, contact_identity=str(conv["sender_identity"]),
-                                       class_offering_id=conv.get("class_offering_id"), content=part)
-                bump_stats(conn, ctx.wanderer_id, {"dm_replies": 1})
-                conn.commit()
-        except Exception as exc:  # noqa: BLE001 - blocked / rate limited / contact gone
-            record_action(ctx, "dm_reply", **target, content_preview=part, ai_calls=ai_calls, mood=mood,
-                          outcome="failed", detail={"error": f"{type(exc).__name__}: {exc}"[:240], "part": index + 1})
-            return [outcome("dm_reply", "failed", ai_calls=ai_calls)]
-    record_action(ctx, "dm_reply", **target, content_preview=" / ".join(parts), ai_calls=ai_calls, mood=mood,
-                  detail={"parts": len(parts)})
-    return [outcome("dm_reply", ai_calls=ai_calls)]
-
-
-def _dm_scene(counterpart: dict[str, Any], history: list[dict[str, Any]], interests: list[Any], mode: str) -> dict[str, Any]:
-    return {
-        "kind": "私信", "title": f"与 {counterpart['name']} 的私信", "meta": "对方给你发来私信",
-        "context_lines": [f"{'你' if item['self'] else item['name']}：{item['text'][:300]}" for item in history],
-        "tags": list(interests), "counterpart": counterpart,
-        "task": "回复这条私信；不想回就 skip。" + ("可以连发几条（multi）。" if mode == "multi" else "最多一条。"),
-    }
-
-
-async def _answer_dm(ctx: ActionContext, conv: dict[str, Any]) -> list[dict[str, Any]]:
-    sender = str(conv.get("sender_identity") or "")
-    thread_key = f"dm:{sender}"
-    target = {"target_type": "private_message", "target_id": sender}
-    with ctx.connect() as conn:
-        history = _dm_history(conn, str(conv["conversation_key"]), ctx.identity)
-    latest = next((item for item in reversed(history) if not item["self"]), {"name": "对方", "text": ""})
-    supported = str(conv.get("sender_role") or "") in {"student", "teacher"}
-    mode = policy_roll(ctx) if supported and behavior_on(ctx.wanderer, "dm_reply") else "disabled"
-    if mode in {"ignore", "disabled"}:
-        record_action(ctx, "skip", **target, outcome="skipped", detail={"reason": f"{mode}_policy"})
-        await remember(ctx, thread_key, heard=(latest["name"], latest["text"]), counterpart_identity=sender)
-        return [outcome("skip", "skipped")]
-    with ctx.connect() as conn:
-        counterpart = counterpart_profile(conn, role=str(conv.get("sender_role") or ""),
-                                          user_pk=conv.get("sender_user_pk"), name=latest["name"])
-    parts, calls, mood, action = await _generate_reply_parts(
-        ctx, mode=mode, scene_builder=lambda _conn: _dm_scene(counterpart, history, ctx.wanderer.get("interests") or [], mode),
-        thread_key=thread_key, suffix="dm_reply",
-    )
-    heard = (latest["name"], latest["text"])
-    if not parts:
-        record_action(ctx, "skip", **target, ai_calls=calls, mood=mood, outcome="skipped",
-                      detail={"reason": f"turn:{action}"})
-        await remember(ctx, thread_key, heard=heard, counterpart_identity=sender)
-        return [outcome("skip", "skipped", ai_calls=calls)]
-    done = await _send_dms(ctx, conv, parts, ai_calls=calls, mood=mood)
-    await remember(ctx, thread_key, said=parts, heard=heard, counterpart_identity=sender)
-    return done
-
-
 async def handle_pending_replies(ctx: ActionContext) -> list[dict[str, Any]]:
-    """Answer up to ``PENDING_ITEMS_PER_ACTION`` waiting items; blog first, then DMs."""
+    """Answer blog items. DMs are owned by the independent durable inbox lane."""
     done: list[dict[str, Any]] = []
     with ctx.connect() as conn:
         notes = pending_blog_notifications(conn, ctx.identity, PENDING_ITEMS_PER_ACTION * 3)
-        convs = pending_dm_conversations(conn, ctx.identity, PENDING_ITEMS_PER_ACTION)
     handled = 0
     for note in notes:
         results = await _handle_notification(ctx, note)
@@ -528,14 +424,6 @@ async def handle_pending_replies(ctx: ActionContext) -> list[dict[str, Any]]:
         handled += 1 if results else 0
         if handled >= PENDING_ITEMS_PER_ACTION:
             return done
-    for conv in convs:
-        try:
-            done.extend(await _answer_dm(ctx, conv))
-        finally:
-            _mark_dm_read(ctx, conv)
-        handled += 1
-        if handled >= PENDING_ITEMS_PER_ACTION:
-            break
     return done
 
 
