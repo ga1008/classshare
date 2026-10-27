@@ -318,6 +318,14 @@
       "params": "复用：PageHead(aside 槽)、Avatar(56)、cultivation-emblem 图像类、Chip(散修/境界/来历/状态)、Card variant=stat、List/Row(primary href 深链 /blog?post=)、Empty。",
       "states": "已陨落：标题加后缀、data-dead=true 时头像降低不透明度；来历芯片 种子散修/天道所造+日期；动态只列仍公开的帖子；860px 以下改单列。",
       "rules": "页面 CSS 只做网格、间距和尺寸；文字色只读 --lq-material-ink/muted；不声明背景、边框色、滤镜或动效；不新增私有按钮/面板。"
+    },
+    "social": {
+      "title": "好友 / 群聊浮窗 static/css/lq/pages/social.css",
+      "layer": "composite",
+      "summary": "2026-10-27 好友与群组（docs/social-friends-groups-2026-10-27.md §9）：顶栏「好友」入口 templates/partials/social_entry.html（四种呈现：LQ 顶栏 / 旧顶栏 / 管理壳 / 课堂顶栏，同一组 data-social-* 钩子），static/js/social/social_client.js 全局单例（/ws/social、徽标、在线缓存、标题闪烁），首次点击才懒加载 social_ui.js → friends_modal.js（好友/新朋友/群组/添加 + 黑名单浮窗）与 chat_modal.js（会话列表 | 消息区 + 输入区 | 资料侧栏）；social.css 由 social_dom.ensureSocialStyles() 按入口上的哈希 URL 懒链接，不依赖 LQ 页族开关。",
+      "params": "复用：Dialog(createDialog + createDomainModal，LQ.layer 持有栈/焦点/滚动锁)、Tabs(navigation.createTabs/tabs，pill)、Button(createComponent)、Choice 复合卡(lq-domain-choice + data-lq-shape=surface：好友卡、会话行)、Avatar/Badge/Chip、Content row/list/empty/bubble、Field/Input/Textarea/Checkbox/Switch(createForm)、Composer(createComposer + enhanceComposer enter=send，IME 守卫在共享 owner)、EmojiPicker、Toast、confirm、共享灯箱 data-ls-lightbox、MarkdownRuntime(untrusted)。",
+      "states": "好友卡 data-online=true：glass 变体 + translateY(-2px) + --lq-material-accent 背光；false：ghost 变体、下沉 1px、头像去饱和；reduced-motion / data-lq-motion=off 取消位移与动画，glass off / 高对比改为主色描边，forced-colors 用 Highlight。聊天：日期分隔、系统/拍一拍居中行、撤回占位、补传中/过期占位、局域网直传 Chip、已读/已送达、输入中、拍一拍时 .social-chat 抖动（不动浮层 surface 的 presence 动效）。≤1100px 侧栏变浮层，≤760px 会话列表变浮层（不透明主题面 + 主题墨）。",
+      "rules": "页面 CSS 只做网格、间距、尺寸与上述状态；玻璃上的文字只读 --lq-material-ink/muted/accent，状态色读 --ls-tone-*-fg；不声明控件背景/边框/滤镜，不新增 backdrop-filter。原生 button 内容块（图片格、引用）声明 data-lq-shape=surface 退出胶囊几何。不要在页面里再写第二套气泡/输入框；改 Bubble/Composer 合同时同时回归本页。"
     }
   },
   "_tools": {

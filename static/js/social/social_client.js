@@ -1,0 +1,272 @@
+/**
+ * 好友/群聊全局客户端 (docs/social-friends-groups-2026-10-27.md §7–§9).
+ *
+ * One per document (Symbol-keyed singleton, safe across hashed asset URLs):
+ *   - a single /ws/social socket: 25 s ping, exponential reconnect with jitter,
+ *     no reconnect after a 1008 auth refusal; REST keeps working while it is down;
+ *   - an event bus (`on(type, fn)`) re-emitting every server frame plus
+ *     'status' / 'counts' / 'presence-changed';
+ *   - the unread badge on every `[data-social-entry]` (messages + incoming requests);
+ *   - the presence cache seeded by `hello` and updated by `presence`;
+ *   - title flashing while the tab is hidden and a message arrives.
+ * The modals are imported lazily on the first click of a 好友 entry.
+ */
+import { socialApi } from './social_api.js';
+
+const KEY = Symbol.for('lanshare.social.client.v1');
+const PING_MS = 25_000;
+const RETRY_MIN_MS = 1_000;
+const RETRY_MAX_MS = 30_000;
+const COUNT_DEBOUNCE_MS = 600;
+const FLASH_MS = 1_200;
+const AUTH_CLOSE_CODE = 1008;
+// The server closes the oldest socket when an account opens more than 5 tabs;
+// that tab must stay quiet instead of reconnecting and evicting another one.
+const TOO_MANY_SOCKETS_CODE = 4008;
+
+class SocialClient {
+    constructor(doc) {
+        this.doc = doc;
+        const entry = doc.querySelector('[data-social-entry]');
+        this.me = entry?.dataset.socialMe || '';
+        this.listeners = new Map();
+        this.presence = new Map();
+        this.unreadMessages = 0;
+        this.pendingIn = 0;
+        this.mutedKeys = new Set();
+        this.activeKey = null;      // conversation visible in the chat window
+        this.ws = null;
+        this.status = 'idle';
+        this.retryDelay = RETRY_MIN_MS;
+        this.retryTimer = 0;
+        this.pingTimer = 0;
+        this.countTimer = 0;
+        this.flashTimer = 0;
+        this.baseTitle = doc.title;
+        this.stopped = false;
+        this.ui = null;
+        this.bindEntries();
+        doc.addEventListener('visibilitychange', () => this.onVisibility());
+        window.addEventListener('online', () => this.reconnectSoon(0));
+        this.connect();
+        this.refreshCounts();
+    }
+
+    /* ---------------------------------------------------------------- bus */
+    on(type, fn) {
+        if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+        this.listeners.get(type).add(fn);
+        return () => this.listeners.get(type)?.delete(fn);
+    }
+
+    emit(type, data) {
+        for (const fn of [...(this.listeners.get(type) || [])]) {
+            try { fn(data); } catch (error) { console.error(`[social] listener for ${type} failed`, error); }
+        }
+    }
+
+    /* ---------------------------------------------------------------- socket */
+    connect() {
+        if (this.stopped || this.ws) return;
+        const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        let socket;
+        try {
+            socket = new WebSocket(`${scheme}://${window.location.host}/ws/social`);
+        } catch {
+            this.setStatus('offline');
+            this.reconnectSoon();
+            return;
+        }
+        this.ws = socket;
+        this.setStatus('connecting');
+        socket.addEventListener('open', () => {
+            this.retryDelay = RETRY_MIN_MS;
+            this.setStatus('online');
+            window.clearInterval(this.pingTimer);
+            this.pingTimer = window.setInterval(() => this.send({ type: 'ping' }), PING_MS);
+            if (this.activeKey) this.send({ type: 'focus', conversation_key: this.activeKey });
+        });
+        socket.addEventListener('message', (event) => this.onFrame(event.data));
+        socket.addEventListener('close', (event) => {
+            window.clearInterval(this.pingTimer);
+            if (this.ws === socket) this.ws = null;
+            this.setStatus('offline');
+            if (event.code === AUTH_CLOSE_CODE || event.code === TOO_MANY_SOCKETS_CODE) { this.stopped = true; return; }
+            this.reconnectSoon();
+        });
+        socket.addEventListener('error', () => { /* close follows; handled there */ });
+    }
+
+    reconnectSoon(delay = null) {
+        if (this.stopped || this.ws) return;
+        window.clearTimeout(this.retryTimer);
+        const wait = delay ?? Math.round(this.retryDelay * (0.75 + Math.random() * 0.5));
+        this.retryDelay = Math.min(RETRY_MAX_MS, this.retryDelay * 2);
+        this.retryTimer = window.setTimeout(() => this.connect(), wait);
+    }
+
+    setStatus(status) {
+        if (this.status === status) return;
+        this.status = status;
+        this.emit('status', status);
+    }
+
+    /** @returns {boolean} whether the frame was handed to an open socket */
+    send(frame) {
+        if (this.ws?.readyState !== WebSocket.OPEN) return false;
+        try { this.ws.send(JSON.stringify(frame)); return true; } catch { return false; }
+    }
+
+    focus(key) {
+        this.activeKey = key || null;
+        this.send({ type: 'focus', conversation_key: this.activeKey });
+    }
+
+    onFrame(raw) {
+        let frame;
+        try { frame = JSON.parse(raw); } catch { return; }
+        if (!frame || typeof frame !== 'object') return;
+        switch (frame.type) {
+        case 'pong': return;
+        case 'hello':
+            this.me = frame.me || this.me;
+            for (const identity of frame.online_friends || []) this.presence.set(identity, { online: true, last_seen_at: null });
+            this.unreadMessages = Number(frame.unread_total) || 0;
+            this.paintBadge();
+            this.refreshCounts();
+            this.emit('presence-changed', null);
+            break;
+        case 'presence':
+            this.presence.set(frame.identity, { online: Boolean(frame.online), last_seen_at: frame.last_seen_at || null });
+            this.emit('presence-changed', frame.identity);
+            break;
+        case 'message': this.onMessage(frame.message); break;
+        case 'friend_request': case 'friend_accepted': case 'friend_removed': case 'group_changed':
+            this.refreshCounts();
+            break;
+        default: break;
+        }
+        this.emit(frame.type, frame);
+    }
+
+    onMessage(message) {
+        if (!message) return;
+        const incoming = message.sender?.identity && message.sender.identity !== this.me
+            && message.message_type !== 'system';
+        const viewing = this.activeKey === message.conversation_key && !this.doc.hidden;
+        // A backfill re-push repeats an old LAN message with server_ready now true.
+        const backfilled = (message.media || []).some((item) => item.delivered_via === 'lan' && item.server_ready);
+        if (!incoming || viewing || message.recalled || backfilled) return;
+        if (!this.mutedKeys.has(message.conversation_key)) {
+            this.unreadMessages += 1;
+            this.paintBadge();
+            if (this.doc.hidden) this.startFlash(message.sender?.name || '新消息');
+            else if (!this.ui?.chatOpen?.()) this.toastIncoming(message);
+        }
+    }
+
+    /* ---------------------------------------------------------------- counts */
+    refreshCounts() {
+        window.clearTimeout(this.countTimer);
+        this.countTimer = window.setTimeout(async () => {
+            try {
+                const [conversations, requests] = await Promise.all([socialApi.conversations(), socialApi.requests()]);
+                const items = conversations?.items || [];
+                this.mutedKeys = new Set(items.filter((item) => item.muted).map((item) => item.conversation_key));
+                this.unreadMessages = items.filter((item) => !item.muted).reduce((sum, item) => sum + (Number(item.unread) || 0), 0);
+                this.pendingIn = (requests?.incoming || []).length;
+                this.paintBadge();
+                this.emit('counts', { unread: this.unreadMessages, pendingIn: this.pendingIn, conversations: items });
+            } catch { /* badge keeps its last value; the socket or next action retries */ }
+        }, COUNT_DEBOUNCE_MS);
+    }
+
+    paintBadge() {
+        const total = Math.max(0, this.unreadMessages + this.pendingIn);
+        const label = total > 99 ? '99+' : String(total);
+        for (const entry of this.doc.querySelectorAll('[data-social-entry]')) {
+            const badge = entry.querySelector('[data-social-unread]');
+            if (badge) { badge.textContent = label; badge.hidden = total === 0; }
+            const base = entry.dataset.socialLabel || '好友';
+            entry.setAttribute('aria-label', total ? `打开${base}（${label} 条未读）` : `打开${base}`);
+        }
+    }
+
+    isOnline(identity) {
+        return Boolean(this.presence.get(identity)?.online);
+    }
+
+    /* ---------------------------------------------------------------- attention */
+    startFlash(name) {
+        if (this.flashTimer || !this.doc.hidden) return;
+        this.baseTitle = this.doc.title;
+        let on = false;
+        this.flashTimer = window.setInterval(() => {
+            on = !on;
+            this.doc.title = on ? `【新消息】${name}` : this.baseTitle;
+        }, FLASH_MS);
+    }
+
+    stopFlash() {
+        if (!this.flashTimer) return;
+        window.clearInterval(this.flashTimer);
+        this.flashTimer = 0;
+        this.doc.title = this.baseTitle;
+    }
+
+    onVisibility() {
+        if (this.doc.hidden) return;
+        this.stopFlash();
+        if (!this.ws) this.reconnectSoon(0);
+        this.emit('visible', null);
+    }
+
+    async toastIncoming(message) {
+        const { notify } = await import('./social_dom.js');
+        const preview = message.body ? String(message.body).replace(/\s+/g, ' ').slice(0, 40) : '[附件]';
+        notify(`${message.sender?.name || '好友'}：${preview}`, 'info', {
+            key: `social:${message.conversation_key}`,
+            action: { label: '查看', onClick: () => this.openChat(message.conversation_key) },
+        });
+    }
+
+    /* ---------------------------------------------------------------- UI */
+    bindEntries() {
+        this.doc.addEventListener('click', (event) => {
+            const entry = event.target.closest?.('[data-social-entry]');
+            if (!entry) return;
+            event.preventDefault();
+            void this.openFriends(entry);
+        });
+        this.paintBadge();
+    }
+
+    async loadUi() {
+        if (!this.ui) {
+            const module = await import('./social_ui.js');
+            this.ui = await module.createSocialUi(this);
+        }
+        return this.ui;
+    }
+
+    async openFriends(trigger = null) {
+        try { (await this.loadUi()).openFriends(trigger); } catch (error) {
+            console.error('[social] friends UI failed to load', error);
+        }
+    }
+
+    async openChat(key, trigger = null) {
+        try { (await this.loadUi()).openChat(key, trigger); } catch (error) {
+            console.error('[social] chat UI failed to load', error);
+        }
+    }
+}
+
+/** @returns {SocialClient|null} */
+export function getSocialClient(doc = document) {
+    if (!doc[KEY] && doc.querySelector('[data-social-entry]')) doc[KEY] = new SocialClient(doc);
+    return doc[KEY] || null;
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => getSocialClient(), { once: true });
+else getSocialClient();

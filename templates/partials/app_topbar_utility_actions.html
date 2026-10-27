@@ -1,5 +1,6 @@
 {% from "macros/app_topbar.html" import app_topbar_icon %}
 {% from "macros/app_utility_menus.html" import app_learning_menu, app_personal_menu %}
+{% from "partials/social_entry.html" import social_entry %}
 {% if user_info.role == 'teacher' and not topbar_in_shell|default(false) %}
 <a data-lq-component="button" href="/manage" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-slate" title="管理中心" aria-label="打开管理中心">
     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('gauge') }}</span>
@@ -40,6 +41,7 @@
         <div class="message-center-bell-toast__meta" data-message-center-bell-toast-meta>点击消息入口进入通知中心</div>
     </div>
 </div>
+{{ social_entry(user_info, 'legacy') }}
 {{ app_personal_menu(user_info) }}
 
 <script type="module">

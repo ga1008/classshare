@@ -1,0 +1,225 @@
+/* 好友 / 群聊浮窗 (docs/social-friends-groups-2026-10-27.md §9).
+   DOM owners: static/js/social/{friends_modal,chat_modal,chat_messages,chat_composer,chat_sidebar}.js.
+   Loaded lazily by social_dom.js ensureSocialStyles() the first time the 好友
+   entry is used, so it never blocks first paint and does not depend on which
+   LQ families are enabled (all shared components it builds on are in
+   tailwind-app.css). Layout and state only: materials, buttons, chips,
+   badges, avatars, bubbles, fields and the composer keep their shared
+   recipes. Text on the raised dialog surface reads the paired scene ink
+   (--lq-material-ink/-muted/-accent); the narrow-screen overlays carry an
+   opaque theme surface and therefore the theme ink. */
+
+.social-dialog .lq-dialog__body { white-space: normal; }
+.social-dialog { color: hsl(var(--lq-material-ink, var(--ls-ink))); }
+.social-section-title { margin: var(--ls-s-4) 0 var(--ls-s-2); font-size: var(--ls-t-footnote); font-weight: var(--ls-weight-title3); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); letter-spacing: .02em; }
+.social-section-title:first-child { margin-top: 0; }
+.social-hint, .social-status { margin: 0; font-size: var(--ls-t-footnote); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
+.social-form-error { margin: 0; font-size: var(--ls-t-footnote); color: hsl(var(--ls-tone-danger-fg)); }
+.social-form-actions, .social-panel__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--ls-s-2); }
+.social-form-actions { justify-content: flex-end; }
+.social-panel { display: grid; gap: var(--ls-s-2); min-width: 0; }
+
+/* ---------------------------------------------------------------- avatars */
+.social-avatar { position: relative; display: inline-flex; flex: none; }
+.social-avatar__dot {
+    position: absolute; inset-inline-end: -1px; inset-block-end: -1px;
+    width: 12px; height: 12px; border-radius: var(--ls-r-capsule);
+    background: hsl(var(--ls-ink-3)); box-shadow: 0 0 0 2px hsl(var(--ls-surface-1));
+}
+.social-avatar[data-online="true"] .social-avatar__dot { background: hsl(var(--ls-tone-success-fg)); }
+
+/* ---------------------------------------------------------------- friends */
+.social-friends { display: grid; gap: var(--ls-s-3); }
+.social-status:empty { display: none; }
+.social-friend-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+    gap: var(--ls-s-3); margin: 0; padding: var(--ls-s-1) 0 var(--ls-s-2); list-style: none;
+}
+.social-friend { position: relative; display: flex; min-width: 0; border-radius: var(--ls-r-md); transition: transform var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out), box-shadow var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out); }
+.social-friend__button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--ls-s-3); width: 100%; }
+.social-friend__copy, .social-conv__copy, .social-member__copy, .social-side__who, .social-file__copy { display: grid; gap: 2px; min-width: 0; }
+.social-friend__name, .social-conv__copy > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.social-friend__meta, .social-friend__presence { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--ls-t-caption); opacity: .86; }
+.social-friend__marks, .social-conv__marks { display: grid; justify-items: end; gap: var(--ls-s-1); }
+/* Online: lit, raised a little, accent backlight. Offline: desaturated and sunk. */
+.social-friend[data-online="true"] {
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 1px hsl(var(--lq-material-accent, var(--ls-primary)) / .32), 0 10px 26px -10px hsl(var(--lq-material-accent, var(--ls-primary)) / .62);
+}
+.social-friend[data-online="false"] { transform: translateY(1px); box-shadow: none; }
+.social-friend[data-online="false"] .lq-avatar { filter: grayscale(.85); opacity: .72; }
+.social-friend[data-online="false"] .social-friend__copy { opacity: .78; }
+
+.social-add__fields { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--ls-s-3); align-items: end; }
+.social-results { display: grid; gap: var(--ls-s-2); min-height: 120px; }
+.social-group-form { display: grid; gap: var(--ls-s-3); padding: var(--ls-s-3) 0; }
+.social-group-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 1fr)); gap: var(--ls-s-1) var(--ls-s-3); margin: 0; padding: 0; border: 0; max-height: 240px; overflow: auto; }
+.social-group-picks > legend { margin-bottom: var(--ls-s-2); font-size: var(--ls-t-footnote); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
+.social-blocks { display: grid; gap: var(--ls-s-3); }
+
+/* ---------------------------------------------------------------- chat layout */
+.social-chat-dialog .lq-dialog__body { display: flex; flex: 1; min-height: 0; padding: 0 var(--ls-s-4) var(--ls-s-4); overflow: hidden; }
+.social-chat {
+    position: relative; flex: 1; min-width: 0; min-height: 0;
+    display: grid; grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(260px, 300px); gap: 0;
+}
+.social-chat__list, .social-chat__side { display: flex; flex-direction: column; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.social-chat__list { padding-inline-end: var(--ls-s-3); border-inline-end: 1px solid hsl(var(--ls-glass-line)); }
+.social-chat__side { padding-inline-start: var(--ls-s-3); border-inline-start: 1px solid hsl(var(--ls-glass-line)); }
+.social-chat__list-head { display: flex; align-items: center; justify-content: space-between; gap: var(--ls-s-2); padding-block: var(--ls-s-1) var(--ls-s-2); }
+.social-convs { display: grid; gap: var(--ls-s-1); margin: 0; padding: 0; list-style: none; }
+.social-conv__button { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--ls-s-2); width: 100%; }
+.social-conv__copy > small, .social-conv__marks > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--ls-t-caption); opacity: .82; }
+
+.social-chat__main { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding-inline: var(--ls-s-3); }
+.social-chat__head { display: flex; align-items: center; gap: var(--ls-s-2); padding-block: var(--ls-s-1) var(--ls-s-2); border-block-end: 1px solid hsl(var(--ls-glass-line)); }
+.social-chat__heading { display: grid; flex: 1; min-width: 0; }
+.social-chat__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.social-chat__subline { min-height: 1.2em; font-size: var(--ls-t-caption); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
+.social-chat__head [data-chat-toggle="list"] { display: none; }
+.social-chat__messages { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-block: var(--ls-s-3); display: flex; flex-direction: column; gap: var(--ls-s-2); }
+.social-chat__messages:focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: -2px; }
+.social-chat__more { margin: 0 auto; font-size: var(--ls-t-caption); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
+.social-chat__composer { flex: none; padding-block-start: var(--ls-s-2); }
+
+/* ---------------------------------------------------------------- messages */
+.social-day { display: flex; justify-content: center; margin-block: var(--ls-s-2); font-size: var(--ls-t-caption); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
+.social-msg { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: var(--ls-s-2); align-items: end; max-width: 100%; }
+.social-msg--out { grid-template-columns: minmax(0, 1fr); }
+.social-msg--out .social-msg__avatar { display: none; }
+.social-msg__column { display: grid; gap: 2px; min-width: 0; justify-items: start; }
+.social-msg--out .social-msg__column { justify-items: end; }
+.social-msg .lq-bubble { max-width: min(640px, 82%); }
+.social-msg.is-connected { margin-top: calc(var(--ls-s-1) * -1); }
+.social-msg.is-connected .lq-bubble__author { display: none; }
+/* In a direct chat the header already names the peer. */
+.social-chat[data-type="dm"] .lq-bubble__author { display: none; }
+.social-msg--out .lq-bubble__author { display: none; }
+.social-msg--out .social-msg__meta { justify-content: flex-end; }
+.social-msg__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ls-s-1); min-height: 24px; font-size: var(--ls-t-caption); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
+.social-msg__actions { display: inline-flex; gap: 2px; opacity: 0; transition: opacity var(--lq-motion-control-duration, 180ms) var(--lq-motion-ease, ease-out); }
+.social-msg:hover .social-msg__actions, .social-msg:focus-within .social-msg__actions { opacity: 1; }
+@media (hover: none) { .social-msg__actions { opacity: 1; } }
+.social-msg--system { display: flex; justify-content: center; text-align: center; font-size: var(--ls-t-caption); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
+.social-msg--system > span { max-width: 80%; overflow-wrap: anywhere; }
+.social-msg--nudge > span { color: hsl(var(--lq-material-accent, var(--ls-primary))); }
+.social-msg.is-flash .lq-bubble { box-shadow: 0 0 0 2px hsl(var(--lq-material-accent, var(--ls-primary)) / .6); }
+
+.social-md { white-space: normal; }
+.social-md > :first-child { margin-top: 0; }
+.social-md > :last-child { margin-bottom: 0; }
+.social-md :where(pre) { max-width: 100%; overflow: auto; }
+.social-quote {
+    display: grid; gap: 2px; width: 100%; margin: 0 0 var(--ls-s-2); padding: var(--ls-s-1) var(--ls-s-2);
+    border: 0; border-inline-start: 3px solid hsl(var(--ls-primary) / .5); border-radius: var(--ls-r-xs);
+    background: hsl(var(--ls-ink) / .05); color: inherit; font: inherit; font-size: var(--ls-t-caption); text-align: start; cursor: pointer;
+}
+.social-quote > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .8; }
+.social-media { display: grid; gap: var(--ls-s-2); margin-top: var(--ls-s-1); }
+.social-media-grid { display: grid; grid-template-columns: repeat(min(var(--social-cols, 3), 3), minmax(0, 1fr)); gap: var(--ls-s-1); max-width: 360px; }
+.social-media-grid[data-count="1"] { --social-cols: 1; max-width: 280px; }
+.social-media-grid[data-count="2"], .social-media-grid[data-count="4"] { --social-cols: 2; }
+.social-media-grid__item { display: block; padding: 0; border: 0; border-radius: var(--ls-r-sm); overflow: hidden; background: hsl(var(--ls-ink) / .06); cursor: zoom-in; aspect-ratio: 1; }
+.social-media-grid[data-count="1"] .social-media-grid__item { aspect-ratio: auto; }
+.social-media-grid__item img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.social-media-grid[data-count="1"] .social-media-grid__item img { height: auto; max-height: 320px; object-fit: contain; }
+.social-media-grid__item:focus-visible { outline: 2px solid hsl(var(--ls-primary)); outline-offset: 2px; }
+.social-video { display: block; width: min(100%, 360px); max-height: 280px; border-radius: var(--ls-r-sm); }
+.social-audio { display: block; width: min(100%, 300px); }
+.social-file { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--ls-s-2); min-width: min(100%, 240px); padding: var(--ls-s-2); border: 1px solid hsl(var(--ls-glass-line)); border-radius: var(--ls-r-sm); }
+.social-file > svg { width: 24px; height: 24px; }
+.social-file__copy > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--ls-t-footnote); }
+.social-file__copy > small { font-size: var(--ls-t-caption); opacity: .8; }
+.social-file--placeholder { grid-template-columns: auto minmax(0, 1fr); opacity: .8; }
+
+/* ---------------------------------------------------------------- composer */
+.social-composer { position: relative; display: block; }
+.social-composer__emoji-anchor { position: absolute; inset-inline-start: 12px; inset-block-end: 56px; width: 0; height: 0; }
+.social-composer__divider { width: 1px; height: 20px; margin-inline: 2px; background: hsl(var(--ls-glass-line)); }
+.social-composer__reply { display: flex; align-items: center; justify-content: space-between; gap: var(--ls-s-2); font-size: var(--ls-t-caption); }
+.social-composer__reply-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .85; }
+.social-composer__notice { margin: 0; font-size: var(--ls-t-caption); color: hsl(var(--ls-tone-danger-fg)); }
+.social-mention { display: flex; flex-wrap: wrap; gap: var(--ls-s-1); max-height: 96px; overflow: auto; }
+.social-voice { display: flex; align-items: center; gap: var(--ls-s-2); font-size: var(--ls-t-footnote); }
+.social-voice__dot { width: 10px; height: 10px; border-radius: var(--ls-r-capsule); background: hsl(var(--ls-tone-danger-fg)); animation: social-pulse 1.2s ease-in-out infinite; }
+.social-tray { display: grid; gap: var(--ls-s-1); margin: 0; padding: 0; list-style: none; max-height: 168px; overflow: auto; }
+.social-tray__item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 2px var(--ls-s-2); font-size: var(--ls-t-caption); }
+.social-tray__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.social-tray__meta { opacity: .8; white-space: nowrap; }
+.social-tray__bar { grid-column: 1 / 3; width: 100%; height: 4px; }
+.social-tray__item > .lq-btn { grid-row: 1 / 3; grid-column: 3; }
+.social-tray__item[data-phase="error"] .social-tray__meta { color: hsl(var(--ls-tone-danger-fg)); opacity: 1; }
+.social-tray__quota { font-size: var(--ls-t-caption); opacity: .75; }
+
+/* ---------------------------------------------------------------- sidebar */
+.social-side__inner { display: grid; gap: var(--ls-s-2); align-content: start; padding-block: var(--ls-s-1) var(--ls-s-4); }
+.social-side__profile { display: flex; align-items: center; gap: var(--ls-s-3); }
+.social-side__who > small { font-size: var(--ls-t-caption); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); overflow-wrap: anywhere; }
+.social-side__mood, .social-side__announcement { margin: 0; font-size: var(--ls-t-footnote); white-space: pre-wrap; overflow-wrap: anywhere; }
+.social-side__cultivation { display: flex; align-items: center; gap: var(--ls-s-2); font-size: var(--ls-t-footnote); }
+.social-side__links { display: grid; gap: var(--ls-s-1); margin: 0; padding: 0; list-style: none; font-size: var(--ls-t-footnote); }
+.social-side__links > li { display: grid; gap: 1px; min-width: 0; }
+.social-side__links a, .social-side__links span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.social-side__links small { font-size: var(--ls-t-caption); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
+.social-side__actions { display: flex; flex-wrap: wrap; gap: var(--ls-s-2); margin-top: var(--ls-s-2); }
+.social-side__form, .social-inline-form { display: grid; gap: var(--ls-s-2); }
+.social-side__filters { display: flex; flex-wrap: wrap; gap: var(--ls-s-1); margin-bottom: var(--ls-s-2); }
+.social-members { display: grid; gap: var(--ls-s-2); margin: 0; padding: 0; list-style: none; max-height: 320px; overflow: auto; }
+.social-member { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2px var(--ls-s-2); }
+.social-member__copy > small { font-size: var(--ls-t-caption); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
+.social-member__actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: 2px; }
+.social-member[data-online="false"] .lq-avatar { filter: grayscale(.85); opacity: .72; }
+
+/* ---------------------------------------------------------------- 拍一拍 */
+.social-chat.is-nudged { animation: social-shake var(--lq-motion-feedback-duration, 280ms) var(--lq-motion-ease, ease-out) 2; }
+@keyframes social-shake {
+    0%, 100% { translate: 0 0; }
+    20% { translate: -6px 0; }
+    40% { translate: 5px 0; }
+    60% { translate: -4px 0; }
+    80% { translate: 3px 0; }
+}
+@keyframes social-pulse { 50% { opacity: .35; } }
+
+/* ---------------------------------------------------------------- narrow */
+@media (max-width: 1100px) {
+    .social-chat { grid-template-columns: minmax(200px, 240px) minmax(0, 1fr); }
+    .social-chat__side {
+        position: absolute; inset-block: 0; inset-inline-end: 0; z-index: var(--ls-z-raised);
+        width: min(320px, 92%); padding: var(--ls-s-3); border-radius: var(--ls-r-lg);
+        background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); box-shadow: var(--ls-glass-shadow);
+    }
+    .social-chat[data-side-open="false"] .social-chat__side { display: none; }
+}
+@media (min-width: 1101px) {
+    .social-chat__head [data-chat-toggle="side"] { display: none; }
+}
+@media (max-width: 760px) {
+    .social-chat-dialog .lq-dialog__body { padding-inline: var(--ls-s-2); }
+    .social-chat { grid-template-columns: minmax(0, 1fr); }
+    .social-chat__head [data-chat-toggle="list"] { display: inline-flex; }
+    .social-chat__list {
+        position: absolute; inset-block: 0; inset-inline-start: 0; z-index: var(--ls-z-raised);
+        width: min(300px, 88%); padding: var(--ls-s-3); border: 0; border-radius: var(--ls-r-lg);
+        background: hsl(var(--ls-surface-1)); color: hsl(var(--ls-ink)); box-shadow: var(--ls-glass-shadow);
+    }
+    .social-chat[data-list-open="false"] .social-chat__list { display: none; }
+    .social-chat__main { padding-inline: 0; }
+    .social-msg .lq-bubble { max-width: 88%; }
+    .social-add__fields { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------------------------------------------------------------- preferences */
+@media (prefers-reduced-motion: reduce) {
+    .social-friend, .social-friend[data-online] { transform: none; transition: none; }
+    .social-chat.is-nudged, .social-voice__dot { animation: none; }
+    .social-msg__actions { transition: none; }
+}
+:root[data-lq-motion="off"] :is(.social-friend, .social-chat.is-nudged, .social-voice__dot) { transform: none; animation: none; transition: none; }
+:root:is([data-lq-glass="off"], [data-lq-contrast="more"]) .social-friend[data-online="true"] { box-shadow: 0 0 0 2px hsl(var(--ls-primary)); }
+@media (forced-colors: active) {
+    .social-friend[data-online="true"] { box-shadow: none; outline: 2px solid Highlight; }
+    .social-avatar__dot { forced-color-adjust: none; background: CanvasText; }
+    .social-avatar[data-online="true"] .social-avatar__dot { background: Highlight; }
+    .social-file, .social-quote { border-color: CanvasText; }
+}

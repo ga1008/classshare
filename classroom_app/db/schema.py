@@ -39,6 +39,7 @@ from .schema_offering_class_links import ensure_offering_class_links_schema
 from .schema_offering_merge import ensure_offering_merge_schema
 from .schema_polls import ensure_poll_schema
 from .schema_wanderers import ensure_wanderer_schema
+from .schema_social import ensure_social_schema
 from .schema_blog_closed_loop import backfill_blog_closed_loop_data, ensure_blog_closed_loop_schema
 from .schema_material_whiteboards import ensure_material_whiteboard_schema
 from .schema_course_doc_packs import ensure_course_doc_pack_schema
@@ -197,6 +198,18 @@ def init_database():
             print("[DB] PostgreSQL wanderer tables ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL wanderer schema step skipped: {exc}")
+        # 好友/群组/统一在线 tables follow the same runtime-managed, engine-aware
+        # pattern (docs/social-friends-groups-2026-10-27.md §1).
+        try:
+            social_conn = get_db_connection()
+            try:
+                ensure_social_schema(social_conn)
+                social_conn.commit()
+            finally:
+                social_conn.close()
+            print("[DB] PostgreSQL social tables ensured")
+        except Exception as exc:
+            print(f"[DB] PostgreSQL social schema step skipped: {exc}")
         # Per-student late-submission windows are read on every student
         # assignment page and submit; create them at startup, committed, so a
         # read-only request never owns (and rolls back) the lazy DDL.
@@ -412,6 +425,7 @@ def init_database():
             ensure_study_group_scheme_schema(conn)
             ensure_poll_schema(conn)
             ensure_wanderer_schema(conn)
+            ensure_social_schema(conn)
             from ..services.assignment_student_window_service import ensure_student_window_schema
 
             ensure_student_window_schema(conn)

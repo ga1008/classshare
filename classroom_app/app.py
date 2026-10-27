@@ -128,6 +128,9 @@ from .routers import resume_console
 from .routers import prompt_pool
 from .routers import academic_evaluations
 from .routers import wanderer_internal
+from .routers import social as social_router
+from .routers import social_ws as social_ws_router
+from .services import social_push_service
 
 
 class CacheControlStaticFiles(StaticFiles):
@@ -308,6 +311,9 @@ async def startup_event():
             from .services.blog_author_stats import ensure_rollup_task as ensure_blog_author_stats_task
 
             ensure_blog_author_stats_task(align_conn)
+            from .services.social_media_retention_service import ensure_social_media_tasks
+
+            ensure_social_media_tasks(align_conn)
             align_conn.commit()
         interrupted_wrong_summary_jobs = expire_interrupted_wrong_summary_jobs()
         if repair_report.paths_repaired > 0 or repair_report.paths_still_missing > 0:
@@ -725,6 +731,8 @@ app.mount("/static", CacheControlStaticFiles(directory=STATIC_DIR), name="static
 # -----------------
 app.include_router(manage_redirects.router)
 app.include_router(ui.router)
+# /ws/social must precede files.router's /ws/{class_offering_id}, which would otherwise capture it.
+app.include_router(social_ws_router.router)
 app.include_router(files.router)
 app.include_router(homework.router)
 app.include_router(ai.router)
@@ -787,4 +795,9 @@ app.include_router(feedback.router)
 app.include_router(session_router.router)
 app.include_router(mp_router.router)
 app.include_router(wanderer_internal.router)
+# 好友、群组与统一在线 (docs/social-friends-groups-2026-10-27.md). Single app worker:
+# this process owns every /ws/social socket, so social pushes are delivered in-process here.
+app.include_router(social_router.router)
+app.include_router(social_router.internal_router)
+social_push_service.mark_app_process()
 

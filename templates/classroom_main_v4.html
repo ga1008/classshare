@@ -3,6 +3,7 @@
 {% from "macros/lq/button.html" import lq_btn %}
 {% from "macros/classroom_menus.html" import classroom_more_menu, classroom_personal_menu %}
 {% from "macros/ui_explanation.html" import explain_attrs %}
+{% from "partials/social_entry.html" import social_entry %}
 
 {% block title %}{{ classroom.course_name }} - {{ classroom.class_name }} | 课堂平台{% endblock %}
 
@@ -91,6 +92,7 @@
 
         </div>
         <div class="cw-topbar-tools" aria-label="课堂工具入口">
+            {{ social_entry(user_info, 'classroom') }}
             {{ classroom_personal_menu(user_info) }}
         </div>
     </nav>

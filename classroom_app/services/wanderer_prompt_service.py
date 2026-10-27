@@ -9,7 +9,9 @@ database right before a generation, in this order:
 3. knowledge most relevant to the scene (bumps ``use_count``)
 4. 天道规则 + personal status (warnings, unacknowledged verdicts, promotion)
 5. thread memory (summary + recent turns) + counterpart's public info
-6. scene (post / classroom / DM), wrapped in an injection guard
+6. scene (post / classroom / DM / friend chat / group chat), wrapped in an
+   injection guard; the social scenes (``scene_type`` 'social_chat' |
+   'group_chat', social doc §10) add a chat guide and the roster of who is who
 7. output contract (strict JSON)
 
 Decision and generation happen in one model call (design §4 last line).
@@ -38,6 +40,21 @@ SCENE_BODY_MAX_CHARS = 2000
 SCENE_LINE_MAX_CHARS = 300
 SCENE_MAX_LINES = 30
 MOOD_MAX_CHARS = 20
+SCENE_SOCIAL_CHAT = "social_chat"
+SCENE_GROUP_CHAT = "group_chat"
+SOCIAL_SCENE_GUIDES = {
+    SCENE_SOCIAL_CHAT: (
+        "【聊天场景】这是好友私聊，像平时用手机聊天，不是在博客下写评论。对方是你的好友。"
+        "口语、短句，一条消息只说一件事；可以只回个表情，也可以不回；别把自己当客服或助手。"
+        "只聊这段对话里出现的事，不打听、不转述任何人的隐私，也不提别处看到的私人信息。"
+    ),
+    SCENE_GROUP_CHAT: (
+        "【聊天场景】这是一个群聊，群里有好几个人。你能看到所有消息，但没人找你时不必每句都接；"
+        "被 @ 到时要认真想想回不回。别刷屏、别抢话，别和别的散修没完没了地互相接话。"
+        "只聊群里出现的事，不打听、不转述任何人的隐私。"
+    ),
+}
+ROSTER_MAX = 30
 _FENCE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
 
 
@@ -156,6 +173,30 @@ def _clip(text: Any, limit: int) -> str:
     return value if len(value) <= limit else value[:limit] + "……"
 
 
+def _roster_line(person: dict[str, Any]) -> str:
+    name = _clip(person.get("name") or "某人", 30)
+    if person.get("is_self"):
+        return f"- {name}（你自己）"
+    if person.get("is_wanderer"):
+        tier_name = str(person.get("tier_name") or "")
+        return f"- {name}（散修{'，境界：' + tier_name if tier_name else ''}）——可以调侃"
+    if str(person.get("role") or "") == "teacher":
+        return f"- {name}（老师）——说话要尊重、礼貌，不调侃、不顶撞"
+    return f"- {name}（真实学生）——是真实的人，说话要有分寸"
+
+
+def _social_block(scene: dict[str, Any]) -> str:
+    """Chat guide + who is who, for the friend-chat and group-chat scenes only."""
+    guide = SOCIAL_SCENE_GUIDES.get(str(scene.get("scene_type") or ""))
+    if not guide:
+        return ""
+    roster = [item for item in scene.get("participants") or [] if isinstance(item, dict)][:ROSTER_MAX]
+    if not roster:
+        return guide
+    lines = "\n".join(_roster_line(item) for item in roster)
+    return f"{guide}\n【在场的人】\n{lines}"
+
+
 def _scene_block(scene: dict[str, Any]) -> str:
     lines = [f"【当前场景】{_clip(scene.get('kind') or '浏览', 40)}"]
     if scene.get("title"):
@@ -212,6 +253,7 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
         _knowledge_block(conn, wanderer, scene_tags),
         _dao_block(conn, wanderer),
         _memory_block(conn, wanderer, thread_key, scene),
+        _social_block(scene),
         _scene_block(scene),
         str(scene.get("output_contract") or "") or _output_contract(wanderer),
     ]

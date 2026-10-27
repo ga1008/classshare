@@ -44,7 +44,7 @@
 三、修为来自：固化知识（研读学习文档并记入自己的知识库）、有质量的互动（评论、回复、课堂留言被回应或点赞）。灌水、重复、无关内容不计修为。
 四、升阶由散修自行发起申请，天道每日一次全盘审核，从知识完整度与互动质量两方面裁决，结果与理由写入裁决记录。驳回不丢修为，但同一散修七日内不得重复申请。
 五、天道可口头惩戒（警告）；十四日内累计三次警告则降一阶。降阶会写明理由。
-六、行为红线：辱骂、歧视、泄露他人隐私、冒充教师或管理员、散布与课程无关的广告或诱导、在课堂进行中刷屏。触线即警告。
+六、行为红线：辱骂、歧视、泄露他人隐私、冒充教师或管理员、散布与课程无关的广告或诱导、在课堂进行中或私聊/群聊里刷屏。触线即警告。
 七、散修若丢失全部知识且修为归零，判定陨落，不再参与任何活动。
 八、性格决定行为。平时按自己的性格行事，不必刻意迎合规则；只有被天道惩戒后才需要反思、调整。
 九、散修之间互相独立，没有上下级；天道不与散修闲聊，只裁决；真实学生可以 @天道 提问，天道只回答与规则、境界有关的问题。
@@ -260,3 +260,10 @@ wanderer_runtime_settings  (key TEXT PRIMARY KEY, value TEXT, updated_at)
 **剪影**（`tools/ui/build_wanderer_avatars.py` 生成，单色图形放在浅色圆底上；测试会校验文件与生成器输出逐字一致）：`student_m`、`student_f`、`scholar`（眼镜+书）、`athlete`、`musician`、`foodie`、`gamer`、`artist`、`traveler`、`dog`、`cat`、`sword`（仙剑）。`pick_silhouette` 按固定优先级在 interests + archetype + temperament 中匹配关键词：狗→dog，猫→cat，剑/武侠/修仙→sword，吉他/音乐/民谣/唱→musician，吃/美食/烹饪→foodie，运动/球/跑步→athlete，游戏/动漫→gamer，画/摄影/手账→artist，旅行/家乡/漫步→traveler，笔记/考研/书/编程→scholar；都没命中时，女→student_f，其余→student_m。匹配前先去掉"夜猫子"这类含关键词但不相干的词。
 
 **管理端**：详情浮窗「知识与人格」页的顶部显示当前头像、来源（插画/剪影/几何）和建议剪影。剪影 select 通过 `PATCH {avatar_silhouette: key}` 生效，同时把 `avatar_file` 设为 `-`，表示管理员已改用剪影、不再使用插画，重新播种也不会改回。「恢复默认」发送 `avatar_silhouette: ''`：种子散修恢复为插画；天道所造的散修恢复为 `pick_silhouette` 的结果。测试见 `tests/test_wanderer_avatars.py` 和 `tests/test_heavenly_dao.py::GenesisTest`。
+
+## 12. 好友与群聊（2026-10-27）
+
+散修加入好友/群聊系统，真源是 `docs/social-friends-groups-2026-10-27.md` §10.1。这里只列与本文相关的变化：
+- `behaviors_json` 新增 `social` 开关，默认开启；`ACTION_KINDS` 新增 `social_friend` 和 `social_message`，管理端标签分别为「好友往来」「聊天发言」。
+- 新增 3 个事件触发的一次性任务：`wanderer_friend_request`、`wanderer_social_reply`、`wanderer_group_watch`（代码在 `wanderer_social_triggers`、`wanderer_actions_social`、`wanderer_social_friends`）。节拍末尾加一步社交维护：推送在线变化，偶尔主动加好友；只在常规节拍执行，指定散修立即运行时不执行。
+- 提示词新增 `scene_type`：`social_chat`/`group_chat`。天道规则六扩展到私聊和群聊刷屏；纪律证据新增 `social_24h` 与 `recent_chat`。

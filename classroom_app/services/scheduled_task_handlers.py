@@ -725,3 +725,30 @@ from .wanderer_behavior_service import (  # noqa: E402
 register_task_handler(TASK_KIND_WANDERER_TICK, handle_wanderer_tick)
 register_task_handler(TASK_KIND_WANDERER_DAO_DAILY, handle_wanderer_dao_daily_review)
 register_task_handler(TASK_KIND_DAO_MENTION_REPLY, handle_dao_mention_reply)
+
+from .wanderer_actions_social import (  # noqa: E402
+    handle_wanderer_group_watch,
+    handle_wanderer_social_reply,
+)
+from .wanderer_social_friends import handle_wanderer_friend_request  # noqa: E402
+from .wanderer_social_triggers import (  # noqa: E402
+    TASK_KIND_FRIEND_REQUEST as WANDERER_FRIEND_REQUEST_TASK_KIND,
+    TASK_KIND_GROUP_WATCH as WANDERER_GROUP_WATCH_TASK_KIND,
+    TASK_KIND_SOCIAL_REPLY as WANDERER_SOCIAL_REPLY_TASK_KIND,
+)
+
+# 散修好友/群聊（社交 §10）：事件触发的一次性任务；系统关闭时均为空操作。
+register_task_handler(WANDERER_FRIEND_REQUEST_TASK_KIND, handle_wanderer_friend_request)
+register_task_handler(WANDERER_SOCIAL_REPLY_TASK_KIND, handle_wanderer_social_reply)
+register_task_handler(WANDERER_GROUP_WATCH_TASK_KIND, handle_wanderer_group_watch)
+
+from .social_media_retention_service import (  # noqa: E402
+    TASK_KIND_RETENTION as SOCIAL_MEDIA_RETENTION_TASK_KIND,
+    TASK_KIND_UPLOAD_CLEANUP as SOCIAL_UPLOAD_CLEANUP_TASK_KIND,
+    handle_social_media_retention,
+    handle_social_upload_cleanup,
+)
+
+# 好友/群聊媒体：每日留存与空间守护 + 每小时清理未完成的分块上传会话。
+register_task_handler(SOCIAL_MEDIA_RETENTION_TASK_KIND, handle_social_media_retention)
+register_task_handler(SOCIAL_UPLOAD_CLEANUP_TASK_KIND, handle_social_upload_cleanup)

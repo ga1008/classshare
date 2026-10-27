@@ -7,18 +7,34 @@ from ..core import active_downloads
 from ..config import TOTAL_UPLOAD_MBPS
 
 
-async def throttled_file_iterator(file_path: Path, bw_limit_mbps: float):
-    chunk_size = 1024 * 64
-    rate_limit_bytes = bw_limit_mbps * 1024 * 1024
-    delay = chunk_size / rate_limit_bytes if rate_limit_bytes > 0 else 0
-    with open(file_path, mode="rb") as file:
-        while True:
-            chunk = file.read(chunk_size)
+async def throttled_file_iterator(
+    file_path: Path,
+    bw_limit_mbps: float,
+    *,
+    start: int = 0,
+    length: int | None = None,
+    chunk_size: int = 1024 * 64,
+):
+    """Stream ``length`` bytes from ``start`` at about ``bw_limit_mbps`` MiB/s (0 = unthrottled).
+
+    The pause now sits inside the loop, after every chunk; it used to run once
+    after the whole file, so nothing was actually throttled.
+    """
+    rate_limit_bytes = float(bw_limit_mbps or 0) * 1024 * 1024
+    remaining = None if length is None else max(0, int(length))
+    async with aiofiles.open(file_path, mode="rb") as file:
+        if start:
+            await file.seek(int(start))
+        while remaining is None or remaining > 0:
+            size = chunk_size if remaining is None else min(chunk_size, remaining)
+            chunk = await file.read(size)
             if not chunk:
                 break
+            if remaining is not None:
+                remaining -= len(chunk)
             yield chunk
-        if delay > 0:
-            await asyncio.sleep(delay)
+            if rate_limit_bytes > 0:
+                await asyncio.sleep(len(chunk) / rate_limit_bytes)
 
 
 async def save_upload_file(upload_dir: Path, file: "UploadFile") -> dict:

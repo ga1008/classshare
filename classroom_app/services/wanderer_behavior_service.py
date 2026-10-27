@@ -11,7 +11,10 @@ Each tick:
    by ``activity_level`` (pending replies first), pausing 1-4 s between them;
    the row is re-read before each action and the wanderer stops as soon as
    it is no longer active or an admin changed its behaviors;
-4. evaluate death; a dead wanderer stops for good.
+4. evaluate death; a dead wanderer stops for good;
+5. social upkeep (regular ticks only, not admin runs on chosen wanderers):
+   push 散修 online/offline changes and rarely send a proactive friend request
+   (``wanderer_social_friends.run_social_upkeep``; social doc §10).
 
 The whole tick is bounded by ``tick_max_seconds`` (runtime setting, default
 150 s): on timeout the summary has status ``timeout`` and lists the wanderers
@@ -353,8 +356,12 @@ async def run_wanderer_tick_once(
     sleep: Optional[SleepFn] = None,
     rng: Optional[random.Random] = None,
     now: Optional[datetime] = None,
+    social_upkeep: Optional[bool] = None,
 ) -> dict[str, Any]:
     """Run one tick. ``force`` skips the enabled switch (admin "tick now").
+
+    ``social_upkeep`` defaults to on for regular ticks and off when explicit
+    ``wanderer_ids`` are given.
 
     Bounded by ``tick_max_seconds``; on timeout returns status ``timeout`` with
     the wanderers completed so far.
@@ -377,16 +384,31 @@ async def run_wanderer_tick_once(
     except asyncio.TimeoutError:
         status = "timeout"
         print(f"[WANDERER] tick exceeded {max_seconds}s; stopped after {len(summaries)} wanderer(s)")
+    social = None
+    if social_upkeep if social_upkeep is not None else wanderer_ids is None:
+        social = await _social_upkeep(conn_factory, summaries, ai_caller=ai_caller, sleep=sleep, now=moment)
     with _connection(conn_factory) as conn:
         wanderer_runtime_setting_set(conn, SETTING_LAST_TICK_AT, local_iso())
         conn.commit()
     return {
-        "status": status, "processed": len(summaries), "capped": state["capped"],
+        "status": status, "processed": len(summaries), "capped": state["capped"], "social": social,
         "actions": sum(len(item.get("actions") or []) for item in summaries),
         "ai_calls": sum(int(item.get("ai_calls") or 0) for item in summaries),
         "failed": sum(int(item.get("failed") or 0) for item in summaries),
         "wanderers": summaries,
     }
+
+
+async def _social_upkeep(conn_factory: Optional[Callable[[], Any]], summaries: list[dict[str, Any]], *,
+                        ai_caller: Optional[AiCaller], sleep: Optional[SleepFn], now: datetime) -> dict[str, Any]:
+    from .wanderer_social_friends import run_social_upkeep
+
+    ids = [int(item["wanderer_id"]) for item in summaries if not item.get("died") and not item.get("error")]
+    try:
+        return await run_social_upkeep(conn_factory, ids, ai_caller=ai_caller, sleep=sleep, now=now)
+    except Exception as exc:  # noqa: BLE001 - social upkeep never fails the tick
+        print(f"[WANDERER] social upkeep failed: {type(exc).__name__}: {exc}")
+        return {"error": f"{type(exc).__name__}: {exc}"[:200]}
 
 
 async def _tick_body(

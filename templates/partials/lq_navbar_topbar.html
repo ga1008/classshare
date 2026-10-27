@@ -2,6 +2,7 @@
 {% from 'macros/lq/icons.generated.html' import lq_icon %}
 {% from 'macros/user_ui_preferences.html' import user_palette_select %}
 {%- from 'macros/lq/nav-menu.html' import lq_nav_menu %}
+{%- from 'partials/social_entry.html' import social_entry %}
 {%- set navbar_shell_condensed = lq_family_enabled is defined and lq_family_enabled('navbar-shell') %}
 {# Authored page composition of the S2 Shell contract. Legacy scene hooks stay
    on these exact nodes; one Shell controller owns the native overflow dialog. #}
@@ -25,6 +26,7 @@
                         </a>
                         <div class="message-center-bell-toast" data-message-center-bell-toast hidden><strong>新消息提醒</strong><div data-message-center-bell-toast-body>你有一条新消息。</div><div data-message-center-bell-toast-meta>点击消息入口进入通知中心</div></div>
                     </div>
+                    {{ social_entry(user_info, 'lq') }}
                     {{ lq_btn('个人中心',href='/profile',variant='ghost',icon='user') }}
                     {{ user_palette_select(ui_palette) }}
                 </div>
@@ -74,6 +76,7 @@
                         </a>
                         <div class="message-center-bell-toast" data-message-center-bell-toast hidden><strong>新消息提醒</strong><div data-message-center-bell-toast-body>你有一条新消息。</div><div data-message-center-bell-toast-meta>点击消息入口进入通知中心</div></div>
                     </div>
+                    {{ social_entry(user_info, 'lq') }}
                     {{ lq_nav_menu(navbar_shell_id ~ '--account', '我的', account_items, icon='user', variant='ghost') }}
                     {{ user_palette_select(ui_palette) }}
                 </div>

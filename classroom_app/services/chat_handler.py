@@ -700,6 +700,29 @@ async def save_chat_message(room_id: int, message: dict) -> dict:
     async with room_lock:
         return await asyncio.to_thread(_save_chat_message_sync, room_id, dict(message))
 
+def _presence_identity(user: dict) -> str:
+    """``role:pk`` from a classroom socket user (``id`` is ``"<role>_<pk>"``); '' when unknown."""
+    role = str(user.get("role") or "")
+    pk = str(user.get("id") or "").rsplit("_", 1)[-1]
+    return f"{role}:{int(pk)}" if role in {"student", "teacher"} and pk.isdigit() else ""
+
+
+def _report_presence(user: dict, connection_id: str, *, opened: bool) -> None:
+    """Mirror classroom sockets into the unified presence registry (best effort, never raises)."""
+    try:
+        from . import presence_service
+
+        identity = _presence_identity(user)
+        if not identity:
+            return
+        if opened:
+            presence_service.connection_opened(identity, connection_id, "classroom_ws")
+        else:
+            presence_service.connection_closed(identity, connection_id)
+    except Exception as exc:  # noqa: BLE001 - presence must never disturb the classroom
+        print(f"[CHAT] presence report failed: {exc!r}", file=sys.stderr)
+
+
 class MultiRoomConnectionManager:
     def __init__(self):
         self.rooms: Dict[int, Dict[str, WebSocket]] = {}
@@ -863,6 +886,7 @@ class MultiRoomConnectionManager:
 
         room_id = connection_info["room_id"]
         participant_key = connection_info["participant_key"]
+        _report_presence(connection_info.get("user") or {}, connection_id, opened=False)
         self.rooms.get(room_id, {}).pop(connection_id, None)
 
         participant_connections = self.room_participants.get(room_id, {}).get(participant_key)
@@ -918,6 +942,7 @@ class MultiRoomConnectionManager:
             "participant_key": participant_key,
             "user": dict(user),
         }
+        _report_presence(user, connection_id, opened=True)
 
         await self.send_display_name_payload(room_id, connection_id)
         await websocket.send_text(json.dumps(await load_initial_history_payload(room_id), ensure_ascii=False))
@@ -941,6 +966,7 @@ class MultiRoomConnectionManager:
         room_id = connection_info["room_id"]
         participant_key = connection_info["participant_key"]
         user = connection_info["user"]
+        _report_presence(user, connection_id, opened=False)
 
         self.rooms.get(room_id, {}).pop(connection_id, None)
 

@@ -71,6 +71,8 @@ MESSAGE_CATEGORY_GONGWEN_FOLLOW = "gongwen_follow"
 MESSAGE_CATEGORY_POLL = "poll"
 MESSAGE_CATEGORY_SIGNATURE = "signature_workflow"
 MESSAGE_CATEGORY_APPROVAL = "approval_workflow"
+# 好友与群聊（docs/social-friends-groups-2026-10-27.md）：好友申请/通过、群聊 @提醒。
+MESSAGE_CATEGORY_SOCIAL = "social"
 
 AI_ASSISTANT_ROLE = "assistant"
 AI_ASSISTANT_LABEL = "AI助教"
@@ -165,6 +167,7 @@ ALL_NOTIFICATION_CATEGORIES = (
     MESSAGE_CATEGORY_ACADEMIC_EXAM,
     MESSAGE_CATEGORY_GONGWEN_FOLLOW,
     MESSAGE_CATEGORY_SIGNATURE,
+    MESSAGE_CATEGORY_SOCIAL,
 )
 
 VISIBLE_NOTIFICATION_CATEGORIES = {
@@ -189,6 +192,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_ACADEMIC_EXAM,
         MESSAGE_CATEGORY_SIGNATURE,
         MESSAGE_CATEGORY_APPROVAL,
+        MESSAGE_CATEGORY_SOCIAL,
     ),
     "teacher": (
         "all",
@@ -213,6 +217,7 @@ VISIBLE_NOTIFICATION_CATEGORIES = {
         MESSAGE_CATEGORY_GONGWEN_FOLLOW,
         MESSAGE_CATEGORY_SIGNATURE,
         MESSAGE_CATEGORY_APPROVAL,
+        MESSAGE_CATEGORY_SOCIAL,
     ),
 }
 
@@ -242,6 +247,7 @@ CATEGORY_LABELS = {
     MESSAGE_CATEGORY_POLL: "投票活动",
     MESSAGE_CATEGORY_SIGNATURE: "签名审批",
     MESSAGE_CATEGORY_APPROVAL: "申请审批",
+    MESSAGE_CATEGORY_SOCIAL: "好友与群聊",
 }
 
 APP_FEEDBACK_TYPE_LABELS = {
@@ -4335,6 +4341,47 @@ def create_todo_notification(
         created_at=timestamp,
     )
     return 1 if _insert_notification_if_allowed(conn, payload, allow_duplicates=allow_duplicates) else 0
+
+
+def create_social_notification(
+    conn,
+    *,
+    recipient_identity: str,
+    title: str,
+    body_preview: str = "",
+    link_url: str = "",
+    actor_identity: str = "",
+    actor_display_name: str = "",
+    ref_id: str = "",
+    metadata: Optional[dict[str, Any]] = None,
+) -> int:
+    """好友与群聊 notification (category ``social``); de-duplicated by ``ref_id``."""
+    recipient = parse_identity(recipient_identity)
+    if recipient["role"] not in {"student", "teacher"}:
+        return 0
+    actor_role, actor_user_pk = "", None
+    if actor_identity:
+        try:
+            actor = parse_identity(actor_identity)
+        except ValueError:
+            actor = {"role": "", "user_pk": None}
+        if actor["role"] in {"student", "teacher"}:
+            actor_role, actor_user_pk = actor["role"], actor["user_pk"]
+    payload = _build_notification_payload(
+        recipient_role=recipient["role"],
+        recipient_user_pk=int(recipient["user_pk"]),
+        category=MESSAGE_CATEGORY_SOCIAL,
+        title=_truncate_text(title, 80),
+        body_preview=_truncate_text(body_preview, 140),
+        actor_role=actor_role,
+        actor_user_pk=actor_user_pk,
+        actor_display_name=str(actor_display_name or "").strip(),
+        link_url=link_url,
+        ref_type=MESSAGE_CATEGORY_SOCIAL,
+        ref_id=ref_id,
+        metadata=metadata or {},
+    )
+    return 1 if _insert_notification_if_allowed(conn, payload) else 0
 
 
 def create_achievement_notification(

@@ -35,11 +35,14 @@ MAX_TIER = 10
 DEFAULT_BEHAVIORS = {
     "blog_browse": 1, "blog_like": 1, "blog_comment": 1, "reply": 1, "dm_reply": 1,
     "classroom_visit": 1, "classroom_message": 1, "knowledge_read": 1, "promotion": 1, "blog_post": 1,
+    "social": 1,
 }
 ACTION_KINDS = frozenset({
     "browse_post", "like_post", "like_comment", "comment", "reply", "dm_reply",
     "classroom_visit", "classroom_message", "knowledge_read", "knowledge_forget",
     "request_promotion", "reflect", "skip", "write_post",
+    # 好友/群聊 (social doc §10): friend decisions + proactive requests, chat messages sent.
+    "social_friend", "social_message",
 })
 ORIGIN_SEED = "seed"
 ORIGIN_DAO = "dao"

@@ -8,14 +8,18 @@ Read-only aggregation per wanderer:
   risk, moderation log entries on its posts (14 days);
 * knowledge statistics against the current tier's capacity;
 * warning history (count, last, warnings since the last demotion in 14 days);
-* classroom flooding: the most messages in one room within 10 minutes (24h).
+* classroom flooding: the most messages in one room within 10 minutes (24h);
+* friend/group chat (social doc §10): messages sent in 24h, conversations and
+  groups spoken in, the most messages in one conversation within 10 minutes,
+  recalled messages, groups joined, how many people blocked it (7 days) and
+  previews of its own latest chat lines.
 
 Only counts and short previews of the wanderer's own public comments leave
 this module; no other user's identity or ids are included.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ..time_utils import parse_datetime
@@ -149,6 +153,58 @@ def chat_flooding(conn: Any, student_id: int, since: str) -> dict[str, Any]:
     }
 
 
+_CHAT_TYPES = ("text", "media", "nudge")
+
+
+def _utc_iso(moment: datetime) -> str:
+    """Social timestamps are UTC ISO; the review clock is local naive."""
+    aware = moment if moment.tzinfo else moment.astimezone()
+    return aware.astimezone(timezone.utc).isoformat()
+
+
+def social_activity(conn: Any, identity: str, now: datetime) -> dict[str, Any]:
+    from .social_common import ensure_schema
+
+    ensure_schema(conn)
+    rows = conn.execute(
+        "SELECT conversation_type, conversation_key, created_at, recalled_at FROM social_messages "
+        "WHERE sender_identity = ? AND created_at >= ? AND message_type IN (?, ?, ?) "
+        "ORDER BY conversation_key, created_at",
+        (identity, _utc_iso(now - timedelta(days=1)), *_CHAT_TYPES),
+    ).fetchall()
+    by_conversation: dict[str, list[datetime]] = {}
+    for row in rows:
+        moment = parse_datetime(row["created_at"])
+        if moment is not None:
+            by_conversation.setdefault(str(row["conversation_key"]), []).append(moment.replace(tzinfo=None))
+    peaks = [_room_peak(times) for times in by_conversation.values()]
+    return {
+        "messages_24h": len(rows),
+        "dm_conversations": sum(1 for key in by_conversation if key.startswith("dm:")),
+        "groups_spoken": sum(1 for key in by_conversation if key.startswith("group:")),
+        "max_in_10_minutes": max(peaks, default=0),
+        "conversations_flooded": sum(1 for peak in peaks if peak > SPAM_THRESHOLD),
+        "recalled_24h": sum(1 for row in rows if row["recalled_at"]),
+        "groups_joined": _count(
+            conn, "SELECT COUNT(*) AS n FROM social_group_members WHERE member_identity = ? AND left_at IS NULL",
+            (identity,),
+        ),
+        "blocked_by_7d": _count(
+            conn, "SELECT COUNT(*) AS n FROM private_message_blocks WHERE blocked_identity = ? AND created_at >= ?",
+            (identity, _iso(now - timedelta(days=7))),
+        ),
+    }
+
+
+def recent_chat_previews(conn: Any, identity: str) -> list[str]:
+    rows = conn.execute(
+        "SELECT body FROM social_messages WHERE sender_identity = ? AND message_type = 'text' "
+        f"ORDER BY id DESC LIMIT {RECENT_COMMENT_PREVIEWS}",
+        (identity,),
+    ).fetchall()
+    return [str(row["body"] or "")[:80] for row in rows]
+
+
 def recent_comment_previews(conn: Any, identity: str) -> list[str]:
     rows = conn.execute(
         f"SELECT content_md FROM blog_comments WHERE author_identity = ? ORDER BY id DESC LIMIT {RECENT_COMMENT_PREVIEWS}",
@@ -176,4 +232,6 @@ def collect_evidence(conn: Any, wanderer: dict[str, Any], now: datetime) -> dict
         "warnings_since_demotion_14d": warnings_since_demotion(conn, int(wanderer["id"]), now),
         "classroom_24h": chat_flooding(conn, int(wanderer["student_id"]), day_ago),
         "recent_comments": recent_comment_previews(conn, identity),
+        "social_24h": social_activity(conn, identity, now),
+        "recent_chat": recent_chat_previews(conn, identity),
     }

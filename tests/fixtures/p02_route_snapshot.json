@@ -3185,6 +3185,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/internal/social/push",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_internal_push",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/internal/wanderers/classroom-broadcast",
     "methods": [
       "POST"
@@ -7086,6 +7094,342 @@
       "POST"
     ],
     "name": "api_record_signature_use",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/admin/storage",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_admin_storage",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/blocks",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_list_blocks",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/blocks",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_add_block",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/blocks/{identity}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "social_remove_block",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/conversations",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_list_conversations",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/conversations/{key}/messages",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_list_messages",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/conversations/{key}/messages",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_send_message",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/conversations/{key}/nudge",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_nudge",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/conversations/{key}/read",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_mark_read",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/friends",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_list_friends",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/friends/requests",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_list_friend_requests",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/friends/requests",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_send_friend_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/friends/requests/{request_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "social_withdraw_friend_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/friends/requests/{request_id}/accept",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_accept_friend_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/friends/requests/{request_id}/decline",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_decline_friend_request",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/friends/{identity}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "social_delete_friend",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/friends/{identity}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "social_update_friend",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/groups",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_list_groups",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/groups",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_create_group",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/groups/{group_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_group_detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/groups/{group_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "social_update_group",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/groups/{group_id}/admins",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_set_group_admin",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/groups/{group_id}/dissolve",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_dissolve_group",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/groups/{group_id}/files",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_group_files",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/groups/{group_id}/leave",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_leave_group",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/groups/{group_id}/me",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "social_update_my_group_settings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/groups/{group_id}/members",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_add_group_members",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/groups/{group_id}/members/{identity}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "social_remove_group_member",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/groups/{group_id}/transfer",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_transfer_group",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/lan/{transfer_id}/status",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_lan_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/media/precheck",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_media_precheck",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/media/upload/init",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_media_upload_init",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/media/upload/{upload_id}/chunk",
+    "methods": [
+      "PUT"
+    ],
+    "name": "social_media_upload_chunk",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/media/upload/{upload_id}/complete",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_media_upload_complete",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/media/{media_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_media_download",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/media/{media_id}/backfill",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_media_backfill",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/messages/{message_id}/recall",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_recall_message",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/presence",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_presence",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/quota",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_quota",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/users/search",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_search_users",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/users/suggestions",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_user_suggestions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/users/{identity}/profile",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_user_profile",
     "include_in_schema": true
   },
   {

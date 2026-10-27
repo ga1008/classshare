@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-26",
+ "generatedAt": "2026-10-27",
  "generator": "python tools/ui/lq_module_registry.py",
  "modules": {
   "materials": {
@@ -864,7 +864,7 @@
     "rules": "禁止 div 模拟按钮；颜色只来自变体不传任意色；固定宽度长标签用 overflow-label。"
    },
    "consumers": {
-    "count": 271,
+    "count": 276,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -1439,6 +1439,10 @@
       "hits": 14
      },
      {
+      "path": "templates/partials/social_entry.html",
+      "hits": 14
+     },
+     {
       "path": "static/js/process_material_modal.js",
       "hits": 13
      },
@@ -1871,6 +1875,18 @@
       "hits": 3
      },
      {
+      "path": "static/js/social/chat_messages.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/social/chat_modal.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/social/friends_modal.js",
+      "hits": 3
+     },
+     {
       "path": "static/js/ui.js",
       "hits": 3
      },
@@ -1932,6 +1948,10 @@
      },
      {
       "path": "static/js/session_knowledge_tree_manager.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/social/social_dom.js",
       "hits": 1
      },
      {
@@ -2071,7 +2091,7 @@
     "rules": "芯片是单行胶囊：不换行，过长标签以省略号截断（2026-10-24）。"
    },
    "consumers": {
-    "count": 30,
+    "count": 33,
     "files": [
      {
       "path": "static/js/materials_sync_report.js",
@@ -2166,6 +2186,10 @@
       "hits": 2
      },
      {
+      "path": "static/js/social/chat_sidebar.js",
+      "hits": 2
+     },
+     {
       "path": "templates/partials/profile/appearance.html",
       "hits": 2
      },
@@ -2187,6 +2211,14 @@
      },
      {
       "path": "static/js/session_knowledge_tree_manager.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/social/chat_messages.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/social/friends_modal.js",
       "hits": 1
      },
      {
@@ -2298,11 +2330,15 @@
     "rules": "领域已有输入 owner（如私信）可只复用槽位结构与 CSS，不重复调用 enhanceComposer；发送、草稿、冷却由业务控制器持有。"
    },
    "consumers": {
-    "count": 4,
+    "count": 5,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
       "hits": 10
+     },
+     {
+      "path": "static/js/social/chat_composer.js",
+      "hits": 4
      },
      {
       "path": "templates/partials/profile/messages.html",
@@ -2373,7 +2409,7 @@
     "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。"
    },
    "consumers": {
-    "count": 168,
+    "count": 171,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -2492,6 +2528,10 @@
       "hits": 7
      },
      {
+      "path": "static/js/social/social_dom.js",
+      "hits": 7
+     },
+     {
       "path": "templates/dev/lq_shell.html",
       "hits": 7
      },
@@ -2605,6 +2645,14 @@
      },
      {
       "path": "static/js/manage_wanderers.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/social/chat_messages.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/social/friends_modal.js",
       "hits": 4
      },
      {
@@ -3176,7 +3224,7 @@
     "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface=\"embedded\"`，否则声明的 `!important` 底色会铺回来，形成\"有底无边距\"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。 `lq-domain-choice[data-lq-shape=\"surface\"]` 退出胶囊后高度即内容高度（2026-10-26），在滚动列里不会被压缩；需要固定格高的网格单元（学期日历）在 domain-controls.css 以更高特异性自设 min-height。"
    },
    "consumers": {
-    "count": 149,
+    "count": 151,
     "files": [
      {
       "path": "templates/assignment_detail_teacher.html",
@@ -3723,6 +3771,14 @@
       "hits": 1
      },
      {
+      "path": "static/js/social/chat_modal.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/social/friends_modal.js",
+      "hits": 1
+     },
+     {
       "path": "static/js/ui_explanation.js",
       "hits": 1
      },
@@ -3819,7 +3875,7 @@
     "rules": "浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。"
    },
    "consumers": {
-    "count": 25,
+    "count": 28,
     "files": [
      {
       "path": "templates/manage/system/users.html",
@@ -3844,6 +3900,10 @@
      {
       "path": "templates/classroom_main_v4.html",
       "hits": 6
+     },
+     {
+      "path": "static/js/social/social_dom.js",
+      "hits": 5
      },
      {
       "path": "static/js/agent_workbench.js",
@@ -3891,6 +3951,14 @@
      },
      {
       "path": "static/js/session_knowledge_tree.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/social/chat_sidebar.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/social/friends_modal.js",
       "hits": 2
      },
      {
@@ -4165,7 +4233,7 @@
     "rules": "挂载在调用方的锚点里（锚点经 `:has(> .emoji-picker)` 自动成为定位盒）；传入 `trigger` 后以触发按钮为基准测量最近裁剪祖先内的可用空间，自动上/下翻转、限高、横向夹在可视区内，因此锚点不必紧挨按钮（反馈弹窗）。材质与前景来自 raised 配对，本模块只定几何。"
    },
    "consumers": {
-    "count": 4,
+    "count": 5,
     "files": [
      {
       "path": "static/js/emoji_picker.js",
@@ -4181,6 +4249,10 @@
      },
      {
       "path": "static/js/message_center.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/social/chat_composer.js",
       "hits": 1
      }
     ]
@@ -4261,7 +4333,7 @@
     "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。"
    },
    "consumers": {
-    "count": 173,
+    "count": 175,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -4636,6 +4708,10 @@
       "hits": 7
      },
      {
+      "path": "static/js/social/chat_sidebar.js",
+      "hits": 7
+     },
+     {
       "path": "static/js/exam_paper_preview.js",
       "hits": 6
      },
@@ -4649,6 +4725,10 @@
      },
      {
       "path": "static/js/resume_list.js",
+      "hits": 6
+     },
+     {
+      "path": "static/js/social/friends_modal.js",
       "hits": 6
      },
      {
@@ -5005,7 +5085,7 @@
     "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem=\"off\"。"
    },
    "consumers": {
-    "count": 14,
+    "count": 17,
     "files": [
      {
       "path": "templates/dev/lq_presentation.html",
@@ -5048,7 +5128,19 @@
       "hits": 2
      },
      {
+      "path": "static/js/social/social_dom.js",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/social_entry.html",
+      "hits": 2
+     },
+     {
       "path": "static/js/session_knowledge_tree_manager.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/social/friends_modal.js",
       "hits": 1
      },
      {
@@ -5524,7 +5616,7 @@
     "rules": ""
    },
    "consumers": {
-    "count": 19,
+    "count": 20,
     "files": [
      {
       "path": "templates/manage/system/wanderers.html",
@@ -5576,6 +5668,10 @@
      },
      {
       "path": "static/js/semester_calendar.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/social/friends_modal.js",
       "hits": 2
      },
      {
@@ -6014,7 +6110,7 @@
     "rules": ""
    },
    "consumers": {
-    "count": 15,
+    "count": 19,
     "files": [
      {
       "path": "static/js/academic_schedule_sync.js",
@@ -6070,6 +6166,22 @@
      },
      {
       "path": "static/js/session_knowledge_tree_manager.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/social/chat_messages.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/social/chat_sidebar.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/social/friends_modal.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/social/social_dom.js",
       "hits": 2
      },
      {
@@ -6312,7 +6424,7 @@
     "rules": "全站通过 `LQ.toast` / `showToast` 发出；不自建 toast 容器。"
    },
    "consumers": {
-    "count": 2,
+    "count": 3,
     "files": [
      {
       "path": "static/js/ui.js",
@@ -6320,6 +6432,10 @@
      },
      {
       "path": "static/js/message_center_bell.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/social/social_dom.js",
       "hits": 2
      }
     ]
@@ -6546,6 +6662,13 @@
    "css": "static/css/lq/pages/profile.css",
    "linkedBy": [
     "templates/partials/profile/head.html"
+   ],
+   "bundledInIndex": false
+  },
+  "social": {
+   "css": "static/css/lq/pages/social.css",
+   "linkedBy": [
+    "templates/partials/social_entry.html"
    ],
    "bundledInIndex": false
   },
@@ -7412,6 +7535,45 @@
    "button",
    "declarative",
    "forms"
+  ],
+  "static/js/social/chat_composer.js": [
+   "composer",
+   "emoji-picker"
+  ],
+  "static/js/social/chat_messages.js": [
+   "button",
+   "chip",
+   "content",
+   "skeleton"
+  ],
+  "static/js/social/chat_modal.js": [
+   "button",
+   "declarative"
+  ],
+  "static/js/social/chat_sidebar.js": [
+   "chip",
+   "dialogs",
+   "forms",
+   "skeleton"
+  ],
+  "static/js/social/friends_modal.js": [
+   "button",
+   "chip",
+   "content",
+   "declarative",
+   "dialogs",
+   "forms",
+   "indicators",
+   "navigation",
+   "skeleton"
+  ],
+  "static/js/social/social_dom.js": [
+   "button",
+   "content",
+   "dialogs",
+   "indicators",
+   "skeleton",
+   "toast"
   ],
   "static/js/student_dashboard_schedule.js": [
    "button",
@@ -8319,6 +8481,10 @@
    "declarative",
    "forms",
    "materials"
+  ],
+  "templates/partials/social_entry.html": [
+   "button",
+   "indicators"
   ],
   "templates/partials/student_dashboard_schedule.html": [
    "button",

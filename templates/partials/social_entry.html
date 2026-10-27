@@ -1,0 +1,46 @@
+{#- 好友入口 (docs/social-friends-groups-2026-10-27.md §9). One macro, four
+    topbar presentations; every variant carries the same hooks:
+      data-social-entry            click → static/js/social/social_client.js opens the 好友 modal
+      data-social-unread           badge text/hidden owned by the client
+      data-social-me / -label      identity and accessible name
+      data-social-css / -marked …  hashed asset URLs the client loads lazily
+    Only real students and teachers get the entry (not 散修, guests or other
+    roles). The module script may appear more than once per page; ES modules
+    with one URL execute once. -#}
+{% from 'macros/lq/icons.generated.html' import lq_icon %}
+{% from 'macros/app_topbar.html' import app_topbar_icon %}
+{% macro social_entry(user_info, variant='lq') -%}
+{%- if user_info and user_info.role in ('student', 'teacher') and user_info.id
+      and not user_info.is_wanderer|default(false)
+      and (user_info.enrollment_status|default('active')) != 'wanderer' -%}
+{%- set social_attrs -%}
+data-social-entry data-social-label="好友" data-social-me="{{ user_info.role }}:{{ user_info.id }}"
+data-social-css="{{ asset_url('css/lq/pages/social.css') }}"
+data-social-polyfills="{{ asset_url('es2022_polyfills') }}"
+data-social-marked="{{ asset_url('marked') }}"
+data-social-markdown="{{ asset_url('markdown_runtime') }}"
+aria-haspopup="dialog" aria-label="打开好友"
+{%- endset -%}
+{%- if variant == 'legacy' -%}
+<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-slate social-entry" title="好友与群聊" {{ social_attrs }}>
+    <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('users') }}</span>
+    <span class="app-topbar-action__text">
+        <strong>好友</strong>
+        <small>私聊与群聊</small>
+    </span>
+    <span class="app-topbar-action__count app-topbar-action__count--danger" data-social-unread hidden>0</span>
+</button>
+{%- elif variant == 'manage' -%}
+<button type="button" class="lq-btn lq-btn--ghost lq-btn--sm social-entry" title="好友" {{ social_attrs }}>{{ lq_icon('users') }}<span class="lq-manage-utility-label">好友</span><span class="lq-badge" data-tone="danger" data-social-unread hidden>0</span></button>
+{%- elif variant == 'classroom' -%}
+<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-nav-link social-entry" title="好友与群聊" {{ social_attrs }}>
+    <span class="cw-nav-icon" aria-hidden="true">{{ lq_icon('users') }}</span>
+    <span class="cw-nav-copy"><strong>好友</strong></span>
+    <span class="app-topbar-action__count app-topbar-action__count--danger" data-social-unread hidden>0</span>
+</button>
+{%- else -%}
+<button type="button" class="lq-btn lq-btn--soft lq-btn--md social-entry" {{ social_attrs }}>{{ lq_icon('users') }}<span>好友</span><span class="lq-badge" data-tone="danger" data-social-unread hidden>0</span></button>
+{%- endif %}
+<script type="module" src="{{ asset_url('js/social/social_client.js') }}"></script>
+{%- endif -%}
+{%- endmacro %}

@@ -65,6 +65,7 @@ ACTION_LABELS = {
     "reply": "回复", "dm_reply": "回复私信", "classroom_visit": "旁听课堂", "classroom_message": "课堂留言",
     "knowledge_read": "研读固化", "knowledge_forget": "遗忘知识", "request_promotion": "申请升阶",
     "reflect": "反思", "skip": "跳过", "write_post": "发帖",
+    "social_friend": "好友往来", "social_message": "聊天发言",
 }
 REVIEW_KIND_LABELS = {
     "promotion": "升阶", "discipline": "纪律", "daily_audit": "日审", "mention_reply": "@天道",
@@ -489,6 +490,17 @@ def _avatar_columns(wanderer: dict[str, Any], value: Any) -> dict[str, Any]:
     return {"avatar_silhouette": default_silhouette, "avatar_file": default_avatar_file(wanderer.get("slug"))}
 
 
+def _social_counts(conn: Any, wanderer: dict[str, Any]) -> dict[str, int]:
+    """好友/群/今日发言 (social doc §10); zeros when the social tables are unavailable."""
+    from ..db.savepoint import best_effort
+    from .wanderer_social_friends import social_counts
+
+    counts = {"friends": 0, "groups": 0, "messages_today": 0, "pending_requests": 0}
+    with best_effort(conn, "wanderer_social_counts", log_prefix="[WANDERER]"):
+        counts = social_counts(conn, int(wanderer["student_id"]))
+    return counts
+
+
 def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
     wanderer = require_wanderer(conn, wanderer_id)
     number = int(wanderer["id"])
@@ -501,6 +513,7 @@ def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
             "by_kind": [{"kind": kind, "label": ACTION_LABELS.get(kind, kind), "count": count} for kind, count in by_kind],
             "daily": _daily_series(conn, number),
             "cached": dict(wanderer.get("stats") or {}),
+            "social": _social_counts(conn, wanderer),
         },
         "knowledge": knowledge_summary(conn, wanderer),
         "profile": _profile_payload(wanderer),
