@@ -21,6 +21,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ..database import get_db_connection
 from ..dependencies import get_current_user
 from ..services import (
+    social_ai_search_service as ai_search_service,
+    social_card_service as card_service,
     social_conversation_service as conversations,
     social_friend_service as friends,
     social_group_service as groups,
@@ -28,6 +30,8 @@ from ..services import (
     social_media_service as media,
     social_message_service as messages,
     social_push_service,
+    social_recommendation_service as recommendation_service,
+    social_scope_service as scope_service,
 )
 from ..services.presence_service import presence_map
 from ..services.rate_limit_service import RateLimitExceededError
@@ -135,9 +139,19 @@ async def social_update_friend(identity: str, data: dict = Body(default={}), use
     return await _run(lambda conn, events: friends.set_remark(conn, user, identity, _field(data, "remark", "")))
 
 
+@router.get("/scope")
+async def social_scope(user: dict = Depends(get_current_user)):
+    return await _run(lambda conn, events: scope_service.scope_payload(conn, user))
+
+
+@router.get("/recommendations")
+async def social_recommendations(user: dict = Depends(get_current_user)):
+    return await _run(lambda conn, events: recommendation_service.recommendations_payload(conn, user))
+
+
 @router.get("/users/search")
 async def social_search_users(q: str = Query(default=""), user: dict = Depends(get_current_user)):
-    return await _run(lambda conn, events: {"items": identities.search_users(conn, user, q)})
+    return await _run(lambda conn, events: identities.search_payload(conn, user, q))
 
 
 @router.get("/users/suggestions")
@@ -145,9 +159,22 @@ async def social_user_suggestions(user: dict = Depends(get_current_user)):
     return await _run(lambda conn, events: {"items": identities.suggest_users(conn, user)})
 
 
+@router.post("/users/ai-search")
+async def social_ai_search_users(data: dict = Body(default={}), user: dict = Depends(get_current_user)):
+    try:
+        return await ai_search_service.ai_search(user, _field(data, "prompt", ""))
+    except SocialError as exc:
+        raise _http_error(exc) from exc
+
+
 @router.get("/users/{identity}/profile")
 async def social_user_profile(identity: str, user: dict = Depends(get_current_user)):
     return await _run(lambda conn, events: identities.profile_sidebar(conn, user, identity))
+
+
+@router.get("/users/{identity}/card")
+async def social_user_card(identity: str, user: dict = Depends(get_current_user)):
+    return await _run(lambda conn, events: card_service.user_card(conn, user, identity))
 
 
 @router.get("/blocks")
@@ -529,6 +556,22 @@ def _admin_storage(conn: Any, user: dict) -> dict[str, Any]:
 @router.get("/admin/storage")
 async def social_admin_storage(user: dict = Depends(get_current_user)):
     return await _run(lambda conn, events: _admin_storage(conn, user))
+
+
+def _require_super_admin(conn: Any, user: dict) -> None:
+    from ..services.message_center_service import is_super_admin_teacher
+
+    if str(user.get("role") or "") != "teacher" or not is_super_admin_teacher(conn, user.get("id")):
+        raise SocialError("仅超级管理员可以操作。", 403)
+
+
+@router.post("/admin/recommendations/run")
+async def social_admin_run_recommendations(user: dict = Depends(get_current_user)):
+    """QA / super admin: run the daily recommendation pipeline now (unchanged buckets are skipped)."""
+    await _run(lambda conn, events: _require_super_admin(conn, user))
+    summary = await recommendation_service.run_recommendations_now()
+    return {key: summary[key] for key in ("buckets", "ai", "backend", "fallback", "skipped", "kept", "pairs",
+                                          "ai_calls_today", "ai_cap")}
 
 
 # ---------------------------------------------------------------------------

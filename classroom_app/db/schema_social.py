@@ -1,6 +1,6 @@
 """Schema for 好友、群组与统一在线 (docs/social-friends-groups-2026-10-27.md §1).
 
-Twelve runtime-owned tables:
+Runtime-owned tables:
 
 * ``social_friendships``      one row per identity pair (identity_a < identity_b).
 * ``social_groups`` / ``social_group_members``  group chats and their members.
@@ -18,6 +18,14 @@ Twelve runtime-owned tables:
 * ``social_blocks``           social-only blocks for people the classroom block list refuses
   (teachers): consulted together with ``private_message_blocks`` by the social code only, so
   classroom private messages and notifications are unaffected.
+
+Second round (§12, internal only — never returned by any API):
+
+* ``social_trait_cards``          per identity structured traits + hash of the sources they came from.
+* ``social_recommendation_pairs`` daily ranked candidates per scope bucket (complement / similar).
+* ``social_recommendation_buckets`` per bucket members hash + method, so unchanged buckets are skipped.
+* ``social_daily_counters``       small (counter_key, day) -> value counters (daily AI cap, AI search usage).
+* ``social_scope_state``          last tier a student was told about (tier-up unlock notification dedupe).
 
 Engine-aware and idempotent (``CREATE TABLE IF NOT EXISTS`` on SQLite and
 PostgreSQL), ensured at startup and lazily at runtime like ``schema_wanderers``
@@ -230,6 +238,49 @@ def _table_statements(id_column: str) -> list[str]:
             created_at TEXT NOT NULL
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS social_trait_cards (
+            identity TEXT PRIMARY KEY,
+            source_hash TEXT NOT NULL DEFAULT '',
+            traits_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS social_recommendation_pairs (
+            scope_key TEXT NOT NULL,
+            identity TEXT NOT NULL,
+            candidate_identity TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            rank INTEGER NOT NULL DEFAULT 0,
+            computed_on TEXT NOT NULL,
+            PRIMARY KEY (scope_key, identity, candidate_identity, kind)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS social_recommendation_buckets (
+            scope_key TEXT PRIMARY KEY,
+            members_hash TEXT NOT NULL DEFAULT '',
+            member_count INTEGER NOT NULL DEFAULT 0,
+            method TEXT NOT NULL DEFAULT '',
+            computed_on TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS social_daily_counters (
+            counter_key TEXT NOT NULL,
+            counter_day TEXT NOT NULL,
+            value INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (counter_key, counter_day)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS social_scope_state (
+            identity TEXT PRIMARY KEY,
+            notified_tier INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        )
+        """,
     ]
 
 
@@ -258,6 +309,8 @@ _INDEX_STATEMENTS = (
     "ON social_friend_request_log (requester_identity, event, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_social_friend_request_log_pair "
     "ON social_friend_request_log (requester_identity, target_identity, event, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_social_recommendation_pairs_identity "
+    "ON social_recommendation_pairs (identity, kind, rank)",
 )
 
 # Columns added after the first release: (table, column, definition). Existing

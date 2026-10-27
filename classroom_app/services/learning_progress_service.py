@@ -3030,6 +3030,13 @@ def serialize_student_learning_progress(conn, class_offering_id: int, student_id
     return state
 
 
+def _notify_social_scope_unlock(conn, student_id: Any, certificate_id: Any) -> None:
+    """A new certificate may raise the student's 好友范围 tier (social doc §12.5); best effort."""
+    from .social_scope_service import on_certificate_issued
+
+    on_certificate_issued(conn, int(student_id), int(certificate_id) if certificate_id else None)
+
+
 def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str, Any]:
     student = _load_student(conn, int(student_id)) or {"id": int(student_id), "name": ""}
     rows = conn.execute(
@@ -5523,6 +5530,7 @@ def _ensure_stage_certificate(
             ),
         ),
     )
+    _notify_social_scope_unlock(conn, student_id, certificate_id)
     return {
         "id": certificate_id,
         "certificate_code": cert_code,
@@ -5832,6 +5840,7 @@ def handle_stage_exam_grading_complete(conn, submission_id: int | str) -> Option
                 ),
             ),
         )
+        _notify_social_scope_unlock(conn, attempt["student_id"], certificate_id)
         certificate = {
             "id": certificate_id,
             "certificate_code": cert_code,

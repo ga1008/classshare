@@ -1526,9 +1526,13 @@ class BlogCenter {
         const isFollowing = this.followKeys.has(`${followType}:${followKey}`)
             || (!isPen && Boolean(identity) && this.followKeys.has(`author:${identity}`));
         const followLabel = isPen ? '关注笔名' : '关注作者';
+        // 个人信息面板 only for real-name faces (kind real / wanderer) with a role:pk identity.
+        // Pen-name and anonymous faces never carry one: it would reveal who wrote under them.
+        const cardIdentity = ['real', 'wanderer'].includes(user?.kind) && /^(student|teacher):\d+$/.test(identity) ? identity : '';
         const actions = document.createElement('div');
         actions.className = 'blog-user-popover__actions';
         actions.innerHTML = `
+                ${cardIdentity ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn" data-user-card="${escapeHtml(cardIdentity)}" aria-haspopup="dialog">个人资料</button>` : ''}
                 ${homepage ? `<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn" href="${escapeHtml(homepage)}">散修主页</a>` : ''}
                 ${ref ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn" data-blog-author-page="${escapeHtml(ref)}">作者主页</button>` : ''}
                 ${isSelf ? '' : `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass blog-user-popover__btn${isFollowing ? ' is-following' : ''}" data-blog-follow-type="${followType}" data-blog-follow-key="${escapeHtml(followKey)}">${isFollowing ? '已关注' : followLabel}</button>`}

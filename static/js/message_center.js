@@ -1380,9 +1380,15 @@ if (app) {
             </button>
         ` : '';
 
+        // Real-name student/teacher contacts open the 个人信息面板 (social/user_card_trigger.js).
+        const cardIdentity = ['student', 'teacher'].includes(contact.role) && Number(contact.user_pk) > 0
+            ? `${contact.role}:${Number(contact.user_pk)}` : '';
+        const contactName = escapeHtml(contact.display_name || '联系人');
         conversationHeaderEl.innerHTML = `
             <div class="message-center-conversation__identity">
-                <h2 class="message-center-pane-title">${escapeHtml(contact.display_name || '联系人')}</h2>
+                <h2 class="message-center-pane-title">${cardIdentity
+                    ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--link lq-btn--md" data-user-card="${escapeHtml(cardIdentity)}" aria-haspopup="dialog" title="查看个人信息">${contactName}</button>`
+                    : contactName}</h2>
                 <p class="message-center-conversation__hint">${escapeHtml(contact.subtitle || contact.role || '')}</p>
                 ${contact.is_blocked_by_contact ? '<p class="message-center-conversation__hint">对方当前不接收你的私信。</p>' : ''}
             </div>

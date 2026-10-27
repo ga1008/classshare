@@ -134,7 +134,8 @@ export function createChatSidebar({ client, onChanged }) {
                 lqAvatar(member.name, member.avatar_url, 32), el('span', { class: 'social-avatar__dot', 'aria-hidden': 'true' }),
             ]),
             el('span', { class: 'social-member__copy' }, [
-                el('strong', { text: `${member.nickname || member.name}${isMe ? '（我）' : ''}` }),
+                isMe ? el('strong', { text: `${member.nickname || member.name}（我）` })
+                    : lqButton({ label: member.nickname || member.name, variant: 'link', attrs: { 'data-user-card': member.identity, 'aria-haspopup': 'dialog', 'data-social-member-name': '' } }),
                 el('small', { text: [ROLE_LABEL[member.group_role] || '', member.online ? '在线' : '离线', member.is_wanderer ? '散修' : ''].filter(Boolean).join(' · ') }),
             ]),
             actions.length ? el('span', { class: 'social-member__actions' }, actions) : null,

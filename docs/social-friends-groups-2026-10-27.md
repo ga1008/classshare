@@ -217,3 +217,79 @@ server -> {type:'pong'} | {type:'hello', me, online_friends:[identity], unread_t
 
 ## 11. 验收
 单测覆盖好友/黑名单/群/消息/撤回/幂等/配额/预检去重/分块哈希校验/留存/空间守护/在线；前端 `node --check`；本地 PostgreSQL 两账号互聊、建群、传图、传 20 MB 文件、局域网直传（同机两浏览器）、散修私聊与群聊回复；新增 `schema_social.py` 需重做原生 PG 门禁。
+
+## 12. 境界门槛、推荐、AI 找人、个人信息面板（2026-10-27 第二轮）
+
+### 12.1 加好友范围（只限制「发起申请」；接收、通过、拒绝、拉黑任何境界都可以）
+学生的境界 = 全局修为档案的当前境界 tier（跨课程取最高，`build_student_global_cultivation_profile`）。
+
+| tier | 可以向谁发起申请（累加） |
+|---|---|
+| 0 凡人 | 无。「添加」页列表为空并提示突破第一境界后解锁；仍可被加、可拉黑 |
+| 1 | 本行政班同学（`students.class_id` 相同）、本校教师 |
+| 2 | 同课程同学：双方各自所在课堂的课程**名称相同**（规范化：去空格、全半角统一、去「（上/下）」等版本括注）即算同课程，后端匹配 |
+| 3 | 本学院同学（`students.college` 或班级 `academic_college`/`college` 相同）、散修 |
+| 4 | 本校同学（`school_code` 相同） |
+| ≥5 | 平台任意注册用户，并解锁「AI 找人」 |
+
+- 教师不受境界限制（视同 ≥5）。散修主动加人沿用原有规则（只加与它互动过的真实学生）。
+- 搜索、推荐、AI 找人的结果只返回当前范围内的人；`POST /friends/requests` 服务端再次校验，越界返回 403「当前境界尚不能添加该用户」+ 解锁提示。对方先向我发来的申请永远可以通过（不受我的境界限制）。
+- 申请对方同意才成为好友（不变）。
+
+### 12.2 推荐（从 tier 1 起；教师显示其任课班级学生的普通推荐，不走 AI）
+- **数据来源仅后台可见**：课堂 AI 对话形成的心理画像（`ai_psychology_profiles` 最新一条）、行为画像、职业测试结果、散修人格。用户界面、接口响应、推荐理由中**绝不出现**这些内容或「侧写」二字；推荐理由只用固定文案：互补 =「你们擅长的方向正好互补」，同向 =「你们的兴趣和节奏很接近」。
+- 每日任务 `social_recommendations_daily`：
+  1. 特质卡：对来源有变化的人（按来源内容哈希），用快速 AI 抽取结构化特质 `{traits:{openness,conscientiousness,extraversion,agreeableness,stability ∈0..1}, learning_style, interests:[≤6 标签]}`，存 `social_trait_cards`（内部表，任何接口不返回）。
+  2. 按范围桶各算一次：班级、同名课程组、学院、全校、全平台（含散修）。桶内 ≤ 120 人时一次深度 AI 调用，只给匿名编号+特质卡，要求每人返回互补 Top8、同向 Top8；桶更大时由后端按特质向量打分（同向=余弦相似，互补=社交维度互补+兴趣有交集）。结果存 `social_recommendation_pairs(scope_key, identity, candidate_identity, kind, rank, computed_on)`。
+  3. 服务：按用户当前 tier 合并允许的桶，排除自己、已是好友、待处理、拉黑任一方、被拒冷却期内、超出范围的人，互补与同向各取前 5。
+- 成本：每日 AI 调用有上限（`SOCIAL_REC_DAILY_AI_CAP`，默认 60），P2，失败保留昨日结果。
+
+### 12.3 AI 找人（tier ≥ 5 或教师）
+- `POST /api/social/users/ai-search {prompt}`：AI 把自然语言转成结构化条件（学院、专业、年级、班级、课程名、兴趣关键词、境界区间、角色、是否散修），后端只在**公开字段**里查询（姓名、角色、学校、学院、专业、年级、班级、心情、参与课程、境界——隐藏修为者不参与境界条件），取前 30 交给 AI 依据公开字段重排并写一句理由，返回前 10。不读取任何画像、对话、作业、联系方式。每人每天 10 次。
+
+### 12.4 个人信息面板
+- 全站点击头像或带 `data-user-card="role:pk"` 的名字，弹出 LQ 浮窗。公开信息：头像+境界标志、姓名、角色、学校/学院/班级、心情、参与课程及每门课的境界、能力雷达（学生）。教师显示学院/系部与任教课程。散修显示原型与散修主页链接。
+- **永不出现**：电话、QQ、微信、邮箱、学号全号（可显示后 4 位）、任何画像/对话内容。
+- 隐藏修为的学生：不显示境界、各课境界、能力雷达。
+- 成为好友后额外开放：近期动态（博客、成就、境界突破）、创作（博客帖子列表）。
+- 面板底部操作：加好友（按境界与关系显示「加好友 / 已申请 / 发消息 / 尚未解锁」）、拉黑。
+- **匿名不穿透**：课堂讨论的临时别名、博客笔名/匿名作者、匿名评论**不能**挂面板（否则可反查真实身份）；只在实名场景挂。
+
+### 12.5 其他
+- 「添加」页顶部显示「境界解锁阶梯」：当前境界、已解锁范围、下一境界解锁什么。
+- 境界提升解锁新范围时发一条消息中心通知（`social` 类别）。
+- 接口：`GET /api/social/scope`、`GET /api/social/recommendations`、`POST /api/social/users/ai-search`、`GET /api/social/users/{identity}/card`；`/users/search`、`/users/suggestions` 改为按范围过滤（`suggestions` 委托推荐结果）。
+
+### 12.6 接口合同（第二轮）
+```
+GET  /api/social/scope -> {tier, tier_name, is_teacher, can_add:bool, ai_search:bool,
+       ladder:[{tier, tier_name, label, unlocked:bool}],      -- 六级阶梯，label 如「本班同学与本校教师」
+       next_unlock:{tier, tier_name, label}|null}
+GET  /api/social/users/search?q=          -> {items:[PublicUser], locked:bool, locked_hint}   -- tier0: items=[], locked=true
+GET  /api/social/recommendations          -> {complement:[RecUser], similar:[RecUser], generated_on, locked:bool}
+     RecUser = PublicUser + {match:'complement'|'similar', hint}   -- hint 只用 §12.2 的两句固定文案
+GET  /api/social/users/suggestions        -> 保留：{items:[PublicUser]}（= complement+similar 去重，供旧前端）
+POST /api/social/users/ai-search {prompt}  -> {items:[PublicUser + {reason}], remaining_today, conditions:{...用户可读的条件摘要}}
+                                             403 当境界不足；429 当日次数用完
+GET  /api/social/users/{identity}/card    -> InfoCard
+InfoCard = {identity, name, role, role_label, avatar_url, is_wanderer, tier_badge|null, archetype|null, homepage_url|null,
+            org:{school, college, class_name, major, grade}, student_no_tail|null, mood|null,
+            courses:[{course_name, tier_name|null, emblem|null}], radar:{...ability radar payload}|null,
+            cultivation_hidden:bool, relation:'self'|'none'|'friend'|'pending_out'|'pending_in'|'blocked',
+            can_add:bool, add_blocked_reason|null, online|null,
+            friend_extras:{recent:[{kind,title,url,at}], creations:[{title,url,at,likes,comments}]}|null}
+PublicUser 增加 can_add:bool 与 add_blocked_reason（越界时显示「突破至「X」后可添加」）
+```
+
+### 12.7 后端实施记录（2026-10-27，§12.6 合同只做增量）
+
+- **境界真源** `social_scope_service`：学生 tier = 当前所在课堂（`offering_student_where`）里 `learning_certificates.tier` 的最大值（即全局修为档案的「当前境界」，不重算整份档案）；教师视同 5；散修取 `wanderer_agents.tier`，但散修发申请不走境界门槛（沿用 §10 规则）。规则有两种等价形式：`required_tier`（Python，单个目标与解锁提示）与 `student_scope_sql`/`teacher_scope_sql`（SQL 候选过滤，搜索用），`tests/test_social_scope.py` 逐档对比两者。
+- **范围细则**：学院 = `students.college` → `students.academic_college` → 班级 `academic_college` → 班级 `college` 第一个非空值，且**必须同校**（学院名在不同学校会重名）；学校 = `students.school_code`（空时取班级）；本校教师按 `teachers.school_code`。课程名规范化 `normalize_course_name`：NFKC（全半角、Ⅱ→II）、去空白、小写，去掉尾部「（上/中/下/一…六/I…IV/数字/A/B）」括注、「上/下册」、紧跟汉字的罗马数字或 1–6 / 一–六。
+- **门槛只拦发起**：`send_request` 在既有校验后调用 `can_add`；对方已有待处理申请（我在「回应」）时不校验。403 文案「当前境界尚不能添加该用户。突破至「X」后可添加」。
+- **PublicUser 增量**：所有 `public_users` 结果（搜索、推荐、群成员、申请列表、资料侧栏）都带 `can_add`/`add_blocked_reason`；`can_add` = 关系为 none 且在范围内，或关系为 pending_in；被对方拉黑不在此暴露。
+- **搜索**：`{items, locked, locked_hint}`；tier 0 学生 `locked:true`。
+- **推荐**：表 `social_trait_cards`、`social_recommendation_pairs`、`social_recommendation_buckets`（桶成员+特质哈希与方法，未变化的桶跳过）、`social_daily_counters`（每日 AI 计数、AI 找人次数）。特质抽取按 12 人一批（匿名编号）用快速模型；桶键 `class:<id>`、`course:<规范名>`、`college:<school>:<学院>`、`school:<code>`、`platform`；≤120 人一次深度调用，超出或额度用尽走后端打分（`backend` / `backend_fallback`，后者在次日有额度时重试 AI）；AI 失败且已有旧结果则保留。服务时 tier≥3 也读 `platform` 桶（散修只在其中），再统一按范围裁剪；互补优先，两表去重；`suggestions` = 两表合并，若为空回退到「同班同学/任课老师/在线散修」并按范围过滤。超管手动运行：`POST /api/social/admin/recommendations/run`（只返回计数）。每日任务 03:40（本地时间）由 `ensure_social_recommendation_task` 在启动时登记。
+- **AI 找人**：`{prompt}` → 快速模型条件（白名单键：college/major/grade/class_name/course_name/interests/tier_min/tier_max/role/is_wanderer）→ 公开字段候选（不读心情、画像、联系方式；隐藏修为者不参与境界条件）→ 深度模型按公开字段（不含姓名）重排写理由 → 理由去联系方式样式文本与内部标记、截 40 字。`conditions` 返回校验后的条件并附 `summary`（中文摘要）。额度在调用模型前扣除。
+- **InfoCard**：`role` 为 `student`/`teacher`（散修用 `is_wanderer`）；教师 `org` 额外带 `department`；拉黑时仍返回完整键集，但除姓名/头像外均为空值；心情与在线沿用 §10.2 可见性（陌生人为 null）；`friend_extras.recent` 含实名博客、成就、境界突破（隐藏修为不含突破），`creations` 只含实名帖子；雷达按学生所有课堂计算并缓存 10 分钟。
+- **境界提升通知**：`social_scope_state(identity, notified_tier)`。发证书时（`learning_progress_service` 两处插入后）调用 `on_certificate_issued`：以「除本证书外的境界」为基线比较；`GET /scope` 也做一次惰性检查（首次见到的学生只记基线、不发通知，避免上线时群发）。境界上升且跨入新的范围档时发一条 `social` 通知「新的交友范围已解锁：…」，`ref_id` 按（学生, 档位）去重。
+- **配置**：`SOCIAL_REC_DAILY_AI_CAP`（默认 60）。`schema_social.py` 新增 5 张表与 1 个索引，需重做原生 PG 门禁。

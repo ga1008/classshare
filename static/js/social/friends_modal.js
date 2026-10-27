@@ -1,6 +1,7 @@
 /**
- * 好友浮窗 (social doc §9): tabs 好友 / 新朋友 / 群组 / 添加, plus the
- * separate 黑名单 modal. LQ owns the dialog (createDomainModal), the tabs
+ * 好友浮窗 (social doc §9, §12): tabs 好友 / 新朋友 / 群组 / 推荐 / 添加, plus
+ * the separate 黑名单 modal. 推荐、境界解锁阶梯与 AI 找人 live in
+ * friends_discover.js; person rows in social_people.js. LQ owns the dialog (createDomainModal), the tabs
  * (lq/navigation.js), buttons, avatars, badges, rows and fields; this module
  * only fetches, renders and dispatches intents.
  *
@@ -8,15 +9,15 @@
  * first; the online/offline presentation is a state hook (`data-online`) that
  * social.css turns into lift + accent backlight vs. desaturated + sunk.
  */
-import { createComponent } from '../lq/components.js';
 import { createTabs, tabs as enhanceTabs } from '../lq/navigation.js';
-import { createContent } from '../lq/content.js';
 import { createForm } from '../lq/forms.js';
 import { confirm } from '../lq/dialogs.js';
 import { socialApi, errorText } from './social_api.js';
 import {
     createSocialDialog, debounce, el, emptyState, formatRelative, lqAvatar, lqBadge, lqButton, notify,
 } from './social_dom.js';
+import { list, personLead, row, userRow, wandererChip } from './social_people.js';
+import { createAiSearch, isLocked, loadScope, lockedState, renderLadder, renderRecommendations } from './friends_discover.js';
 
 const SEARCH_DEBOUNCE_MS = 320;
 const REQUEST_MESSAGE_MAX = 100;
@@ -28,32 +29,13 @@ function presenceSort(a, b) {
         || String(a.remark || a.name).localeCompare(String(b.remark || b.name), 'zh-CN');
 }
 
-function personLead(person, size = 40) {
-    return el('span', { class: 'social-avatar', 'data-online': person.online ? 'true' : 'false' }, [
-        lqAvatar(person.name, person.avatar_url, size),
-        person.online === undefined ? null : el('span', { class: 'social-avatar__dot', 'aria-hidden': 'true' }),
-    ]);
-}
-
-function wandererChip() {
-    return createComponent('chip', { label: '散修', tone: 'info', size: 'sm', attrs: { 'data-social-wanderer': '' } });
-}
-
-function list(label, rows) {
-    return createContent('list', { label }, { items: rows });
-}
-
-function row({ title, meta = '', actions = [], lead = null, trail = [] }) {
-    return createContent('row', { title, meta, actions }, { lead: lead ? [lead] : [], trail });
-}
-
 export function createFriendsModal(client, { openChat }) {
-    const panels = new Map(['friends', 'requests', 'groups', 'add'].map((key) => [key, el('div', { class: 'social-panel', 'data-social-panel': key })]));
+    const panels = new Map(['friends', 'requests', 'groups', 'recommend', 'add'].map((key) => [key, el('div', { class: 'social-panel', 'data-social-panel': key })]));
     const tabsRoot = createTabs({
         id: 'social-friends-tabs', label: '好友分类', variant: 'pill', size: 'sm', selected: 'friends',
         items: [
             { key: 'friends', label: '好友' }, { key: 'requests', label: '新朋友' },
-            { key: 'groups', label: '群组' }, { key: 'add', label: '添加' },
+            { key: 'groups', label: '群组' }, { key: 'recommend', label: '推荐' }, { key: 'add', label: '添加' },
         ],
     }, document, panels);
     const blockButton = lqButton({ label: '黑名单', icon: 'ban', variant: 'ghost', attrs: { 'data-social-open-blocks': '' } });
@@ -87,7 +69,9 @@ export function createFriendsModal(client, { openChat }) {
             ]),
             el('span', { class: 'social-friend__marks', 'aria-hidden': 'true' }, [friend.is_wanderer ? wandererChip() : null, lqBadge(friend.unread)]),
         ]);
-        return el('li', { class: 'social-friend', 'data-online': friend.online ? 'true' : 'false' }, [button]);
+        // The card itself opens the chat; the 资料 button beside it opens the 个人信息面板.
+        const info = lqButton({ icon: 'user', variant: 'ghost', aria: `查看${name}的资料`, attrs: { 'data-user-card': friend.identity, 'aria-haspopup': 'dialog', 'data-social-friend-info': '' } });
+        return el('li', { class: 'social-friend', 'data-online': friend.online ? 'true' : 'false' }, [button, info]);
     }
 
     function renderFriends() {
@@ -109,7 +93,7 @@ export function createFriendsModal(client, { openChat }) {
                 { label: '拒绝', variant: 'ghost', attrs: { 'data-act': 'decline', 'data-id': String(item.id) } }]
             : [{ label: '撤回', variant: 'ghost', attrs: { 'data-act': 'withdraw', 'data-id': String(item.id) } }];
         const meta = [user.role_label, user.org_label, item.message ? `「${item.message}」` : '', formatRelative(item.created_at)].filter(Boolean).join(' · ');
-        return row({ title: user.name || '用户', meta, actions, lead: personLead(user), trail: user.is_wanderer ? [wandererChip()] : [] });
+        return row({ title: user.name || '用户', meta, actions, lead: personLead(user), trail: user.is_wanderer ? [wandererChip()] : [], identity: user.identity });
     }
 
     function renderRequests() {
@@ -209,38 +193,35 @@ export function createFriendsModal(client, { openChat }) {
         id: 'social-user-search', label: '搜索用户', type: 'search', name: 'q',
         placeholder: '姓名、学号、工号、邮箱或散修名',
     });
+    const ladderSlot = el('div', { class: 'social-add__ladder' });
+    const searchBox = el('div', { class: 'social-add__search' }, [el('div', { class: 'social-add__fields' }, [searchField, addMessage])]);
     const results = el('div', { class: 'social-results', 'aria-live': 'polite' });
-    panels.get('add').append(el('div', { class: 'social-add__fields' }, [searchField, addMessage]), results);
-
-    function relationAction(user) {
-        const id = { 'data-identity': user.identity };
-        switch (user.relation) {
-        case 'friend': return { label: '发消息', variant: 'soft', attrs: { ...id, 'data-act': 'chat-user' } };
-        case 'pending_out': return { label: '已申请', variant: 'ghost', disabled: true };
-        case 'pending_in': return { label: '通过申请', variant: 'prominent', attrs: { ...id, 'data-act': 'accept-user' } };
-        case 'blocked': return { label: '已拉黑', variant: 'ghost', disabled: true };
-        default: return { label: '加好友', variant: 'prominent', attrs: { ...id, 'data-act': 'request' } };
-        }
-    }
+    const aiSlot = el('div', { class: 'social-add__ai' });
+    searchBox.append(results);
+    panels.get('add').append(ladderSlot, searchBox, aiSlot);
+    // Revealed once /scope answers, so a tier-0 student never sees the search box flash.
+    searchBox.hidden = true;
+    let aiSearch = null;
 
     function renderUsers(items, title) {
         if (!items.length) {
-            results.replaceChildren(emptyState(title === '推荐' ? '暂时没有推荐' : '没有找到匹配的用户', '', title === '推荐' ? 'empty' : 'no-results'));
+            results.replaceChildren(emptyState('没有找到匹配的用户', '只会列出你当前境界可以添加的人。', 'no-results'));
             return;
         }
-        results.replaceChildren(el('h3', { class: 'social-section-title', text: title }), list(title, items.map((user) => row({
-            title: user.name, meta: [user.role_label, user.org_label].filter(Boolean).join(' · '),
-            actions: [relationAction(user)], lead: personLead(user), trail: user.is_wanderer ? [wandererChip()] : [],
-        }))));
+        results.replaceChildren(el('h3', { class: 'social-section-title', text: title }), list(title, items.map((user) => userRow(user))));
     }
 
     async function runSearch() {
         const q = searchField.querySelector('input').value.trim();
         searchAbort?.abort();
         searchAbort = new AbortController();
+        if (!q) {
+            results.replaceChildren(el('p', { class: 'social-hint', text: '输入姓名、学号、工号或散修名开始搜索；也可以看看「推荐」。' }));
+            return;
+        }
         try {
-            if (!q) { renderUsers((await socialApi.suggestions()).items || [], '推荐'); return; }
             const data = await socialApi.search(q, searchAbort.signal);
+            if (data?.locked) { results.replaceChildren(emptyState(data.locked_hint || '当前境界尚不能添加好友', '')); return; }
             renderUsers(data.items || [], `搜索「${q}」`);
         } catch (failure) {
             if (failure?.name === 'AbortError') return;
@@ -249,6 +230,23 @@ export function createFriendsModal(client, { openChat }) {
     }
     const debouncedSearch = debounce(runSearch, SEARCH_DEBOUNCE_MS);
     searchField.querySelector('input').addEventListener('input', debouncedSearch);
+
+    /** 添加 tab: ladder on top; tier 0 shows the locked state instead of the search box. */
+    async function loadAdd(force = false) {
+        let scope = null;
+        try { scope = await loadScope(force); } catch { scope = null; }
+        const ladder = renderLadder(scope);
+        const locked = isLocked(scope);
+        ladderSlot.replaceChildren(...[ladder, locked ? lockedState() : null].filter(Boolean));
+        ladderSlot.hidden = !ladderSlot.childElementCount;
+        searchBox.hidden = locked;
+        if (scope?.ai_search && !locked) {
+            aiSearch ||= createAiSearch();
+            if (!aiSlot.contains(aiSearch)) aiSlot.replaceChildren(aiSearch);
+        } else aiSlot.replaceChildren();
+        aiSlot.hidden = !aiSlot.childElementCount;
+        if (!locked) await runSearch();
+    }
 
     /* ------------------------------------------------------------ data */
     async function load(key = currentKey()) {
@@ -269,8 +267,10 @@ export function createFriendsModal(client, { openChat }) {
                 state.groups = groups.items || [];
                 if (friends) state.friends = friends.items || [];
                 renderGroups();
+            } else if (key === 'recommend') {
+                await renderRecommendations(panel);
             } else {
-                await runSearch();
+                await loadAdd(true);
             }
         } catch (failure) {
             panel.replaceChildren(emptyState('加载失败', errorText(failure), 'error'));
@@ -281,6 +281,15 @@ export function createFriendsModal(client, { openChat }) {
 
     function currentKey() {
         return tabsRoot.querySelector('[role="tab"][aria-selected="true"]')?.dataset.lqTab || 'friends';
+    }
+
+    /** A row's request button becomes a quiet, disabled state in place (search/推荐/AI results stay put). */
+    function settle(button, label) {
+        const text = button.querySelector('.lq-btn__label');
+        if (text) text.textContent = label; else button.textContent = label;
+        button.classList.replace('lq-btn--prominent', 'lq-btn--ghost');
+        button.removeAttribute('data-act');
+        button.dataset.settled = 'true';
     }
 
     async function act(button) {
@@ -296,12 +305,14 @@ export function createFriendsModal(client, { openChat }) {
                 const message = addMessage.querySelector('input').value.trim();
                 const result = await socialApi.sendRequest(identity, message);
                 notify(result.status === 'accepted' ? '对方也申请过你，已直接成为好友。' : '好友申请已发送。', 'success');
-                await runSearch();
+                settle(button, result.status === 'accepted' ? '已成为好友' : '已申请');
+                client.refreshCounts();
                 return;
             } else if (action === 'accept-user') {
                 const pending = (await socialApi.requests()).incoming.find((item) => item.user?.identity === identity);
                 if (pending) { await socialApi.acceptRequest(pending.id); notify('已成为好友。', 'success'); }
-                await runSearch();
+                settle(button, '已成为好友');
+                client.refreshCounts();
                 return;
             } else if (action === 'chat-user' || action === 'open-group') {
                 const key = button.dataset.key || (identity ? `dm:${[client.me, identity].sort().join('|')}` : '');
@@ -314,7 +325,7 @@ export function createFriendsModal(client, { openChat }) {
         } catch (failure) {
             notify(errorText(failure), 'danger');
         } finally {
-            if (button.isConnected) button.disabled = false;
+            if (button.isConnected && !button.dataset.settled) button.disabled = false;
         }
     }
 

@@ -753,20 +753,24 @@
     "python": null,
     "react": []
    },
-   "title": "ability-radar",
+   "title": "Ability radar 六边形能力雷达",
    "layer": "component",
    "notes": {
-    "summary": "",
+    "summary": "六轴能力雷达（ability_radar_service.build_ability_radar 载荷，几何由服务端算好）。服务端页用 templates/partials/ability_radar.html；异步浮层用 static/js/ability_radar.js renderAbilityRadar(payload, {selfLabel})，两者输出同一 DOM/类名（lq-radar__*）。2026-10-27 起个人信息面板（social/user_card.js）消费 JS 版。",
     "params": "",
     "states": "",
-    "rules": ""
+    "rules": "改雷达 DOM 时 Jinja 宏与 JS 渲染器同步修改；JS 版只用 textContent/setAttribute，不拼 HTML；颜色只在 ability-radar.css。"
    },
    "consumers": {
-    "count": 1,
+    "count": 2,
     "files": [
      {
       "path": "templates/partials/ability_radar.html",
       "hits": 27
+     },
+     {
+      "path": "static/js/ability_radar.js",
+      "hits": 26
      }
     ]
    }
@@ -864,7 +868,7 @@
     "rules": "禁止 div 模拟按钮；颜色只来自变体不传任意色；固定宽度长标签用 overflow-label。"
    },
    "consumers": {
-    "count": 276,
+    "count": 277,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -876,7 +880,7 @@
      },
      {
       "path": "static/js/blog.js",
-      "hits": 224
+      "hits": 228
      },
      {
       "path": "static/js/collaboration.js",
@@ -1035,6 +1039,10 @@
       "hits": 52
      },
      {
+      "path": "static/js/message_center.js",
+      "hits": 51
+     },
+     {
       "path": "templates/manage/signature_workflows.html",
       "hits": 49
      },
@@ -1044,10 +1052,6 @@
      },
      {
       "path": "static/js/classroom_materials.js",
-      "hits": 47
-     },
-     {
-      "path": "static/js/message_center.js",
       "hits": 47
      },
      {
@@ -1679,6 +1683,10 @@
       "hits": 6
      },
      {
+      "path": "static/js/social/friends_modal.js",
+      "hits": 6
+     },
+     {
       "path": "templates/dev/lq_content.html",
       "hits": 6
      },
@@ -1883,10 +1891,6 @@
       "hits": 3
      },
      {
-      "path": "static/js/social/friends_modal.js",
-      "hits": 3
-     },
-     {
       "path": "static/js/ui.js",
       "hits": 3
      },
@@ -1948,6 +1952,10 @@
      },
      {
       "path": "static/js/session_knowledge_tree_manager.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/social/friends_discover.js",
       "hits": 1
      },
      {
@@ -2091,7 +2099,7 @@
     "rules": "芯片是单行胶囊：不换行，过长标签以省略号截断（2026-10-24）。"
    },
    "consumers": {
-    "count": 33,
+    "count": 35,
     "files": [
      {
       "path": "static/js/materials_sync_report.js",
@@ -2139,6 +2147,10 @@
      },
      {
       "path": "static/js/academic_schedule_sync.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/social/friends_discover.js",
       "hits": 3
      },
      {
@@ -2218,7 +2230,11 @@
       "hits": 1
      },
      {
-      "path": "static/js/social/friends_modal.js",
+      "path": "static/js/social/social_people.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/social/user_card.js",
       "hits": 1
      },
      {
@@ -2409,7 +2425,7 @@
     "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。"
    },
    "consumers": {
-    "count": 171,
+    "count": 172,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -2652,7 +2668,7 @@
       "hits": 4
      },
      {
-      "path": "static/js/social/friends_modal.js",
+      "path": "static/js/social/social_people.js",
       "hits": 4
      },
      {
@@ -2725,6 +2741,10 @@
      },
      {
       "path": "static/js/resume_common.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/social/friends_discover.js",
       "hits": 3
      },
      {
@@ -3167,14 +3187,22 @@
     "rules": ""
    },
    "consumers": {
-    "count": 4,
+    "count": 6,
     "files": [
      {
       "path": "static/js/cultivation_emblems.js",
       "hits": 20
      },
      {
+      "path": "static/js/social/user_card.js",
+      "hits": 2
+     },
+     {
       "path": "static/js/manage_wanderers.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/social/user_card_trigger.js",
       "hits": 1
      },
      {
@@ -3875,7 +3903,7 @@
     "rules": "浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。"
    },
    "consumers": {
-    "count": 28,
+    "count": 29,
     "files": [
      {
       "path": "templates/manage/system/users.html",
@@ -3959,6 +3987,10 @@
      },
      {
       "path": "static/js/social/friends_modal.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/social/user_card.js",
       "hits": 2
      },
      {
@@ -4333,7 +4365,7 @@
     "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。"
    },
    "consumers": {
-    "count": 175,
+    "count": 176,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -4868,6 +4900,10 @@
       "hits": 3
      },
      {
+      "path": "static/js/social/friends_discover.js",
+      "hits": 3
+     },
+     {
       "path": "templates/macros/manage_page.html",
       "hits": 3
      },
@@ -5085,7 +5121,7 @@
     "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem=\"off\"。"
    },
    "consumers": {
-    "count": 17,
+    "count": 18,
     "files": [
      {
       "path": "templates/dev/lq_presentation.html",
@@ -5137,6 +5173,10 @@
      },
      {
       "path": "static/js/session_knowledge_tree_manager.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/social/friends_discover.js",
       "hits": 1
      },
      {
@@ -6030,7 +6070,7 @@
     "rules": "FAB 复用 `.lq-fab` 定位与 slot 合同；禁止另做 resize/scroll 测量循环。"
    },
    "consumers": {
-    "count": 9,
+    "count": 10,
     "files": [
      {
       "path": "templates/manage/lq_sidebar.html",
@@ -6043,6 +6083,10 @@
      {
       "path": "templates/dev/lq_shell.html",
       "hits": 8
+     },
+     {
+      "path": "static/js/social/friends_discover.js",
+      "hits": 3
      },
      {
       "path": "static/js/manage_lq_pilot.js",
@@ -6110,7 +6154,7 @@
     "rules": ""
    },
    "consumers": {
-    "count": 19,
+    "count": 21,
     "files": [
      {
       "path": "static/js/academic_schedule_sync.js",
@@ -6177,11 +6221,19 @@
       "hits": 2
      },
      {
-      "path": "static/js/social/friends_modal.js",
+      "path": "static/js/social/friends_discover.js",
       "hits": 2
      },
      {
       "path": "static/js/social/social_dom.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/social/social_people.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/social/user_card.js",
       "hits": 2
      },
      {
@@ -6237,7 +6289,7 @@
     "rules": "警告/错误/保存语义优先复用这里的填充与前景配对，不把有色前景放到任意透明背景。"
    },
    "consumers": {
-    "count": 15,
+    "count": 16,
     "files": [
      {
       "path": "templates/dev/lq_status.html",
@@ -6254,6 +6306,10 @@
      {
       "path": "static/js/knowledge_tree/chrome.js",
       "hits": 5
+     },
+     {
+      "path": "static/js/social/friends_discover.js",
+      "hits": 4
      },
      {
       "path": "static/js/session_knowledge_tree.js",
@@ -6741,6 +6797,9 @@
   "frontend/src/islands/submission-jump-nav.tsx": [
    "button",
    "declarative"
+  ],
+  "static/js/ability_radar.js": [
+   "ability-radar"
   ],
   "static/js/academic_final_materials.js": [
    "button",
@@ -7556,16 +7615,23 @@
    "forms",
    "skeleton"
   ],
-  "static/js/social/friends_modal.js": [
+  "static/js/social/friends_discover.js": [
    "button",
    "chip",
    "content",
+   "forms",
+   "indicators",
+   "shells",
+   "skeleton",
+   "status"
+  ],
+  "static/js/social/friends_modal.js": [
+   "button",
    "declarative",
    "dialogs",
    "forms",
    "indicators",
-   "navigation",
-   "skeleton"
+   "navigation"
   ],
   "static/js/social/social_dom.js": [
    "button",
@@ -7574,6 +7640,20 @@
    "indicators",
    "skeleton",
    "toast"
+  ],
+  "static/js/social/social_people.js": [
+   "chip",
+   "content",
+   "skeleton"
+  ],
+  "static/js/social/user_card.js": [
+   "chip",
+   "cultivation-emblem",
+   "dialogs",
+   "skeleton"
+  ],
+  "static/js/social/user_card_trigger.js": [
+   "cultivation-emblem"
   ],
   "static/js/student_dashboard_schedule.js": [
    "button",

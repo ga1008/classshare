@@ -41,11 +41,14 @@ export function createChatModal(client, { openFriends }) {
     const heading = el('strong', { class: 'social-chat__title', text: '' });
     const subline = el('small', { class: 'social-chat__subline', 'aria-live': 'polite' });
     const listToggle = lqButton({ icon: 'menu', variant: 'ghost', aria: '显示会话列表', attrs: { 'data-chat-toggle': 'list', 'aria-expanded': 'false' } });
+    // DM only: the peer's 个人信息面板 (delegated data-user-card trigger).
+    const profileButton = lqButton({ icon: 'user', variant: 'ghost', aria: '查看对方的个人信息', attrs: { 'data-user-card': 'off', 'aria-haspopup': 'dialog' } });
+    profileButton.hidden = true;
     const sideToggle = lqButton({ icon: 'info', variant: 'ghost', aria: '显示资料与设置', attrs: { 'data-chat-toggle': 'side', 'aria-expanded': 'false' } });
     const scroller = el('div', { class: 'social-chat__messages', role: 'log', 'aria-label': '消息记录', tabindex: '0', 'data-ls-lightbox-scope': '' });
     const composer = createChatComposer({ client, onSent: (message) => upsert(message, true) });
     const main = el('section', { class: 'social-chat__main', 'aria-label': '消息' }, [
-        el('header', { class: 'social-chat__head' }, [listToggle, el('div', { class: 'social-chat__heading' }, [heading, subline]), sideToggle]),
+        el('header', { class: 'social-chat__head' }, [listToggle, el('div', { class: 'social-chat__heading' }, [heading, subline]), profileButton, sideToggle]),
         scroller,
         el('div', { class: 'social-chat__composer' }, [composer.element]),
     ]);
@@ -249,6 +252,8 @@ export function createChatModal(client, { openFriends }) {
             messages: [], hasMore: false, peerRead: 0, detail: null, readSent: 0,
         };
         layout.dataset.type = type;
+        profileButton.dataset.userCard = type === 'dm' && active.peer ? active.peer : 'off';
+        profileButton.hidden = type !== 'dm' || !active.peer;
         layout.dataset.listOpen = 'false';
         listToggle.setAttribute('aria-expanded', 'false');
         heading.textContent = item.title;

@@ -752,3 +752,11 @@ from .social_media_retention_service import (  # noqa: E402
 # 好友/群聊媒体：每日留存与空间守护 + 每小时清理未完成的分块上传会话。
 register_task_handler(SOCIAL_MEDIA_RETENTION_TASK_KIND, handle_social_media_retention)
 register_task_handler(SOCIAL_UPLOAD_CLEANUP_TASK_KIND, handle_social_upload_cleanup)
+
+from .social_recommendation_service import (  # noqa: E402
+    TASK_KIND as SOCIAL_RECOMMENDATIONS_TASK_KIND,
+    handle_social_recommendations_daily,
+)
+
+# 好友推荐（社交 §12.2）：每日特质卡增量抽取 + 范围桶排序。
+register_task_handler(SOCIAL_RECOMMENDATIONS_TASK_KIND, handle_social_recommendations_daily)

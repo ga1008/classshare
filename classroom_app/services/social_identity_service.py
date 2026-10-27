@@ -152,12 +152,39 @@ def public_user(person: dict[str, Any], relation: str) -> dict[str, Any]:
     }
 
 
+def add_capability(conn: Any, me: Any, users: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Set ``can_add`` / ``add_blocked_reason`` (§12.6) on PublicUser dicts from ``me``'s point of view.
+
+    ``can_add`` means "the add button would work": relation ``none`` and in my
+    境界 scope, or ``pending_in`` (answering is never restricted). Being blocked
+    by the other side is never revealed here; the request itself is refused.
+    """
+    from .social_scope_service import evaluate_targets, scope_context
+
+    if not users:
+        return users
+    pending = [item["identity"] for item in users if item.get("relation") == "none"]
+    ctx = scope_context(conn, me) if me and pending else None
+    verdicts = evaluate_targets(conn, ctx, pending) if ctx is not None else {}
+    for item in users:
+        relation = item.get("relation")
+        if relation == "pending_in":
+            item["can_add"], item["add_blocked_reason"] = True, None
+        elif relation == "none" and ctx is not None:
+            allowed, reason = verdicts.get(item["identity"], (False, ""))
+            item["can_add"], item["add_blocked_reason"] = bool(allowed), (reason or None)
+        else:
+            item["can_add"], item["add_blocked_reason"] = False, None
+    return users
+
+
 def public_users(conn: Any, me: str, identities: Iterable[str]) -> list[dict[str, Any]]:
     ordered = [item for item in dict.fromkeys(str(value) for value in identities) if item and item != me]
     people = load_people(conn, ordered)
     relations = relations_for(conn, me, ordered)
-    return [public_user(people[item], relations.get(item, "none")) for item in ordered
-            if item in people and people[item]["active"]]
+    users = [public_user(people[item], relations.get(item, "none")) for item in ordered
+             if item in people and people[item]["active"]]
+    return add_capability(conn, me, users)
 
 
 def sender_card(person: Optional[dict[str, Any]], identity: str) -> dict[str, Any]:
@@ -184,27 +211,45 @@ def _clean_query(raw: Any) -> str:
 
 
 def search_users(conn: Any, user: dict, query: Any) -> list[dict[str, Any]]:
-    """Name, 学号, 工号, email or 散修 name; at most 20; public fields only."""
+    """Name, 学号, 工号, email or 散修 name within my 境界 scope (§12.1); at most 20; public fields only."""
+    from .social_scope_service import scope_context, student_scope_sql, teacher_scope_sql
+
     me = user_identity(user)
     needle = _clean_query(query)
-    if not needle:
+    ctx = scope_context(conn, user)
+    if not needle or not ctx.can_add_anyone:
         return []
     like = f"%{needle}%"
+    student_where, student_params = student_scope_sql(conn, ctx)
     student_rows = conn.execute(
-        "SELECT id FROM students WHERE COALESCE(enrollment_status, 'active') IN (?, ?) "
-        "AND (name LIKE ? OR student_id_number = ? OR LOWER(COALESCE(email, '')) = LOWER(?)) "
-        "ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, id LIMIT ?",
-        (*ACTIVE_STUDENT_STATUSES, like, needle, needle, needle, SEARCH_LIMIT + 1),
+        "SELECT s.id FROM students s LEFT JOIN classes c ON c.id = s.class_id "
+        "WHERE COALESCE(s.enrollment_status, 'active') IN (?, ?) "
+        "AND (s.name LIKE ? OR s.student_id_number = ? OR LOWER(COALESCE(s.email, '')) = LOWER(?)) "
+        f"AND {student_where} "
+        "ORDER BY CASE WHEN s.name = ? THEN 0 ELSE 1 END, s.id LIMIT ?",
+        (*ACTIVE_STUDENT_STATUSES, like, needle, needle, *student_params, needle, SEARCH_LIMIT + 1),
     ).fetchall()
+    teacher_where, teacher_params = teacher_scope_sql(ctx)
     teacher_rows = conn.execute(
-        "SELECT id FROM teachers WHERE COALESCE(is_active, 1) = 1 "
-        "AND (name LIKE ? OR LOWER(email) = LOWER(?) OR (employee_number <> '' AND employee_number = ?)) "
-        "ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, id LIMIT ?",
-        (like, needle, needle, needle, SEARCH_LIMIT + 1),
+        "SELECT t.id FROM teachers t WHERE COALESCE(t.is_active, 1) = 1 "
+        "AND (t.name LIKE ? OR LOWER(t.email) = LOWER(?) OR (t.employee_number <> '' AND t.employee_number = ?)) "
+        f"AND {teacher_where} "
+        "ORDER BY CASE WHEN t.name = ? THEN 0 ELSE 1 END, t.id LIMIT ?",
+        (like, needle, needle, *teacher_params, needle, SEARCH_LIMIT + 1),
     ).fetchall()
     identities = [f"teacher:{int(row['id'])}" for row in teacher_rows]
     identities += [f"student:{int(row['id'])}" for row in student_rows]
     return public_users(conn, me, identities)[:SEARCH_LIMIT]
+
+
+def search_payload(conn: Any, user: dict, query: Any) -> dict[str, Any]:
+    """``GET /users/search`` (§12.6): ``{items, locked, locked_hint}``; 未入道 students are locked."""
+    from .social_scope_service import locked_hint, scope_context
+
+    ctx = scope_context(conn, user)
+    if not ctx.can_add_anyone:
+        return {"items": [], "locked": True, "locked_hint": locked_hint()}
+    return {"items": search_users(conn, user, query), "locked": False, "locked_hint": ""}
 
 
 def _classmate_and_teacher_identities(conn: Any, user: dict) -> list[str]:
@@ -242,14 +287,30 @@ def _online_wanderer_identities(conn: Any) -> list[str]:
     return [f"student:{student_id}" for student_id in ids if student_id in online]
 
 
-def suggest_users(conn: Any, user: dict) -> list[dict[str, Any]]:
-    """同课堂同学、任课老师、在线散修 — minus me, friends, pending and blocked either way."""
+def fallback_suggestions(conn: Any, user: dict) -> list[dict[str, Any]]:
+    """同课堂同学、任课老师、在线散修 within my scope — used until the daily recommendations exist."""
     me = user_identity(user)
     candidates = _classmate_and_teacher_identities(conn, user) + _online_wanderer_identities(conn)
     hidden = blocked_by(conn, me) | blockers_of(conn, me)
     users = [item for item in public_users(conn, me, candidates)
-             if item["relation"] == "none" and item["identity"] not in hidden]
+             if item["relation"] == "none" and item["identity"] not in hidden and item.get("can_add")]
     return users[:SUGGESTION_LIMIT]
+
+
+def suggest_users(conn: Any, user: dict) -> list[dict[str, Any]]:
+    """Legacy ``/users/suggestions``: complement + similar recommendations (deduped), else the fallback."""
+    from .social_recommendation_service import recommendations_payload
+
+    payload = recommendations_payload(conn, user)
+    if payload["locked"]:
+        return []
+    seen: set[str] = set()
+    items: list[dict[str, Any]] = []
+    for item in payload["complement"] + payload["similar"]:
+        if item["identity"] not in seen:
+            seen.add(item["identity"])
+            items.append({key: value for key, value in item.items() if key not in {"match", "hint"}})
+    return items or fallback_suggestions(conn, user)
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +364,10 @@ def profile_sidebar(conn: Any, user: dict, identity: Any) -> dict[str, Any]:
     friendship = get_friendship(conn, me, target) if target != me else None
     is_friend = bool(friendship and friendship.get("status") == "accepted")
     payload = public_user(person, relation)
+    if target != me:
+        add_capability(conn, me, [payload])
+    else:
+        payload.update({"can_add": False, "add_blocked_reason": None})
     payload.update({
         "mood": person["mood"] if visible else "",
         "online": bool(presence["online"]) if visible else None,

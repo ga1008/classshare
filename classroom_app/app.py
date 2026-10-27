@@ -314,6 +314,9 @@ async def startup_event():
             from .services.social_media_retention_service import ensure_social_media_tasks
 
             ensure_social_media_tasks(align_conn)
+            from .services.social_recommendation_service import ensure_social_recommendation_task
+
+            ensure_social_recommendation_task(align_conn)
             align_conn.commit()
         interrupted_wrong_summary_jobs = expire_interrupted_wrong_summary_jobs()
         if repair_report.paths_repaired > 0 or repair_report.paths_still_missing > 0:

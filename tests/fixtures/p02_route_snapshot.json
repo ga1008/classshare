@@ -7097,6 +7097,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/social/admin/recommendations/run",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_admin_run_recommendations",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/social/admin/storage",
     "methods": [
       "GET"
@@ -7409,6 +7417,30 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/social/recommendations",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_recommendations",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/scope",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_scope",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/users/ai-search",
+    "methods": [
+      "POST"
+    ],
+    "name": "social_ai_search_users",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/social/users/search",
     "methods": [
       "GET"
@@ -7422,6 +7454,14 @@
       "GET"
     ],
     "name": "social_user_suggestions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/users/{identity}/card",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_user_card",
     "include_in_schema": true
   },
   {

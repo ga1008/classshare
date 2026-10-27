@@ -2228,6 +2228,8 @@ export class ClassroomChat {
         avatar.className = 'chat-avatar';
         avatar.setAttribute('aria-hidden', 'true');
         avatar.textContent = initials;
+        // Classroom discussion may show temporary aliases: never a 个人信息面板 here (social doc §12.4).
+        row.dataset.userCard = 'off';
         // Student avatars carry their id so cultivation_emblems.js can add the level emblem.
         if (role === 'student' && normalizedMessage.user_id != null && /^\d+$/.test(String(normalizedMessage.user_id))) {
             avatar.dataset.cultivationStudentId = String(normalizedMessage.user_id);

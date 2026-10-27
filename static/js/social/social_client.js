@@ -9,9 +9,11 @@
  *   - the unread badge on every `[data-social-entry]` (messages + incoming requests);
  *   - the presence cache seeded by `hello` and updated by `presence`;
  *   - title flashing while the tab is hidden and a message arrives.
- * The modals are imported lazily on the first click of a 好友 entry.
+ * The modals are imported lazily on the first click of a 好友 entry; the
+ * 个人信息面板 (user_card.js) on the first click of a real-name avatar/name.
  */
 import { socialApi } from './social_api.js';
+import { bindUserCardTriggers } from './user_card_trigger.js';
 
 const KEY = Symbol.for('lanshare.social.client.v1');
 const PING_MS = 25_000;
@@ -270,3 +272,4 @@ export function getSocialClient(doc = document) {
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => getSocialClient(), { once: true });
 else getSocialClient();
+bindUserCardTriggers(document, () => getSocialClient());

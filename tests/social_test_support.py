@@ -34,7 +34,27 @@ SOCIAL_TABLES = (
     "social_media_blobs", "social_media_tokens", "social_upload_sessions", "social_dm_reads",
     "social_upload_usage", "social_lan_transfers", "user_presence", "private_message_blocks",
     "message_center_notifications", "social_dm_participants", "social_friend_request_log", "social_blocks",
+    "social_trait_cards", "social_recommendation_pairs", "social_recommendation_buckets", "social_daily_counters",
+    "social_scope_state",
 )
+# §12.1: sending a friend request needs 境界 ≥ 1 (classmates); the fixture students reach tier 1 in one
+# shared classroom so the first-round tests keep exercising the request flow, not the scope gate.
+FIXTURE_TIER = 1
+
+
+def grant_tier(conn, offering_id: int, student_id: int, tier: int) -> None:
+    """Synthetic certificates up to ``tier`` in one classroom (idempotent per stage)."""
+    from classroom_app.services.learning_progress_service import LEARNING_LEVELS
+
+    for level in LEARNING_LEVELS:
+        if int(level["tier"]) > int(tier):
+            break
+        conn.execute(
+            "INSERT INTO learning_certificates (class_offering_id, student_id, stage_key, level_key, level_name, tier, "
+            "title, certificate_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+            (offering_id, student_id, level["key"], level["key"], level["name"], level["tier"],
+             level["certificate_title"], f"T-{offering_id}-{student_id}-{level['key']}"),
+        )
 
 
 def sha(data: bytes) -> str:
@@ -73,6 +93,15 @@ class SocialDbTestCase(unittest.TestCase):
                     "VALUES (?, ?, ?, 'active', '2026-10-27T08:00:00')", (f"S-SOCIAL-{index}", name, class_id))
                 cls.student_ids.append(conn.execute("SELECT id FROM students WHERE student_id_number = ?",
                                                     (f"S-SOCIAL-{index}",)).fetchone()[0])
+            conn.execute("INSERT INTO courses (name, created_by_teacher_id) VALUES (?, ?)", ("社交测试课", cls.teacher_id))
+            course_id = conn.execute("SELECT id FROM courses WHERE name = ?", ("社交测试课",)).fetchone()[0]
+            conn.execute("INSERT INTO class_offerings (class_id, course_id, teacher_id) VALUES (?, ?, ?)",
+                         (class_id, course_id, cls.teacher_id))
+            cls.class_id = class_id
+            cls.offering_id = conn.execute("SELECT id FROM class_offerings WHERE course_id = ?",
+                                           (course_id,)).fetchone()[0]
+            for pk in cls.student_ids:
+                grant_tier(conn, cls.offering_id, pk, FIXTURE_TIER)
             conn.commit()
         cls.a, cls.b, cls.c, cls.d, cls.e = (f"student:{pk}" for pk in cls.student_ids)
         cls.teacher = f"teacher:{cls.teacher_id}"
@@ -87,6 +116,12 @@ class SocialDbTestCase(unittest.TestCase):
     def setUp(self):
         self.addCleanup(self._drain)
         presence_service.reset_for_tests()
+        # Process-wide caches keyed by student id must not leak between test classes' databases.
+        from classroom_app.services.cultivation_display_service import invalidate_emblem_cache
+        from classroom_app.services.wanderer_identity_service import invalidate_wanderer_cache
+
+        invalidate_emblem_cache()
+        invalidate_wanderer_cache()
         social_push_service.reset_for_tests()
         social_media_service.upload_limiter = social_media_service.ByteRateLimiter()
         social_media_service._slot_registry.clear()

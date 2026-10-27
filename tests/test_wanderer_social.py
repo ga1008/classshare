@@ -36,7 +36,7 @@ from classroom_app.services.wanderer_social_friends import (
     sync_wanderer_presence,
 )
 from classroom_app.services.wanderer_social_triggers import sociability
-from tests.social_test_support import SocialDbTestCase, sha
+from tests.social_test_support import SocialDbTestCase, grant_tier, sha
 from tests.wanderer_behavior_support import StubCaller, WandererWorldTestCase, ZeroSleep, turn
 
 ALWAYS_AWAKE = {"active_hours": [[0, 24]], "weekday_weights": {}}
@@ -80,6 +80,8 @@ class WandererSocialTest(WandererWorldTestCase):
             ensure_schema(conn)
             for table in SOCIAL_TABLES:
                 conn.execute(f"DELETE FROM {table}")
+            # §12.1: a real student may send requests to 散修 from 境界 3 on.
+            grant_tier(conn, self.offering_id, self.student_pk, 3)
             conn.commit()
         self.pushes = PushRecorder()
         for patcher in (patch.object(social_push_service, "push", self.pushes),

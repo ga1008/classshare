@@ -57,6 +57,12 @@
     "summary": "`.lq-prose` 内 Markdown 正文（标题、列表、表格、代码、链接）的排版与配色；AI 回复气泡与博客正文共用。",
     "rules": "正文链接保留真实 a；用户文档内容是内容槽位，不强制涂成玻璃。"
   },
+  "ability-radar": {
+    "title": "Ability radar 六边形能力雷达",
+    "layer": "component",
+    "summary": "六轴能力雷达（ability_radar_service.build_ability_radar 载荷，几何由服务端算好）。服务端页用 templates/partials/ability_radar.html；异步浮层用 static/js/ability_radar.js renderAbilityRadar(payload, {selfLabel})，两者输出同一 DOM/类名（lq-radar__*）。2026-10-27 起个人信息面板（social/user_card.js）消费 JS 版。",
+    "rules": "改雷达 DOM 时 Jinja 宏与 JS 渲染器同步修改；JS 版只用 textContent/setAttribute，不拼 HTML；颜色只在 ability-radar.css。"
+  },
   "react-bridges": {
     "title": "React bridges",
     "layer": "foundation",
@@ -322,10 +328,10 @@
     "social": {
       "title": "好友 / 群聊浮窗 static/css/lq/pages/social.css",
       "layer": "composite",
-      "summary": "2026-10-27 好友与群组（docs/social-friends-groups-2026-10-27.md §9）：顶栏「好友」入口 templates/partials/social_entry.html（四种呈现：LQ 顶栏 / 旧顶栏 / 管理壳 / 课堂顶栏，同一组 data-social-* 钩子），static/js/social/social_client.js 全局单例（/ws/social、徽标、在线缓存、标题闪烁），首次点击才懒加载 social_ui.js → friends_modal.js（好友/新朋友/群组/添加 + 黑名单浮窗）与 chat_modal.js（会话列表 | 消息区 + 输入区 | 资料侧栏）；social.css 由 social_dom.ensureSocialStyles() 按入口上的哈希 URL 懒链接，不依赖 LQ 页族开关。",
-      "params": "复用：Dialog(createDialog + createDomainModal，LQ.layer 持有栈/焦点/滚动锁)、Tabs(navigation.createTabs/tabs，pill)、Button(createComponent)、Choice 复合卡(lq-domain-choice + data-lq-shape=surface：好友卡、会话行)、Avatar/Badge/Chip、Content row/list/empty/bubble、Field/Input/Textarea/Checkbox/Switch(createForm)、Composer(createComposer + enhanceComposer enter=send，IME 守卫在共享 owner)、EmojiPicker、Toast、confirm、共享灯箱 data-ls-lightbox、MarkdownRuntime(untrusted)。",
-      "states": "好友卡 data-online=true：glass 变体 + translateY(-2px) + --lq-material-accent 背光；false：ghost 变体、下沉 1px、头像去饱和；reduced-motion / data-lq-motion=off 取消位移与动画，glass off / 高对比改为主色描边，forced-colors 用 Highlight。聊天：日期分隔、系统/拍一拍居中行、撤回占位、补传中/过期占位、局域网直传 Chip、已读/已送达、输入中、拍一拍时 .social-chat 抖动（不动浮层 surface 的 presence 动效）。≤1100px 侧栏变浮层，≤760px 会话列表变浮层（不透明主题面 + 主题墨）。",
-      "rules": "页面 CSS 只做网格、间距、尺寸与上述状态；玻璃上的文字只读 --lq-material-ink/muted/accent，状态色读 --ls-tone-*-fg；不声明控件背景/边框/滤镜，不新增 backdrop-filter。原生 button 内容块（图片格、引用）声明 data-lq-shape=surface 退出胶囊几何。不要在页面里再写第二套气泡/输入框；改 Bubble/Composer 合同时同时回归本页。"
+      "summary": "2026-10-27 好友与群组（docs/social-friends-groups-2026-10-27.md §9）：顶栏「好友」入口 templates/partials/social_entry.html（四种呈现：LQ 顶栏 / 旧顶栏 / 管理壳 / 课堂顶栏，同一组 data-social-* 钩子），static/js/social/social_client.js 全局单例（/ws/social、徽标、在线缓存、标题闪烁），首次点击才懒加载 social_ui.js → friends_modal.js（好友/新朋友/群组/添加 + 黑名单浮窗）与 chat_modal.js（会话列表 | 消息区 + 输入区 | 资料侧栏）；social.css 由 social_dom.ensureSocialStyles() 按入口上的哈希 URL 懒链接，不依赖 LQ 页族开关。 2026-10-27 第二轮（§12）：浮窗增加「推荐」选项卡；「添加」页顶部为境界解锁阶梯（friends_discover.js：LQ Steps + Alert，tier 0 只显示鼓励性锁定态、不出搜索框），scope.ai_search 时出现「AI 找人」；人员行抽到 social_people.js（姓名是 Row primary 链接按钮，带 data-user-card）。全站「个人信息面板」：social_client.js 只绑一个委托点击监听（user_card_trigger.js，无 MutationObserver），首次点击实名头像 /api/profile/avatar?role=&user_id= 或 [data-user-card=\"role:pk\"] 才懒加载 user_card.js（createSocialDialog → createDomainModal）；能力雷达用 static/js/ability_radar.js（与 partials/ability_radar.html 同 DOM）。",
+      "params": "复用：Dialog(createDialog + createDomainModal，LQ.layer 持有栈/焦点/滚动锁)、Tabs(navigation.createTabs/tabs，pill)、Button(createComponent)、Choice 复合卡(lq-domain-choice + data-lq-shape=surface：好友卡、会话行)、Avatar/Badge/Chip、Content row/list/empty/bubble、Field/Input/Textarea/Checkbox/Switch(createForm)、Composer(createComposer + enhanceComposer enter=send，IME 守卫在共享 owner)、EmojiPicker、Toast、confirm、共享灯箱 data-ls-lightbox、MarkdownRuntime(untrusted)。；§12：Steps(shells.createShell steps，icon 代替序号)、Alert(status.createStatus)、Card flat(推荐卡，primary=姓名触发面板)、Chip filter(AI 示例)、Field input + Button submit(AI 找人)、Dialog md(个人信息面板，data-user-card-panel)。触发声明：data-user-card=\"student:12\"；data-user-card=\"off\" 子树退出；[data-blog-avatar]、交互元素内的头像不触发。",
+      "states": "好友卡 data-online=true：glass 变体 + translateY(-2px) + --lq-material-accent 背光；false：ghost 变体、下沉 1px、头像去饱和；reduced-motion / data-lq-motion=off 取消位移与动画，glass off / 高对比改为主色描边，forced-colors 用 Highlight。聊天：日期分隔、系统/拍一拍居中行、撤回占位、补传中/过期占位、局域网直传 Chip、已读/已送达、输入中、拍一拍时 .social-chat 抖动（不动浮层 surface 的 presence 动效）。≤1100px 侧栏变浮层，≤760px 会话列表变浮层（不透明主题面 + 主题墨）。 §12：阶梯 complete/current/upcoming；tier 0 锁定 Alert；推荐空态/锁定态/404「暂未开放」；AI 找人 忙碌/结果/无结果/403/429/404；面板 读取中/404「资料暂不可查看」/错误，关系 self/friend/pending_out/pending_in/blocked/none(can_add true|false+原因)，隐藏修为不显示境界、各课境界与雷达；≤520px 面板头部居中、操作纵排（对话框本身变底部 sheet）。",
+      "rules": "页面 CSS 只做网格、间距、尺寸与上述状态；玻璃上的文字只读 --lq-material-ink/muted/accent，状态色读 --ls-tone-*-fg；不声明控件背景/边框/滤镜，不新增 backdrop-filter。原生 button 内容块（图片格、引用）声明 data-lq-shape=surface 退出胶囊几何。不要在页面里再写第二套气泡/输入框；改 Bubble/Composer 合同时同时回归本页。 §12 隐私：任何前端文件不得出现「侧写」，推荐只显示接口 hint 与一句中性说明（tests/test_social_frontend_privacy.py 守卫）；匿名不穿透——课堂讨论行 data-user-card=off，博客只在 kind real/wanderer 的作者浮层里给「个人资料」按钮，笔名/匿名永不挂面板；不劫持已有链接/按钮里的头像。"
     }
   },
   "_tools": {

@@ -24,6 +24,11 @@ export const socialApi = Object.freeze({
     search: (q, signal) => call(`/users/search?q=${seg(q)}`, { signal }),
     suggestions: () => call('/users/suggestions'),
     profile: (identity) => call(`/users/${seg(identity)}/profile`),
+    // §12.6 第二轮：境界范围、推荐、AI 找人、个人信息面板。
+    scope: () => call('/scope'),
+    recommendations: () => call('/recommendations'),
+    aiSearch: (prompt, signal) => call('/users/ai-search', { method: 'POST', body: { prompt }, signal }),
+    card: (identity, signal) => call(`/users/${seg(identity)}/card`, { signal }),
     blocks: () => call('/blocks'),
     block: (identity) => call('/blocks', { method: 'POST', body: { identity } }),
     unblock: (identity) => call(`/blocks/${seg(identity)}`, { method: 'DELETE' }),

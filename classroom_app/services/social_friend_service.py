@@ -119,6 +119,17 @@ def _check_can_request(conn: Any, me: str, target: str, existing: Optional[dict[
             raise SocialError(f"好友数量已达 {FRIEND_LIMIT} 人上限。", 409)
 
 
+SCOPE_REFUSAL = "当前境界尚不能添加该用户"
+
+
+def _check_scope(conn: Any, user: dict, target: str) -> None:
+    from .social_scope_service import can_add
+
+    allowed, reason = can_add(conn, user, target)
+    if not allowed:
+        raise SocialError(f"{SCOPE_REFUSAL}。{reason}" if reason else f"{SCOPE_REFUSAL}。", 403)
+
+
 def _notify(conn: Any, recipient: str, *, title: str, body: str, actor: str, actor_name: str, ref_id: str) -> None:
     from ..db.savepoint import best_effort
 
@@ -154,6 +165,9 @@ def send_request(conn: Any, user: dict, target_identity: Any, message: Any = "",
     text = str(message or "").strip()[:REQUEST_MESSAGE_MAX]
     existing = get_friendship(conn, me, target)
     _check_can_request(conn, me, target, existing)
+    answering = bool(existing and existing["status"] == STATUS_PENDING and existing["requester_identity"] == target)
+    if not answering:  # §12.1: only *sending* is gated by 境界; answering their request never is
+        _check_scope(conn, user, target)
     if existing and existing["status"] == STATUS_PENDING:
         if existing["requester_identity"] == target:
             _become_friends(conn, existing, events)

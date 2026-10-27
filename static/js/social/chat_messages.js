@@ -150,7 +150,8 @@ export function renderMessage(message, ctx, { connected = false } = {}) {
         class: `social-msg social-msg--${mine ? 'out' : 'in'}${connected ? ' is-connected' : ''}`,
         'data-message-id': String(message.id), 'data-sender': message.sender?.identity || '',
     }, [
-        el('span', { class: 'social-msg__avatar', 'aria-hidden': 'true' }, [showAvatar ? lqAvatar(message.sender?.name, message.sender?.avatar_url, 32) : null]),
+        // Pointer shortcut to the sender's 个人信息面板; the keyboard path is the header/member list.
+        el('span', { class: 'social-msg__avatar', 'aria-hidden': 'true', 'data-user-card': showAvatar ? (message.sender?.identity || 'off') : 'off' }, [showAvatar ? lqAvatar(message.sender?.name, message.sender?.avatar_url, 32) : null]),
         el('div', { class: 'social-msg__column' }, [bubble, meta]),
     ]);
 }
