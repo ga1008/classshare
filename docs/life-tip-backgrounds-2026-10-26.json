@@ -1,0 +1,145 @@
+{
+  "batch_id": "2026-10-26",
+  "before": 328,
+  "after": 330,
+  "added": [
+    {
+      "file": "xianxia-sunny-peach-watergarden-20261026-e6ace728.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "思考",
+        "专注",
+        "学习",
+        "目标",
+        "成长",
+        "坚持"
+      ],
+      "luma": 163,
+      "tone": "light",
+      "bytes": 117320,
+      "width": 1440,
+      "height": 810,
+      "quality": 42,
+      "sha256": "e6ace72862e95a458feaefc111224fd583f623255643343b7b9ac2fb1383e99b",
+      "source": "C:\\Users\\AngelWei\\.codex\\generated_images\\01a09ace-1e17-7ee1-b115-6fe59e1f51c2\\exec-7cd8821a-10af-4550-a4a0-e43ba6c76427.png",
+      "key": "day",
+      "nearest_history": "xianxia-cloud-terrace-night-20261011-35eb73ef.webp",
+      "frost": "static\\img\\life_tips\\frost\\xianxia-sunny-peach-watergarden-20261026-e6ace728.webp",
+      "frost_sha256": "69257bf804bd7794f5105cb9b24f6ec214a21a0103784b242e07c45f2c7f6043"
+    },
+    {
+      "file": "xueye-night-wind-tunnel-20261026-8628821e.webp",
+      "categories": [
+        "职业路径",
+        "简历面试",
+        "教学相长",
+        "人生大实话"
+      ],
+      "tags": [
+        "表达",
+        "交流",
+        "演示",
+        "合作",
+        "反馈",
+        "思考"
+      ],
+      "luma": 83,
+      "tone": "dark",
+      "bytes": 90160,
+      "width": 1600,
+      "height": 900,
+      "quality": 78,
+      "sha256": "8628821e3512369107bc7b5d74e21faf24bd08e97698b3ef7fc612c539110bb6",
+      "source": "C:\\Users\\AngelWei\\.codex\\generated_images\\01a09ace-1e17-7ee1-b115-6fe59e1f51c2\\exec-52a6ea80-7f31-4133-add0-3848c5669596.png",
+      "key": "night",
+      "nearest_history": "xueye-night-lab05-6a25be23.webp",
+      "frost": "static\\img\\life_tips\\frost\\xueye-night-wind-tunnel-20261026-8628821e.webp",
+      "frost_sha256": "d28f4d7604b9f19e29e1291531f9e77b02219aae11f037aea11ada2b6ef86b15"
+    }
+  ],
+  "retired": [],
+  "generation_calls": 2,
+  "old_entries_and_hashes_preserved": true,
+  "status": "verified-assets-awaiting-release",
+  "prompt_evidence": {
+    "batch_id": "2026-10-26",
+    "verified_at": "2026-10-27",
+    "prompts": {
+      "day": "Use case: stylized-concept. Original 16:9 landscape background for a university welcome screen. Eastern Chinese xianxia cloud realm, cinematic realistic environment. The single wonder is an ancient peach tree growing on a low circular white-jade flower island, suspended above a boundless luminous cloud sea. Camera is low beside a shallow still-water basin on the same cloud garden, looking diagonally across the water with a natural 50mm perspective; no central bridge, no long colonnade, no distant grand palace. The old gray-brown trunk bends naturally into the upper center, its roots gripping the mineral-veined island edge; a sparse airy crown of small pale pink peach blossoms spreads across the upper band, with individual twig gaps and sky visible. A curving shallow marble basin rim enters from lower right and narrows toward the island, its joints and a few tiny standard-size stone balusters communicate scale and consistent perspective. Small ordinary-size stone steps are only at the far side of the island, no people. In the narrow central portrait crop the main tree trunk and blossoms remain recognizable in the top third, while the broad middle and lower region is calm pale cyan water with a soft partial reflection and very slight natural ripples. Thin near mist, sculpted blue-gray cloud valleys and bright textured cloud tops fade into a distant pale cyan horizon. Gentle fresh late-morning side-backlight enters from the right, grazing bark, sparse petals and white stone; transparent cool shadows, no blown whites. A tiny piece of dark timber eave at the far left is subordinate and optional, no architecture filling the frame. Real bark, fine stone mineral texture and correct physically consistent reflections, dignified airy tranquility. Background must remain readable behind centered welcome text; avoid dense branches or high-contrast reflection lines in the middle 40 percent. No text card or overlay painted into the image. No giant peach fruits, flower wall, petal storm, pink filter, cartoon tree, moon, sun disk, waterfall, giant bell, Western architecture, modern structures, magical neon, crowded objects, floating inscriptions, melted geometry, dense fog, writing, logo, watermark or interface.",
+      "night": "Use case: photorealistic-natural. Original 16:9 landscape university welcome-screen background. A quiet contemporary university aerodynamics teaching lab at blue hour, centered on a small transparent wind-tunnel test section with a single cream aerodynamic wing model securely mounted inside. Photograph from a low three-quarter side viewpoint using a natural 45mm lens, looking across the short transparent chamber rather than down a hallway; instrument high in the upper center, broad quiet blue-gray epoxy floor in the middle and foreground. The tunnel's rounded rectangular pale-metal contraction is visible to the upper left, and the transparent clear acrylic test section sits on two believable dark steel supports near the upper center; a short unobtrusive duct exits toward the upper right. No running propeller exposed, no smoke streaks or projected data, no flying object. The setup is small and human-scale, a real instructional apparatus with carefully joined panels and subtle material texture, not a futuristic machine. A few tall narrow windows along the back show a softly illuminated campus under an indigo twilight sky. Cool diffused window light from behind the chamber and one warm task spotlight from upper left quietly outline the wing and acrylic edges, leaving soft legible shadows and restrained warm-cool contrast. Nothing is printed on the wing or apparatus. Distinct spatial organization: suspended-looking but physically supported horizontal apparatus across the upper third, side-on near view, generous open floor; no desk, computer screen, shelves, robot, workbench arrangement or central receding corridor. The central 26 percent phone crop retains the wing and transparent chamber at the top and an open matte floor beneath; high contrast edges and bright reflections stay above the actual center text area. Cinematic editorial architectural photography, calm curiosity, believable engineering and university scale. No people, readable letters, numbers, charts, signs, logos, watermark, UI, dark overlay, hologram, neon, science-fiction technology, distorted supports, clutter or black voids."
+    },
+    "designs": [
+      {
+        "key": "day",
+        "theme": "蟠桃天苑·临水低视点",
+        "time": "day",
+        "nearest_old": "xianxia-cloud-terrace-night-20261011-35eb73ef.webp",
+        "planned_differences": [
+          "临水低机位斜看独立桃树花岛，替代宽露台平视侧伸古松",
+          "疏朗粉花树冠与浅水倒影、右侧晨间逆光，替代夜间松树与石露台"
+        ],
+        "paired_difference": "有机树冠、水面、户外天境与夜间透明实验装置、室内横向空间不同"
+      },
+      {
+        "key": "night",
+        "theme": "校园空气动力教学实验室",
+        "time": "night",
+        "nearest_old": "xueye-night-lab05-6a25be23.webp",
+        "planned_differences": [
+          "低机位近处斜侧看透明风洞和固定翼型，替代深房间设备阵列",
+          "上方水平实验段与中央哑光地面，冷窗光配左上工作灯"
+        ],
+        "paired_difference": "实体工业教学装置、夜间室内与日光云中树岛不同"
+      }
+    ],
+    "history_prompt_files": [
+      ".codex-temp\\life-tip-weekly-20260914\\image-prompts.json",
+      ".codex-temp\\life-tip-weekly-20260928\\image-prompts.json",
+      ".codex-temp\\life-tip-weekly-20261005\\image-prompts.json",
+      ".codex-temp\\life-tip-weekly-20261012\\image-prompts.json",
+      ".codex-temp\\life-tip-weekly-20261019\\image-prompts.json",
+      ".codex-temp\\xianxia-preview-20261011\\prompts.json",
+      "docs\\life-tip-backgrounds-2026-10-11.json",
+      "docs\\life-tip-backgrounds-2026-10-12.json",
+      "docs\\life-tip-backgrounds-2026-10-19.json"
+    ],
+    "unique_full_prompts_compared": 14,
+    "weekly_batches_available": [
+      "2026-09-14",
+      "2026-09-28",
+      "2026-10-05",
+      "2026-10-12",
+      "2026-10-19"
+    ],
+    "coverage_gap": "Only five prior weekly batches have local prompt records; searched all available records and viewed all 328 gallery thumbnails, including four 2026-10-11 manual images. Older raw gallery has no full prompt archive here.",
+    "normalized_duplicate": false
+  },
+  "visual_review": {
+    "day": {
+      "actual_differences": [
+        "临水低机位看独立树岛，替代露台平视与侧伸古松",
+        "桃花疏枝、浅水倒影和日光，替代松冠、干石地和月夜"
+      ],
+      "crop": "390×844中央裁切保留上部树干花枝、下方水面和弧形岸线；变化可感知。"
+    },
+    "night": {
+      "actual_differences": [
+        "近处斜侧看上部横置透明风洞和翼型，替代远景设备阵列",
+        "窗外暮蓝与暖灯照射透明材料，中央明晰地面，替代暗室光点"
+      ],
+      "crop": "中心竖裁切保留翼型/实验段与下方安静地面，未裁掉唯一主体。窗外校园为虚构环境，不代表本校。"
+    }
+  },
+  "review_method": "Viewed all 328 gallery thumbnails, both full images and nearest-old side-by-side full/phone crops. Compared all 14 available unique historical prompts across 5 prior weekly batches plus 4 manual previews; fewer than 8 weekly archives available.",
+  "generation_limit": {
+    "started": 2,
+    "completed": 2,
+    "retries": 0,
+    "external_paid_calls": 0
+  },
+  "compression_note": "Day scene at 1600px exceeded 120KiB even at lowest existing ladder quality; deterministic resize to 1440x810 quality42 produced 117320 bytes. Night1600x900 quality78 90160 bytes. No image generation retry."
+}
