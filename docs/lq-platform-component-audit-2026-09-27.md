@@ -1,6 +1,6 @@
 # 全平台组件源码审计基线（2026-09-27）
 
-当前源码入口清单见 [2026-10-27 全平台审计](lq-platform-component-audit-2026-10-27.md)。本文件保留历史基线；本轮没有提升历史 pending/unknown 或业务验收状态。
+当前源码入口清单见 [2026-10-27 LQ续修全平台审计](lq-platform-component-audit-2026-10-27-followup.md)。本文件保留历史基线；本轮没有提升历史 pending/unknown 或业务验收状态。
 
 此报告是源码入口清单，不是组件完成率或页面验收证明。所有记录仍为 pending/unknown；JSON 保存逐条文件、行号、类名、来源、建议 owner 与源文件 SHA256。
 

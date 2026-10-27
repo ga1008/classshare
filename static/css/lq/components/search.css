@@ -42,6 +42,8 @@
 }
 :root .lq-search {
     position: relative;
+    /* Tail controls rise over this input, never over a sibling card or layer. */
+    isolation: isolate;
     display: flex;
     align-items: center;
     min-width: 0;
@@ -63,10 +65,10 @@
    reserves its width only while the action is shown. */
 :root .lq-search > :is(.lq-search__end, .lq-btn) {
     position: absolute;
-    z-index: 1;
+    z-index: var(--ls-z-raised);
     inset-inline-end: var(--ls-s-1);
     top: 50%;
-    min-height: 0;
+    /* The shared Button keeps its size, including the coarse-pointer floor. */
     /* translate composes with the shared hover/press transform. */
     translate: 0 -50%;
 }

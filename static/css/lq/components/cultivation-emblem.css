@@ -4,6 +4,9 @@
    lower-right edge and gives it the shared focus ring. No backdrop-filter. */
 .lq-cultivation-host { position: relative; overflow: visible !important; }
 .lq-cultivation-host--positioned { overflow: visible !important; }
+/* The mark is raised above its own avatar and presence dot only. Keep that
+   ordering local, so an avatar never lifts its mark over neighbouring content. */
+.lq-cultivation-host, .lq-cultivation-host--positioned { isolation: isolate; }
 /* A host that used to clip a round avatar keeps the image round itself. */
 :is(.lq-cultivation-host:not(.lq-cultivation-host--wrap), .lq-cultivation-host--positioned) > img:not(.lq-cultivation-emblem-img) { border-radius: inherit; }
 .lq-cultivation-host--wrap { display: inline-flex; flex: none; align-self: center; vertical-align: middle; line-height: 0; max-width: 100%; }
@@ -11,22 +14,26 @@
     position: absolute;
     right: -16%;
     bottom: -14%;
-    z-index: 2;
+    z-index: var(--ls-z-raised);
     display: grid;
     place-items: center;
     width: clamp(14px, 46%, 30px);
     aspect-ratio: 1;
     border-radius: 50%;
     cursor: help;
-    filter: drop-shadow(0 1px 2px rgb(0 0 0 / .45));
-    transition: transform var(--ls-dur-fast) var(--ls-ease-out), filter var(--ls-dur-fast) var(--ls-ease-out);
+    filter: drop-shadow(0 1px 2px hsl(var(--ls-c-black) / .45));
+    transition: transform var(--lq-motion-control-duration) var(--lq-motion-ease);
 }
 .lq-cultivation-emblem > img { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: 0 !important; pointer-events: none; }
-.lq-cultivation-emblem:hover, .lq-cultivation-emblem:focus-visible { transform: scale(1.22); }
+@media (hover: hover) and (pointer: fine) { .lq-cultivation-emblem:hover { transform: scale(var(--lq-motion-press-x)); } }
+.lq-cultivation-emblem:focus-visible { transform: scale(var(--lq-motion-press-x)); }
 .lq-cultivation-emblem:focus-visible { outline: 2px solid hsl(var(--ls-ring)); outline-offset: 2px; }
-.lq-cultivation-emblem:is([data-tier="8"], [data-tier="9"], [data-tier="10"]) { filter: drop-shadow(0 0 3px hsl(var(--ls-c-amber-400) / .7)) drop-shadow(0 1px 2px rgb(0 0 0 / .45)); }
-@media (prefers-reduced-motion: reduce) { .lq-cultivation-emblem { transition: none; } }
-@media (forced-colors: active) { .lq-cultivation-emblem { filter: none; forced-color-adjust: none; } }
+.lq-cultivation-emblem:is([data-tier="8"], [data-tier="9"], [data-tier="10"]) { filter: drop-shadow(0 0 3px hsl(var(--ls-c-amber-400) / .7)) drop-shadow(0 1px 2px hsl(var(--ls-c-black) / .45)); }
+/* Match shared motion's zero-transition contract above legacy .01ms bridges. */
+@media (prefers-reduced-motion: reduce) { :root .lq-cultivation-emblem { transition: none !important; } }
 /* Shared cultivation card: the level mark shows the emblem art once a stage is passed. */
 .cultivation-card__mark.has-emblem { background: none !important; border-color: transparent !important; box-shadow: none !important; padding: 0; }
-.cultivation-card__mark.has-emblem > .cultivation-card__emblem { display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 6px rgb(0 0 0 / .35)); }
+.cultivation-card__mark.has-emblem > .cultivation-card__emblem { display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 6px hsl(var(--ls-c-black) / .35)); }
+@media (forced-colors: active) {
+    :is(.lq-cultivation-emblem, .cultivation-card__mark.has-emblem > .cultivation-card__emblem) { filter: none; forced-color-adjust: none; }
+}

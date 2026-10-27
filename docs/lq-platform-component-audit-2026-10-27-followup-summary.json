@@ -1,0 +1,391 @@
+{
+  "acceptance": "pending",
+  "summary": {
+    "files": 580,
+    "htmlTemplates": 208,
+    "entries": 5615,
+    "byKind": {
+      "toolbar": 136,
+      "surface": 742,
+      "choice": 211,
+      "button": 2249,
+      "field": 760,
+      "unknown": 829,
+      "menu": 38,
+      "layer": 137,
+      "select": 304,
+      "content-slot": 39,
+      "tab": 37,
+      "domain": 18,
+      "status": 53,
+      "dialog": 31,
+      "chip": 30,
+      "handle": 1
+    },
+    "bySyntax": {
+      "jinja-component-call": 524,
+      "jinja-html": 2494,
+      "dynamic-html-sink": 688,
+      "js-html-candidate": 1380,
+      "create-element": 184,
+      "component-factory-call": 163,
+      "react-jsx": 158,
+      "python-generated-jinja-html": 24
+    },
+    "byCanonicalContract": {
+      "not-declared": 1803,
+      "canonical-declared-pending": 3720,
+      "declared-missing-canonical": 6,
+      "canonical-resolution-pending": 5,
+      "adapter-call-pending-runtime": 81
+    },
+    "byProvenance": {
+      "shared-component-call": 720,
+      "lq-marked-native": 131,
+      "component-declared": 3730,
+      "runtime-output-unknown": 688,
+      "legacy-or-native": 134,
+      "shared-definition": 54,
+      "shared-adapter-call-candidate": 81,
+      "factory-ownership-unknown": 49,
+      "external-icon-content-slot": 28
+    },
+    "byStatus": {
+      "pending": 4786,
+      "unknown": 829
+    },
+    "largestFiles": [
+      {
+        "file": "templates/classroom_main_v4.html",
+        "entries": 215
+      },
+      {
+        "file": "templates/assignment_detail_teacher.html",
+        "entries": 173
+      },
+      {
+        "file": "templates/exam_editor.html",
+        "entries": 108
+      },
+      {
+        "file": "static/js/blog.js",
+        "entries": 107
+      },
+      {
+        "file": "static/js/collaboration.js",
+        "entries": 102
+      },
+      {
+        "file": "static/js/materials_manage.js",
+        "entries": 88
+      },
+      {
+        "file": "templates/manage/system/wanderers.html",
+        "entries": 77
+      },
+      {
+        "file": "templates/manage/signatures.html",
+        "entries": 67
+      },
+      {
+        "file": "static/js/teacher_onboarding.js",
+        "entries": 67
+      },
+      {
+        "file": "static/js/attendance_reports.js",
+        "entries": 66
+      },
+      {
+        "file": "templates/blog.html",
+        "entries": 65
+      },
+      {
+        "file": "templates/manage/courses.html",
+        "entries": 61
+      },
+      {
+        "file": "templates/manage/system/blog_crawler.html",
+        "entries": 61
+      },
+      {
+        "file": "templates/partials/materials/modals_generate.html",
+        "entries": 61
+      },
+      {
+        "file": "static/js/course_schedule_editor.js",
+        "entries": 59
+      },
+      {
+        "file": "templates/dashboard_teacher.html",
+        "entries": 56
+      },
+      {
+        "file": "templates/manage/classes.html",
+        "entries": 56
+      },
+      {
+        "file": "static/js/approval_workflow.js",
+        "entries": 56
+      },
+      {
+        "file": "static/js/career_path_app.js",
+        "entries": 55
+      },
+      {
+        "file": "templates/dashboard.html",
+        "entries": 54
+      },
+      {
+        "file": "static/js/message_center.js",
+        "entries": 54
+      },
+      {
+        "file": "templates/manage/attendance_reports.html",
+        "entries": 49
+      },
+      {
+        "file": "templates/submission_detail.html",
+        "entries": 49
+      },
+      {
+        "file": "static/js/manage_lesson_plans.js",
+        "entries": 49
+      },
+      {
+        "file": "templates/dev/lq_interactions.html",
+        "entries": 47
+      }
+    ]
+  },
+  "registryDrift": {
+    "storedTemplateCount": 203,
+    "currentTemplateCount": 208,
+    "storedEntryCount": 225,
+    "currentEntryCount": 230,
+    "addedIdentities": [
+      "GET /manage/system/wanderers::manage/system/wanderers.html",
+      "GET /wanderers/{slug}::wanderers/home.html",
+      "template::partials/ability_radar.html",
+      "template::partials/cultivation_panel.html",
+      "template::partials/login_remember.html",
+      "template::partials/social_entry.html"
+    ],
+    "removedIdentities": [
+      "template::message_center.html"
+    ],
+    "sourcePageMethodPaths": 99,
+    "directTemplates": [
+      "templates/achievements.html",
+      "templates/assessment_plan_editor.html",
+      "templates/assignment_detail_student.html",
+      "templates/assignment_detail_teacher.html",
+      "templates/assignment_wrong_summary.html",
+      "templates/blog.html",
+      "templates/career_path.html",
+      "templates/classroom_main_v4.html",
+      "templates/dashboard.html",
+      "templates/dashboard_teacher.html",
+      "templates/dev/lq.html",
+      "templates/dev/lq_centered.html",
+      "templates/dev/lq_shell.html",
+      "templates/exam_editor.html",
+      "templates/exam_take.html",
+      "templates/feedback_review.html",
+      "templates/learning_path.html",
+      "templates/lesson_plan_editor.html",
+      "templates/lessondoc_editor.html",
+      "templates/manage/academic_final_materials.html",
+      "templates/manage/academic_overview.html",
+      "templates/manage/ai.html",
+      "templates/manage/archive_pipeline.html",
+      "templates/manage/assessment_plans.html",
+      "templates/manage/attendance_reports.html",
+      "templates/manage/classes.html",
+      "templates/manage/classrooms.html",
+      "templates/manage/course_schedule.html",
+      "templates/manage/course_schedule_editor.html",
+      "templates/manage/courses.html",
+      "templates/manage/exams.html",
+      "templates/manage/gongwen.html",
+      "templates/manage/lesson_plans.html",
+      "templates/manage/life_tips.html",
+      "templates/manage/material_hub.html",
+      "templates/manage/materials.html",
+      "templates/manage/me_credentials.html",
+      "templates/manage/offering_hub.html",
+      "templates/manage/offering_merge.html",
+      "templates/manage/offerings.html",
+      "templates/manage/polls.html",
+      "templates/manage/profile.html",
+      "templates/manage/semesters.html",
+      "templates/manage/signature_workflows.html",
+      "templates/manage/signatures.html",
+      "templates/manage/student_detail.html",
+      "templates/manage/system/academic_integrations.html",
+      "templates/manage/system/agent_keys.html",
+      "templates/manage/system/ai_usage.html",
+      "templates/manage/system/blog_crawler.html",
+      "templates/manage/system/blog_review.html",
+      "templates/manage/system/diagnostics.html",
+      "templates/manage/system/feedback.html",
+      "templates/manage/system/gongwen_integrations.html",
+      "templates/manage/system/monitor.html",
+      "templates/manage/system/organizations.html",
+      "templates/manage/system/password_resets.html",
+      "templates/manage/system/smart_classroom_integrations.html",
+      "templates/manage/system/users.html",
+      "templates/manage/system/wanderers.html",
+      "templates/manage/teacher_evaluations.html",
+      "templates/manage/teacher_schedule_query.html",
+      "templates/manage/textbooks.html",
+      "templates/manage/work_inbox.html",
+      "templates/material_render_shell.html",
+      "templates/material_viewer.html",
+      "templates/partials/classroom_members/alerts.html",
+      "templates/partials/classroom_members/exams.html",
+      "templates/partials/classroom_members/overview.html",
+      "templates/partials/classroom_members/settings.html",
+      "templates/partials/classroom_members/workspace.html",
+      "templates/permission_denied.html",
+      "templates/points_shop.html",
+      "templates/profile.html",
+      "templates/report_card.html",
+      "templates/resume/applications.html",
+      "templates/resume/builder.html",
+      "templates/resume/home.html",
+      "templates/resume/job_targets.html",
+      "templates/resume/list.html",
+      "templates/resume/personal.html",
+      "templates/resume/section.html",
+      "templates/status.html",
+      "templates/student_auth_flow_v4.html",
+      "templates/student_login_v4.html",
+      "templates/submission_detail.html",
+      "templates/teacher_evaluation_editor.html",
+      "templates/teacher_login_v4.html",
+      "templates/wanderers/home.html",
+      "templates/wrong_book.html"
+    ],
+    "ordinaryPageTemplates": [
+      "templates/achievements.html",
+      "templates/assessment_plan_editor.html",
+      "templates/assignment_detail_student.html",
+      "templates/assignment_detail_teacher.html",
+      "templates/assignment_wrong_summary.html",
+      "templates/blog.html",
+      "templates/career_path.html",
+      "templates/classroom_main_v4.html",
+      "templates/dashboard.html",
+      "templates/dashboard_teacher.html",
+      "templates/exam_editor.html",
+      "templates/exam_take.html",
+      "templates/feedback_review.html",
+      "templates/learning_path.html",
+      "templates/lesson_plan_editor.html",
+      "templates/lessondoc_editor.html",
+      "templates/manage/academic_final_materials.html",
+      "templates/manage/academic_overview.html",
+      "templates/manage/ai.html",
+      "templates/manage/archive_pipeline.html",
+      "templates/manage/assessment_plans.html",
+      "templates/manage/attendance_reports.html",
+      "templates/manage/classes.html",
+      "templates/manage/classrooms.html",
+      "templates/manage/course_schedule.html",
+      "templates/manage/course_schedule_editor.html",
+      "templates/manage/courses.html",
+      "templates/manage/exams.html",
+      "templates/manage/gongwen.html",
+      "templates/manage/lesson_plans.html",
+      "templates/manage/life_tips.html",
+      "templates/manage/material_hub.html",
+      "templates/manage/materials.html",
+      "templates/manage/me_credentials.html",
+      "templates/manage/offering_hub.html",
+      "templates/manage/offering_merge.html",
+      "templates/manage/offerings.html",
+      "templates/manage/polls.html",
+      "templates/manage/profile.html",
+      "templates/manage/semesters.html",
+      "templates/manage/signature_workflows.html",
+      "templates/manage/signatures.html",
+      "templates/manage/student_detail.html",
+      "templates/manage/system/academic_integrations.html",
+      "templates/manage/system/agent_keys.html",
+      "templates/manage/system/ai_usage.html",
+      "templates/manage/system/blog_crawler.html",
+      "templates/manage/system/blog_review.html",
+      "templates/manage/system/diagnostics.html",
+      "templates/manage/system/feedback.html",
+      "templates/manage/system/gongwen_integrations.html",
+      "templates/manage/system/monitor.html",
+      "templates/manage/system/organizations.html",
+      "templates/manage/system/password_resets.html",
+      "templates/manage/system/smart_classroom_integrations.html",
+      "templates/manage/system/users.html",
+      "templates/manage/system/wanderers.html",
+      "templates/manage/teacher_evaluations.html",
+      "templates/manage/teacher_schedule_query.html",
+      "templates/manage/textbooks.html",
+      "templates/manage/work_inbox.html",
+      "templates/material_render_shell.html",
+      "templates/material_viewer.html",
+      "templates/permission_denied.html",
+      "templates/points_shop.html",
+      "templates/profile.html",
+      "templates/report_card.html",
+      "templates/resume/applications.html",
+      "templates/resume/builder.html",
+      "templates/resume/home.html",
+      "templates/resume/job_targets.html",
+      "templates/resume/list.html",
+      "templates/resume/personal.html",
+      "templates/resume/section.html",
+      "templates/status.html",
+      "templates/student_auth_flow_v4.html",
+      "templates/student_login_v4.html",
+      "templates/submission_detail.html",
+      "templates/teacher_evaluation_editor.html",
+      "templates/teacher_login_v4.html",
+      "templates/wanderers/home.html",
+      "templates/wrong_book.html"
+    ],
+    "dynamicPageRoutesMissingFromGenerator": [
+      "/manage/me",
+      "/manage/me/appearance",
+      "/manage/me/email",
+      "/manage/me/notifications",
+      "/manage/me/private",
+      "/manage/me/security",
+      "/manage/me/settings"
+    ],
+    "exceptionalResponseTemplates": [
+      "error.html",
+      "session_expired.html",
+      "material_reader_unavailable.html"
+    ],
+    "unresolvedTemplates": [
+      "error.html",
+      "macros/lq/dialogs.html",
+      "manage/system/super_admin.html",
+      "material_reader_unavailable.html",
+      "partials/blog_button.html",
+      "partials/dashboard_agenda_widget.html",
+      "session_expired.html",
+      "teacher_register_v4.html"
+    ],
+    "storedStatuses": {
+      "已盘点": 196,
+      "迁移中": 12,
+      "未盘点": 17
+    },
+    "emptyStates": 216,
+    "emptyTests": 207,
+    "limitations": [
+      "AST routes and dependencies are source hints; helper-generated templates, external include_router prefixes and dynamic templates require manual verification.",
+      "An inventoried file is not a migrated or accepted page. Regeneration preserves manual state and before evidence.",
+      "Removed entries remain in retiredEntries for explicit retirement review.",
+      "Dynamic profile routes are explicitly resolved from their registration loop; the source-only generator is not a runtime route snapshot."
+    ]
+  }
+}

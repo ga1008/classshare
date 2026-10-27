@@ -60,13 +60,15 @@ test.describe('LQ manage pilot presentation adapter', () => {
   });
   test.describe('real legacy stylesheet mobile navigation hit area', () => {
     test.use({ hasTouch: true });
-    test('compact 1024px shell keeps every class action and 44px touch target inline', async ({ page }) => {
+    test('compact 1024px shell keeps every class action and 44px touch target inline', async ({ page }, info) => {
       await page.setViewportSize({ width: 1024, height: 900 }); await mount(page, { header: 'classes' });
       await page.evaluate(() => document.fonts.ready);
       const topbar = page.locator('#manage-pilot-topbar');
       const controls = topbar.locator('.lq-manage-context-actions .app-topbar-action, .lq-manage-utility .lq-btn, .lq-manage-utility [data-ui-preferences-toggle]');
-      await expect(controls).toHaveCount(10);
+      await expect(controls).toHaveCount(11);
+      await expect(topbar.locator('[data-social-entry]')).toBeVisible();
       const bounds = await topbar.boundingBox(); expect(bounds!.height).toBeLessThanOrEqual(64);
+      const hits = [];
       for (const control of await controls.all()) {
         await expect(control).toBeVisible();
         const hit = await control.evaluate(node => {
@@ -78,10 +80,17 @@ test.describe('LQ manage pilot presentation adapter', () => {
         expect(hit.width, hit.label!).toBeGreaterThanOrEqual(44); expect(hit.height, hit.label!).toBeGreaterThanOrEqual(44);
         expect(hit.top).toBeGreaterThanOrEqual(bounds!.y); expect(hit.bottom).toBeLessThanOrEqual(bounds!.y + bounds!.height);
         expect(hit.matches, hit.label!).toBe(true);
+        hits.push(hit);
       }
       await topbar.locator('[data-ui-preferences-toggle]').tap();
       await expect(topbar.locator('[data-ui-preferences-panel]')).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1024);
+      await topbar.locator('[data-ui-preferences-toggle]').tap();
+      await expect(topbar.locator('[data-ui-preferences-panel]')).toBeHidden();
+      const hitEvidence = info.outputPath('compact-topbar-hit-targets.json');
+      fs.writeFileSync(hitEvidence, JSON.stringify({ topbar: bounds, controls: hits }, null, 2));
+      await info.attach('compact-topbar-hit-targets', { path: hitEvidence, contentType: 'application/json' });
+      await page.screenshot({ path: info.outputPath('classes-1024-touch.png') });
     });
     for (const width of [320, 390, 768]) test(`native nav tap survives topbar stacking at ${width}`, async ({ page }, info) => {
       await page.setViewportSize({ width: 1440, height: 900 }); await mount(page, { header: 'courses' });
@@ -136,13 +145,18 @@ test.describe('LQ manage pilot presentation adapter', () => {
     await page.evaluate(() => (window as any).pilot.destroy()); await expect(page.locator('#retained-input')).toHaveValue('fallback草稿');
     await expect(page.locator('#manageNavSearch')).toBeVisible(); await expect(pane(page)).toBeVisible();
   });
-  test('eight real SSR header-action blocks fit the desktop height contract and tablet width', async ({ page }) => {
+  test('eight real SSR header-action blocks fit the desktop height contract and tablet width', async ({ page }, info) => {
     for (const width of [1440, 1024]) for (const header of Object.keys(fixture.headers)) {
       await page.unroute('**/*'); await page.setViewportSize({ width, height: 900 }); await mount(page, { header });
       expect(await page.evaluate(() => document.documentElement.scrollWidth), `${header}/${width} viewport`).toBe(width);
       expect((await page.locator('#manage-pilot-topbar').boundingBox())!.height, `${header}/${width} topbar`).toBeLessThanOrEqual(64);
+      await expect(page.locator('#manage-pilot-topbar [data-social-entry]')).toBeVisible();
       await page.locator('[data-ui-preferences-toggle]').click(); await expect(page.locator('[data-ui-preferences-panel]')).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+      await page.locator('[data-ui-preferences-toggle]').click();
+      await expect(page.locator('[data-ui-preferences-panel]')).toBeHidden();
+      await page.locator('#manage-pilot-topbar').screenshot({ path: info.outputPath(`topbar-${header.replaceAll('/', '-')}-${width}.png`) });
+      if (header === 'classes') await page.screenshot({ path: info.outputPath(`classes-${width}-desktop.png`) });
     }
   });
   test('mobile business action releases only its pane before the original one click and keeps new modal focus', async ({ page }) => {

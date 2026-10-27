@@ -19,6 +19,20 @@ RULES = {
 }
 
 
+def source_digest(path: Path, mode: str = "raw-bytes") -> str:
+    """An explicit text review survives Git CRLF checkout conversion only.
+
+    Old reviews remain byte-exact. Opted-in text reviews still invalidate on
+    every content/whitespace change except the CRLF/LF representation.
+    """
+    if mode not in {"raw-bytes", "text-lf"}:
+        raise ValueError(f"Unknown shared-source hash mode: {mode}")
+    data = path.read_bytes()
+    if mode == "text-lf":
+        data = data.replace(b"\r\n", b"\n")
+    return hashlib.sha256(data).hexdigest()
+
+
 def violations(path: str, text: str) -> list[dict]:
     findings = []
     # Ignore source comments and url() payloads, preserving line numbers.
@@ -99,6 +113,9 @@ def audit(root: Path, registry: dict, exceptions: list[dict], page: str | None =
             if not isinstance(item, dict) or not isinstance(item.get("scope"), str) or not item["scope"].strip() or not re.fullmatch(r"[0-9a-f]{64}", str(item.get("sha256", ""))):
                 raise ValueError(f"Invalid shared-source review: {entry['id']}")
             path = _path(root, item.get("path"))
+            mode = item.get("hashMode", "raw-bytes")
+            if mode not in {"raw-bytes", "text-lf"}:
+                raise ValueError(f"Unknown shared-source hash mode: {path}")
             tests = _paths(root, item.get("tests"))
             if not tests or any(not test.startswith("tests/") for test in tests):
                 raise ValueError(f"Shared-source review needs actual test paths: {path}")
@@ -106,9 +123,10 @@ def audit(root: Path, registry: dict, exceptions: list[dict], page: str | None =
                 raise ValueError(f"Overlapping partial source roles: {path}")
             shared_paths.add(path)
             if active:
-                if path in reviewed and reviewed[path] != item["sha256"]:
+                review = (item["sha256"], mode)
+                if path in reviewed and reviewed[path] != review:
                     raise ValueError(f"Conflicting shared-source review hashes: {path}")
-                reviewed[path] = item["sha256"]
+                reviewed[path] = review
                 required.update(tests)
         if entry["template"] not in {*sources, *shared_paths}:
             raise ValueError(f"Partial scope must cover its template: {entry['id']}")
@@ -147,8 +165,8 @@ def audit(root: Path, registry: dict, exceptions: list[dict], page: str | None =
     missing = {path for path in required if not (root / path).is_file()}
     for path in sorted(missing):
         report["blocking"].append({"path": path, "line": 0, "rule": "missing-file"})
-    for path, digest in sorted(reviewed.items()):
-        if path not in missing and hashlib.sha256((root / path).read_bytes()).hexdigest() != digest:
+    for path, (digest, mode) in sorted(reviewed.items()):
+        if path not in missing and source_digest(root / path, mode) != digest:
             report["blocking"].append({"path": path, "line": 0, "rule": "reviewed-source-changed"})
     for path, active in sorted(scopes.items()):
         file = (root / path).resolve()

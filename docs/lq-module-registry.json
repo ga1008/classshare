@@ -28,7 +28,7 @@
     "rules": "玻璃上的文字只读 `--lq-material-ink/muted/accent`，禁用随主题翻转的灰阶；普通内容面板与重复行不得各自开 backdrop-filter；真源 docs/lq-scene-ink-2026-09-26.md。"
    },
    "consumers": {
-    "count": 178,
+    "count": 179,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -307,10 +307,6 @@
       "hits": 3
      },
      {
-      "path": "static/js/materials_manage.js",
-      "hits": 3
-     },
-     {
       "path": "static/js/resume_common.js",
       "hits": 3
      },
@@ -424,6 +420,14 @@
      },
      {
       "path": "static/js/manage_users.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/materials_explorer.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/materials_manage.js",
       "hits": 2
      },
      {
@@ -595,7 +599,7 @@
       "hits": 1
      },
      {
-      "path": "static/js/materials_explorer.js",
+      "path": "static/js/materials_library_cards.js",
       "hits": 1
      },
      {
@@ -943,6 +947,10 @@
       "hits": 88
      },
      {
+      "path": "static/js/materials_explorer.js",
+      "hits": 84
+     },
+     {
       "path": "static/js/resume_list.js",
       "hits": 84
      },
@@ -969,10 +977,6 @@
      {
       "path": "templates/manage/signatures.html",
       "hits": 80
-     },
-     {
-      "path": "static/js/materials_explorer.js",
-      "hits": 68
      },
      {
       "path": "static/js/lessondoc_wizard.js",
@@ -1171,10 +1175,6 @@
       "hits": 32
      },
      {
-      "path": "templates/manage/materials.html",
-      "hits": 32
-     },
-     {
       "path": "templates/partials/lq_navbar_topbar.html",
       "hits": 31
      },
@@ -1224,7 +1224,7 @@
      },
      {
       "path": "static/js/materials_library_cards.js",
-      "hits": 25
+      "hits": 27
      },
      {
       "path": "static/js/app_files.js",
@@ -1252,6 +1252,10 @@
      },
      {
       "path": "templates/manage/ai.html",
+      "hits": 24
+     },
+     {
+      "path": "templates/manage/materials.html",
       "hits": 24
      },
      {
@@ -2437,7 +2441,7 @@
     "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。"
    },
    "consumers": {
-    "count": 173,
+    "count": 174,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -2836,6 +2840,10 @@
       "hits": 2
      },
      {
+      "path": "static/js/materials_explorer.js",
+      "hits": 2
+     },
+     {
       "path": "static/js/materials_manage.js",
       "hits": 2
      },
@@ -2865,10 +2873,6 @@
      },
      {
       "path": "templates/manage/lesson_plans.html",
-      "hits": 2
-     },
-     {
-      "path": "templates/manage/materials.html",
       "hits": 2
      },
      {
@@ -2993,6 +2997,10 @@
      },
      {
       "path": "static/js/material_viewer.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/materials_library_cards.js",
       "hits": 1
      },
      {
@@ -3187,7 +3195,9 @@
     "lq-cultivation-emblem-img",
     "lq-cultivation-host"
    ],
-   "extraRoots": [],
+   "extraRoots": [
+    "cultivation-card__emblem"
+   ],
    "entries": {
     "macros": {},
     "js": {},
@@ -3197,13 +3207,13 @@
    "title": "Cultivation emblem 境界标志与道印图案身份",
    "layer": "component",
    "notes": {
-    "summary": "既有头像境界标志由 static/js/cultivation_emblems.js 与 components/cultivation-emblem.css 提供；本轮不修改该共享组件。2026-10-27 道印大徽章在 static/img/cultivation/awards/ 扩展相同十阶段图案身份，tools/ui/build_cultivation_awards.py 生成 SVG；展示与 PNG 保存统一消费 learning_certificate_art.js 的映射，避免展示/导出两张不同图。",
+    "summary": "既有头像境界标志由 static/js/cultivation_emblems.js 与 components/cultivation-emblem.css 提供；2026-10-27续修局部层级、阴影令牌与共享动效；保持SVG身份和宿主原定位。2026-10-27 道印大徽章在 static/img/cultivation/awards/ 扩展相同十阶段图案身份，tools/ui/build_cultivation_awards.py 生成 SVG；展示与 PNG 保存统一消费 learning_certificate_art.js 的映射，避免展示/导出两张不同图。",
     "params": "道印顺序 qi_awakening/qi_refining/foundation/application_seed/golden_core/practical_mastery/systems_thinking/nascent_soul/independent_path/mentor_heart；兼容 self_directed 与 teacher_guiding。主色依次天蓝、青绿、青、翡翠、金、橙、靛、紫、玫红、暖金。",
-    "states": "原头像标志状态保持；道印内容庆祝粒子 6–24、基础时长 1900–5140ms，单次有限播放；高阶段增加外环、扩散范围与多色光晕。quiet/off/reduced-motion 停止庆祝；forced-colors 隐藏装饰光效。",
-    "rules": "奖章 SVG/Canvas 是可导出的图形内容，不作为控件或面板材质；操作与信息区继续使用 LQ。图形色只描绘境界身份；不能将奖章特效推广成共享控件第二套动效。原组件颜色/z-index lint 候选本轮未豁免，见 2026-10-27 全平台审计。"
+    "states": "头像宿主isolation、共享raised层级、精细指针hover/键盘focus、quiet/standard/expressive/off、系统reduce零过渡、forced-colors无外部阴影；隐藏修为和SSR/动态更新保留。原头像标志状态保持；道印内容庆祝粒子 6–24、基础时长 1900–5140ms，单次有限播放；高阶段增加外环、扩散范围与多色光晕。quiet/off/reduced-motion 停止庆祝；forced-colors 隐藏装饰光效。",
+    "rules": "奖章 SVG/Canvas 是可导出的图形内容，不作为控件或面板材质；操作与信息区继续使用 LQ。图形色只描绘境界身份；不能将奖章特效推广成共享控件第二套动效。四项硬编码阻断已用现有令牌修复，不增加例外。除六个原登记消费者，还覆盖partials/cultivation_card.html及learning_path、profile/hero、hero_lq、overview父模板；测试tests/e2e/components/lq-cultivation-emblem.spec.ts。"
    },
    "consumers": {
-    "count": 6,
+    "count": 7,
     "files": [
      {
       "path": "static/js/cultivation_emblems.js",
@@ -3223,6 +3233,10 @@
      },
      {
       "path": "templates/manage/system/wanderers.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/cultivation_card.html",
       "hits": 1
      },
      {
@@ -3265,10 +3279,10 @@
     "summary": "`data-lq-component` 显式声明把服务端/领域 DOM 的填充、前景、描边锁定到共享配方，防止晚加载的旧样式夺回外观；也提供 `lq-domain-toolbar`（组合边界）、`lq-domain-choice`（选择卡）、`lq-domain-raised`（浮层材质）、`data-lq-selected` Surface 选中态、`lq-disclosure-popover`（原生 details 浮层）。",
     "params": "`data-lq-component=\"button|input|select|surface|toolbar|choice|popover|…\"`、`data-lq-padding=\"none|sm|md|lg\"`、`data-lq-selected=\"true\"`、`data-lq-align/placement`。；`data-lq-surface=\"embedded\"`（2026-10-24：宿主里的分组，不铺底、不描边、不成为模糊宿主，内边距由宿主负责）。",
     "states": "",
-    "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface=\"embedded\"`，否则声明的 `!important` 底色会铺回来，形成\"有底无边距\"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。 `lq-domain-choice[data-lq-shape=\"surface\"]` 退出胶囊后高度即内容高度（2026-10-26），在滚动列里不会被压缩；需要固定格高的网格单元（学期日历）在 domain-controls.css 以更高特异性自设 min-height。"
+    "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface=\"embedded\"`，否则声明的 `!important` 底色会铺回来，形成\"有底无边距\"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。 `lq-domain-choice[data-lq-shape=\"surface\"]` 退出胶囊后高度即内容高度（2026-10-26），在滚动列里不会被压缩；需要固定格高的网格单元（学期日历）在 domain-controls.css 以更高特异性自设 min-height。 2026-10-27材料资源管理器工具栏/窗格头/状态栏用embedded Surface，不各自采样模糊；树节点/文件选择和卡片主入口为原生button+Choice，菜单按钮为兄弟节点。"
    },
    "consumers": {
-    "count": 152,
+    "count": 153,
     "files": [
      {
       "path": "templates/assignment_detail_teacher.html",
@@ -3333,6 +3347,10 @@
      {
       "path": "templates/partials/materials/modals_repository.html",
       "hits": 9
+     },
+     {
+      "path": "static/js/materials_explorer.js",
+      "hits": 8
      },
      {
       "path": "templates/manage/academic_final_materials.html",
@@ -3452,10 +3470,6 @@
      },
      {
       "path": "templates/assessment_plan_editor.html",
-      "hits": 4
-     },
-     {
-      "path": "templates/manage/materials.html",
       "hits": 4
      },
      {
@@ -3608,6 +3622,10 @@
      },
      {
       "path": "static/js/material_viewer.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/materials_library_cards.js",
       "hits": 2
      },
      {
@@ -3920,10 +3938,10 @@
     "summary": "模态与非模态浮层外壳：raised Surface、scrim、头/体/脚槽；`openDialog` 与 `confirm/choose` 返回 Promise，取消不执行分支；关闭可被未保存草稿否决。",
     "params": "",
     "states": "open / closing（可取消）/ busy 否决关闭 / nested child。",
-    "rules": "浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。 2026-10-27 好友页「+新朋友」复用二层 Dialog，取消后恢复触发器，已发申请与找人草稿由同一持久 owner 保留。道印点击后 createDialog/openDialog 创建 parentLayer 为 Viewer 的保存子层，取消只关闭子层、焦点回到道印；写入期间否决关闭与重复保存。"
+    "rules": "浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。 2026-10-27 好友页「+新朋友」复用二层 Dialog，取消后恢复触发器，已发申请与找人草稿由同一持久 owner 保留。道印点击后 createDialog/openDialog 创建 parentLayer 为 Viewer 的保存子层，取消只关闭子层、焦点回到道印；写入期间否决关闭与重复保存。 2026-10-27用户管理4个原生表单继续由manage_users.js显式createDomainModal托管；confirm导入别名confirmDialog区分共享确认与浏览器原生确认，未更改取消/脏草稿/忙碌合同。"
    },
    "consumers": {
-    "count": 30,
+    "count": 31,
     "files": [
      {
       "path": "templates/manage/system/users.html",
@@ -3999,6 +4017,10 @@
      },
      {
       "path": "static/js/manage_teacher_schedule_query.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/materials_explorer.js",
       "hits": 2
      },
      {
@@ -5149,7 +5171,7 @@
     "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem=\"off\"。 2026-10-27 四种顶栏好友入口共用 data-social 钩子与 LQ Badge，数字放入口右上角；免打扰消息仍纳入未读。角标是显示状态，不能承载读取确认或权限逻辑。"
    },
    "consumers": {
-    "count": 18,
+    "count": 19,
     "files": [
      {
       "path": "templates/dev/lq_presentation.html",
@@ -5209,6 +5231,10 @@
      },
      {
       "path": "static/js/social/friends_modal.js",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/materials/library_card.html",
       "hits": 1
      },
      {
@@ -5511,10 +5537,10 @@
     "summary": "由 LQ.layer 托管的 portal 菜单：原生条目 + 作者内容槽，精细指针悬停、触摸点击、键盘同一 owner；`lq-popover` 为 raised 边界采样。",
     "params": "",
     "states": "",
-    "rules": "菜单条目不套按钮胶囊；关闭成功后才执行领域动作。 2026-10-27 群成员管理改为行尾右对齐的 ellipsis 入口，createMenu/bindMenu 把菜单 portal 到共享层栈，桌面点击与触摸同一 owner。列表重绘或侧栏销毁必须释放绑定；权限与破坏性动作确认仍由领域持有，不能由隐藏菜单代替服务端授权。"
+    "rules": "菜单条目不套按钮胶囊；关闭成功后才执行领域动作。 2026-10-27 群成员管理改为行尾右对齐的 ellipsis 入口，createMenu/bindMenu 把菜单 portal 到共享层栈，桌面点击与触摸同一 owner。列表重绘或侧栏销毁必须释放绑定；权限与破坏性动作确认仍由领域持有，不能由隐藏菜单代替服务端授权。 2026-10-27材料卡片/资源管理器通过materials_menus.js共用createMenu/bindMenu；只传业务动作与权限，不重建portal/焦点/定位。原生上传菜单在原始点击激活内调用input.click，后续原生动作由共享菜单退出后回放，禁止重复提交。"
    },
    "consumers": {
-    "count": 11,
+    "count": 12,
     "files": [
      {
       "path": "templates/assignment_detail_teacher.html",
@@ -5522,6 +5548,10 @@
      },
      {
       "path": "templates/manage/exams.html",
+      "hits": 6
+     },
+     {
+      "path": "templates/manage/materials.html",
       "hits": 6
      },
      {
@@ -5537,15 +5567,15 @@
       "hits": 2
      },
      {
+      "path": "static/js/materials_menus.js",
+      "hits": 2
+     },
+     {
       "path": "static/js/social/chat_sidebar.js",
       "hits": 2
      },
      {
       "path": "static/js/ui_explanation.js",
-      "hits": 2
-     },
-     {
-      "path": "templates/manage/materials.html",
       "hits": 2
      },
      {
@@ -5907,10 +5937,10 @@
    "title": "Search 搜索包装",
    "layer": "component",
    "notes": {
-    "summary": "`.lq-search` 只清除包装层底色并提供尾部槽（清空/提交）；放大镜由 `.lq-input[type=search]` 自己绘制，避免框中框。",
+    "summary": "`.lq-search` 只清除包装层底色并提供尾部槽（清空/提交）；放大镜由 `.lq-input[type=search]` 自己绘制，避免框中框。 2026-10-27局部isolation防止尾部raised动作跨越邻接面板；所有现有12个消费者保留原生输入，实际带尾部动作的试卷/材料筛选共用此实现。",
     "params": "",
     "states": "",
-    "rules": "不要再给搜索框外面画一层框或自放图标。"
+    "rules": "不要再给搜索框外面画一层框或自放图标。 不覆盖共享粗指针44px命中高度；清空动作仍发送一次input，提交使用原生form。验证：tests/e2e/components/lq-search-stacking.spec.ts。"
    },
    "consumers": {
     "count": 12,
@@ -6103,7 +6133,7 @@
     "summary": "AppShell 家族：导航壳、编辑器壳、底部 dock（`enhanceDock` 测量高度令牌）、浮动操作入口、面包屑与步骤条。",
     "params": "",
     "states": "",
-    "rules": "FAB 复用 `.lq-fab` 定位与 slot 合同；禁止另做 resize/scroll 测量循环。"
+    "rules": "FAB 复用 `.lq-fab` 定位与 slot 合同；禁止另做 resize/scroll 测量循环。 2026-10-27修复新增好友入口后的1024–1279管理壳换行：从水平留白收回空间，保留全部11个入口与44px命中区、侧栏展开及原换行兜底；pilot/family同一CSS，8个真实页头两宽度与18项adapter回归。"
    },
    "consumers": {
     "count": 10,
@@ -6325,7 +6355,7 @@
     "rules": "警告/错误/保存语义优先复用这里的填充与前景配对，不把有色前景放到任意透明背景。"
    },
    "consumers": {
-    "count": 18,
+    "count": 19,
     "files": [
      {
       "path": "templates/dev/lq_status.html",
@@ -6389,6 +6419,10 @@
      },
      {
       "path": "static/js/manage_users.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/materials_explorer.js",
       "hits": 1
      },
      {
@@ -6524,11 +6558,15 @@
     "rules": "全站通过 `LQ.toast` / `showToast` 发出；不自建 toast 容器。 2026-10-27 社交聊天浮窗唯一归 SocialClient：message_notification_policy.js 识别 category=social 且 metadata.event_type（兼容 event）为 social_message/social_mention；React message-center-sync 与旧 message_center_bell 继续更新总未读但不重复弹聊天。免打扰仅抑制该会话浮窗，保留消息中心与好友角标；当前可见会话抑制浮窗，其他会话仍可提示；WS 重复消息去重；刷新铃铛通过 900ms 合并并传 allowPopup:false，避免请求风暴。好友申请不在聊天排除规则内。"
    },
    "consumers": {
-    "count": 3,
+    "count": 4,
     "files": [
      {
       "path": "static/js/ui.js",
       "hits": 3
+     },
+     {
+      "path": "static/js/materials_explorer.js",
+      "hits": 2
      },
      {
       "path": "static/js/message_center_bell.js",
@@ -7455,14 +7493,22 @@
   "static/js/materials_explorer.js": [
    "button",
    "chip",
+   "content",
+   "declarative",
+   "dialogs",
    "forms",
    "materials",
-   "search"
+   "search",
+   "status",
+   "toast"
   ],
   "static/js/materials_library_cards.js": [
    "button",
    "chip",
-   "forms"
+   "content",
+   "declarative",
+   "forms",
+   "materials"
   ],
   "static/js/materials_manage.js": [
    "button",
@@ -7471,6 +7517,9 @@
    "declarative",
    "forms",
    "materials"
+  ],
+  "static/js/materials_menus.js": [
+   "menus"
   ],
   "static/js/materials_sync_report.js": [
    "chip",
@@ -8168,8 +8217,6 @@
   ],
   "templates/manage/materials.html": [
    "button",
-   "content",
-   "declarative",
    "forms",
    "materials",
    "menus"
@@ -8445,6 +8492,7 @@
   ],
   "templates/partials/cultivation_card.html": [
    "content",
+   "cultivation-emblem",
    "materials"
   ],
   "templates/partials/cultivation_panel.html": [
@@ -8531,6 +8579,7 @@
    "chip",
    "content",
    "forms",
+   "indicators",
    "materials",
    "search"
   ],

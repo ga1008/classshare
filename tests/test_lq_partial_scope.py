@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from tools.ui.lint_lq import audit
+from tools.ui.lint_lq import audit, source_digest
 from tools.ui.lq_inventory import build_registry
 
 
@@ -51,6 +51,36 @@ class LqPartialScopeTests(unittest.TestCase):
     def test_every_shared_source_change_requires_review_even_without_a_rule_violation(self):
         self.write('templates/page.html', '<p>Changed macro ownership</p>')
         self.assertEqual([dict(path='templates/page.html', line=0, rule='reviewed-source-changed')], self.report()['blocking'])
+
+    def test_opted_in_text_review_ignores_only_git_line_endings(self):
+        file = self.root / 'templates/page.html'
+        original = b'<p>Reviewed</p>\n<p>Same content</p>\n'
+        file.write_bytes(original)
+        review = self.entry['migrationScope']['sharedSources'][0]
+        review.update(sha256=hashlib.sha256(original).hexdigest(), hashMode='text-lf')
+        for ending in (b'\r\n', b'\n'):
+            file.write_bytes(original.replace(b'\n', ending))
+            self.assertEqual([], self.report()['blocking'])
+        for changed in (original.replace(b'Reviewed', b'Changed'), original.replace(b'<p>', b'<p >'),
+                        original.rstrip(b'\n'), b'\xef\xbb\xbf' + original):
+            file.write_bytes(changed)
+            self.assertEqual('reviewed-source-changed', self.report()['blocking'][0]['rule'])
+
+    def test_legacy_byte_reviews_and_unknown_hash_modes_still_fail_closed(self):
+        file = self.root / 'templates/page.html'
+        file.write_bytes(b'<p>Reviewed</p>\n')
+        review = self.entry['migrationScope']['sharedSources'][0]
+        review['sha256'] = self.digest('templates/page.html')
+        file.write_bytes(b'<p>Reviewed</p>\r\n')
+        self.assertEqual('reviewed-source-changed', self.report()['blocking'][0]['rule'])
+        review['hashMode'] = 'ignore-all-whitespace'
+        with self.assertRaises(ValueError): self.report()
+
+    def test_consumers_cannot_disagree_about_review_hash_mode(self):
+        duplicate = copy.deepcopy(self.entry)
+        duplicate['id'] = 'other'
+        duplicate['migrationScope']['sharedSources'][0]['hashMode'] = 'text-lf'
+        with self.assertRaises(ValueError): self.report([duplicate])
 
     def test_generated_and_retained_files_and_real_test_evidence_must_exist(self):
         for path in ('static/css/compiled.css', 'static/js/business.js', 'tests/ssr.py', 'templates/page.html'):
@@ -157,7 +187,7 @@ class LqRealPartialScopeContractTests(unittest.TestCase):
                     self.assertTrue((root / path).is_file(), path)
                 ssr = 'tests/test_manage_lq_pilot_templates.py' if entry['routePattern'].startswith('/manage/') else 'tests/test_lq_report_card_pilot.py'
                 for item in scope['sharedSources']:
-                    self.assertEqual(item['sha256'], hashlib.sha256((root / item['path']).read_bytes()).hexdigest(), item['path'])
+                    self.assertEqual(item['sha256'], source_digest(root / item['path'], item.get('hashMode', 'raw-bytes')), item['path'])
                     self.assertIn(ssr, item['tests'])
 
 

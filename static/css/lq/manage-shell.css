@@ -71,7 +71,7 @@ body:is(.lq-manage-pilot,.lq-manage-shell) { background: hsl(var(--ls-surface-0)
   :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-utility { flex-wrap: nowrap; }
   :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions .app-topbar-action { min-width: 0; height: calc(var(--ls-s-10) + var(--ls-s-1)); padding: var(--ls-s-2) var(--ls-s-3); }
   :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions .app-topbar-action small { display: none; }
-  :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-utility .lq-btn { position: relative; width: calc(var(--ls-s-10) + var(--ls-s-1)); min-width: calc(var(--ls-s-10) + var(--ls-s-1)); padding: var(--ls-s-2); }
+  :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-utility .lq-btn { position: relative; width: calc(var(--ls-s-10) + var(--ls-s-1)); min-width: calc(var(--ls-s-10) + var(--ls-s-1)); min-height: calc(var(--ls-s-10) + var(--ls-s-1)); padding: var(--ls-s-2); }
   :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-utility :is(.lq-manage-utility-label,.lq-btn__label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-utility :is([data-message-center-bell-count],[data-blog-today-count]) { position: absolute; inset-block-start: 0; inset-inline-end: 0; font-size: var(--ls-t-caption); line-height: 1; }
   :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-sidebar[data-lq-compact="true"] { width: calc(var(--ls-s-16) + var(--ls-s-2)); }
@@ -80,12 +80,13 @@ body:is(.lq-manage-pilot,.lq-manage-shell) { background: hsl(var(--ls-surface-0)
   :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-sidebar[data-lq-compact="true"] .lq-manage-collapse { margin: auto; }
 }
 @media (min-width:1024px) and (max-width:1279px) {
-  /* Compact shell spacing leaves every action inline beside the expanded
-     sidebar. Keep the shared controls and their 44px targets unchanged. */
-  :is(.lq-manage-pilot,.lq-manage-shell) #manage-pilot-topbar { column-gap: var(--ls-s-2); }
+  /* Four class actions and seven utility entries fit beside the expanded
+     sidebar. Recover the added friend's footprint from horizontal insets,
+     while preserving labels, all 44px targets, and wrapping for longer pages. */
+  :is(.lq-manage-pilot,.lq-manage-shell) #manage-pilot-topbar { column-gap: var(--ls-s-2); padding-inline: var(--ls-s-2); }
   :is(.lq-manage-pilot,.lq-manage-shell) #manage-pilot-topbar .lq-topbar__actions > [data-lq-slot="more"] { gap: var(--ls-s-2); }
   :is(.lq-manage-pilot,.lq-manage-shell) :is(.lq-manage-context-actions,.lq-manage-utility) { gap: var(--ls-s-1); }
-  :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions .app-topbar-action { padding-inline: var(--ls-s-2); }
+  :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions .app-topbar-action { padding-inline: var(--ls-s-1); }
   :is(.lq-manage-pilot,.lq-manage-shell) .lq-manage-context-actions .app-topbar-action__icon { display: none; }
 }
 @media (max-width:1023px) {

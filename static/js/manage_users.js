@@ -1,5 +1,5 @@
 import { createDomainModal } from './lq/domain-modal.js';
-import { confirm } from './lq/dialogs.js';
+import { confirm as confirmDialog } from './lq/dialogs.js';
 import { escapeHtml as esc } from './lq/html.js';
 import { bindOrganizationSuggestions } from './organization_suggestions.js';
 
@@ -68,7 +68,7 @@ for (const [id, form] of [
                 discardPending = true;
                 // Veto immediately: a human decision must not expire with the
                 // layer's bounded async-close timeout.
-                void confirm({ title: '放弃未保存的修改？', message: '关闭后，本次尚未保存的内容会丢失。', confirmLabel: '放弃修改', cancelLabel: '继续编辑', danger: true }, { parentLayer: owner.handle })
+                void confirmDialog({ title: '放弃未保存的修改？', message: '关闭后，本次尚未保存的内容会丢失。', confirmLabel: '放弃修改', cancelLabel: '继续编辑', danger: true }, { parentLayer: owner.handle })
                     .then(async approved => {
                         discardPending = false;
                         if (!approved) return;
@@ -285,7 +285,7 @@ editForm.addEventListener('submit', async event => {
 });
 $('teacher-detail-reload').addEventListener('click', async event => {
     if ($('teacher-detail-modal').dataset.saving === 'true') return;
-    if (isDirty(editForm) && !(await confirm({ title: '重新载入最新资料？', message: '当前未保存的修改会被丢弃。', confirmLabel: '重新载入', cancelLabel: '继续编辑', danger: true }))) return;
+    if (isDirty(editForm) && !(await confirmDialog({ title: '重新载入最新资料？', message: '当前未保存的修改会被丢弃。', confirmLabel: '重新载入', cancelLabel: '继续编辑', danger: true }))) return;
     await openDetail(current.id, owners.get('teacher-detail-modal').handle?.trigger || event.currentTarget);
 });
 
@@ -329,7 +329,7 @@ $('teacher-membership-list').addEventListener('click', async event => {
     if (!member) return;
     if (node.dataset.membershipAction === 'edit') { openMembership(member, node); return; }
     const removing = node.dataset.membershipAction === 'delete';
-    if (!(await confirm({ title: removing ? '停用任教归属？' : '设为默认任教归属？', message: removing ? '该学校的职工号登录及课表关联将失效，课表和教学历史继续保留。' : '默认学校及职工号将同步到个人信息，其他学校归属继续保留。', confirmLabel: removing ? '停用归属' : '设为默认', danger: removing }))) return;
+    if (!(await confirmDialog({ title: removing ? '停用任教归属？' : '设为默认任教归属？', message: removing ? '该学校的职工号登录及课表关联将失效，课表和教学历史继续保留。' : '默认学校及职工号将同步到个人信息，其他学校归属继续保留。', confirmLabel: removing ? '停用归属' : '设为默认', danger: removing }))) return;
     const data = mutationData();
     const result = await runBusy(editForm, () => window.apiFetch(`/api/manage/system/teachers/${current.id}/memberships/${member.id}${removing ? '' : '/primary'}`, { method: removing ? 'DELETE' : 'POST', body: data }));
     if (result) {
@@ -358,7 +358,7 @@ document.querySelectorAll('[data-teacher-action]').forEach(node => node.addEvent
         revoke: ['撤销超管', '/super-admin/revoke', 'POST', '撤销管理权限，已有会话会失效，普通教学数据保留。'],
     };
     const [label, path, method, message] = actions[action];
-    if (!(await confirm({ title: `${label} · ${current.name}`, message, confirmLabel: label, danger: ['cancel', 'deactivate', 'revoke'].includes(action) }))) return;
+    if (!(await confirmDialog({ title: `${label} · ${current.name}`, message, confirmLabel: label, danger: ['cancel', 'deactivate', 'revoke'].includes(action) }))) return;
     const data = mutationData();
     const result = await runBusy(editForm, () => window.apiFetch(`/api/manage/system/teachers/${current.id}${path}`, { method, body: data }));
     if (!result) return;

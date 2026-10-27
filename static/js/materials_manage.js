@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { createMaterialMenu, bindMaterialHeaderMenu } from './materials_menus.js';
 import { submitGradeMaterialWithPreflight } from './grade_material_preflight.js';
 import { openGradePublicationModal } from './grade_publication_controls.js';
 import { closeModal, escapeHtml, formatDate, formatSize, getFileIcon, openModal, showToast } from './ui.js';
@@ -21,6 +22,8 @@ import { MATERIAL_KINDS, MATERIAL_KIND_GROUPS } from './materials_kinds.js';
 import { createMaterialsExplorer } from './materials_explorer.js';
 import { paintCardSyncProgress, renderMaterialCards } from './materials_library_cards.js';
 import { startRepositoryUpdate } from './materials_sync_report.js';
+
+const headerMenus = {};
 
 const VIEW_MODE_STORAGE_KEY = 'lanshare:materials:library:view';
 
@@ -2350,6 +2353,7 @@ function finishAiPendingTask(key, { success, label, message }) {
 }
 
 function renderList() {
+    closeCardMenu();
     const aiTaskCards = renderAiPendingCards() + renderAiImportTaskCards();
     renderViewToggle();
     renderBoardSummary();
@@ -3215,8 +3219,8 @@ function getAiImportRegistry() {
 
 function setUploadMenuOpen(open) {
     if (!refs.uploadDropdown || !refs.uploadMenuBtn) return;
-    refs.uploadDropdown.hidden = !open;
-    refs.uploadMenuBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) headerMenus.upload?.open();
+    else void headerMenus.upload?.close();
 }
 
 function renderAiImportGroups() {
@@ -5064,45 +5068,31 @@ async function runCardGitUpdate(item) {
 }
 
 function closeCardMenu() {
-    state.cardMenu?.remove();
+    state.cardMenu?.destroy();
     state.cardMenu = null;
 }
 
-function openCardMenu(item, anchor) {
+function openCardMenu(item, anchor, { focus = 'first' } = {}) {
+    if (state.cardMenu?.trigger === anchor) return; // Existing binding handled this click.
     closeCardMenu();
     const canManage = item.can_manage !== false;
     const entries = [
         { action: 'explore', label: '在资源管理器中打开' },
-        item.preview_url ? { action: 'open-external', label: '新标签打开' } : null,
+        item.preview_url ? { action: 'open-external', label: '新标签打开', href: item.preview_url, target: '_blank' } : null,
         isGitRepository(item) && canManage ? { action: 'repository', label: 'Git 仓库控制台' } : null,
         item.lessondoc_pack && canManage ? { action: 'lessondoc-manage', label: '管理课次' } : null,
         config.canAssign ? { action: 'assign-card', label: '分配课堂' } : null,
         canManage && config.canAssign && (item.is_markdown || isRenderable(item)) ? { action: 'bind-card', label: '绑定课次 / 首页' } : null,
         canManage ? { action: 'move-card', label: '移动到…' } : null,
-        item.node_type === 'file' && item.download_allowed !== false ? { action: 'download', label: '下载' } : null,
+        item.node_type === 'file' && item.download_allowed !== false ? { action: 'download', label: '下载', href: `/materials/download/${Number(item.id)}`, target: '_blank' } : null,
         canManage ? { action: 'delete-card', label: '删除', danger: true } : null,
     ].filter(Boolean);
-    const menu = document.createElement('div');
-    menu.className = 'mx__menu lq-glass';
-    menu.setAttribute('role', 'menu');
-    menu.innerHTML = entries.map((entry) => `<button type="button" class="mx__menu-item${entry.danger ? ' is-danger' : ''}" role="menuitem" data-card-menu="${entry.action}">${escapeHtml(entry.label)}</button>`).join('');
-    document.body.appendChild(menu);
-    const rect = anchor.getBoundingClientRect();
-    const left = Math.max(8, Math.min(rect.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8));
-    const top = rect.bottom + 6 + menu.offsetHeight > window.innerHeight ? rect.top - menu.offsetHeight - 6 : rect.bottom + 6;
-    menu.style.left = `${left}px`;
-    menu.style.top = `${Math.max(8, top)}px`;
-    state.cardMenu = menu;
-    menu.querySelector('[role="menuitem"]')?.focus();
-    menu.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-card-menu]');
-        if (!button) return;
-        const action = button.dataset.cardMenu;
-        closeCardMenu();
-        runCardAction(action, item).catch((error) => {
-            showToast(error.message || '操作失败', 'error');
-        });
+    state.cardMenu = createMaterialMenu(anchor, {
+        label: `${item.name || '材料'}的操作`, items: entries,
+        onAction: action => runCardAction(action, item),
+        onError: error => showToast(error.message || '操作失败', 'error'),
     });
+    state.cardMenu.open({ focus });
 }
 
 async function runCardAction(action, item) {
@@ -5327,8 +5317,8 @@ function setCreateMenuOpen(open) {
     const dropdown = refs.createDropdown || document.getElementById('materials-create-dropdown');
     const button = refs.createMenuBtn || document.getElementById('materials-create-menu-btn');
     if (!dropdown || !button) return;
-    dropdown.hidden = !open;
-    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) headerMenus.create?.open();
+    else void headerMenus.create?.close();
 }
 
 function openCreateNodeModal(type, parentId = state.currentParentId, { fromWorkspace = false } = {}) {
@@ -5715,78 +5705,6 @@ function bindEvents() {
             return;
         }
 
-        const createTrigger = event.target.closest('#materials-create-menu-btn');
-        if (createTrigger) {
-            event.preventDefault();
-            event.stopPropagation();
-            setCreateMenuOpen((document.getElementById('materials-create-dropdown'))?.hidden !== false);
-            return;
-        }
-
-        const createFolder = event.target.closest('#materials-create-folder-btn');
-        if (createFolder) {
-            event.preventDefault();
-            event.stopPropagation();
-            setCreateMenuOpen(false);
-            openCreateNodeModal('folder');
-            return;
-        }
-
-        const createFile = event.target.closest('#materials-create-file-btn');
-        if (createFile) {
-            event.preventDefault();
-            event.stopPropagation();
-            setCreateMenuOpen(false);
-            openCreateNodeModal('file');
-            return;
-        }
-
-        const uploadTrigger = event.target.closest('#materials-upload-menu-btn');
-        if (uploadTrigger) {
-            event.preventDefault();
-            event.stopPropagation();
-            setUploadMenuOpen(refs.uploadDropdown?.hidden !== false);
-            return;
-        }
-
-        const directUpload = event.target.closest('#materials-upload-direct-btn');
-        if (directUpload) {
-            event.preventDefault();
-            event.stopPropagation();
-            setUploadMenuOpen(false);
-            refs.fileInput?.click();
-            return;
-        }
-
-        const aiImportOpen = event.target.closest('#materials-ai-import-open-btn');
-        if (aiImportOpen) {
-            event.preventDefault();
-            event.stopPropagation();
-            setUploadMenuOpen(false);
-            setCreateMenuOpen(false);
-            openAiImportModal(getProcessGeneratePolicy() ? initialAiImportPreset : undefined);
-            return;
-        }
-
-        const aiImportShortcut = event.target.closest('#materials-ai-import-shortcut-btn, [data-process-ai-import]');
-        if (aiImportShortcut) {
-            event.preventDefault();
-            event.stopPropagation();
-            setUploadMenuOpen(false);
-            setCreateMenuOpen(false);
-            openAiImportModal(initialAiImportPreset);
-            return;
-        }
-
-        const classroomGenerate = event.target.closest('#materials-classroom-generate-open-btn, [data-process-classroom-generate]');
-        if (classroomGenerate) {
-            event.preventDefault();
-            event.stopPropagation();
-            setUploadMenuOpen(false);
-            setCreateMenuOpen(false);
-            openClassroomGenerateModal();
-            return;
-        }
     }, true);
 
     refs.refreshBtn?.addEventListener('click', () => {
@@ -5935,14 +5853,6 @@ function bindEvents() {
         });
     });
 
-    refs.uploadMenuBtn?.addEventListener('click', (event) => {
-        event.stopPropagation();
-        setUploadMenuOpen(refs.uploadDropdown?.hidden !== false);
-    });
-    refs.directUploadBtn?.addEventListener('click', () => {
-        setUploadMenuOpen(false);
-        refs.fileInput?.click();
-    });
     refs.aiImportOpenBtn?.addEventListener('click', () => {
         setUploadMenuOpen(false);
         setCreateMenuOpen(false);
@@ -5973,10 +5883,6 @@ function bindEvents() {
     });
     refs.folderBtn?.addEventListener('click', () => refs.folderInput?.click());
 
-    refs.createMenuBtn?.addEventListener('click', (event) => {
-        event.stopPropagation();
-        setCreateMenuOpen(refs.createDropdown?.hidden !== false);
-    });
     refs.createFolderBtn?.addEventListener('click', () => {
         setCreateMenuOpen(false);
         openCreateNodeModal('folder');
@@ -6130,12 +6036,6 @@ function bindEvents() {
         reloadForLibraryFilter('清除筛选失败');
     });
 
-    document.addEventListener('click', (event) => {
-        if (state.cardMenu && !state.cardMenu.contains(event.target)) closeCardMenu();
-    }, true);
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') closeCardMenu();
-    });
 
     refs.scopeFilter?.addEventListener('change', () => {
         state.filters.scopeLevel = normalizeScopeFilter(refs.scopeFilter.value);
@@ -6442,6 +6342,14 @@ function bindSecondaryEvents() {
         });
     });
 
+    refs.listBody?.addEventListener('keydown', (event) => {
+        if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || !['ArrowDown', 'ArrowUp'].includes(event.key)) return;
+        const anchor = event.target.closest('[data-action="card-menu"]');
+        const item = anchor && state.items.find(value => Number(value.id) === Number(anchor.closest('.mcard')?.dataset.id));
+        if (!item) return;
+        event.preventDefault();
+        openCardMenu(item, anchor, { focus: event.key === 'ArrowUp' ? 'last' : 'first' });
+    });
     refs.listBody?.addEventListener('click', (event) => {
         const pendingDismissButton = event.target.closest('[data-ai-pending-dismiss]');
         if (pendingDismissButton) {
@@ -6477,13 +6385,13 @@ function bindSecondaryEvents() {
             }
             const actionTarget = event.target.closest('[data-action]');
             const cardAction = actionTarget?.dataset.action || '';
-            if (cardAction === 'lessondoc-edit') return;
+            if (!cardAction || cardAction === 'lessondoc-edit') return;
             if (cardAction === 'card-menu') {
                 event.preventDefault();
                 openCardMenu(cardItem, actionTarget);
                 return;
             }
-            runCardAction(cardAction || 'explore', cardItem).catch((error) => {
+            runCardAction(cardAction, cardItem).catch((error) => {
                 showToast(error.message || '操作失败', 'error');
             });
             return;
@@ -6619,24 +6527,14 @@ function bindSecondaryEvents() {
         });
     });
 
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') {
-            setUploadMenuOpen(false);
-            setCreateMenuOpen(false);
-        }
-        if (event.key === 'Escape' && isDetailModalOpen()) {
-            closeDetailModal();
-        }
+    headerMenus.create = bindMaterialHeaderMenu(refs.createMenuBtn, refs.createDropdown);
+    headerMenus.upload = bindMaterialHeaderMenu(refs.uploadMenuBtn, refs.uploadDropdown, {
+        fileButton: refs.directUploadBtn, fileInput: refs.fileInput,
     });
-
-    document.addEventListener('click', (event) => {
-        if (refs.uploadMenu && !refs.uploadMenu.contains(event.target)) {
-            setUploadMenuOpen(false);
-        }
-        if (refs.createMenu && !refs.createMenu.contains(event.target)) {
-            setCreateMenuOpen(false);
-        }
-    });
+    window.addEventListener('pagehide', () => {
+        closeCardMenu();
+        headerMenus.create?.destroy(); headerMenus.upload?.destroy();
+    }, { once: true });
 }
 
 const initialAiGeneratePreset = getInitialAiGeneratePreset();

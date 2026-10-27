@@ -9849,7 +9849,11 @@
         "js/materials_manage.js",
         "js/message_center_bell.js",
         "js/process_material_modal.js",
-        "js/user_ui_preferences.js"
+        "js/user_ui_preferences.js",
+        "css/materials_library.css",
+        "js/materials_explorer.js",
+        "js/materials_library_cards.js",
+        "js/materials_menus.js"
       ],
       "islands": [
         "materials-manage-page"
@@ -9871,7 +9875,10 @@
         "frontend/src/islands/materials-manage-page.tsx",
         "static/js/manage_lq_pilot.js",
         "static/js/user_ui_preferences.js",
-        "static/js/process_material_modal.js"
+        "static/js/process_material_modal.js",
+        "static/js/materials_explorer.js",
+        "static/js/materials_library_cards.js",
+        "static/js/materials_menus.js"
       ],
       "domHooks": [
         "materials-ai-generate-file-input",
@@ -9956,7 +9963,10 @@
         "tests/e2e/components/manage-pilot-adapter.spec.ts",
         "tests/e2e/specs/manage-pilot.spec.ts",
         "tests/test_base_resource_modes_service.py",
-        "tests/e2e/components/lq-legacy-bridges.spec.ts"
+        "tests/e2e/components/lq-legacy-bridges.spec.ts",
+        "tests/test_material_library_cards.py",
+        "tests/e2e/components/lq-materials-library.spec.ts",
+        "tests/e2e/components/materials-repository-bindings.spec.ts"
       ],
       "migrationFlag": "LANSHARE_LQ_PILOT；服务端默认off；is_lq_pilot_enabled(request)仅exact path /manage/library/materials",
       "sharedCssConsumers": [
@@ -9979,7 +9989,11 @@
           "js/base_resource_modes.js",
           "js/manage_lq_pilot.js",
           "js/materials_manage.js",
-          "js/process_material_modal.js"
+          "js/process_material_modal.js",
+          "css/materials_library.css",
+          "js/materials_explorer.js",
+          "js/materials_library_cards.js",
+          "js/materials_menus.js"
         ],
         "schema": [],
         "verified": false
@@ -9992,7 +10006,8 @@
         "关闭开关走旧模板分支和旧壳控制器；统一CSS仍含试点字节但限定.lq-manage-pilot，未迁路径不匹配。共享壳及宏须随本组回滚，不删除其他LQ消费者。",
         "tests为门禁索引，不表示已通过；业务/视觉验收与发布、真机、正式签字均待root后续确认。本条status仅迁移中。",
         "原materials-manage-page React island与__LANSHARE_MATERIALS_MANAGE_PAGE_CONTROLLER__保持单一控制器；上述API为该页面主要保留入口，完整原业务调用仍由materials_manage.js持有，本票未改各API或提前迁移grade-record/archive链。",
-        "process_material_modal.js 只补 LQ 父层存在时的子层兼容，独立旧 LP 仍原契约。回退 flag 关闭本试点 Shell，不应删除其他 LQ 消费者共用的桥接；若回退 helper 源码须连同共享父子层门禁复核。动态结果由根统一汇总。"
+        "process_material_modal.js 只补 LQ 父层存在时的子层兼容，独立旧 LP 仍原契约。回退 flag 关闭本试点 Shell，不应删除其他 LQ 消费者共用的桥接；若回退 helper 源码须连同共享父子层门禁复核。动态结果由根统一汇总。",
+        "2026-10-27资源管理器不再创建重复模糊和私有菜单层；卡片/目录选择使用原生按钮，上传保持原始手势内打开系统文件选择。保留旧材料API、权限、编辑草稿与Git绑定流程；证据见docs/lq-seven-blockers-2026-10-27.md。"
       ],
       "controllerNotes": [
         {
@@ -10019,31 +10034,54 @@
           "path": "static/js/process_material_modal.js",
           "entrypoint": "openProcessMaterialModal / openProcessMaterialConfirm",
           "description": "原 LP 公共 helper；仅已有 LQ 父层时复用同一 layer/portal/focus/close owner，不再并行旧 keydown trap。standalone 仍按原同步契约。"
+        },
+        {
+          "path": "static/js/materials_explorer.js",
+          "description": "文档库领域模块；复用共享Surface/Choice/Menu，菜单只持有业务动作与权限，焦点及退出由LQ管理。"
+        },
+        {
+          "path": "static/js/materials_library_cards.js",
+          "description": "文档库领域模块；复用共享Surface/Choice/Menu，菜单只持有业务动作与权限，焦点及退出由LQ管理。"
+        },
+        {
+          "path": "static/js/materials_menus.js",
+          "description": "文档库领域模块；复用共享Surface/Choice/Menu，菜单只持有业务动作与权限，焦点及退出由LQ管理。"
         }
       ],
       "migrationScope": {
         "kind": "partial",
         "owner": "S3 manage pilot",
-        "description": "S3 八管理列表的壳/页头显式试点；不把依赖的原业务卡片、弹窗或 controller 宣称迁移完成。",
-        "reviewAt": "2026-09-27：完成本轮显式声明与原生合同的有界审查；不改变整页业务/视觉验收状态。后续要求：共享源码任意改动须重新审阅指纹并复验所列 SSR/浏览器门禁；S4/S5 按实际页面迁移范围另行扩展，不自动升级整页。",
+        "description": "S3 八管理列表的壳/页头显式试点；不把依赖的原业务卡片、弹窗或 controller 宣称迁移完成。 2026-10-27将10月新增文档库CSS、资源管理器、卡片与统一菜单适配器纳入activeSources；旧materials_manage.js保留既有业务作用域，修复点与续审证据单列。",
+        "reviewAt": "2026-10-27续审：先核对旧SHA对应Git变更，修正组件实现与失真登记；真实SSR、隔离正式资源浏览器及所涉业务测试完成，详见docs/lq-seven-blockers-2026-10-27.md。历史共享壳/全平台状态不因此提升。",
         "activeSources": [
           "static/css/lq/manage-pilot.css",
           "static/js/manage_lq_pilot.js",
           "templates/manage/lq_sidebar.html",
           "templates/manage/lq_topbar.html",
-          "templates/manage/lq_utility.html"
+          "templates/manage/lq_utility.html",
+          "static/css/materials_library.css",
+          "static/js/materials_explorer.js",
+          "static/js/materials_library_cards.js",
+          "static/js/materials_menus.js"
         ],
         "sharedSources": [
           {
             "path": "templates/manage/materials.html",
-            "sha256": "c64955bfd8878cd313492832cd6ee4620abd076addf69cd67867557e9e4bb0dc",
-            "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。 2026-09-27 显式组件复核：增加原生叶子/容器的共享呈现声明，保留原 DOM、Jinja 权限条件、表单属性、事件钩子与业务 controller；manage SSR 11 项通过，hidden/表单和危险动作明暗状态定向浏览器 2 项通过。完整 Shell/业务视觉验收仍按既有门禁独立记录。",
+            "sha256": "967320ba151ed3896dc788f2623d94b81c378028eea046ecf87d8ef00c0720d1",
+            "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。 2026-09-27 显式组件复核：增加原生叶子/容器的共享呈现声明，保留原 DOM、Jinja 权限条件、表单属性、事件钩子与业务 controller；manage SSR 11 项通过，hidden/表单和危险动作明暗状态定向浏览器 2 项通过。完整 Shell/业务视觉验收仍按既有门禁独立记录。 2026-10-27续审文档库当前模板与header菜单：替换私有层为共享Menu、保持原生上传激活和既有业务handler，域CSS/新控制器纳入activeSources；真实Jinja+合成API正式图浏览器覆盖筛选/卡片/上传/取消/权限/失败草稿及移动布局，旧材料大模块未宣称全量迁移。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
               "tests/e2e/specs/manage-pilot.spec.ts",
-              "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+              "tests/e2e/components/lq-declarative-contracts.spec.ts",
+              "tests/test_material_library_cards.py",
+              "tests/e2e/components/lq-materials-library.spec.ts",
+              "tests/e2e/components/materials-repository-bindings.spec.ts"
+            ],
+            "previousReviewedSha256": [
+              "c64955bfd8878cd313492832cd6ee4620abd076addf69cd67867557e9e4bb0dc"
+            ],
+            "hashMode": "text-lf"
           },
           {
             "path": "templates/manage/layout.html",
@@ -10087,6 +10125,30 @@
             ],
             "previousReviewedSha256": [
               "adb229a07898fd25416ff92aee7b304354c19c2e8fdd418a94af71ae80685852"
+            ]
+          },
+          {
+            "path": "static/js/materials_manage.js",
+            "hashMode": "text-lf",
+            "sha256": "34ae41777e537be10d400e19b2ef4b6c3c8fc6f3a3100ecf5dc1d6e186b99dbe",
+            "scope": "2026-10-27限定续审：文档库入口/header动作绑定、卡片菜单和选择处理；保留其余既有材料功能与警告。只读源码复核加真实Jinja主控制器浏览器，上传激活/取消/无重复动作/焦点/权限/失败输入与Git绑定回归。此记录不把旧大模块或全部材料业务标为完成。",
+            "tests": [
+              "tests/test_manage_lq_pilot_templates.py",
+              "tests/test_material_library_cards.py",
+              "tests/e2e/components/lq-materials-library.spec.ts",
+              "tests/e2e/components/materials-repository-bindings.spec.ts"
+            ]
+          },
+          {
+            "path": "templates/partials/materials/library_card.html",
+            "hashMode": "text-lf",
+            "sha256": "bc368fe7ed62ed473ba7b0386dc11b3e2bc89e4a3e943a844c5ed1dd587a76ca",
+            "scope": "2026-10-27限定续审：文档库入口/header动作绑定、卡片菜单和选择处理；保留其余既有材料功能与警告。只读源码复核加真实Jinja主控制器浏览器，上传激活/取消/无重复动作/焦点/权限/失败输入与Git绑定回归。此记录不把旧大模块或全部材料业务标为完成。",
+            "tests": [
+              "tests/test_manage_lq_pilot_templates.py",
+              "tests/test_material_library_cards.py",
+              "tests/e2e/components/lq-materials-library.spec.ts",
+              "tests/e2e/components/materials-repository-bindings.spec.ts"
             ]
           }
         ]
@@ -13821,7 +13883,7 @@
         "manage/layout.html"
       ],
       "controller": [
-        "templates/manage/system/users.html",
+        "static/js/manage_users.js",
         "static/js/manage_lq_pilot.js",
         "static/js/user_ui_preferences.js"
       ],
@@ -13867,11 +13929,17 @@
         "POST /api/manage/system/teachers/{id}/memberships/{membershipId}/primary",
         "POST /api/manage/system/teachers/{id}/super-admin/grant",
         "POST /api/manage/system/teachers/{id}/super-admin/revoke",
-        "GET/PATCH /api/profile/ui-preferences（原三字段账号偏好）"
+        "GET/PATCH /api/profile/ui-preferences（原三字段账号偏好）",
+        "GET /api/manage/system/teachers/{id}",
+        "POST /api/manage/system/teachers/{id}/activate",
+        "POST /api/manage/system/teachers/{id}/cancel",
+        "GET /api/manage/organization-suggestions"
       ],
       "versionFields": [
         "ui_preferences.version",
-        "ui_preferences.context_token"
+        "ui_preferences.context_token",
+        "teacher.revision",
+        "expected_revision"
       ],
       "states": [
         "无权访问",
@@ -13884,7 +13952,11 @@
         "侧栏展开/折叠/搜索空",
         "mobile native drawer/Esc/回焦",
         "无JS导航可达",
-        "壳增强失败保留入口"
+        "壳增强失败保留入口",
+        "注销账号只读",
+        "expected_revision冲突409保留草稿",
+        "提交忙碌禁止关闭",
+        "嵌套归属取消与焦点恢复"
       ],
       "components": [
         "LQ Sidebar Shell",
@@ -13905,7 +13977,11 @@
         "tests/test_lq_pilot.py",
         "tests/test_manage_lq_pilot_templates.py",
         "tests/e2e/components/manage-pilot-adapter.spec.ts",
-        "tests/e2e/specs/manage-pilot.spec.ts"
+        "tests/e2e/specs/manage-pilot.spec.ts",
+        "tests/test_manage_users_lq_template.py",
+        "tests/test_teacher_account_lifecycle.py",
+        "tests/e2e/specs/manage-users.spec.ts",
+        "tests/e2e/specs/teacher-identity.spec.ts"
       ],
       "migrationFlag": "LANSHARE_LQ_PILOT；服务端默认off；is_lq_pilot_enabled(request)仅exact path /manage/system/users",
       "sharedCssConsumers": [
@@ -13925,7 +14001,8 @@
         "assets": [
           "css/lq/manage-pilot.css",
           "css/lq/manage-shell.css",
-          "js/manage_lq_pilot.js"
+          "js/manage_lq_pilot.js",
+          "js/manage_users.js"
         ],
         "schema": [],
         "verified": false
@@ -13937,12 +14014,12 @@
         "manage_lq_pilot.js只协调Shell、搜索、折叠和层生命周期；不fetch/submit/clone，不复制表单状态；折叠状态按role:id隔离。embedded_mode保留嵌入布局，不创建侧栏/顶栏Shell。",
         "关闭开关走旧模板分支和旧壳控制器；统一CSS仍含试点字节但限定.lq-manage-pilot，未迁路径不匹配。共享壳及宏须随本组回滚，不删除其他LQ消费者。",
         "tests为门禁索引，不表示已通过；业务/视觉验收与发布、真机、正式签字均待root后续确认。本条status仅迁移中。",
-        "本页原业务控制器未见新增expected_revision/version保存字段；本票不把updated_at展示字段冒充CAS。versionFields中的version/context_token只属于既有账号偏好。"
+        "历史S3登记只覆盖Shell；10月21日用户管理已提取为manage_users.js，当前保存使用teacher.revision/expected_revision处理409冲突，updated_at仍只是展示。2026-10-27补登记真实控制器并续审，证据见docs/lq-seven-blockers-2026-10-27.md。"
       ],
       "controllerNotes": [
         {
-          "path": "templates/manage/system/users.html",
-          "description": "templates/manage/system/users.html#inline-script"
+          "path": "static/js/manage_users.js",
+          "description": "唯一外部领域控制器；原生表单、expected_revision、409草稿、IME、忙碌禁关与LQ子层由当前实现持有。"
         },
         {
           "path": "static/js/manage_lq_pilot.js",
@@ -13956,20 +14033,21 @@
       "migrationScope": {
         "kind": "partial",
         "owner": "S3 manage pilot",
-        "description": "S3 八管理列表的壳/页头显式试点；不把依赖的原业务卡片、弹窗或 controller 宣称迁移完成。",
-        "reviewAt": "2026-09-27：完成本轮显式声明与原生合同的有界审查；不改变整页业务/视觉验收状态。后续要求：共享源码任意改动须重新审阅指纹并复验所列 SSR/浏览器门禁；S4/S5 按实际页面迁移范围另行扩展，不自动升级整页。",
+        "description": "S3 八管理列表的壳/页头显式试点；不把依赖的原业务卡片、弹窗或 controller 宣称迁移完成。 2026-10-27将已使用共享组件的用户领域控制器纳入activeSources；其真实模板仍为续审共享源。",
+        "reviewAt": "2026-10-27续审：先核对旧SHA对应Git变更，修正组件实现与失真登记；真实SSR、隔离正式资源浏览器及所涉业务测试完成，详见docs/lq-seven-blockers-2026-10-27.md。历史共享壳/全平台状态不因此提升。",
         "activeSources": [
           "static/css/lq/manage-pilot.css",
           "static/js/manage_lq_pilot.js",
           "templates/manage/lq_sidebar.html",
           "templates/manage/lq_topbar.html",
-          "templates/manage/lq_utility.html"
+          "templates/manage/lq_utility.html",
+          "static/js/manage_users.js"
         ],
         "sharedSources": [
           {
             "path": "templates/manage/system/users.html",
-            "sha256": "d982c3bd9d80349cf4e0493635d53cdc7799f9b8a203e0b191cb32d5fba54148",
-            "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。 2026-09-27 显式组件复核：增加原生叶子/容器的共享呈现声明，保留原 DOM、Jinja 权限条件、表单属性、事件钩子与业务 controller；manage SSR 11 项通过，hidden/表单和危险动作明暗状态定向浏览器 2 项通过。完整 Shell/业务视觉验收仍按既有门禁独立记录。 2026-10-08 动效合同复审：原生表单、账号权限、事件选择器及提交逻辑不变；内联入口改 module，显式 createDomainModal 接管既有 .um-modal 的开关和焦点，源码声明不代表完整用户管理流程已验收。",
+            "sha256": "abfbd30cb112723f00b4f071fff81b8b1aa0dea321a5d4c165392bfc08cc8173",
+            "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。 2026-09-27 显式组件复核：增加原生叶子/容器的共享呈现声明，保留原 DOM、Jinja 权限条件、表单属性、事件钩子与业务 controller；manage SSR 11 项通过，hidden/表单和危险动作明暗状态定向浏览器 2 项通过。完整 Shell/业务视觉验收仍按既有门禁独立记录。 2026-10-08 动效合同复审：原生表单、账号权限、事件选择器及提交逻辑不变；内联入口改 module，显式 createDomainModal 接管既有 .um-modal 的开关和焦点，源码声明不代表完整用户管理流程已验收。 2026-10-27续审当前外部控制器版本：4项真实SSR、8项用户管理与5项教师身份浏览器及13项生命周期测试；原生form、外部submit、IME/409草稿、忙碌禁关、权限和注销只读均有验证。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
@@ -13977,11 +14055,17 @@
               "tests/e2e/components/lq-declarative-contracts.spec.ts",
               "tests/e2e/components/lq-motion-process.spec.ts",
               "tests/e2e/specs/lq-motion-app.spec.ts",
-              "tests/e2e/specs/lq-selection-app.spec.ts"
+              "tests/e2e/specs/lq-selection-app.spec.ts",
+              "tests/test_manage_users_lq_template.py",
+              "tests/test_teacher_account_lifecycle.py",
+              "tests/e2e/specs/manage-users.spec.ts",
+              "tests/e2e/specs/teacher-identity.spec.ts"
             ],
             "previousReviewedSha256": [
-              "dc4ba520f2925b3ae52f588c18a84b8b9fb4ed4373593f860b68cd1a3fc6d647"
-            ]
+              "dc4ba520f2925b3ae52f588c18a84b8b9fb4ed4373593f860b68cd1a3fc6d647",
+              "d982c3bd9d80349cf4e0493635d53cdc7799f9b8a203e0b191cb32d5fba54148"
+            ],
+            "hashMode": "text-lf"
           },
           {
             "path": "templates/manage/layout.html",

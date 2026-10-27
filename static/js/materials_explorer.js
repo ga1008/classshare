@@ -19,7 +19,10 @@
  * Keyboard: ↑↓ move, Enter open, Backspace up, F2 rename, Delete, Alt+←/→.
  */
 import { apiFetch } from './api.js';
-import { closeModal, escapeHtml, formatDate, formatSize, openModal, showToast } from './ui.js';
+import { createMaterialMenu } from './materials_menus.js';
+import { confirm as confirmDialog } from './lq/dialogs.js';
+import { toast } from './lq/toast.js';
+import { closeModal, escapeHtml, formatDate, formatSize, openModal } from './ui.js';
 import { getMaterialKind, kindIcon } from './materials_kinds.js';
 import { renderMaterialPreview } from './material_renderers.js';
 import { canEditMaterial, mountMaterialEditor } from './material_editors.js';
@@ -78,6 +81,17 @@ export function createMaterialsExplorer(options = {}) {
     };
 
     const dom = {};
+    let discardDecision = null;
+    let navigationRequest = 0;
+    let historyNavigation = null;
+
+    function mayDiscardDraft() {
+        if (!state.editor?.isDirty()) return Promise.resolve(true);
+        if (!discardDecision) discardDecision = confirmDialog({ title: '放弃未保存的修改？',
+            message: '当前文档有未保存修改，离开将丢失。', confirmLabel: '放弃修改', danger: true,
+        }).finally(() => { discardDecision = null; });
+        return discardDecision;
+    }
 
     /* ---------- data ---------- */
 
@@ -133,22 +147,22 @@ export function createMaterialsExplorer(options = {}) {
     function ensureShell() {
         if (dom.root && mount.contains(dom.root)) return;
         mount.innerHTML = `
-            <div class="mx" data-materials-explorer>
-                <div class="mx__toolbar" role="toolbar" aria-label="资源管理器工具栏">
+            <div class="mx lq-surface" data-lq-component="surface" data-lq-surface="embedded" data-materials-explorer>
+                <div class="mx__toolbar lq-domain-toolbar" data-lq-component="toolbar" role="toolbar" aria-label="资源管理器工具栏">
                     <div class="mx__nav">
                         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lq-btn--icon" data-mx="back" title="后退 (Alt+←)" aria-label="后退">${kindIcon('back')}</button>
                         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lq-btn--icon" data-mx="forward" title="前进 (Alt+→)" aria-label="前进">${kindIcon('forward')}</button>
                         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lq-btn--icon" data-mx="up" title="上一级 (Backspace)" aria-label="上一级">${kindIcon('up')}</button>
                         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lq-btn--icon" data-mx="reload" title="刷新" aria-label="刷新">${kindIcon('refresh')}</button>
                     </div>
-                    <nav class="mx__address" aria-label="当前位置" data-mx-address></nav>
+                    <nav class="mx__address lq-surface" data-lq-component="surface" data-lq-surface="embedded" aria-label="当前位置" data-mx-address></nav>
                     <label class="mx__search lq-search">
                         <input data-lq-component="input" type="search" class="lq-input" placeholder="在当前文档库中筛选" data-mx-search autocomplete="off">
                     </label>
                     <div class="mx__view" role="group" aria-label="内容视图">
-                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lq-btn--icon" data-mx="view-list" title="详细信息" aria-pressed="false">${kindIcon('list')}</button>
-                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lq-btn--icon" data-mx="view-grid" title="大图标" aria-pressed="false">${kindIcon('grid')}</button>
-                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lq-btn--icon" data-mx="toggle-details" title="详细信息窗格" aria-pressed="true">${kindIcon('info')}</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lq-btn--icon" data-mx="view-list" title="详细信息" aria-label="详细信息" aria-pressed="false">${kindIcon('list')}</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lq-btn--icon" data-mx="view-grid" title="大图标" aria-label="大图标" aria-pressed="false">${kindIcon('grid')}</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lq-btn--icon" data-mx="toggle-details" title="详细信息窗格" aria-label="详细信息窗格" aria-pressed="true">${kindIcon('info')}</button>
                     </div>
                     <div class="mx__actions" data-mx-actions></div>
                 </div>
@@ -160,7 +174,7 @@ export function createMaterialsExplorer(options = {}) {
                     <main class="mx__content" data-mx-content tabindex="0" aria-label="内容"></main>
                     <aside class="mx__details" aria-label="详细信息" data-mx-details></aside>
                 </div>
-                <div class="mx__statusbar" data-mx-status></div>
+                <div class="mx__statusbar lq-status" role="status" data-mx-status></div>
             </div>
         `;
         dom.root = mount.querySelector('[data-materials-explorer]');
@@ -215,10 +229,13 @@ export function createMaterialsExplorer(options = {}) {
         const inPath = pathTo(state.selectedId).some((item) => Number(item.id) === id);
         return `
             <div class="mx__tree-node" role="treeitem" aria-expanded="${hasChildren ? String(expanded) : 'false'}" aria-selected="${String(selected)}" data-mx-node="${id}" style="--depth:${depth}">
-                <div class="mx__tree-row${selected ? ' is-selected' : ''}${inPath && !selected ? ' is-ancestor' : ''}" data-mx-row="${id}" tabindex="${selected ? 0 : -1}">
-                    <button type="button" class="mx__tree-toggle" data-mx-toggle="${id}" aria-label="${expanded ? '收起' : '展开'}" ${hasChildren ? '' : 'disabled'}>${hasChildren ? kindIcon('chevron', 12) : ''}</button>
-                    <span class="mx__kind" style="--kind-color:${escapeHtml(kind.color)}">${kindIcon(kind.icon, 15)}</span>
-                    <span class="mx__tree-label" title="${escapeHtml(node.material_path || node.name || '')}">${escapeHtml(node.name || '未命名')}</span>
+                <div class="mx__tree-row${inPath && !selected ? ' is-ancestor' : ''}">
+                    <button type="button" class="mx__tree-toggle lq-btn lq-btn--ghost lq-btn--sm lq-btn--icon" data-lq-component="button" data-mx-toggle="${id}" aria-label="${expanded ? '收起' : '展开'} ${escapeHtml(node.name || '')}" ${hasChildren ? '' : 'disabled'}>${hasChildren ? kindIcon('chevron', 12) : ''}</button>
+                    <button type="button" class="mx__tree-select lq-btn lq-btn--ghost lq-domain-choice" data-lq-component="choice" data-lq-shape="surface" data-mx-row="${id}" aria-pressed="${selected}" tabindex="${selected ? 0 : -1}">
+                        <span class="mx__kind" data-lq-visual="category" style="--kind-color:${escapeHtml(kind.color)}">${kindIcon(kind.icon, 15)}</span>
+                        <span class="mx__tree-label" title="${escapeHtml(node.material_path || node.name || '')}">${escapeHtml(node.name || '未命名')}</span>
+                    </button>
+                    ${menuButton(node)}
                 </div>
                 ${hasChildren && expanded ? `<div class="mx__tree-children" role="group">${node.children.map((child) => renderTreeNode(child, depth + 1)).join('')}</div>` : ''}
             </div>
@@ -226,6 +243,7 @@ export function createMaterialsExplorer(options = {}) {
     }
 
     function renderTree() {
+        closeContextMenu();
         dom.tree.innerHTML = state.root ? renderTreeNode(state.root, 0) : '<div class="mx__empty">正在加载目录…</div>';
         const stats = state.stats || {};
         dom.treeStats.textContent = stats.file_count != null ? `${stats.folder_count || 0} 文件夹 · ${stats.file_count || 0} 文件` : '';
@@ -245,31 +263,32 @@ export function createMaterialsExplorer(options = {}) {
         }
         if (state.view === 'grid') {
             container.innerHTML = `
-                <div class="mx__grid" role="listbox" aria-label="文件夹内容">
+                <div class="mx__grid" role="list" aria-label="文件夹内容">
                     ${children.map((child) => {
                         const kind = getMaterialKind(child);
                         return `
-                            <button type="button" class="mx__tile" role="option" aria-selected="false" data-mx-item="${child.id}" data-node-type="${escapeHtml(child.node_type)}" title="${escapeHtml(child.name || '')}">
+                            <div class="mx__tile" role="listitem" data-mx-item="${child.id}" data-node-type="${escapeHtml(child.node_type)}" tabindex="-1">
+                            <button type="button" class="mx__tile-open lq-btn lq-btn--ghost lq-domain-choice" data-lq-component="choice" data-lq-shape="surface" data-mx-open="${child.id}" aria-pressed="false" title="${escapeHtml(child.name || '')}">
                                 <span class="mx__tile-icon" style="--kind-color:${escapeHtml(kind.color)}">${kindIcon(kind.icon, 30)}</span>
                                 <span class="mx__tile-name">${escapeHtml(child.name || '')}</span>
                                 <span class="mx__tile-meta">${escapeHtml(kind.label)} · ${escapeHtml(nodeMeta(child))}</span>
-                            </button>`;
+                            </button>${menuButton(child)}</div>`;
                     }).join('')}
                 </div>`;
             return;
         }
         container.innerHTML = `
             <table class="mx__list" role="grid" aria-label="文件夹内容">
-                <thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">大小 / 项目</th><th scope="col">修改时间</th></tr></thead>
+                <thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">大小 / 项目</th><th scope="col">修改时间</th><th scope="col"><span class="sr-only">操作</span></th></tr></thead>
                 <tbody>
                     ${children.map((child) => {
                         const kind = getMaterialKind(child);
                         return `
                             <tr class="mx__list-row" data-mx-item="${child.id}" data-node-type="${escapeHtml(child.node_type)}" tabindex="-1" aria-selected="false">
-                                <td class="mx__list-name"><span class="mx__kind" style="--kind-color:${escapeHtml(kind.color)}">${kindIcon(kind.icon, 16)}</span><span title="${escapeHtml(child.material_path || '')}">${escapeHtml(child.name || '')}</span></td>
+                                <td><button type="button" class="mx__list-name lq-btn lq-btn--ghost lq-domain-choice" data-lq-component="choice" data-lq-shape="surface" data-mx-open="${child.id}" aria-pressed="false"><span class="mx__kind" style="--kind-color:${escapeHtml(kind.color)}">${kindIcon(kind.icon, 16)}</span><span title="${escapeHtml(child.material_path || '')}">${escapeHtml(child.name || '')}</span></button></td>
                                 <td><span class="mx__kind-pill" style="--kind-color:${escapeHtml(kind.color)}">${escapeHtml(kind.label)}</span></td>
                                 <td>${escapeHtml(nodeMeta(child))}</td>
-                                <td>${escapeHtml(formatDate(child.updated_at || child.created_at || '') || '')}</td>
+                                <td>${escapeHtml(formatDate(child.updated_at || child.created_at || '') || '')}</td><td>${menuButton(child)}</td>
                             </tr>`;
                     }).join('')}
                 </tbody>
@@ -277,6 +296,7 @@ export function createMaterialsExplorer(options = {}) {
     }
 
     function renderContent() {
+        closeContextMenu();
         const detail = state.detail;
         const node = state.nodes.get(Number(state.selectedId));
         if (!detail || Number(detail.id) !== Number(state.selectedId)) {
@@ -334,8 +354,8 @@ export function createMaterialsExplorer(options = {}) {
         const editor = await mountMaterialEditor(container, detail, {
             content: String(data.content || ''),
             onDirty: () => renderStatus(),
-            onCancel: (dirty) => {
-                if (dirty && !window.confirm('放弃未保存的修改？')) return;
+            onCancel: async (dirty) => {
+                if (dirty && !await mayDiscardDraft()) return;
                 state.editing = false;
                 renderContent();
             },
@@ -358,6 +378,8 @@ export function createMaterialsExplorer(options = {}) {
                         data = state.editorContent;
                         state.editor.markSaved(state.editorContent.content);
                     }
+                } catch (error) {
+                    toast(error.message || '保存失败，请保留草稿后重试', { tone: 'danger' });
                 } finally {
                     state.editor?.setBusy(false);
                 }
@@ -467,8 +489,8 @@ export function createMaterialsExplorer(options = {}) {
 
     async function select(materialId, { record = true } = {}) {
         const id = Number(materialId);
-        if (!id || !state.nodes.has(id)) return;
-        if (state.editor?.isDirty() && !window.confirm('当前文档有未保存修改，离开将丢失，是否继续？')) return;
+        const request = ++navigationRequest;
+        if (!id || !state.nodes.has(id) || !await mayDiscardDraft() || request !== navigationRequest) return false;
         if (record && state.selectedId && state.selectedId !== id) {
             state.history.push(state.selectedId);
             state.future = [];
@@ -482,32 +504,40 @@ export function createMaterialsExplorer(options = {}) {
         renderTree();
         dom.content.innerHTML = '<div class="mx__empty">正在加载…</div>';
         try {
-            await loadDetail(id);
+            const detail = await loadDetail(id);
+            if (!detail || request !== navigationRequest) return false;
         } catch (error) {
+            if (request !== navigationRequest) return false;
             dom.content.innerHTML = `<div class="mx__empty">${escapeHtml(error.message || '加载失败')}</div>`;
-            return;
+            return false;
         }
-        if (Number(state.selectedId) !== id) return;
+        if (request !== navigationRequest || Number(state.selectedId) !== id) return false;
         renderContent();
         renderDetails();
         renderActions();
         renderStatus();
         dom.tree.querySelector(`[data-mx-row="${id}"]`)?.scrollIntoView({ block: 'nearest' });
+        return true;
     }
 
-    function goBack() {
-        const previous = state.history.pop();
-        if (!previous) return;
-        state.future.push(state.selectedId);
-        select(previous, { record: false });
+    function navigateHistory(direction) {
+        // A repeated traversal shares its pending decision/request and commits once.
+        if (historyNavigation) return historyNavigation;
+        const source = direction === 'back' ? state.history : state.future;
+        const destination = direction === 'back' ? state.future : state.history;
+        const target = source.at(-1), current = state.selectedId;
+        if (!target) return Promise.resolve(false);
+        historyNavigation = (async () => {
+            if (!await select(target, { record: false })) return false;
+            source.pop(); destination.push(current); renderAddress();
+            return true;
+        })().finally(() => { historyNavigation = null; });
+        return historyNavigation;
     }
 
-    function goForward() {
-        const next = state.future.pop();
-        if (!next) return;
-        state.history.push(state.selectedId);
-        select(next, { record: false });
-    }
+    function goBack() { return navigateHistory('back'); }
+
+    function goForward() { return navigateHistory('forward'); }
 
     function goUp() {
         const node = state.nodes.get(Number(state.selectedId));
@@ -534,12 +564,12 @@ export function createMaterialsExplorer(options = {}) {
             const result = await run.promise;
             state.git.result = result;
             state.git.progress = { status: result.status, phase: 'done', label: result.status === 'success' ? '完成' : (result.status === 'auth_required' ? '需要登录' : '失败'), percent: 100, message: result.message || '' };
-            showToast([result.message, result.learning_bindings?.message].filter(Boolean).join('；'), result.status === 'success' ? 'success' : (result.status === 'auth_required' ? 'warning' : 'error'), 5200);
+            toast([result.message, result.learning_bindings?.message].filter(Boolean).join('；'), { tone: result.status === 'success' ? 'success' : (result.status === 'auth_required' ? 'warning' : 'danger'), duration: 5200 });
             options.onGitResult?.(detail, result);
             await refresh();
         } catch (error) {
             state.git.progress = { status: 'failed', phase: 'failed', label: '失败', percent: 100, message: error.message || '' };
-            showToast(error.message || '仓库更新失败', 'error');
+            toast(error.message || '仓库更新失败', { tone: 'danger' });
         } finally {
             state.git.running = false;
             if (Number(state.selectedId) === id) renderDetails();
@@ -554,7 +584,7 @@ export function createMaterialsExplorer(options = {}) {
         try {
             state.git.plan = await apiFetch(`/api/materials/${Number(detail.id)}/repository/binding-plan`, { silent: true });
         } catch (error) {
-            showToast(error.message || '读取课次对应预览失败', 'error');
+            toast(error.message || '读取课次对应预览失败', { tone: 'danger' });
         } finally {
             state.git.planLoading = false;
             renderDetails();
@@ -563,41 +593,45 @@ export function createMaterialsExplorer(options = {}) {
 
     /* ---------- context menu ---------- */
 
+    function menuButton(node) {
+        return `<button type="button" class="lq-btn lq-btn--ghost lq-btn--sm lq-btn--icon mx__more" data-lq-component="button" data-mx-menu-trigger="${Number(node.id)}" aria-haspopup="menu" aria-label="${escapeHtml(node.name || '材料')}的更多操作">${kindIcon('more', 15)}</button>`;
+    }
+
     function closeContextMenu() {
-        state.contextMenu?.remove();
+        state.contextMenu?.destroy();
         state.contextMenu = null;
     }
 
-    function openContextMenu(event, node) {
+    function openContextMenu(anchor, node, { forceOpen = false, focus = 'first' } = {}) {
+        if (!anchor || !node) return;
+        if (state.contextMenu?.trigger === anchor) {
+            if (forceOpen) state.contextMenu.open({ focus });
+            return;
+        }
         closeContextMenu();
         const items = [{ action: 'open', label: node.node_type === 'folder' ? '打开' : '查看' }];
-        if (node.preview_url) items.push({ action: 'external', label: '新标签打开' });
-        if (node.node_type === 'file') items.push({ action: 'download', label: '下载' });
-        if (node.editable && state.detail?.can_manage !== false) items.push({ action: 'edit', label: '编辑源码' });
-        if (state.detail?.can_manage !== false) {
+        if (node.preview_url) items.push({ action: 'external', label: '新标签打开', href: node.preview_url, target: '_blank' });
+        if (node.node_type === 'file' && node.download_allowed !== false) items.push({ action: 'download', label: '下载', href: `/materials/download/${Number(node.id)}`, target: '_blank' });
+        const canManage = node.can_manage !== false && state.detail?.can_manage !== false;
+        if (node.editable && canManage) items.push({ action: 'edit', label: '编辑源码' });
+        if (canManage) {
             items.push({ action: 'rename', label: '重命名' });
             if (node.node_type === 'folder') items.push({ action: 'new-folder', label: '新建文件夹' }, { action: 'new-file', label: '新建文档' });
-            items.push({ action: 'move', label: '移动到…' });
-            items.push({ action: 'delete', label: '删除', danger: true });
+            items.push({ action: 'move', label: '移动到…' }, { action: 'delete', label: '删除', danger: true });
         }
-        const menu = document.createElement('div');
-        menu.className = 'mx__menu lq-glass';
-        menu.setAttribute('role', 'menu');
-        menu.innerHTML = items.map((item) => `<button type="button" class="mx__menu-item${item.danger ? ' is-danger' : ''}" role="menuitem" data-mx-menu="${item.action}" data-node="${node.id}">${escapeHtml(item.label)}</button>`).join('');
-        document.body.appendChild(menu);
-        const x = Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 8);
-        const y = Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 8);
-        menu.style.left = `${Math.max(8, x)}px`;
-        menu.style.top = `${Math.max(8, y)}px`;
-        state.contextMenu = menu;
-        menu.querySelector('[role="menuitem"]')?.focus();
-        menu.addEventListener('click', (clickEvent) => {
-            const button = clickEvent.target.closest('[data-mx-menu]');
-            if (!button) return;
-            const action = button.dataset.mxMenu;
-            const targetId = Number(button.dataset.node);
-            closeContextMenu();
-            runContextAction(action, targetId);
+        state.contextMenu = createMaterialMenu(anchor, {
+            label: `${node.name || '材料'}的操作`, items,
+            onAction: action => runContextAction(action, Number(node.id)),
+            onError: error => toast(error.message || '操作失败', { tone: 'danger' }),
+        });
+        state.contextMenu.open({ focus });
+    }
+
+    function markContentSelection(selected) {
+        dom.content.querySelectorAll('[data-mx-item]').forEach(row => {
+            row.dataset.mxSelected = String(row === selected);
+            if (row.matches('tr')) row.setAttribute('aria-selected', String(row === selected));
+            row.querySelector('[data-mx-open]')?.setAttribute('aria-pressed', String(row === selected));
         });
     }
 
@@ -608,19 +642,19 @@ export function createMaterialsExplorer(options = {}) {
         if (action === 'external' && node.preview_url) return window.open(node.preview_url, '_blank', 'noopener');
         if (action === 'download') return window.open(`/materials/download/${targetId}`, '_blank', 'noopener');
         if (action === 'edit') {
-            await select(targetId);
+            if (!await select(targetId)) return;
             state.editing = true;
             renderContent();
             return;
         }
         if (action === 'rename') {
-            await select(targetId);
+            if (!await select(targetId)) return;
             const input = dom.details.querySelector('[data-property-name]');
             input?.focus();
             input?.select();
             return;
         }
-        if (Number(state.selectedId) !== targetId) await select(targetId);
+        if (Number(state.selectedId) !== targetId && !await select(targetId)) return;
         const map = { 'new-folder': 'create-folder', 'new-file': 'create-file', move: 'move', delete: 'delete' };
         const hostAction = map[action];
         if (hostAction) options.runAction?.(hostAction, state.detail);
@@ -630,7 +664,11 @@ export function createMaterialsExplorer(options = {}) {
     /* ---------- events ---------- */
 
     function bindShell() {
-        dom.root.addEventListener('click', (event) => {
+        dom.root.addEventListener('click', async (event) => {
+            const more = event.target.closest('[data-mx-menu-trigger]');
+            if (more) { openContextMenu(more, state.nodes.get(Number(more.dataset.mxMenuTrigger))); return; }
+            const open = event.target.closest('[data-mx-open]');
+            if (open) { await select(Number(open.dataset.mxOpen)); return; }
             const control = event.target.closest('[data-mx]');
             if (control && dom.root.contains(control)) {
                 const command = control.dataset.mx;
@@ -648,7 +686,7 @@ export function createMaterialsExplorer(options = {}) {
                     writeStorage(PANE_STORAGE_KEY, state.detailsOpen ? 'open' : 'closed');
                     renderAddress();
                 } else if (command === 'edit') {
-                    if (state.editing && state.editor?.isDirty() && !window.confirm('放弃未保存的修改？')) return;
+                    if (state.editing && !await mayDiscardDraft()) return;
                     state.editing = !state.editing;
                     renderContent();
                 } else if (command === 'git-update') runGitUpdate();
@@ -680,7 +718,7 @@ export function createMaterialsExplorer(options = {}) {
                 if (event.detail >= 2 || item.dataset.nodeType === 'file' || item.classList.contains('mx__tile')) {
                     select(id);
                 } else {
-                    dom.content.querySelectorAll('[data-mx-item]').forEach((el) => el.setAttribute('aria-selected', String(el === item)));
+                    markContentSelection(item);
                     item.focus?.();
                 }
             }
@@ -695,25 +733,36 @@ export function createMaterialsExplorer(options = {}) {
             const node = state.nodes.get(Number(target.dataset.mxItem || target.dataset.mxRow));
             if (!node) return;
             event.preventDefault();
-            openContextMenu(event, node);
+            openContextMenu(target.closest('.mx__tree-row, [data-mx-item]')?.querySelector('[data-mx-menu-trigger]'), node, { forceOpen: true });
         });
-        dom.search.addEventListener('input', () => {
+        dom.search.addEventListener('input', (event) => {
+            if (event.isComposing) return;
             state.filter = String(dom.search.value || '').trim();
             renderTree();
             if (state.detail?.node_type === 'folder' && !state.editing) renderContent();
             renderStatus();
         });
         dom.root.addEventListener('keydown', onKeydown);
-        document.addEventListener('click', (event) => {
-            if (state.contextMenu && !state.contextMenu.contains(event.target)) closeContextMenu();
-        }, true);
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && state.contextMenu) closeContextMenu();
-        });
+
     }
 
     function onKeydown(event) {
-        if (event.target.matches('input, textarea, select') || state.editing) return;
+        if (event.defaultPrevented || event.isComposing || event.keyCode === 229 || event.target.matches('input, textarea, select') || state.editing) return;
+        const menuTrigger = event.target.closest('[data-mx-menu-trigger]');
+        if (menuTrigger && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
+            event.preventDefault();
+            openContextMenu(menuTrigger, state.nodes.get(Number(menuTrigger.dataset.mxMenuTrigger)), { focus: event.key === 'ArrowUp' ? 'last' : 'first' });
+            return;
+        }
+        if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+            const row = event.target.closest('[data-mx-item], .mx__tree-row');
+            const anchor = row?.querySelector('[data-mx-menu-trigger]');
+            const node = anchor && state.nodes.get(Number(anchor.dataset.mxMenuTrigger));
+            if (node) { event.preventDefault(); openContextMenu(anchor, node, { forceOpen: true }); }
+            return;
+        }
+        // Native operation buttons own Enter/Space; arrows still navigate rows.
+        if (['Enter', ' '].includes(event.key) && event.target.closest('button,a[href]')) return;
         if (event.altKey && event.key === 'ArrowLeft') { event.preventDefault(); goBack(); return; }
         if (event.altKey && event.key === 'ArrowRight') { event.preventDefault(); goForward(); return; }
         if (event.key === 'Backspace') { event.preventDefault(); goUp(); return; }
@@ -721,11 +770,12 @@ export function createMaterialsExplorer(options = {}) {
         if (event.key === 'Delete' && state.detail?.can_manage !== false) { event.preventDefault(); options.runAction?.('delete', state.detail); return; }
         const rows = [...dom.content.querySelectorAll('[data-mx-item]')];
         if (!rows.length) return;
-        const currentIndex = rows.findIndex((row) => row.getAttribute('aria-selected') === 'true');
+        const focusedIndex = rows.indexOf(event.target.closest('[data-mx-item]'));
+        const currentIndex = focusedIndex >= 0 ? focusedIndex : rows.findIndex((row) => row.dataset.mxSelected === 'true' || row.getAttribute('aria-selected') === 'true');
         const move = (index) => {
             const next = rows[Math.max(0, Math.min(rows.length - 1, index))];
-            rows.forEach((row) => row.setAttribute('aria-selected', String(row === next)));
-            next.focus?.();
+            markContentSelection(next);
+            (next.querySelector('[data-mx-open]') || next).focus({ preventScroll: true });
             next.scrollIntoView({ block: 'nearest' });
         };
         if (event.key === 'ArrowDown') { event.preventDefault(); move(currentIndex + 1); }
@@ -749,6 +799,7 @@ export function createMaterialsExplorer(options = {}) {
         dom.content.innerHTML = '<div class="mx__empty">正在加载材料…</div>';
         dom.tree.innerHTML = '<div class="mx__empty">正在加载目录…</div>';
         dom.details.innerHTML = '';
+        document.getElementById(modalId)?.setAttribute('aria-hidden', 'false');
         openModal(modalId);
         await Promise.all([loadTree(materialId), loadDetail(materialId)]);
         renderAll();

@@ -163,7 +163,11 @@ test.describe.serial('school-scoped teacher identities on production assets', ()
     await discardDraft(page);
     await expect(form).toBeHidden();
     await expect(opener).toBeFocused();
+    // Signed-in users now continue to their dashboard from the login URL.
+    // Test the native login field in its actual unauthenticated state.
+    await page.context().clearCookies();
     await page.goto('/teacher/login');
+    await expect(page).toHaveURL(/\/teacher\/login$/);
     await expect(page.locator('#email')).toHaveAttribute('type', 'text');
     await page.locator('#email').fill('000187');
     expect(await page.locator('#email').evaluate((el: HTMLInputElement) => el.checkValidity())).toBe(true);

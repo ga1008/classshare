@@ -6,31 +6,17 @@
 
 
 {% block header_actions %}
-{% from "macros/app_topbar.html" import app_topbar_icon, topbar_action %}
+{% from "macros/app_topbar.html" import topbar_action %}
 {% set process_generate_blocked = initial_ai_generate and initial_ai_generate.get('blocked') %}
 <div class="materials-toolbar-group materials-header-actions">
-    <div data-lq-component="menu" class="lq-domain-region materials-upload-menu" id="materials-create-menu">
-        <button data-lq-component="button"
-            type="button"
-            class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--primary app-topbar-action--tone-indigo materials-upload-menu__trigger"
-            id="materials-create-menu-btn"
-            title="新建"
-            aria-label="新建"
-            aria-haspopup="true"
-            aria-expanded="false"
-        >
-            <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('plus') }}</span>
-            <span class="app-topbar-action__text">
-                <strong>新建</strong>
-                <small>文件夹 / 文档</small>
-            </span>
-        </button>
-        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised materials-upload-dropdown" id="materials-create-dropdown" hidden>
-            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" id="materials-create-folder-btn">
+    <div class="materials-upload-menu" id="materials-create-menu">
+        {{ topbar_action('新建', '', 'plus', button_id='materials-create-menu-btn', variant='solid', tone='indigo', attrs='aria-haspopup="menu" aria-expanded="false" data-explain data-explain-title="新建" data-explain-text="文件夹 / 文档" data-explain-placement="bottom"') }}
+        <div class="lq-menu lq-glass" role="menu" aria-label="新建" id="materials-create-dropdown" hidden>
+            <button data-lq-component="button" class="lq-menu__item lq-btn lq-btn--sm lq-btn--ghost" type="button" role="menuitem" tabindex="-1" data-lq-menu-item="materials-create-folder-btn" id="materials-create-folder-btn">
                 <strong>新建文件夹</strong>
                 <small>在当前目录下创建</small>
             </button>
-            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" id="materials-create-file-btn">
+            <button data-lq-component="button" class="lq-menu__item lq-btn lq-btn--sm lq-btn--ghost" type="button" role="menuitem" tabindex="-1" data-lq-menu-item="materials-create-file-btn" id="materials-create-file-btn">
                 <strong>新建文档</strong>
                 <small>Markdown 材料文件</small>
             </button>
@@ -43,29 +29,14 @@
         {{ topbar_action('AI生成材料', '提示与附件', 'robot', button_id='materials-ai-generate-open-btn', variant='solid', tone='teal') }}
     {% endif %}
     {{ topbar_action('上传文件夹', '批量资料', 'folder-up', button_id='materials-upload-folder-btn', variant='solid', tone='cyan') }}
-    <div data-lq-component="menu" class="lq-domain-region materials-upload-menu" id="materials-upload-menu">
-        <button data-lq-component="button"
-            type="button"
-            class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--primary app-topbar-action--tone-teal materials-upload-menu__trigger"
-            id="materials-upload-menu-btn"
-            data-testid="p03-materials-upload-menu"
-            title="上传文件"
-            aria-label="上传文件"
-            aria-haspopup="true"
-            aria-expanded="false"
-        >
-            <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('upload') }}</span>
-            <span class="app-topbar-action__text">
-                <strong>上传文件</strong>
-                <small>单个资料 / zip 自动解压</small>
-            </span>
-        </button>
-        <div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised materials-upload-dropdown" id="materials-upload-dropdown" hidden>
-            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" id="materials-ai-import-open-btn">
+    <div class="materials-upload-menu" id="materials-upload-menu">
+        {{ topbar_action('上传文件', '', 'upload', button_id='materials-upload-menu-btn', variant='solid', tone='teal', attrs='aria-haspopup="menu" aria-expanded="false" data-testid="p03-materials-upload-menu" data-explain data-explain-title="上传文件" data-explain-text="单个资料 / zip 自动解压" data-explain-placement="bottom"') }}
+        <div class="lq-menu lq-glass" role="menu" aria-label="上传文件" id="materials-upload-dropdown" hidden>
+            <button data-lq-component="button" class="lq-menu__item lq-btn lq-btn--sm lq-btn--ghost" type="button" role="menuitem" tabindex="-1" data-lq-menu-item="materials-ai-import-open-btn" id="materials-ai-import-open-btn">
                 <strong>AI解析</strong>
                 <small>按材料类型导入</small>
             </button>
-            <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" id="materials-upload-direct-btn" data-testid="p03-materials-upload-direct">
+            <button data-lq-component="button" class="lq-menu__item lq-btn lq-btn--sm lq-btn--ghost" type="button" role="menuitem" tabindex="-1" data-lq-menu-item="materials-upload-direct-btn" id="materials-upload-direct-btn" data-testid="p03-materials-upload-direct">
                 <strong>直接上传</strong>
                 <small>保留原始文件</small>
             </button>

@@ -39,11 +39,11 @@ function searchMatches(item, keyword) {
     if (!matches.length && !item.search_match_count) return '';
     const count = Number(item.search_match_count || matches.length);
     return `
-        <div class="mcard__matches">
+        <span class="mcard__matches">
             <span class="mcard__matches-head">${count} 处命中</span>
             ${matches.slice(0, 4).map((match) => `<span class="mcard__match" title="${escapeHtml(match.material_path || '')}">${kindIcon(match.node_type === 'folder' ? 'folder' : 'file', 12)}${highlight(match.name, keyword)}</span>`).join('')}
             ${count > Math.min(matches.length, 4) + 1 ? '<span class="mcard__match is-more">…</span>' : ''}
-        </div>`;
+        </span>`;
 }
 
 function coverageChips(item) {
@@ -104,21 +104,21 @@ export function renderMaterialCard(item, ctx = {}) {
     const summary = String(item.summary || '').trim();
     const activity = item.latest_activity_at || item.updated_at || item.created_at;
     return `
-        <article class="mcard${selected ? ' is-selected' : ''}${active ? ' is-active' : ''}${generated ? ' is-generated' : ''}" data-id="${id}" data-kind="${escapeHtml(kind.kind)}" style="--kind-color:${escapeHtml(kind.color)}" tabindex="0" aria-label="${escapeHtml(item.name || '')}">
-            <div class="mcard__paper">
+        <article class="mcard${selected ? ' is-selected' : ''}${active ? ' is-active' : ''}${generated ? ' is-generated' : ''}" data-id="${id}" data-kind="${escapeHtml(kind.kind)}" style="--kind-color:${escapeHtml(kind.color)}" aria-label="${escapeHtml(item.name || '')}">
+            <div class="mcard__paper lq-surface" data-lq-component="surface" ${selected || active ? 'data-lq-selected="true"' : ''}>
                 <header class="mcard__head">
                     <span class="mcard__kind">${kindIcon(kind.icon, 16)}<span>${escapeHtml(kind.label)}</span></span>
                     <label class="mcard__check" title="选择">
-                        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-role="select-item" data-id="${id}" ${selected ? 'checked' : ''}>
+                        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" aria-label="选择 ${escapeHtml(item.name || '材料')}" data-role="select-item" data-id="${id}" ${selected ? 'checked' : ''}>
                     </label>
                 </header>
-                <div class="mcard__body" data-action="explore" role="button">
-                    <h3 class="mcard__title" title="${escapeHtml(item.name || '')}">${highlight(item.name, ctx.keyword)}</h3>
-                    <p class="mcard__structure">${escapeHtml(structureLine(item, kind))}</p>
-                    ${summary ? `<p class="mcard__summary">${escapeHtml(summary)}</p>` : `<p class="mcard__summary is-muted">${escapeHtml(item.material_path || '')}</p>`}
+                <button type="button" class="mcard__body lq-btn lq-btn--ghost lq-domain-choice" data-lq-component="choice" data-lq-shape="surface" data-action="explore" aria-label="浏览 ${escapeHtml(item.name || '材料')}">
+                    <span class="mcard__title" title="${escapeHtml(item.name || '')}">${highlight(item.name, ctx.keyword)}</span>
+                    <span class="mcard__structure">${escapeHtml(structureLine(item, kind))}</span>
+                    ${summary ? `<span class="mcard__summary">${escapeHtml(summary)}</span>` : `<span class="mcard__summary is-muted">${escapeHtml(item.material_path || '')}</span>`}
                     ${searchMatches(item, ctx.keyword)}
                     ${generated ? '<span class="materials-generated-badge">刚刚生成</span>' : ''}
-                </div>
+                </button>
                 <div class="mcard__coverage">${coverageChips(item)}</div>
                 ${gitBlock(item, ctx)}
                 <footer class="mcard__foot">
