@@ -367,7 +367,7 @@ class ConversationIndexTest(_Base):  # M10, M11, M12, live-QA items 2 and 3
     def test_sender_is_serialised_before_counting(self):
         with patch.object(messages, "serialize_on", wraps=messages.serialize_on) as spy:
             self.run_service(messages.send_message, self.user(self.a), self.key, {"body": "hi"})
-        self.assertEqual(spy.call_args.args[1:], ("social-send", [self.a]))
+        self.assertEqual(spy.call_args_list[0].args[1:], ("social-send", [self.a]))
 
     def test_schema_flag_only_after_a_committed_ensure(self):
         with patch.object(schema_social, "_SCHEMA_READY", False), self.connect() as conn:

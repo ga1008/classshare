@@ -29,6 +29,7 @@ from ..services import (
     social_identity_service as identities,
     social_media_service as media,
     social_message_service as messages,
+    social_notification_service as notifications,
     social_push_service,
     social_recommendation_service as recommendation_service,
     social_scope_service as scope_service,
@@ -256,7 +257,7 @@ async def social_set_group_admin(group_id: int, data: dict = Body(default={}), u
 async def social_update_my_group_settings(group_id: int, data: dict = Body(default={}),
                                           user: dict = Depends(get_current_user)):
     return await _run(lambda conn, events: groups.update_me(
-        conn, user, group_id, nickname=_field(data, "nickname"), muted=_field(data, "muted")))
+        conn, user, group_id, nickname=_field(data, "nickname"), muted=_field(data, "muted"), events=events))
 
 
 @router.get("/groups/{group_id}/files")
@@ -273,6 +274,23 @@ async def social_group_files(group_id: int, kind: Optional[str] = Query(default=
 @router.get("/conversations")
 async def social_list_conversations(user: dict = Depends(get_current_user)):
     return await _run(lambda conn, events: {"items": conversations.list_conversations(conn, user)})
+
+
+@router.get("/mention-quota")
+async def social_mention_quota(user: dict = Depends(get_current_user)):
+    return await _run(lambda conn, events: notifications.mention_quota(conn, user))
+
+
+@router.get("/conversations/{key}/preferences")
+async def social_conversation_preferences(key: str, user: dict = Depends(get_current_user)):
+    return await _run(lambda conn, events: notifications.preferences(conn, user, key))
+
+
+@router.patch("/conversations/{key}/preferences")
+async def social_set_conversation_preferences(key: str, data: dict = Body(default={}),
+                                               user: dict = Depends(get_current_user)):
+    return await _run(lambda conn, events: notifications.set_preferences(
+        conn, user, key, _field(data, "muted"), events))
 
 
 @router.get("/conversations/{key}/messages")

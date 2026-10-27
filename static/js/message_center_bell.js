@@ -1,5 +1,6 @@
 import { apiFetch } from './api.js';
 import { createMessageBellTargets } from './message_center_bell_dom.js';
+import { isSocialChatNotification } from './message_notification_policy.js';
 
 const bellShells = Array.from(document.querySelectorAll('[data-message-center-bell-shell]'));
 const getBellNodes = createMessageBellTargets();
@@ -179,6 +180,7 @@ function syncBellState(summary, latestUnread, { allowPopup }) {
     const shouldPopup = Boolean(
         allowPopup
         && latestUnread
+        && !isSocialChatNotification(latestUnread)
         && unreadTotal > 0
         && (
             !bellState.initialized

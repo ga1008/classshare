@@ -5,7 +5,7 @@ message (app process) and only registers one-shot scheduler tasks — no model
 call, no sleep. The scheduler container does the work later
 (``wanderer_actions_social`` / ``wanderer_social_friends``):
 
-* ``wanderer_friend_request``  per (wanderer, requester), delayed 1–30 min by personality;
+* ``wanderer_friend_request``  per (wanderer, requester), immediate or delayed by personality / active window;
 * ``wanderer_social_reply``    per (wanderer, conversation), delayed 20 s–10 min
   (or to the next active window), bursts coalesce into the pending task;
 * ``wanderer_group_watch``     per group, debounced 30–120 s; when it fires each
@@ -31,11 +31,11 @@ TASK_KIND_SOCIAL_REPLY = "wanderer_social_reply"
 TASK_KIND_GROUP_WATCH = "wanderer_group_watch"
 SOCIAL_BEHAVIOR = "social"
 
-FRIEND_DELAY_SECONDS = (60, 1800)
+FRIEND_DELAY_SECONDS = (0, 1800)
 REPLY_DELAY_SECONDS = (20, 600)
 GROUP_DEBOUNCE_SECONDS = (30, 120)
 WAKE_JITTER_SECONDS = (60, 900)
-NEXT_WINDOW_HORIZON_HOURS = 12
+NEXT_WINDOW_HORIZON_HOURS = 48
 TASK_PRIORITY = 110
 TASK_MAX_ATTEMPTS = 2
 _SHY_MARKS = ("社恐", "寡言", "冷淡", "慢热", "沉默", "内向")
@@ -77,7 +77,9 @@ def _scaled_delay(wanderer: dict[str, Any], bounds: tuple[int, int], rng: random
 
 
 def friend_request_delay(wanderer: dict[str, Any], rng: random.Random) -> int:
-    """社牛 1–3 min … 社恐 up to 30 min."""
+    """An outgoing personality may consider a request immediately; others take their time."""
+    if rng.random() < sociability(wanderer) * 0.5:
+        return 0
     return _scaled_delay(wanderer, FRIEND_DELAY_SECONDS, rng)
 
 
@@ -97,7 +99,7 @@ def is_awake_now(wanderer: dict[str, Any], now: datetime) -> bool:
 
 
 def seconds_until_awake(wanderer: dict[str, Any], now: datetime) -> Optional[float]:
-    """0 inside an active window; seconds to the next window start within 12 h; None otherwise."""
+    """0 inside an active window; seconds to the next preferred window within two days."""
     if is_awake_now(wanderer, now):
         return 0.0
     probe = now.replace(second=0, microsecond=0)
@@ -109,7 +111,7 @@ def seconds_until_awake(wanderer: dict[str, Any], now: datetime) -> Optional[flo
 
 
 def delay_with_wakeup(wanderer: dict[str, Any], delay: float, now: datetime, rng: random.Random) -> Optional[float]:
-    """``delay`` when awake; otherwise next window start + jitter; None when asleep for > 12 h."""
+    """``delay`` when awake; otherwise the next preferred window plus a small jitter."""
     wait = seconds_until_awake(wanderer, now)
     if wait is None:
         return None
@@ -219,7 +221,7 @@ def on_message_created(conn: Any, parsed: dict[str, Any], sender: str, *, rng: O
         wanderer = wanderers[peer]
         delay = delay_with_wakeup(wanderer, reply_delay(wanderer, rng), moment, rng)
         if delay is None:
-            return []  # asleep for the next 12 h: the message is simply left unanswered
+            return []  # no preferred activity window within the bounded lookahead
         return [schedule_social_reply(conn, wanderer, parsed["key"], delay_seconds=delay, now=moment)]
     from .social_relations import group_member_identities
 
@@ -235,11 +237,20 @@ def on_message_created(conn: Any, parsed: dict[str, Any], sender: str, *, rng: O
 
 
 def on_friend_request(conn: Any, request_id: int, requester: str, target: str, *,
-                      rng: Optional[random.Random] = None, now: Optional[datetime] = None) -> Optional[int]:
+                      rng: Optional[random.Random] = None, now: Optional[datetime] = None,
+                      recovery: bool = False) -> Optional[int]:
     """A pending request from ``requester`` to ``target`` exists; schedule the 散修's decision."""
     wanderers = social_wanderers(conn, [target]) if requester != target else {}
     if not wanderers or not _enabled(conn):
         return None
+    from .social_common import serialize_on
+    from .scheduled_task_service import get_owner_task_by_dedupe
+
+    dedupe = friend_dedupe_key(int(wanderers[target]["id"]), requester)
+    serialize_on(conn, "wanderer-friend-schedule", [dedupe])
+    existing = get_owner_task_by_dedupe(conn, dedupe)
+    if recovery and existing and existing.get("status") in {"pending", "running"}:
+        return None  # another recovery already queued/claimed it since our candidate snapshot
     rng = rng or random.Random()
     wanderer = wanderers[target]
     moment = now or datetime.now()
@@ -247,7 +258,7 @@ def on_friend_request(conn: Any, request_id: int, requester: str, target: str, *
     if delay is None:
         delay = NEXT_WINDOW_HORIZON_HOURS * 3600.0  # decided later; the request just waits
     return schedule_coalesced(
-        conn, task_kind=TASK_KIND_FRIEND_REQUEST, dedupe_key=friend_dedupe_key(int(wanderer["id"]), requester),
+        conn, task_kind=TASK_KIND_FRIEND_REQUEST, dedupe_key=dedupe,
         run_at=moment + timedelta(seconds=delay),
         payload={"wanderer_id": int(wanderer["id"]), "request_id": int(request_id), "requester": requester},
         title=f"散修处理好友申请 · {wanderer.get('display_name') or ''}",

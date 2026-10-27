@@ -1,0 +1,665 @@
+{
+  "acceptance": "pending",
+  "summary": {
+    "files": 579,
+    "htmlTemplates": 208,
+    "entries": 5618,
+    "byKind": {
+      "toolbar": 136,
+      "surface": 741,
+      "choice": 207,
+      "button": 2252,
+      "field": 760,
+      "unknown": 831,
+      "menu": 40,
+      "layer": 137,
+      "select": 305,
+      "content-slot": 39,
+      "tab": 37,
+      "domain": 18,
+      "status": 53,
+      "dialog": 31,
+      "chip": 30,
+      "handle": 1
+    },
+    "bySyntax": {
+      "jinja-component-call": 524,
+      "jinja-html": 2496,
+      "dynamic-html-sink": 690,
+      "js-html-candidate": 1377,
+      "create-element": 186,
+      "component-factory-call": 163,
+      "react-jsx": 158,
+      "python-generated-jinja-html": 24
+    },
+    "byCanonicalContract": {
+      "not-declared": 1810,
+      "canonical-declared-pending": 3716,
+      "declared-missing-canonical": 6,
+      "canonical-resolution-pending": 5,
+      "adapter-call-pending-runtime": 81
+    },
+    "byProvenance": {
+      "shared-component-call": 720,
+      "lq-marked-native": 131,
+      "component-declared": 3726,
+      "runtime-output-unknown": 690,
+      "legacy-or-native": 139,
+      "shared-definition": 54,
+      "shared-adapter-call-candidate": 81,
+      "factory-ownership-unknown": 49,
+      "external-icon-content-slot": 28
+    },
+    "byStatus": {
+      "pending": 4787,
+      "unknown": 831
+    },
+    "largestFiles": [
+      {
+        "file": "templates/classroom_main_v4.html",
+        "entries": 215
+      },
+      {
+        "file": "templates/assignment_detail_teacher.html",
+        "entries": 173
+      },
+      {
+        "file": "templates/exam_editor.html",
+        "entries": 108
+      },
+      {
+        "file": "static/js/blog.js",
+        "entries": 107
+      },
+      {
+        "file": "static/js/collaboration.js",
+        "entries": 102
+      },
+      {
+        "file": "static/js/materials_manage.js",
+        "entries": 91
+      },
+      {
+        "file": "templates/manage/system/wanderers.html",
+        "entries": 77
+      },
+      {
+        "file": "templates/manage/signatures.html",
+        "entries": 67
+      },
+      {
+        "file": "static/js/teacher_onboarding.js",
+        "entries": 67
+      },
+      {
+        "file": "static/js/attendance_reports.js",
+        "entries": 66
+      },
+      {
+        "file": "templates/blog.html",
+        "entries": 65
+      },
+      {
+        "file": "templates/manage/courses.html",
+        "entries": 61
+      },
+      {
+        "file": "templates/manage/system/blog_crawler.html",
+        "entries": 61
+      },
+      {
+        "file": "templates/partials/materials/modals_generate.html",
+        "entries": 61
+      },
+      {
+        "file": "static/js/course_schedule_editor.js",
+        "entries": 59
+      },
+      {
+        "file": "templates/dashboard_teacher.html",
+        "entries": 56
+      },
+      {
+        "file": "templates/manage/classes.html",
+        "entries": 56
+      },
+      {
+        "file": "static/js/approval_workflow.js",
+        "entries": 56
+      },
+      {
+        "file": "static/js/career_path_app.js",
+        "entries": 55
+      },
+      {
+        "file": "templates/dashboard.html",
+        "entries": 54
+      },
+      {
+        "file": "static/js/message_center.js",
+        "entries": 54
+      },
+      {
+        "file": "templates/manage/attendance_reports.html",
+        "entries": 49
+      },
+      {
+        "file": "templates/submission_detail.html",
+        "entries": 49
+      },
+      {
+        "file": "static/js/manage_lesson_plans.js",
+        "entries": 49
+      },
+      {
+        "file": "templates/dev/lq_interactions.html",
+        "entries": 47
+      }
+    ]
+  },
+  "registryDrift": {
+    "storedTemplateCount": 203,
+    "currentTemplateCount": 208,
+    "storedEntryCount": 225,
+    "currentEntryCount": 230,
+    "addedIdentities": [
+      "GET /manage/system/wanderers::manage/system/wanderers.html",
+      "GET /wanderers/{slug}::wanderers/home.html",
+      "template::partials/ability_radar.html",
+      "template::partials/cultivation_panel.html",
+      "template::partials/login_remember.html",
+      "template::partials/social_entry.html"
+    ],
+    "removedIdentities": [
+      "template::message_center.html"
+    ],
+    "sourcePageMethodPaths": 99,
+    "directTemplates": [
+      "templates/achievements.html",
+      "templates/assessment_plan_editor.html",
+      "templates/assignment_detail_student.html",
+      "templates/assignment_detail_teacher.html",
+      "templates/assignment_wrong_summary.html",
+      "templates/blog.html",
+      "templates/career_path.html",
+      "templates/classroom_main_v4.html",
+      "templates/dashboard.html",
+      "templates/dashboard_teacher.html",
+      "templates/dev/lq.html",
+      "templates/dev/lq_centered.html",
+      "templates/dev/lq_shell.html",
+      "templates/exam_editor.html",
+      "templates/exam_take.html",
+      "templates/feedback_review.html",
+      "templates/learning_path.html",
+      "templates/lesson_plan_editor.html",
+      "templates/lessondoc_editor.html",
+      "templates/manage/academic_final_materials.html",
+      "templates/manage/academic_overview.html",
+      "templates/manage/ai.html",
+      "templates/manage/archive_pipeline.html",
+      "templates/manage/assessment_plans.html",
+      "templates/manage/attendance_reports.html",
+      "templates/manage/classes.html",
+      "templates/manage/classrooms.html",
+      "templates/manage/course_schedule.html",
+      "templates/manage/course_schedule_editor.html",
+      "templates/manage/courses.html",
+      "templates/manage/exams.html",
+      "templates/manage/gongwen.html",
+      "templates/manage/lesson_plans.html",
+      "templates/manage/life_tips.html",
+      "templates/manage/material_hub.html",
+      "templates/manage/materials.html",
+      "templates/manage/me_credentials.html",
+      "templates/manage/offering_hub.html",
+      "templates/manage/offering_merge.html",
+      "templates/manage/offerings.html",
+      "templates/manage/polls.html",
+      "templates/manage/profile.html",
+      "templates/manage/semesters.html",
+      "templates/manage/signature_workflows.html",
+      "templates/manage/signatures.html",
+      "templates/manage/student_detail.html",
+      "templates/manage/system/academic_integrations.html",
+      "templates/manage/system/agent_keys.html",
+      "templates/manage/system/ai_usage.html",
+      "templates/manage/system/blog_crawler.html",
+      "templates/manage/system/blog_review.html",
+      "templates/manage/system/diagnostics.html",
+      "templates/manage/system/feedback.html",
+      "templates/manage/system/gongwen_integrations.html",
+      "templates/manage/system/monitor.html",
+      "templates/manage/system/organizations.html",
+      "templates/manage/system/password_resets.html",
+      "templates/manage/system/smart_classroom_integrations.html",
+      "templates/manage/system/users.html",
+      "templates/manage/system/wanderers.html",
+      "templates/manage/teacher_evaluations.html",
+      "templates/manage/teacher_schedule_query.html",
+      "templates/manage/textbooks.html",
+      "templates/manage/work_inbox.html",
+      "templates/material_render_shell.html",
+      "templates/material_viewer.html",
+      "templates/partials/classroom_members/alerts.html",
+      "templates/partials/classroom_members/exams.html",
+      "templates/partials/classroom_members/overview.html",
+      "templates/partials/classroom_members/settings.html",
+      "templates/partials/classroom_members/workspace.html",
+      "templates/permission_denied.html",
+      "templates/points_shop.html",
+      "templates/profile.html",
+      "templates/report_card.html",
+      "templates/resume/applications.html",
+      "templates/resume/builder.html",
+      "templates/resume/home.html",
+      "templates/resume/job_targets.html",
+      "templates/resume/list.html",
+      "templates/resume/personal.html",
+      "templates/resume/section.html",
+      "templates/status.html",
+      "templates/student_auth_flow_v4.html",
+      "templates/student_login_v4.html",
+      "templates/submission_detail.html",
+      "templates/teacher_evaluation_editor.html",
+      "templates/teacher_login_v4.html",
+      "templates/wanderers/home.html",
+      "templates/wrong_book.html"
+    ],
+    "ordinaryPageTemplates": [
+      "templates/achievements.html",
+      "templates/assessment_plan_editor.html",
+      "templates/assignment_detail_student.html",
+      "templates/assignment_detail_teacher.html",
+      "templates/assignment_wrong_summary.html",
+      "templates/blog.html",
+      "templates/career_path.html",
+      "templates/classroom_main_v4.html",
+      "templates/dashboard.html",
+      "templates/dashboard_teacher.html",
+      "templates/exam_editor.html",
+      "templates/exam_take.html",
+      "templates/feedback_review.html",
+      "templates/learning_path.html",
+      "templates/lesson_plan_editor.html",
+      "templates/lessondoc_editor.html",
+      "templates/manage/academic_final_materials.html",
+      "templates/manage/academic_overview.html",
+      "templates/manage/ai.html",
+      "templates/manage/archive_pipeline.html",
+      "templates/manage/assessment_plans.html",
+      "templates/manage/attendance_reports.html",
+      "templates/manage/classes.html",
+      "templates/manage/classrooms.html",
+      "templates/manage/course_schedule.html",
+      "templates/manage/course_schedule_editor.html",
+      "templates/manage/courses.html",
+      "templates/manage/exams.html",
+      "templates/manage/gongwen.html",
+      "templates/manage/lesson_plans.html",
+      "templates/manage/life_tips.html",
+      "templates/manage/material_hub.html",
+      "templates/manage/materials.html",
+      "templates/manage/me_credentials.html",
+      "templates/manage/offering_hub.html",
+      "templates/manage/offering_merge.html",
+      "templates/manage/offerings.html",
+      "templates/manage/polls.html",
+      "templates/manage/profile.html",
+      "templates/manage/semesters.html",
+      "templates/manage/signature_workflows.html",
+      "templates/manage/signatures.html",
+      "templates/manage/student_detail.html",
+      "templates/manage/system/academic_integrations.html",
+      "templates/manage/system/agent_keys.html",
+      "templates/manage/system/ai_usage.html",
+      "templates/manage/system/blog_crawler.html",
+      "templates/manage/system/blog_review.html",
+      "templates/manage/system/diagnostics.html",
+      "templates/manage/system/feedback.html",
+      "templates/manage/system/gongwen_integrations.html",
+      "templates/manage/system/monitor.html",
+      "templates/manage/system/organizations.html",
+      "templates/manage/system/password_resets.html",
+      "templates/manage/system/smart_classroom_integrations.html",
+      "templates/manage/system/users.html",
+      "templates/manage/system/wanderers.html",
+      "templates/manage/teacher_evaluations.html",
+      "templates/manage/teacher_schedule_query.html",
+      "templates/manage/textbooks.html",
+      "templates/manage/work_inbox.html",
+      "templates/material_render_shell.html",
+      "templates/material_viewer.html",
+      "templates/permission_denied.html",
+      "templates/points_shop.html",
+      "templates/profile.html",
+      "templates/report_card.html",
+      "templates/resume/applications.html",
+      "templates/resume/builder.html",
+      "templates/resume/home.html",
+      "templates/resume/job_targets.html",
+      "templates/resume/list.html",
+      "templates/resume/personal.html",
+      "templates/resume/section.html",
+      "templates/status.html",
+      "templates/student_auth_flow_v4.html",
+      "templates/student_login_v4.html",
+      "templates/submission_detail.html",
+      "templates/teacher_evaluation_editor.html",
+      "templates/teacher_login_v4.html",
+      "templates/wanderers/home.html",
+      "templates/wrong_book.html"
+    ],
+    "dynamicPageRoutesMissingFromGenerator": [
+      "/manage/me",
+      "/manage/me/appearance",
+      "/manage/me/email",
+      "/manage/me/notifications",
+      "/manage/me/private",
+      "/manage/me/security",
+      "/manage/me/settings"
+    ],
+    "exceptionalResponseTemplates": [
+      "error.html",
+      "session_expired.html",
+      "material_reader_unavailable.html"
+    ],
+    "unresolvedTemplates": [
+      "error.html",
+      "macros/lq/dialogs.html",
+      "manage/system/super_admin.html",
+      "material_reader_unavailable.html",
+      "partials/blog_button.html",
+      "partials/dashboard_agenda_widget.html",
+      "session_expired.html",
+      "teacher_register_v4.html"
+    ],
+    "storedStatuses": {
+      "已盘点": 196,
+      "迁移中": 12,
+      "未盘点": 17
+    },
+    "emptyStates": 216,
+    "emptyTests": 207,
+    "limitations": [
+      "AST routes and dependencies are source hints; helper-generated templates, external include_router prefixes and dynamic templates require manual verification.",
+      "An inventoried file is not a migrated or accepted page. Regeneration preserves manual state and before evidence.",
+      "Removed entries remain in retiredEntries for explicit retirement review.",
+      "Dynamic profile routes are explicitly resolved from their registration loop; the source-only generator is not a runtime route snapshot."
+    ]
+  },
+  "scopedReview": {
+    "date": "2026-10-27",
+    "scope": "好友与群聊重排、@/免打扰/浮窗协调、道印艺术/颁发/保存/历史查看",
+    "globalAcceptance": "pending",
+    "baselineCommit": "87cbc34c8057f21c1749cb31154b38a9b2b982d2",
+    "assetRevision": "81b15e1acb4c59a57dbab94c7e8ec8557117c7fc63c5a5e09ceda45ed7ed80d1",
+    "sourceSha256": {
+      "templates/partials/social_entry.html": "44fa42b2d9cf0eede1815a5f60d9efcc998208d288554cadd7dbcdbbe4fe70ee",
+      "static/css/lq/pages/social.css": "43eb721274339a2479cc152b377a730c6a0125e16e3c47a86e61cd840751574e",
+      "static/js/social/friends_modal.js": "afbf6b292776d001b5820c2372bb62a270defc9eb227ace13bf7de0ec61d429d",
+      "static/js/social/friends_discover.js": "612dfe4a2b99d8453c16cccc8bc6203c9212b3196e3575c97c857f7d7d9078c4",
+      "static/js/social/chat_sidebar.js": "43d6d1e27f86df9febb6660c1582e73d84332b05b398b360ca838586de656723",
+      "static/js/social/chat_composer.js": "85e5a8de18af345ebc68d1f5b52b0bf6c9472d952e6e3fafbf51faef58a420f1",
+      "static/js/social/chat_modal.js": "5ac8d80f039816d1036e2d478ec1b208164ea45433da63af8c2fcd3d97d0a88b",
+      "static/js/social/social_api.js": "c8acea0aa30336a4cded4d33258cf22be9705aa92dc30b564846f2e0c0017cae",
+      "static/js/social/social_client.js": "b77a383b8a62d9697de51cbe00d5bdceae46e1e750de155acdc40dda72ba9575",
+      "static/js/message_notification_policy.js": "2bb8653ce0678f45e04fbeb16905d216cb3be71b09a9d338e57b684111165b76",
+      "static/js/message_notification_policy.d.ts": "e1c592e674474d6d55d358cc76b238dc3fa7e4a9f4f0585a763ced4797078800",
+      "static/js/message_center_bell.js": "a40d017d295443d74a9b716096888a816e71be0bbd30694e02875a25ce548fcd",
+      "frontend/src/islands/message-center-sync.tsx": "cb7f04bfa853f734af6bb7556271429852a22b078ecd89ac295b246efdd58e06",
+      "frontend/src/lib/message-center-bell.ts": "6114400d7fb1dffd94d9881c0027e1db3eb8140a6ba98c5312a32e778b12e7f8",
+      "templates/partials/learning_certificate_reveal.html": "6c100641187ca92dbdf070a9974835a9041344479872b3d0acafdf2a69482dd3",
+      "static/css/lq/pages/certificate-reveal.css": "ba6bad157623d7ed6292b3f5885a039d2d186f40268b74ebdcea18e7823b5128",
+      "static/js/learning_certificate_art.js": "975c8ae150d5012d6c6562041fc33c040abec7fbe344acce0364a176cdface01",
+      "static/js/learning_certificate_reveal.js": "b57971a7f6ba7be6de5389ca785b7f8f2397bbf61256977da215fb11c07bfdbc",
+      "static/js/cultivation_panel.js": "1705edfd44ee5a351e594b22086c7664ffe8dbbeef82ce4d9e46289905e461a0",
+      "tools/ui/build_cultivation_awards.py": "c0760e818be673f92604d19d179c88adb73d00541ffafdeeee55d532c66a296f",
+      "tests/e2e/components/lq-social-redesign.spec.ts": "8056b77971cfaeefb82993ca00011b8c41a535a75db7dcbc861e1973e44b627c",
+      "tests/e2e/components/learning-certificate-reveal.spec.ts": "36ba6550a010c17a9ef7c55fa54e659c8942ca3fa7d986481c3525596eceee83",
+      "tests/lq/social-notification-policy.test.mjs": "07e7bb992f6a94a6a264579e9274c7df7694607ad378adc9b8be1be152a909a3",
+      "tests/lq/learning-certificate-art.test.mjs": "8a2214ac4c74dde1cb216fe5f12e03bb192835d082edcd9e600fd8890cba6c6f",
+      "frontend/src/islands/message-center-sync.test.ts": "efcfb9438c576bbacb1b5d44e637ce5990246da441980b1791adcca23b9ac66a"
+    },
+    "contractSha256": {
+      "docs/lq-component-contract-2026-09-27.md": "4cdf3484735c75e543ac707a5d27d53840f8e511c8a60a76d23c7722bd9b4a9d",
+      "docs/lq-components.md": "b8e642327a30f2613d2936412c341281eb2563eec948884c2348f14f72010b56"
+    },
+    "checks": {
+      "inventory:lq-modules": {
+        "passed": true,
+        "modules": 40,
+        "pageAdapters": 18,
+        "consumerFiles": 341
+      },
+      "check:lq-modules": {
+        "passed": true
+      },
+      "check:lq-size": {
+        "passed": true,
+        "sourceHashesVerified": true,
+        "gzipBytes": 18179,
+        "budgetBytes": 18432
+      },
+      "typecheck": {
+        "passed": true
+      },
+      "lint:lq": {
+        "passed": false,
+        "blockingCount": 7,
+        "blocking": [
+          {
+            "path": "templates/manage/materials.html",
+            "line": 0,
+            "rule": "reviewed-source-changed"
+          },
+          {
+            "path": "templates/manage/system/users.html",
+            "line": 0,
+            "rule": "reviewed-source-changed"
+          },
+          {
+            "path": "static/css/lq/components/cultivation-emblem.css",
+            "line": 14,
+            "rule": "literal-z-index"
+          },
+          {
+            "path": "static/css/lq/components/cultivation-emblem.css",
+            "line": 21,
+            "rule": "literal-color"
+          },
+          {
+            "path": "static/css/lq/components/cultivation-emblem.css",
+            "line": 27,
+            "rule": "literal-color"
+          },
+          {
+            "path": "static/css/lq/components/cultivation-emblem.css",
+            "line": 32,
+            "rule": "literal-color"
+          },
+          {
+            "path": "static/css/lq/components/search.css",
+            "line": 66,
+            "rule": "literal-z-index"
+          }
+        ],
+        "warningCount": 3660,
+        "exceptionCount": 15,
+        "baselineProof": [
+          {
+            "path": "static/css/lq/components/cultivation-emblem.css",
+            "gitDiffEmpty": true,
+            "normalizedSourceEqualsHEAD": true,
+            "headSha256": "2ae4a15a7a7bcd4cbf4a04cda36dc54073071f3dde5be0947d322cef86275ca5",
+            "workingSha256": "0a1b4e827b67d846a66718ed6286a4f951a1fc1674cbe8b32e37f0d5da56a1ee",
+            "findings": [
+              {
+                "path": "static/css/lq/components/cultivation-emblem.css",
+                "line": 14,
+                "rule": "literal-z-index",
+                "sameFindingAtHEAD": true
+              },
+              {
+                "path": "static/css/lq/components/cultivation-emblem.css",
+                "line": 21,
+                "rule": "literal-color",
+                "sameFindingAtHEAD": true
+              },
+              {
+                "path": "static/css/lq/components/cultivation-emblem.css",
+                "line": 27,
+                "rule": "literal-color",
+                "sameFindingAtHEAD": true
+              },
+              {
+                "path": "static/css/lq/components/cultivation-emblem.css",
+                "line": 32,
+                "rule": "literal-color",
+                "sameFindingAtHEAD": true
+              }
+            ]
+          },
+          {
+            "path": "static/css/lq/components/search.css",
+            "gitDiffEmpty": true,
+            "normalizedSourceEqualsHEAD": true,
+            "headSha256": "7745471889d2c540f4805fa0ec9df212d16a056d224df66b7e7f55875c9cb4f9",
+            "workingSha256": "1391a0a1496ab90e86de6034b6be77e5023cbe40998c55b8e5f2be7b449f6a9c",
+            "findings": [
+              {
+                "path": "static/css/lq/components/search.css",
+                "line": 66,
+                "rule": "literal-z-index",
+                "sameFindingAtHEAD": true
+              }
+            ]
+          },
+          {
+            "path": "templates/manage/materials.html",
+            "gitDiffEmpty": true,
+            "normalizedSourceEqualsHEAD": true,
+            "headSha256": "3b4c842426f52bd1394f406859787f4e9870b41aae980828e7f474967ef16487",
+            "workingSha256": "cebd6c90ab695989a6050dac0a7071d0d888fc0992b2ed8bfc2d469def726238",
+            "findings": [
+              {
+                "path": "templates/manage/materials.html",
+                "line": 0,
+                "rule": "reviewed-source-changed",
+                "reviewHashesAtHEAD": [
+                  "c64955bfd8878cd313492832cd6ee4620abd076addf69cd67867557e9e4bb0dc"
+                ],
+                "headAlreadyFailsReview": true
+              }
+            ]
+          },
+          {
+            "path": "templates/manage/system/users.html",
+            "gitDiffEmpty": true,
+            "normalizedSourceEqualsHEAD": true,
+            "headSha256": "abfbd30cb112723f00b4f071fff81b8b1aa0dea321a5d4c165392bfc08cc8173",
+            "workingSha256": "abfbd30cb112723f00b4f071fff81b8b1aa0dea321a5d4c165392bfc08cc8173",
+            "findings": [
+              {
+                "path": "templates/manage/system/users.html",
+                "line": 0,
+                "rule": "reviewed-source-changed",
+                "reviewHashesAtHEAD": [
+                  "d982c3bd9d80349cf4e0493635d53cdc7799f9b8a203e0b191cb32d5fba54148"
+                ],
+                "headAlreadyFailsReview": true
+              }
+            ]
+          }
+        ],
+        "note": "七项均在 HEAD 已存在；不修改审核哈希、不新增豁免、不提升全平台状态。HEAD 与工作树有正常 CRLF 差异，证明同时比较归一化源码、Git diff 和不可变 HEAD 命中。"
+      },
+      "probe:lq-layout": {
+        "run": false,
+        "reason": "本轮使用正式资源图的隔离定向浏览器场景；未扩大为全站登录/全角色探针。"
+      }
+    },
+    "tests": [
+      {
+        "files": [
+          "tests/e2e/components/lq-social-redesign.spec.ts"
+        ],
+        "passed": 8,
+        "command": "npx playwright test --config tests/e2e/components/playwright.config.ts tests/e2e/components/lq-social-redesign.spec.ts --output .codex-temp/social-redesign-playwright",
+        "coverage": "两标签、空分组、二层找人草稿/焦点、群成员权限菜单、触摸、@配额错误留稿、免打扰角标、事件重复与铃铛去重"
+      },
+      {
+        "files": [
+          "tests/e2e/components/learning-certificate-reveal.spec.ts"
+        ],
+        "passed": 9,
+        "coverage": "十级图案、有限动效、窄屏与 off/quiet/reduce、嵌套取消/焦点、原生保存/浏览器下载、透明 PNG、历史不改颁发状态"
+      },
+      {
+        "files": [
+          "tests/lq/social-notification-policy.test.mjs",
+          "frontend/src/islands/message-center-sync.test.ts"
+        ],
+        "passed": 6,
+        "coverage": "聊天浮窗归属与 event_type/event 兼容、好友申请保留、消息元数据规范化"
+      },
+      {
+        "files": [
+          "tests/lq/learning-certificate-art.test.mjs"
+        ],
+        "passed": 3,
+        "coverage": "十级资源映射、旧别名与路径边界、有限特效、文件名与长铭文"
+      },
+      {
+        "files": [
+          "tests/test_social_frontend_contract.py",
+          "tests/test_social_frontend_privacy.py"
+        ],
+        "passed": 27,
+        "coverage": "社交前端既有合同和公开呈现边界"
+      }
+    ],
+    "visualEvidence": {
+      "reviewed": true,
+      "social": [
+        ".codex-temp/social-redesign/friends-mobile-dark.png",
+        ".codex-temp/social-redesign/new-friend-mobile-dark.png",
+        ".codex-temp/social-redesign/group-menu-mobile-dark.png",
+        ".codex-temp/social-redesign/group-menu-desktop-light.png"
+      ],
+      "awards": [
+        ".codex-temp/cultivation-awards-preview/ten-awards.png",
+        ".codex-temp/award-reveal-e2e-final"
+      ],
+      "socialPerformanceSnapshots": {
+        "desktop-light": {
+          "backdropHosts": [
+            "lq-dialog__surface lq-modal lq-modal--full lq-glass lq-glass--thick social-dialog social-chat-dialog",
+            "lq-menu lq-glass"
+          ],
+          "longTasks": [],
+          "resourceRequests": 59,
+          "apiRequests": 9,
+          "assetRevision": "81b15e1acb4c59a57dbab94c7e8ec8557117c7fc63c5a5e09ceda45ed7ed80d1"
+        },
+        "mobile-dark": {
+          "backdropHosts": [
+            "lq-dialog__surface lq-modal lq-modal--full lq-glass lq-glass--thick social-dialog social-chat-dialog",
+            "lq-menu lq-glass"
+          ],
+          "longTasks": [],
+          "resourceRequests": 57,
+          "apiRequests": 7,
+          "assetRevision": "81b15e1acb4c59a57dbab94c7e8ec8557117c7fc63c5a5e09ceda45ed7ed80d1"
+        }
+      }
+    },
+    "limits": [
+      "浏览器仅使用正式构建资源与合成 HTTP/WS/Jinja 载荷，不连接真实业务数据库、SMTP 或 AI。后端权限/并发/邮件验证由独立业务测试负责。",
+      "亮暗与 360px 定向截图不代表所有授权角色、所有路由、完整宽度矩阵或所有主题验收。",
+      "长任务为空、采样模糊宿主数和请求数仅是这两个合成菜单场景观测，不是全平台性能结论。",
+      "源码清单仍为 pending/unknown；保留旧台账缺口、动态路由/源入口未知与继承的 lint 阻断。",
+      "截图和 Playwright 输出为本地验收证据，未将临时目录作为发布资源。生产部署与 Git 推送另行核验。"
+    ]
+  }
+}

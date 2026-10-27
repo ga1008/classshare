@@ -40,16 +40,18 @@ from .wanderer_actions_blog import policy_roll
 from .wanderer_actions_common import (
     ActionContext,
     behavior_on,
+    compact_memory,
     emoji_for,
     interest_score,
     outcome,
     record_action,
-    remember,
     run_turn,
     turn_parts,
 )
 from .wanderer_identity_service import STATUS_ACTIVE, build_wanderer_user_dict, load_wanderer
 from .wanderer_prompt_service import SCENE_GROUP_CHAT, SCENE_SOCIAL_CHAT
+from .wanderer_memory_service import HISTORY_DB_LIMIT, append_turn, invalidate_thread_cache, load_thread
+from .wanderer_social_context import context_block, conversation_text, friend_context
 from .wanderer_settings_service import daily_ai_calls, daily_cap, is_wanderer_runtime_enabled
 from .wanderer_social_triggers import (
     SOCIAL_BEHAVIOR,
@@ -73,7 +75,6 @@ WANDERER_STREAK_LIMIT = 2
 NUDGE_BACK_PROB = 0.04
 NUDGED_BACK_PROB = 0.5
 STAGGER_SECONDS = (5, 40)
-HEARD_LINES = 5
 COUNTED_TYPES = ("text", "media", "nudge")
 MENTION_ALL = "all"
 
@@ -170,6 +171,9 @@ def load_window(conn: Any, identity: str, key: str) -> Optional[dict[str, Any]]:
     except SocialError:
         return None
     rows = _recent_rows(conn, parsed["key"])
+    if parsed["type"] == "group":
+        joined_at = str(parsed["membership"].get("joined_at") or "")
+        rows = [row for row in rows if str(row.get("created_at") or "") >= joined_at]
     audience = participants(conn, parsed)
     speakers = {str(row["sender_identity"]) for row in rows}
     people = load_people(conn, speakers | set(audience[:ROSTER_LIMIT]) | {identity})
@@ -183,7 +187,8 @@ def load_window(conn: Any, identity: str, key: str) -> Optional[dict[str, Any]]:
     }
 
 
-def _gate(conn: Any, identity: str, window: dict[str, Any]) -> tuple[str, int]:
+def _gate(conn: Any, identity: str, window: dict[str, Any], *, require_new: bool = True,
+          check_streak: bool = True) -> tuple[str, int]:
     """(skip reason or '', how many messages may still be sent)."""
     parsed, key = window["parsed"], window["key"]
     if parsed["type"] == "dm":
@@ -191,9 +196,9 @@ def _gate(conn: Any, identity: str, window: dict[str, Any]) -> tuple[str, int]:
             return "not_friends", 0
     elif parsed["group"].get("dissolved_at"):
         return "dissolved", 0
-    if not window["new"]:
+    if require_new and not window["new"]:
         return "nothing_new", 0
-    if window["streak"] >= WANDERER_STREAK_LIMIT:
+    if check_streak and window["streak"] >= WANDERER_STREAK_LIMIT:
         return "wanderer_loop", 0
     quota = RATE_LIMIT - _sent_since(conn, identity, key, iso_before(seconds=RATE_WINDOW_SECONDS))
     if parsed["type"] == "group":
@@ -230,11 +235,6 @@ def _message_text(row: dict[str, Any]) -> str:
     return body or "[空消息]"
 
 
-def _context_lines(window: dict[str, Any], me: str) -> list[str]:
-    return [f"{_speaker(window['people'], row['sender_identity'], me)}：{_message_text(row)[:300]}"
-            for row in window["rows"] if row.get("message_type") != "system" or row.get("body")]
-
-
 def _roster(window: dict[str, Any], me: str) -> list[dict[str, Any]]:
     wanted = [me, *[row["sender_identity"] for row in reversed(window["rows"])], *window["audience"]]
     roster = []
@@ -267,12 +267,17 @@ def chat_scene(ctx: ActionContext, window: dict[str, Any], mode: str, mentioned:
                 + "要说就简短自然，可以只回表情（emoji）。" + more)
     else:
         task = "好友给你发来了消息。按你的性格决定回不回、怎么回：skip、只回表情（emoji）或回话。" + more
+    context = ""
+    if not group:
+        with ctx.connect() as conn:
+            context = context_block(friend_context(conn, ctx.wanderer, window["parsed"]["peer"]))
     return {
         "scene_type": SCENE_GROUP_CHAT if group else SCENE_SOCIAL_CHAT,
         "kind": "群聊" if group else "好友私聊",
         "title": f"群「{window['title']}」" if group else f"与 {window['title']} 的私聊",
         "meta": f"{len(window['new'])} 条新消息",
-        "context_lines": _context_lines(window, ctx.identity),
+        "conversation_text": conversation_text(window["rows"], window["people"], ctx.identity),
+        "friend_context": context,
         "tags": list(ctx.wanderer.get("interests") or []),
         "counterpart": _counterpart(window),
         "participants": _roster(window, ctx.identity),
@@ -324,9 +329,24 @@ async def post_parts(ctx: ActionContext, window: dict[str, Any], parts: list[str
         await social_push_service.push(audience, {"type": "typing", "conversation_key": key, "identity": ctx.identity})
         await ctx.sleep(typing_seconds(part))
         events: list = []
-        payload = {"body": part, "body_format": "text", "client_nonce": f"wanderer:{ctx.wanderer_id}:{anchor}:{index}"}
+        nonce = window.get("nonce_prefix") or f"wanderer:{ctx.wanderer_id}:{anchor}"
+        payload = {"body": part, "body_format": "text", "client_nonce": f"{nonce}:{index}"}
         try:
             with ctx.connect() as conn:
+                fresh = load_wanderer(conn, ctx.wanderer_id)
+                if (not is_wanderer_runtime_enabled(conn) or not fresh or fresh.get("status") != STATUS_ACTIVE
+                        or not behavior_on(fresh, SOCIAL_BEHAVIOR)):
+                    return index, "inactive"
+                current = load_window(conn, ctx.identity, key)
+                own_part = bool(index > 0 and current and current["rows"]
+                                and current["rows"][-1]["sender_identity"] == ctx.identity)
+                reason, _quota = (_gate(conn, ctx.identity, current, require_new=False, check_streak=not own_part)
+                                   if current else ("no_access", 0))
+                if (window.get("nonce_prefix") and index == 0 and current
+                        and [row["id"] for row in current["rows"]] != [row["id"] for row in window["rows"]]):
+                    return index, "conversation_changed"
+                if reason:
+                    return index, reason
                 send_message(conn, user, key, payload, events)
                 conn.commit()
         except (SocialError, RateLimitExceededError) as exc:
@@ -353,13 +373,23 @@ async def _maybe_nudge(ctx: ActionContext, window: dict[str, Any]) -> bool:
     return True
 
 
-def _heard(window: dict[str, Any], me: str) -> tuple[str, str]:
-    lines = [f"{_speaker(window['people'], row['sender_identity'], me)}：{_message_text(row)}"
-             for row in window["new"][-HEARD_LINES:]]
-    if window["type"] == "dm":
-        latest = window["new"][-1]["sender_identity"] if window["new"] else ""
-        return str((window["people"].get(latest) or {}).get("name") or "对方"), "\n".join(lines)
-    return "群聊", "\n".join(lines)
+async def _remember_exchange(ctx: ActionContext, window: dict[str, Any], said: tuple[str, ...] | list[str] = ()) -> None:
+    """Store each newly heard message intact instead of clipping a combined transcript to 4k."""
+    peer = window["parsed"].get("peer") or ""
+    key = f"social:{window['key']}"
+    entries = [(_speaker(window["people"], row["sender_identity"], ctx.identity), _message_text(row))
+               for row in window["new"]] + [(ctx.display_name, text) for text in said]
+    with ctx.connect() as conn:
+        invalidate_thread_cache(ctx.wanderer_id, key)
+        thread = load_thread(conn, ctx.wanderer_id, key)
+    # At most one optional compaction per exchange, before evicting older work memory.
+    # A failed/capped summary leaves the original mirror intact and never loops on a burst.
+    if thread["history"] and len(thread["history"]) + len(entries) >= HISTORY_DB_LIMIT - 6:
+        await compact_memory(ctx, key)
+    with ctx.connect() as conn:
+        for speaker, text in entries:
+            append_turn(conn, ctx.wanderer, key, who=speaker, text=text, counterpart_identity=peer)
+        conn.commit()
 
 
 def _target(window: dict[str, Any]) -> dict[str, Any]:
@@ -371,8 +401,7 @@ async def _skip(ctx: ActionContext, window: Optional[dict[str, Any]], reason: st
     target = _target(window) if window else {"target_type": "social_dm", "target_id": ""}
     record_action(ctx, "skip", **target, ai_calls=ai_calls, mood=mood, outcome="skipped", detail={"reason": reason})
     if window and heard and window["new"]:
-        peer = window["parsed"].get("peer") or ""
-        await remember(ctx, f"social:{window['key']}", heard=_heard(window, ctx.identity), counterpart_identity=peer)
+        await _remember_exchange(ctx, window)
     return [outcome("skip", "skipped", ai_calls=ai_calls, reason=reason)]
 
 
@@ -412,8 +441,7 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
     record_action(ctx, "social_message", **_target(window), content_preview=" / ".join(parts[:sent] or parts),
                   ai_calls=calls, mood=mood, outcome=status,
                   detail={"parts": sent, "mode": mode, "turn": action, "nudged": nudged, "error": error})
-    await remember(ctx, f"social:{window['key']}", said=parts[:sent], heard=_heard(window, ctx.identity),
-                   counterpart_identity=window["parsed"].get("peer") or "")
+    await _remember_exchange(ctx, window, said=parts[:sent])
     return [outcome("social_message", status, ai_calls=calls, parts=sent)]
 
 
@@ -445,6 +473,7 @@ def _mark_group_read(conn: Any, group_id: int, identity: str, last_id: int) -> N
 def _consider(conn: Any, wanderer: dict[str, Any], identity: str, group_id: int, rows: list[dict[str, Any]],
               wanderer_ids: set[str], streak: int) -> Optional[dict[str, Any]]:
     membership = load_membership(conn, group_id, identity) or {}
+    rows = [row for row in rows if str(row.get("created_at") or "") >= str(membership.get("joined_at") or "")]
     new = _new_rows(rows, as_int(membership.get("last_read_message_id")), identity)
     if not new:
         return None

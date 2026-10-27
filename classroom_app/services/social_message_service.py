@@ -17,13 +17,11 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from .message_center_service import create_social_notification
 from .rate_limit_service import RateLimitExceededError, calculate_retry_after_seconds
 from .social_common import (
     SocialError,
     add_event,
     as_int,
-    blocked_by,
     blocked_either,
     dumps,
     ensure_schema,
@@ -121,8 +119,10 @@ def message_for_nonce(conn: Any, user: dict, key: Any, nonce: str) -> Optional[d
 
 
 def _clean_mentions(conn: Any, me: str, parsed: dict[str, Any], mentions: Any) -> list[str]:
-    if parsed["type"] != "group" or not isinstance(mentions, (list, tuple)):
+    if not isinstance(mentions, (list, tuple)):
         return []
+    if parsed["type"] == "dm":
+        return [parsed["peer"]] if parsed["peer"] in mentions else []
     members = set(group_member_identities(conn, parsed["group_id"]))
     allowed_all = parsed["membership"]["role"] in ("owner", "admin")
     cleaned: list[str] = []
@@ -156,27 +156,6 @@ def _valid_reply(conn: Any, key: str, reply_to_id: Any) -> Optional[int]:
 # Send
 # ---------------------------------------------------------------------------
 
-def _notify_mentions(conn: Any, me: str, parsed: dict[str, Any], mentions: list[str], message: dict[str, Any]) -> None:
-    from ..db.savepoint import best_effort
-
-    if not mentions:
-        return
-    members = [item for item in group_member_identities(conn, parsed["group_id"]) if item != me]
-    targets = members if MENTION_ALL in mentions else [item for item in mentions if item in members]
-    sender_name = message["sender"]["name"]
-    group_name = str(parsed["group"]["name"] or "群聊")
-    for target in targets:
-        if me in blocked_by(conn, target):
-            continue  # someone who blocked the sender is never pinged by them
-        with best_effort(conn, "social_mention", log_prefix="[SOCIAL]"):
-            create_social_notification(
-                conn, recipient_identity=target, title=f"{sender_name} 在「{group_name}」中 @ 了你",
-                body_preview=message["body"][:140], link_url="/profile?section=notifications",
-                actor_identity=me, actor_display_name=sender_name, ref_id=f"mention:{message['id']}:{target}",
-                metadata={"conversation_key": parsed["key"], "message_id": message["id"]},
-            )
-
-
 def _wake_wanderers(conn: Any, parsed: dict[str, Any], sender: str) -> None:
     """Register 散修 reaction tasks (social doc §10); never sinks the send."""
     from ..db.savepoint import best_effort
@@ -187,10 +166,15 @@ def _wake_wanderers(conn: Any, parsed: dict[str, Any], sender: str) -> None:
 
 
 def push_message(events: Optional[list], conn: Any, parsed: dict[str, Any], message: dict[str, Any]) -> None:
+    from .social_notification_service import muted_map
+
     if events is None:
         return
-    for viewer in participants(conn, parsed):
-        add_event(events, [viewer], {"type": "message", "message": for_viewer(message, viewer)})
+    viewers = participants(conn, parsed)
+    muted = muted_map(conn, parsed, viewers)
+    for viewer in viewers:
+        add_event(events, [viewer], {"type": "message", "message": {
+            **for_viewer(message, viewer), "muted": muted.get(viewer, False)}})
 
 
 def _validated_body(payload: dict[str, Any]) -> tuple[str, str]:
@@ -205,12 +189,15 @@ def _validated_body(payload: dict[str, Any]) -> tuple[str, str]:
 
 def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], events: Optional[list] = None) -> dict[str, Any]:
     from . import social_media_service as media_service
+    from .social_notification_service import consume_mention, mention_quota, notify_message
 
     me = user_identity(user)
     parsed = require_access(conn, me, key)
     nonce = clean_nonce(payload)
     existing = _existing_by_nonce(conn, me, nonce)
     if existing:
+        if existing["conversation_key"] != parsed["key"]:
+            raise SocialError("该发送标识已用于其他会话，请重新发送。", 409)
         return serialize_messages(conn, me, [existing])[0]
     _require_can_send(conn, me, parsed)
     body, body_format = _validated_body(payload)
@@ -222,9 +209,22 @@ def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], event
         raise SocialError(f"一条消息最多 {media_service.MAX_ATTACHMENTS} 个附件。", 400)
     if not body.strip() and not raw_tokens and not lan_specs:
         raise SocialError("消息内容不能为空。", 400)
+    serialize_on(conn, "social-send", [me])
+    existing = _existing_by_nonce(conn, me, nonce)
+    if existing:
+        if existing["conversation_key"] != parsed["key"]:
+            raise SocialError("该发送标识已用于其他会话，请重新发送。", 409)
+        return serialize_messages(conn, me, [existing])[0]
     _enforce_rate_limit(conn, me)
+    serialize_on(conn, "social-attention", [parsed["key"]])
+    # Membership, manager role, friendship or a block may change while this
+    # sender waits behind another transaction. Authorise the write under the
+    # conversation lock, using fresh rows rather than the earlier snapshot.
+    parsed = require_access(conn, me, parsed["key"])
+    _require_can_send(conn, me, parsed)
     tokens = media_service.redeem_tokens(conn, me, raw_tokens)
     mentions = _clean_mentions(conn, me, parsed, payload.get("mentions"))
+    quota = consume_mention(conn, user) if mentions else mention_quota(conn, user)
     message_id = insert_message(
         conn, key=parsed["key"], sender=me, body=body, body_format=body_format,
         message_type="media" if (tokens or lan_specs) and not body.strip() else "text",
@@ -235,10 +235,10 @@ def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], event
     if lan_specs:
         media_service.attach_lan_media(conn, message_id, me, parsed["peer"], lan_specs)
     message = serialize_messages(conn, me, [load_message_row(conn, message_id)])[0]
-    _notify_mentions(conn, me, parsed, mentions, message)
+    notify_message(conn, me, parsed, message)
     _wake_wanderers(conn, parsed, me)
     push_message(events, conn, parsed, message)
-    return message
+    return {**message, "mention_quota": quota}
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +246,12 @@ def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], event
 # ---------------------------------------------------------------------------
 
 def recall_message(conn: Any, user: dict, message_id: int, events: Optional[list] = None) -> dict[str, Any]:
+    from .social_notification_service import recall_notifications
     me = user_identity(user)
+    row = load_message_row(conn, message_id)
+    if not row:
+        raise SocialError("消息不存在。", 404)
+    serialize_on(conn, "social-attention", [row["conversation_key"]])
     row = load_message_row(conn, message_id)
     if not row:
         raise SocialError("消息不存在。", 404)
@@ -262,23 +267,29 @@ def recall_message(conn: Any, user: dict, message_id: int, events: Optional[list
     if not is_manager and (utc_now() - sent).total_seconds() > RECALL_WINDOW_SECONDS:
         raise SocialError("超过 2 分钟的消息不能撤回。", 409)
     conn.execute("UPDATE social_messages SET recalled_at = ? WHERE id = ?", (now_iso(), int(row["id"])))
+    recall_notifications(conn, int(row["id"]), parsed["key"])
     add_event(events, participants(conn, parsed),
               {"type": "message_recalled", "id": int(row["id"]), "conversation_key": parsed["key"]})
     return {"id": int(row["id"]), "recalled": True}
 
 
 def mark_read(conn: Any, user: dict, key: Any, last_message_id: Any, events: Optional[list] = None) -> dict[str, Any]:
+    from .social_notification_service import settle_read
     me = user_identity(user)
     parsed = require_access(conn, me, key)
     ensure_schema(conn)
+    serialize_on(conn, "social-attention", [parsed["key"]])
     latest = conn.execute("SELECT MAX(id) AS n FROM social_messages WHERE conversation_key = ?",
                           (parsed["key"],)).fetchone()
     target = min(max(0, as_int(last_message_id)), as_int(latest["n"]) if latest else 0)
+    settle_read(conn, me, parsed["key"], target)
     if parsed["type"] == "group":
         conn.execute(
             "UPDATE social_group_members SET last_read_message_id = ? WHERE id = ? AND last_read_message_id < ?",
             (target, int(parsed["membership"]["id"]), target),
         )
+        add_event(events, [me], {"type": "read", "conversation_key": parsed["key"], "reader": me,
+                                 "last_message_id": target})
         return {"conversation_key": parsed["key"], "last_message_id": target}
     conn.execute(
         "INSERT INTO social_dm_reads (conversation_key, reader_identity, last_read_message_id, updated_at) "
@@ -290,6 +301,8 @@ def mark_read(conn: Any, user: dict, key: Any, last_message_id: Any, events: Opt
     )
     add_event(events, [parsed["peer"]], {"type": "read", "conversation_key": parsed["key"], "reader": me,
                                          "last_message_id": target})
+    add_event(events, [me], {"type": "read", "conversation_key": parsed["key"], "reader": me,
+                             "last_message_id": target})
     return {"conversation_key": parsed["key"], "last_message_id": target}
 
 
@@ -306,8 +319,14 @@ def _nudge_target(conn: Any, me: str, parsed: dict[str, Any], target: Any) -> st
 
 def nudge(conn: Any, user: dict, key: Any, target: Any = None, events: Optional[list] = None) -> dict[str, Any]:
     """拍一拍: a stored ``nudge`` message plus a ``nudge`` push; once per pair per minute."""
+    from .social_notification_service import notify_message
     me = user_identity(user)
     parsed = require_access(conn, me, key)
+    _require_can_send(conn, me, parsed)
+    # Same global order as text/media sends: sender, then conversation.
+    _enforce_rate_limit(conn, me)
+    serialize_on(conn, "social-attention", [parsed["key"]])
+    parsed = require_access(conn, me, parsed["key"])
     _require_can_send(conn, me, parsed)
     whom = _nudge_target(conn, me, parsed, target)
     recent = conn.execute(
@@ -317,11 +336,11 @@ def nudge(conn: Any, user: dict, key: Any, target: Any = None, events: Optional[
     ).fetchone()
     if recent is not None:
         raise SocialError("拍得太频繁了，休息一下吧。", 429, retry_after=NUDGE_WINDOW_SECONDS)
-    _enforce_rate_limit(conn, me)
     names = load_people(conn, [me, whom])
     body = f"{(names.get(me) or {}).get('name', '')} 拍了拍 {(names.get(whom) or {}).get('name', '')}"
     message_id = insert_message(conn, key=parsed["key"], sender=me, body=body, message_type="nudge", mentions=[whom])
     message = serialize_messages(conn, me, [load_message_row(conn, message_id)])[0]
+    notify_message(conn, me, parsed, message)
     _wake_wanderers(conn, parsed, me)
     push_message(events, conn, parsed, message)
     add_event(events, [whom], {"type": "nudge", "conversation_key": parsed["key"], "from": me})

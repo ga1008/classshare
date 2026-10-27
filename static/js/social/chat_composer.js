@@ -2,7 +2,7 @@
  * Chat composer: shared LQ Composer DOM (createComposer + enhanceComposer
  * with Enter = send, Shift+Enter = newline, IME composition guarded by the
  * shared owner) plus the social intents: emoji, paste/attach (≤ 9), voice
- * recording, a minimal Markdown toolbar, @ mentions in groups, per-file
+ * recording, a minimal Markdown toolbar, structured @ mentions, per-file
  * progress, quota hints and the LAN-first path for large DM files.
  *
  * Drafts are kept per conversation in memory; a failed send keeps the text,
@@ -29,10 +29,11 @@ export function createChatComposer({ client, onSent }) {
     const tray = el('ul', { class: 'social-tray', role: 'list', 'aria-label': '待发送附件', hidden: true });
     const voice = el('div', { class: 'social-voice', role: 'status', hidden: true });
     const notice = el('p', { class: 'social-composer__notice', role: 'alert', hidden: true });
+    const mentionHint = el('p', { class: 'social-hint social-composer__mention-hint', hidden: true, 'aria-live': 'polite' });
     const root = createComposer('composer', {
         label: '消息内容', placeholder: '输入消息，Enter 发送，Shift+Enter 换行', enter: 'send', maxlength: BODY_MAX,
         attachment: '添加附件', emoji: '表情', sendLabel: '发送',
-    }, { content: [reply, mention, voice, tray, notice] });
+    }, { content: [reply, mention, mentionHint, voice, tray, notice] });
     form.append(root);
     const input = root.querySelector('[data-lq-composer-input]');
     const tools = root.querySelector('.lq-composer__tools');
@@ -40,10 +41,11 @@ export function createChatComposer({ client, onSent }) {
     const imageInput = el('input', { type: 'file', multiple: true, accept: 'image/*', hidden: true, 'aria-hidden': 'true', tabindex: '-1' });
     form.append(fileInput, imageInput);
     const imageButton = lqButton({ icon: 'image', variant: 'ghost', aria: '发送图片', attrs: { 'data-tool': 'image' } });
+    const mentionButton = lqButton({ label: '@', variant: 'ghost', aria: '@ 提醒对方', attrs: { 'data-tool': 'mention' } });
     const voiceButton = lqButton({ icon: 'circle', variant: 'ghost', aria: '录音', attrs: { 'data-tool': 'voice', 'aria-pressed': 'false' } });
     const mdTools = [['bold', '加粗', 'bold'], ['italic', '斜体', 'italic'], ['code', '代码', 'code'], ['link', '链接', 'link']]
         .map(([icon, label, tool]) => lqButton({ icon, variant: 'ghost', aria: label, attrs: { 'data-tool': tool } }));
-    tools.append(imageButton, voiceButton, el('span', { class: 'social-composer__divider', 'aria-hidden': 'true' }), ...mdTools);
+    tools.append(imageButton, voiceButton, mentionButton, el('span', { class: 'social-composer__divider', 'aria-hidden': 'true' }), ...mdTools);
     const emojiAnchor = el('span', { class: 'social-composer__emoji-anchor' });
     form.append(emojiAnchor);
     let owner = null;
@@ -51,12 +53,13 @@ export function createChatComposer({ client, onSent }) {
 
     const state = {
         ctx: null, queue: [], replyTo: null, busy: false, nonce: null, mentions: new Map(),
-        drafts: new Map(), quota: null, lastTyping: 0, recorder: null, voiceTimer: 0, abort: null,
+        drafts: new Map(), quota: null, mentionQuota: null, composing: false, lastTyping: 0, recorder: null, voiceTimer: 0, abort: null,
     };
 
     /* ------------------------------------------------------------ helpers */
     const sync = () => {
         owner?.set({ hasContent: state.queue.length > 0, busy: state.busy, disabled: !state.ctx?.writable });
+        mentionButton.disabled = state.busy || !state.ctx?.writable;
     };
 
     function showNotice(text) {
@@ -113,7 +116,7 @@ export function createChatComposer({ client, onSent }) {
 
     /* ------------------------------------------------------------ mentions */
     function mentionQuery() {
-        if (state.ctx?.type !== 'group') return null;
+        if (!state.ctx?.writable || state.composing) return null;
         const before = input.value.slice(0, input.selectionStart);
         const match = /(^|\s)@([^\s@]{0,20})$/.exec(before);
         return match ? match[2] : null;
@@ -121,13 +124,18 @@ export function createChatComposer({ client, onSent }) {
 
     function renderMentions() {
         const query = mentionQuery();
+        const selected = collectMentions(input.value).length;
+        mentionHint.hidden = query === null && !selected;
+        const quota = state.mentionQuota;
+        const remaining = quota ? (quota.limit === null ? '当前账号不限次数' : `今天还可 @ ${quota.remaining} 次，每天 ${quota.limit} 次`) : '学生每天 3 次，教师 20 次，管理员不限';
+        mentionHint.textContent = `选择 @ 对象后，发送时会邮件提醒并附上几条上下文。${remaining}。`;
         if (query === null) { mention.hidden = true; return; }
         const members = (state.ctx.members || []).filter((member) => member.identity !== client.me);
         const options = members
             .filter((member) => !query || `${member.nickname || ''}${member.name}`.toLowerCase().includes(query.toLowerCase()))
             .slice(0, MENTION_LIMIT)
             .map((member) => ({ label: member.nickname || member.name, identity: member.identity }));
-        if (['owner', 'admin'].includes(state.ctx.myRole) && (!query || '全体成员'.includes(query))) options.unshift({ label: '全体成员', identity: 'all' });
+        if (state.ctx.type === 'group' && ['owner', 'admin'].includes(state.ctx.myRole) && (!query || '全体成员'.includes(query))) options.unshift({ label: '全体成员', identity: 'all' });
         mention.replaceChildren(...options.map((option) => lqButton({
             label: `@${option.label}`, variant: 'ghost', size: 'sm',
             attrs: { 'data-mention': option.identity, 'data-mention-label': option.label },
@@ -140,14 +148,21 @@ export function createChatComposer({ client, onSent }) {
         const before = input.value.slice(0, caret).replace(/@([^\s@]{0,20})$/, `@${label} `);
         input.value = before + input.value.slice(caret);
         input.setSelectionRange(before.length, before.length);
-        state.mentions.set(label, identity);
+        state.mentions.set(identity, label);
         mention.hidden = true;
         input.focus();
         input.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
     function collectMentions(body) {
-        return [...new Set([...state.mentions].filter(([label]) => body.includes(`@${label}`)).map(([, identity]) => identity))];
+        return [...state.mentions].filter(([, label]) => {
+            const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return new RegExp(`(^|\\s)@${escaped}(?=\\s|$|[，。！？、])`, 'u').test(body);
+        }).map(([identity]) => identity);
+    }
+
+    function rememberDraft() {
+        if (state.ctx) state.drafts.set(state.ctx.key, { body: input.value, mentions: [...state.mentions] });
     }
 
     /* ------------------------------------------------------------ voice */
@@ -229,6 +244,7 @@ export function createChatComposer({ client, onSent }) {
 
     async function postMessage(key, payload) {
         const message = await socialApi.send(key, payload);
+        if (message.mention_quota) state.mentionQuota = message.mention_quota;
         onSent?.(message);
         return message;
     }
@@ -251,7 +267,7 @@ export function createChatComposer({ client, onSent }) {
 
     async function send() {
         const ctx = state.ctx;
-        if (!ctx?.writable || state.busy) return;
+        if (!ctx?.writable || state.busy || state.composing) return;
         const body = input.value;
         if (!body.trim() && !state.queue.length) return;
         if (body.length > BODY_MAX) { showNotice(`消息不能超过 ${BODY_MAX} 字。`); return; }
@@ -291,6 +307,7 @@ export function createChatComposer({ client, onSent }) {
             void loadQuota();
         } catch (error) {
             if (error?.name !== 'AbortError') showNotice(errorText(error, '发送失败，请重试。'));
+            if (error?.status === 429 && collectMentions(body).length) void socialApi.mentionQuota().then((quota) => { state.mentionQuota = quota; renderMentions(); }).catch(() => {});
             state.queue = state.queue.filter((item) => !item.sent);
         } finally {
             state.busy = false;
@@ -316,14 +333,16 @@ export function createChatComposer({ client, onSent }) {
     /* ------------------------------------------------------------ events */
     form.addEventListener('submit', (event) => { event.preventDefault(); void send(); });
     input.addEventListener('input', (event) => {
-        renderMentions();
-        if (state.ctx) state.drafts.set(state.ctx.key, input.value);
+        if (!event.isComposing) renderMentions();
+        rememberDraft();
         const now = Date.now();
         if (event.isTrusted && state.ctx && input.value && now - state.lastTyping > TYPING_THROTTLE_MS) {
             state.lastTyping = now;
             client.send({ type: 'typing', conversation_key: state.ctx.key });
         }
     });
+    input.addEventListener('compositionstart', () => { state.composing = true; mention.hidden = true; });
+    input.addEventListener('compositionend', () => { state.composing = false; renderMentions(); rememberDraft(); });
     input.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && !mention.hidden) { event.preventDefault(); event.stopPropagation(); mention.hidden = true; }
     });
@@ -350,6 +369,11 @@ export function createChatComposer({ client, onSent }) {
         if (event.target.closest('[data-lq-composer-emoji]')) { toggleEmoji(event.target.closest('button')); return; }
         const tool = event.target.closest('[data-tool]')?.dataset.tool;
         if (tool === 'image') imageInput.click();
+        else if (tool === 'mention') {
+            if (!state.ctx?.writable || state.busy) return;
+            const before = input.value.slice(0, input.selectionStart);
+            wrapSelection(before && !/\s$/.test(before) ? ' @' : '@', '', '');
+        }
         else if (tool === 'voice') void toggleVoice();
         else if (tool === 'bold') wrapSelection('**', '**', '粗体');
         else if (tool === 'italic') wrapSelection('*', '*', '斜体');
@@ -377,17 +401,22 @@ export function createChatComposer({ client, onSent }) {
         setConversation(ctx) {
             if (state.busy && state.ctx?.key !== ctx.key) state.abort?.abort();
             const switched = state.ctx?.key !== ctx.key;
+            const becameWritable = ctx.writable && !state.ctx?.writable;
+            if (switched) rememberDraft();
             state.ctx = ctx;
+            if (ctx.mentionQuota) state.mentionQuota = ctx.mentionQuota;
             if (switched) {
-                input.value = state.drafts.get(ctx.key) || '';
+                const draft = state.drafts.get(ctx.key);
+                input.value = draft?.body || '';
                 state.queue = [];
                 state.nonce = null;
-                state.mentions.clear();
+                state.mentions = new Map(draft?.mentions || []);
                 setReply(null);
                 showNotice('');
                 renderTray();
             }
             input.placeholder = ctx.writable ? '输入消息，Enter 发送，Shift+Enter 换行' : (ctx.readOnlyReason || '无法发送消息');
+            if (becameWritable) showNotice('');
             if (!ctx.writable) showNotice(ctx.readOnlyReason || '');
             sync();
             input.dispatchEvent(new Event('input', { bubbles: true }));

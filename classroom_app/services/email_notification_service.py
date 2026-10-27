@@ -62,6 +62,7 @@ SYSTEM_NOTIFICATION_CATEGORIES = {
 }
 
 EMAIL_ELIGIBLE_CATEGORIES = {
+    "social",
     "signature_workflow",
     "approval_workflow",
     "assignment",
@@ -216,6 +217,7 @@ EMAIL_PROVIDER_PRESETS = {
 }
 
 EMAIL_CATEGORY_ACTION_LABELS = {
+    "social": "打开聊天",
     "private_message": "查看教师私信",
     "collaboration": "查看小组成绩",
     "assignment": "查看作业",
@@ -230,6 +232,7 @@ EMAIL_CATEGORY_ACTION_LABELS = {
 }
 
 EMAIL_CATEGORY_COPY = {
+    "social": "有人在好友或群聊中 @ 了你。下方附有这条消息附近的对话，登录后可以继续交流。",
     "private_message": "老师给你发来了私信，可以查看消息并继续沟通。",
     "collaboration": "小组作业成绩已公布，可以查看综合表现分和反馈。",
     "assignment": "老师发布了新的学习任务，建议尽早查看要求和截止安排。",
@@ -372,6 +375,9 @@ def notification_email_required(
     actor_role = str(payload.get("actor_role") or "").strip().lower()
     ref_type = str(payload.get("ref_type") or "")
     ref_id = str(payload.get("ref_id") or "")
+    if normalized_category == "social":
+        return (recipient_role in {"student", "teacher"} and ref_type == "social_message"
+                and metadata.get("event_type") == "social_mention" and metadata.get("email_authorized") is True)
     if normalized_category == "ai_feedback":
         # Older queued notifications predate explicit issue metadata.
         parts = ref_id.split(":", 2)
@@ -915,6 +921,10 @@ def _platform_fallback_config(conn, category: str, primary_teacher_id: Optional[
 
 
 def _resolve_sender_teacher_id(conn, payload: dict[str, Any]) -> Optional[int]:
+    if payload.get("category") == "social":
+        # Social reminders belong to the configured platform sender, never an
+        # arbitrary participant's personal SMTP account.
+        return platform_sender_teacher_id() or None
     if payload.get("category") == "signature_workflow":
         configured_sender = _safe_int(os.getenv("SIGNATURE_NOTIFICATION_SENDER_TEACHER_ID", "0"))
         if configured_sender:
@@ -1053,6 +1063,13 @@ def _payload_metadata(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _email_detail_lines(payload: dict[str, Any]) -> list[tuple[str, str]]:
     category = str(payload.get("category") or "").strip().lower()
+    if category == "social":
+        metadata = _payload_metadata(payload)
+        context = metadata.get("context")
+        if not isinstance(context, list):
+            return []
+        return [(_normalize_text(item.get("name"), limit=40), _normalize_text(item.get("text"), limit=600))
+                for item in context[-4:] if isinstance(item, dict)]
     if category not in {"submission", "ai_feedback"}:
         return []
     metadata = _payload_metadata(payload)
@@ -1101,7 +1118,7 @@ def _build_email_content(payload: dict[str, Any], recipient_name: str, *, notifi
     lines.append(f"{action_label}：{action_url}")
     lines.extend([
         "",
-        "这封邮件由通知中心自动发送。普通通知仅保留站内提醒，重要与系统类通知才会进入邮件队列。",
+        "这封邮件由通知中心自动发送。普通聊天仅在站内提醒；主动 @ 提醒和指定的重要业务事件会发送邮件。",
     ])
     text_body = "\n".join(lines)
     safe_site = html.escape(str(SITE_DISPLAY_NAME or "Lanshare"))
@@ -1139,7 +1156,7 @@ def _build_email_content(payload: dict[str, Any], recipient_name: str, *, notifi
       <a href="{safe_action_url}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#4f46e5;color:#ffffff;text-decoration:none;font-size:14px;font-weight:800;">{safe_action_label}</a>
       <p style="margin:22px 0 0;font-size:12px;line-height:1.7;color:#64748b;">若按钮无法打开，请复制此链接到浏览器：<br><span style="word-break:break-all;">{safe_action_url}</span></p>
     </div>
-    <p style="margin:14px 2px 0;font-size:12px;line-height:1.7;color:#64748b;">普通通知仅保留站内提醒，重要与系统类通知才会发送邮件。</p>
+    <p style="margin:14px 2px 0;font-size:12px;line-height:1.7;color:#64748b;">普通聊天仅在站内提醒；主动 @ 提醒和指定的重要业务事件会发送邮件。</p>
     </div>
 </body>
 </html>"""
@@ -1583,7 +1600,21 @@ def process_email_job(job: dict[str, Any]) -> str:
                 (job.get("notification_id"),),
             ).fetchone()
             payload = dict(row) if row else {}
-            if not row or not notification_email_required(
+            if row and payload.get("category") == "social":
+                from .social_notification_service import refresh_email_payload
+
+                payload = refresh_email_payload(conn, payload) or {}
+                if payload:
+                    recipient = _load_recipient_email(conn, role=str(payload["recipient_role"]),
+                                                      user_pk=int(payload["recipient_user_pk"]))
+                    if recipient:
+                        text_body, html_body = _build_email_content(payload, recipient["name"],
+                                                                   notification_id=int(row["id"]))
+                        job = {**job, "body_text": text_body, "body_html": html_body,
+                               "recipient_email": recipient["email"]}
+                    else:
+                        payload = {}
+            if not row or not payload or not notification_email_required(
                 payload.get("category"), payload.get("severity"), payload=payload,
             ):
                 conn.execute(

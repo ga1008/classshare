@@ -107,6 +107,25 @@ class WandererMemoryTest(WandererDbTestCase):
         self.assertEqual(len(thread["history"]), 3)
         self.assertEqual(thread["summary"], "")
 
+    def test_short_history_compacts_before_working_window_evicts_it(self):
+        with self.connect() as conn:
+            wanderer = self.wanderer(conn, "atai")
+            self._fill(conn, wanderer, "social:dm:student:7", 34)
+            thread = memory.load_thread(conn, wanderer["id"], "social:dm:student:7")
+        self.assertTrue(memory.needs_compaction(thread))
+        self.assertEqual(thread["history"][0]["text"], "第0句话")
+
+    def test_stale_summary_cannot_discard_concurrent_arrival(self):
+        with self.connect() as conn:
+            wanderer = self.wanderer(conn, "atai")
+            memory.append_turn(conn, wanderer, "social:dm:student:7", who="self", text="旧消息")
+            snapshot = memory.load_thread(conn, wanderer["id"], "social:dm:student:7")
+            memory.append_turn(conn, wanderer, "social:dm:student:7", who="对方", text="生成摘要期间的新消息")
+            result = memory.compact_thread(conn, wanderer, "social:dm:student:7", lambda _: "只有旧消息的摘要",
+                                           expected_thread=snapshot)
+        self.assertEqual(result["summary"], "")
+        self.assertEqual(result["history"][-1]["text"], "生成摘要期间的新消息")
+
     def test_loaded_threads_are_copies(self):
         with self.connect() as conn:
             wanderer = self.wanderer(conn, "abu")

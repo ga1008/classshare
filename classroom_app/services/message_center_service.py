@@ -1641,6 +1641,11 @@ def _insert_notification(conn, payload: dict[str, Any]) -> int:
         ),
         engine=db_engine,
     )
+    # A caller's explicit mail veto needs no outbox work. The schema default is
+    # already not_required; avoiding a savepoint/update per ordinary chat
+    # recipient keeps large group fan-out bounded to inbox writes.
+    if payload.get("email_notification_allowed") is False:
+        return notification_id
     savepoint_started = False
     try:
         conn.execute("SAVEPOINT notification_email_enqueue")

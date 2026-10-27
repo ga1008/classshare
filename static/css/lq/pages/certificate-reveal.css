@@ -1,0 +1,27 @@
+/* Collectible art is an authored content slot. LQ owns the viewer, caption,
+   focus ring, save dialog and their materials; these rules only compose them. */
+.learning-certificate-backdrop { position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; overflow: auto; overscroll-behavior: contain; }
+.learning-certificate-shell { position: relative; display: grid; justify-items: center; width: min(540px, 100%); gap: 0; margin: auto; }
+/* Initial focus announces the noninteractive viewer. Tab reaches the medal,
+   whose real action retains the shared visible focus ring. */
+.learning-certificate-shell:focus { outline: none; }
+.learning-certificate-scene { position: relative; width: min(500px, 100%, calc(100dvh - 215px)); aspect-ratio: 1; isolation: isolate; }
+.learning-certificate-medal.lq-domain-choice { position: relative; z-index: 1; display: block; width: 100%; padding: 0; border-radius: 50%; }
+.learning-certificate-medal > img { display: block; width: 100%; height: auto; pointer-events: none; }
+.learning-certificate-caption { display: grid; justify-items: center; gap: 6px; max-width: 100%; padding: 14px 24px; border-radius: var(--ls-r-xl); text-align: center; }
+.learning-certificate-caption h3 { margin: 0; font-size: clamp(18px, 4vw, 23px); line-height: 1.3; }
+.learning-certificate-caption p { margin: 0; max-width: 100%; overflow-wrap: anywhere; font-size: 14px; }
+.learning-certificate-caption small { font-size: 12px; }
+/* Graphic colors describe each stage's artwork, never control or panel paint. */
+.learning-certificate-aura { position: absolute; inset: -9%; border-radius: 50%; pointer-events: none; mask-image: radial-gradient(ellipse, #000 30%, transparent 74%); background: radial-gradient(ellipse, color-mix(in srgb, var(--award-color) 42%, transparent), transparent 66%); }
+.learning-certificate-orbit { position: absolute; inset: 8%; border: 1px solid color-mix(in srgb, var(--award-light) 40%, transparent); border-radius: 50%; opacity: .28; pointer-events: none; }
+.learning-certificate-orbit--outer { inset: 3%; border-style: dashed; opacity: .2; }
+.learning-certificate-constellation { position: absolute; inset: 0; pointer-events: none; }
+.learning-certificate-constellation i { position: absolute; width: 5px; height: 5px; background: var(--award-light); opacity: .4; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); }
+.learning-certificate-scene:is([data-tier="1"], [data-tier="2"], [data-tier="3"]) .learning-certificate-orbit--outer { visibility: hidden; }
+.learning-certificate-scene:is([data-tier="7"], [data-tier="8"], [data-tier="9"], [data-tier="10"]) .learning-certificate-aura { inset: -18%; }
+.learning-certificate-scene:is([data-tier="8"], [data-tier="9"], [data-tier="10"]) .learning-certificate-constellation i { width: 9px; height: 9px; }
+.learning-certificate-scene[data-tier="10"] .learning-certificate-aura { background: radial-gradient(ellipse at 36% 35%, #e4b3fd44, transparent 52%), radial-gradient(ellipse at 65% 62%, #7dd3fc55, transparent 50%), radial-gradient(ellipse, #f9cf7077, transparent 67%); }
+@media (max-width: 480px) { .learning-certificate-backdrop { padding: 12px; } .learning-certificate-caption { padding: 12px 16px; } }
+@media (max-height: 480px) { .learning-certificate-shell { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); width: min(680px, 100%); gap: 12px; } .learning-certificate-scene { width: min(100%, calc(100dvh - 40px)); } }
+@media (forced-colors: active) { .learning-certificate-aura, .learning-certificate-orbit, .learning-certificate-constellation { display: none; } .learning-certificate-medal img { forced-color-adjust: none; } }

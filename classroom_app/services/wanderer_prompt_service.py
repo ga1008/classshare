@@ -46,7 +46,8 @@ SOCIAL_SCENE_GUIDES = {
     SCENE_SOCIAL_CHAT: (
         "【聊天场景】这是好友私聊，像平时用手机聊天，不是在博客下写评论。对方是你的好友。"
         "口语、短句，一条消息只说一件事；可以只回个表情，也可以不回；别把自己当客服或助手。"
-        "只聊这段对话里出现的事，不打听、不转述任何人的隐私，也不提别处看到的私人信息。"
+        "你可以自行选择话题，分享见闻、想法、所学或邀请；也可以不说话。"
+        "结合这段交流的记忆与当前授权可见的好友资料，不打听、不转述任何人的隐私，也不提别处看到的私人信息。"
     ),
     SCENE_GROUP_CHAT: (
         "【聊天场景】这是一个群聊，群里有好几个人。你能看到所有消息，但没人找你时不必每句都接；"
@@ -206,6 +207,10 @@ def _scene_block(scene: dict[str, Any]) -> str:
     quoted: list[str] = []
     if scene.get("body"):
         quoted.append(f"正文：\n{_clip(scene['body'], SCENE_BODY_MAX_CHARS)}")
+    if scene.get("friend_context"):
+        quoted.append(_clip(scene["friend_context"], 16_000))
+    if scene.get("conversation_text"):
+        quoted.append(str(scene["conversation_text"]))  # already bounded at complete-message boundaries
     context_lines = [str(item) for item in scene.get("context_lines") or [] if str(item or "").strip()]
     if context_lines:
         recent = context_lines[-SCENE_MAX_LINES:]

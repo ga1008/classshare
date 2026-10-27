@@ -22,24 +22,24 @@ data-social-markdown="{{ asset_url('markdown_runtime') }}"
 aria-haspopup="dialog" aria-label="打开好友"
 {%- endset -%}
 {%- if variant == 'legacy' -%}
-<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-slate social-entry" title="好友与群聊" {{ social_attrs }}>
+<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--tone-slate social-entry relative" title="好友与群聊" {{ social_attrs }}>
     <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('users') }}</span>
     <span class="app-topbar-action__text">
         <strong>好友</strong>
         <small>私聊与群聊</small>
     </span>
-    <span class="app-topbar-action__count app-topbar-action__count--danger" data-social-unread hidden>0</span>
+    <span class="lq-badge absolute -top-1 -right-1" data-tone="danger" data-social-unread hidden>0</span>
 </button>
 {%- elif variant == 'manage' -%}
-<button type="button" class="lq-btn lq-btn--ghost lq-btn--sm social-entry" title="好友" {{ social_attrs }}>{{ lq_icon('users') }}<span class="lq-manage-utility-label">好友</span><span class="lq-badge" data-tone="danger" data-social-unread hidden>0</span></button>
+<button type="button" class="lq-btn lq-btn--ghost lq-btn--sm social-entry relative" title="好友" {{ social_attrs }}>{{ lq_icon('users') }}<span class="lq-manage-utility-label">好友</span><span class="lq-badge absolute -top-1 -right-1" data-tone="danger" data-social-unread hidden>0</span></button>
 {%- elif variant == 'classroom' -%}
-<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-nav-link social-entry" title="好友与群聊" {{ social_attrs }}>
+<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-nav-link social-entry relative" title="好友与群聊" {{ social_attrs }}>
     <span class="cw-nav-icon" aria-hidden="true">{{ lq_icon('users') }}</span>
     <span class="cw-nav-copy"><strong>好友</strong></span>
-    <span class="app-topbar-action__count app-topbar-action__count--danger" data-social-unread hidden>0</span>
+    <span class="lq-badge absolute -top-1 -right-1" data-tone="danger" data-social-unread hidden>0</span>
 </button>
 {%- else -%}
-<button type="button" class="lq-btn lq-btn--soft lq-btn--md social-entry" {{ social_attrs }}>{{ lq_icon('users') }}<span>好友</span><span class="lq-badge" data-tone="danger" data-social-unread hidden>0</span></button>
+<button type="button" class="lq-btn lq-btn--soft lq-btn--md social-entry relative" {{ social_attrs }}>{{ lq_icon('users') }}<span>好友</span><span class="lq-badge absolute -top-1 -right-1" data-tone="danger" data-social-unread hidden>0</span></button>
 {%- endif %}
 <script type="module" src="{{ asset_url('js/social/social_client.js') }}"></script>
 {%- endif -%}

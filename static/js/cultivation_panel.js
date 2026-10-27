@@ -501,6 +501,27 @@ function renderPath(progress, ctx) {
                 parts.length ? el('small', { text: parts.join(' · ') }) : null,
             ]),
         ].filter(Boolean);
+        if (stage.status === 'passed' && stage.certificate?.id) {
+            const viewAward = el('button', {
+                type: 'button', class: 'lq-btn lq-btn--glass lq-btn--sm', 'data-lq-component': 'button',
+                'data-view-certificate': String(stage.certificate.id), text: '查看道印',
+                onclick: async () => {
+                    viewAward.disabled = true;
+                    try {
+                        const { showLearningCertificate } = await import('./learning_certificate_reveal.js');
+                        if (!viewAward.isConnected || viewAward.closest('[hidden],[aria-hidden="true"]')) return;
+                        const viewer = showLearningCertificate({ ...stage.certificate,
+                            course_name: ctx.courseName || stage.certificate.course_name || '课堂',
+                            student_name: ctx.userName || stage.certificate.student_name || '',
+                        }, { trigger: viewAward });
+                        ctx.cleanups.push(() => viewer?.destroy());
+                    } catch (error) { showToast(error.message || '道印暂时无法展示，请重试。', 'error'); }
+                    finally { viewAward.disabled = false; }
+                },
+            });
+            children.find(child => child.classList.contains('lq-cultivation__detail-copy'))
+                ?.append(el('div', { class: 'lq-cultivation__action-row' }, [viewAward]));
+        }
         detail.replaceChildren(...children);
     };
 

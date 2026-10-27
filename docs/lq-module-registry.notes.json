@@ -110,7 +110,7 @@
         "LqAvatar"
       ]
     },
-    "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem=\"off\"。"
+    "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem=\"off\"。 2026-10-27 四种顶栏好友入口共用 data-social 钩子与 LQ Badge，数字放入口右上角；免打扰消息仍纳入未读。角标是显示状态，不能承载读取确认或权限逻辑。"
   },
   "skeleton": {
     "title": "Skeleton 骨架屏",
@@ -180,7 +180,7 @@
     "summary": "消息/评论输入外壳：content 槽（附件/引用）+ 无框 textarea + actions（tools 槽与发送）；焦点环落在整个外壳；`enhanceComposer` 处理自动增高、Enter 策略、固定底部与键盘避让，不发请求。",
     "params": "`label, name, value, placeholder, required, maxlength, disabled, busy, hasContent, enter(newline|send), attachment, emoji, sendLabel, submit_name/value`。",
     "states": "disabled / busy（readonly + 发送禁用）/ hasContent / data-lq-composer-fixed。",
-    "rules": "领域已有输入 owner（如私信）可只复用槽位结构与 CSS，不重复调用 enhanceComposer；发送、草稿、冷却由业务控制器持有。"
+    "rules": "领域已有输入 owner（如私信）可只复用槽位结构与 CSS，不重复调用 enhanceComposer；发送、草稿、冷却由业务控制器持有。 2026-10-27 私信/群聊的 @ 元数据、按会话保存的姓名映射和文本草稿、异步加载只读态、配额提示由 social/chat_composer.js 与 chat_modal.js 持有。IME 不触发候选或发送；429 保留草稿，允许移除 @ 后发送普通消息；网络发送中不切会话。配额与授权仍以服务器为准。"
   },
   "emoji-picker": {
     "title": "EmojiPicker 表情选择器",
@@ -208,13 +208,13 @@
     "title": "Collapsible 折叠",
     "layer": "component",
     "summary": "原生 details/summary 的共享外观与过渡；`lq-filter-more` 用于筛选栏「更多」。",
-    "rules": "保留浏览器的展开、焦点和键盘行为。"
+    "rules": "保留浏览器的展开、焦点和键盘行为。 2026-10-27 社交页用 createCollapsible/enhanceCollapsible 组织申请、好友与推荐；只渲染非空分组，好友首次默认展开，更新列表保留展开状态。分组是 data-lq-surface=\"embedded\"，不产生额外材质；summary 保留共享内边距和原生键盘/焦点。"
   },
   "menus": {
     "title": "Menu / Popover 菜单与浮层",
     "layer": "component",
     "summary": "由 LQ.layer 托管的 portal 菜单：原生条目 + 作者内容槽，精细指针悬停、触摸点击、键盘同一 owner；`lq-popover` 为 raised 边界采样。",
-    "rules": "菜单条目不套按钮胶囊；关闭成功后才执行领域动作。"
+    "rules": "菜单条目不套按钮胶囊；关闭成功后才执行领域动作。 2026-10-27 群成员管理改为行尾右对齐的 ellipsis 入口，createMenu/bindMenu 把菜单 portal 到共享层栈，桌面点击与触摸同一 owner。列表重绘或侧栏销毁必须释放绑定；权限与破坏性动作确认仍由领域持有，不能由隐藏菜单代替服务端授权。"
   },
   "nav-menu": {
     "title": "NavMenu 导航菜单",
@@ -231,19 +231,19 @@
     "layer": "component",
     "summary": "模态与非模态浮层外壳：raised Surface、scrim、头/体/脚槽；`openDialog` 与 `confirm/choose` 返回 Promise，取消不执行分支；关闭可被未保存草稿否决。",
     "states": "open / closing（可取消）/ busy 否决关闭 / nested child。",
-    "rules": "浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。"
+    "rules": "浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。 2026-10-27 好友页「+新朋友」复用二层 Dialog，取消后恢复触发器，已发申请与找人草稿由同一持久 owner 保留。道印点击后 createDialog/openDialog 创建 parentLayer 为 Viewer 的保存子层，取消只关闭子层、焦点回到道印；写入期间否决关闭与重复保存。"
   },
   "layers": {
     "title": "Layer 层栈",
     "layer": "component",
     "summary": "`getLayerSystem()` 唯一持有层级、焦点、背景 inert、滚动锁、嵌套顺序与关闭；可移植领域弹层显式注册。",
-    "rules": "禁止第二个焦点栈或滚动锁。"
+    "rules": "禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。"
   },
   "toast": {
     "title": "Toast 通知",
     "layer": "component",
     "summary": "raised 填充 + thick 实时模糊（栈上限 3），有 shell 顶栏时下移；图标为成对 tone 小胶囊。",
-    "rules": "全站通过 `LQ.toast` / `showToast` 发出；不自建 toast 容器。"
+    "rules": "全站通过 `LQ.toast` / `showToast` 发出；不自建 toast 容器。 2026-10-27 社交聊天浮窗唯一归 SocialClient：message_notification_policy.js 识别 category=social 且 metadata.event_type（兼容 event）为 social_message/social_mention；React message-center-sync 与旧 message_center_bell 继续更新总未读但不重复弹聊天。免打扰仅抑制该会话浮窗，保留消息中心与好友角标；当前可见会话抑制浮窗，其他会话仍可提示；WS 重复消息去重；刷新铃铛通过 900ms 合并并传 allowPopup:false，避免请求风暴。好友申请不在聊天排除规则内。"
   },
   "status": {
     "title": "Status / SaveStatus / Alert / Conflict",
@@ -285,7 +285,7 @@
   "workspace": {
     "title": "Workspace Split / Viewer",
     "layer": "component",
-    "summary": "可拖分栏与文档查看器外壳；iframe/表单原位，移动端操作可达。"
+    "summary": "可拖分栏与文档查看器外壳；iframe/表单原位，移动端操作可达。 2026-10-27 破境道印沿用 LQ Viewer 层管理，主体是透明圆形奖章内容槽，不绘制另一套玻璃面板。铭文使用 raised Surface，交互道印使用共享 Choice/Button 焦点态，保存用子 Dialog；LQ 持有外壳动效，奖章内容内部仅有限 transform/opacity 庆祝。"
   },
   "shells": {
     "title": "Shells 页面壳（Topbar / Sidebar / Dock / Editor / PageLayout / FAB / Crumbs / Steps）",
@@ -328,14 +328,30 @@
     "social": {
       "title": "好友 / 群聊浮窗 static/css/lq/pages/social.css",
       "layer": "composite",
-      "summary": "2026-10-27 好友与群组（docs/social-friends-groups-2026-10-27.md §9）：顶栏「好友」入口 templates/partials/social_entry.html（四种呈现：LQ 顶栏 / 旧顶栏 / 管理壳 / 课堂顶栏，同一组 data-social-* 钩子），static/js/social/social_client.js 全局单例（/ws/social、徽标、在线缓存、标题闪烁），首次点击才懒加载 social_ui.js → friends_modal.js（好友/新朋友/群组/添加 + 黑名单浮窗）与 chat_modal.js（会话列表 | 消息区 + 输入区 | 资料侧栏）；social.css 由 social_dom.ensureSocialStyles() 按入口上的哈希 URL 懒链接，不依赖 LQ 页族开关。 2026-10-27 第二轮（§12）：浮窗增加「推荐」选项卡；「添加」页顶部为境界解锁阶梯（friends_discover.js：LQ Steps + Alert，tier 0 只显示鼓励性锁定态、不出搜索框），scope.ai_search 时出现「AI 找人」；人员行抽到 social_people.js（姓名是 Row primary 链接按钮，带 data-user-card）。全站「个人信息面板」：social_client.js 只绑一个委托点击监听（user_card_trigger.js，无 MutationObserver），首次点击实名头像 /api/profile/avatar?role=&user_id= 或 [data-user-card=\"role:pk\"] 才懒加载 user_card.js（createSocialDialog → createDomainModal）；能力雷达用 static/js/ability_radar.js（与 partials/ability_radar.html 同 DOM）。",
-      "params": "复用：Dialog(createDialog + createDomainModal，LQ.layer 持有栈/焦点/滚动锁)、Tabs(navigation.createTabs/tabs，pill)、Button(createComponent)、Choice 复合卡(lq-domain-choice + data-lq-shape=surface：好友卡、会话行)、Avatar/Badge/Chip、Content row/list/empty/bubble、Field/Input/Textarea/Checkbox/Switch(createForm)、Composer(createComposer + enhanceComposer enter=send，IME 守卫在共享 owner)、EmojiPicker、Toast、confirm、共享灯箱 data-ls-lightbox、MarkdownRuntime(untrusted)。；§12：Steps(shells.createShell steps，icon 代替序号)、Alert(status.createStatus)、Card flat(推荐卡，primary=姓名触发面板)、Chip filter(AI 示例)、Field input + Button submit(AI 找人)、Dialog md(个人信息面板，data-user-card-panel)。触发声明：data-user-card=\"student:12\"；data-user-card=\"off\" 子树退出；[data-blog-avatar]、交互元素内的头像不触发。",
-      "states": "好友卡 data-online=true：glass 变体 + translateY(-2px) + --lq-material-accent 背光；false：ghost 变体、下沉 1px、头像去饱和；reduced-motion / data-lq-motion=off 取消位移与动画，glass off / 高对比改为主色描边，forced-colors 用 Highlight。聊天：日期分隔、系统/拍一拍居中行、撤回占位、补传中/过期占位、局域网直传 Chip、已读/已送达、输入中、拍一拍时 .social-chat 抖动（不动浮层 surface 的 presence 动效）。≤1100px 侧栏变浮层，≤760px 会话列表变浮层（不透明主题面 + 主题墨）。 §12：阶梯 complete/current/upcoming；tier 0 锁定 Alert；推荐空态/锁定态/404「暂未开放」；AI 找人 忙碌/结果/无结果/403/429/404；面板 读取中/404「资料暂不可查看」/错误，关系 self/friend/pending_out/pending_in/blocked/none(can_add true|false+原因)，隐藏修为不显示境界、各课境界与雷达；≤520px 面板头部居中、操作纵排（对话框本身变底部 sheet）。",
-      "rules": "页面 CSS 只做网格、间距、尺寸与上述状态；玻璃上的文字只读 --lq-material-ink/muted/accent，状态色读 --ls-tone-*-fg；不声明控件背景/边框/滤镜，不新增 backdrop-filter。原生 button 内容块（图片格、引用）声明 data-lq-shape=surface 退出胶囊几何。不要在页面里再写第二套气泡/输入框；改 Bubble/Composer 合同时同时回归本页。 §12 隐私：任何前端文件不得出现「侧写」，推荐只显示接口 hint 与一句中性说明（tests/test_social_frontend_privacy.py 守卫）；匿名不穿透——课堂讨论行 data-user-card=off，博客只在 kind real/wanderer 的作者浮层里给「个人资料」按钮，笔名/匿名永不挂面板；不劫持已有链接/按钮里的头像。"
+      "summary": "2026-10-27 好友/群聊入口与用户信息面板见 docs/social-friends-groups-2026-10-27.md；本轮方案见 docs/social-awards-redesign-2026-10-27.md。顶栏四种入口共用 social_client.js 单例、/ws/social、未读角标和在线缓存；首次使用懒加载 UI 与 social.css。主窗只保留「好友」「群组」；好友页按申请/已添加/推荐展示非空分组，好友默认展开；「+新朋友」在黑名单左边打开二层找人浮窗，保留境界阶梯、解锁 scope、关键词搜索、AI 找人和已发申请。群聊天仍保留会话/消息/资料三栏与响应式折叠，成员动作移到行尾共享菜单。全站个人信息面板保持 user_card_trigger 委托监听与 user_card.js 懒加载；能力雷达保持 Jinja/JS 同 DOM。",
+      "params": "复用：Dialog(createDialog + createDomainModal，LQ.layer 持有栈/焦点/滚动锁)、Tabs(navigation.createTabs/tabs，pill)、Button(createComponent)、Choice 复合卡(lq-domain-choice + data-lq-shape=surface：好友卡、会话行)、Avatar/Badge/Chip、Content row/list/empty/bubble、Field/Input/Textarea/Checkbox/Switch(createForm)、Composer(createComposer + enhanceComposer enter=send，IME 守卫在共享 owner)、EmojiPicker、Toast、confirm、共享灯箱 data-ls-lightbox、MarkdownRuntime(untrusted)。；§12：Steps(shells.createShell steps，icon 代替序号)、Alert(status.createStatus)、Card flat(推荐卡，primary=姓名触发面板)、Chip filter(AI 示例)、Field input + Button submit(AI 找人)、Dialog md(个人信息面板，data-user-card-panel)。触发声明：data-user-card=\"student:12\"；data-user-card=\"off\" 子树退出；[data-blog-avatar]、交互元素内的头像不触发。 本轮增加 Collapsible(createCollapsible/enhanceCollapsible，embedded 分组)、Menu(createMenu/bindMenu，portal)、DM/group structured mentions、GET /mention-quota 与 GET/PATCH /conversations/{key}/preferences。服务端消息列表附 muted/mention_quota，发送结果附 mention_quota，WS message.muted 与 conversation_preferences/read 同步本地状态；站内通知深链 /profile?social_conversation=<encoded key>。",
+      "states": "好友卡 data-online=true：glass 变体 + translateY(-2px) + --lq-material-accent 背光；false：ghost 变体、下沉 1px、头像去饱和；reduced-motion / data-lq-motion=off 取消位移与动画，glass off / 高对比改为主色描边，forced-colors 用 Highlight。聊天：日期分隔、系统/拍一拍居中行、撤回占位、补传中/过期占位、局域网直传 Chip、已读/已送达、输入中、拍一拍时 .social-chat 抖动（不动浮层 surface 的 presence 动效）。≤1100px 侧栏变浮层，≤760px 会话列表变浮层（不透明主题面 + 主题墨）。 §12：阶梯 complete/current/upcoming；tier 0 锁定 Alert；推荐空态/锁定态/404「暂未开放」；AI 找人 忙碌/结果/无结果/403/429/404；面板 读取中/404「资料暂不可查看」/错误，关系 self/friend/pending_out/pending_in/blocked/none(can_add true|false+原因)，隐藏修为不显示境界、各课境界与雷达；≤520px 面板头部居中、操作纵排（对话框本身变底部 sheet）。 本轮：分组非空/为空隐藏/展开状态重绘保留；找人二层取消/焦点回归/IME/异步过期响应丢弃；@ 配额不足 429 留草稿、删除 @ 可普通发送；DM/group mute 保留未读与中心、仅抑制浮窗；WS 重复帧去重；聊天加载时只读、发送中防切换；门户菜单普通成员只显示有权动作。360px 深色触摸和桌面亮色已做限定浏览器验收。",
+      "rules": "页面 CSS 只做网格、间距、尺寸与上述状态；玻璃上的文字只读 --lq-material-ink/muted/accent，状态色读 --ls-tone-*-fg；不声明控件背景/边框/滤镜，不新增 backdrop-filter。原生 button 内容块（图片格、引用）声明 data-lq-shape=surface 退出胶囊几何。不要在页面里再写第二套气泡/输入框；改 Bubble/Composer 合同时同时回归本页。 §12 隐私：任何前端文件不得出现「侧写」，推荐只显示接口 hint 与一句中性说明（tests/test_social_frontend_privacy.py 守卫）；匿名不穿透——课堂讨论行 data-user-card=off，博客只在 kind real/wanderer 的作者浮层里给「个人资料」按钮，笔名/匿名永不挂面板；不劫持已有链接/按钮里的头像。 聊天浮窗只能由 SocialClient 发出；bell 的 shared message_notification_policy 保留 category/metadata 后排除 social_message/social_mention，不排除好友申请。未读更新合并刷新铃铛并禁 popup。配额/邮箱发送/免打扰持久化与成员权限以服务器为准，前端不冒充成功。推荐空分组不制造空面板，好友列表和二层找人有各自取消合同。"
+    },
+    "certificate-reveal": {
+      "title": "道印颁发与历史查看 static/css/lq/pages/certificate-reveal.css",
+      "layer": "composite",
+      "summary": "learning_certificate_art.js 唯一映射阶段 SVG 与导出；learning_certificate_reveal.js 管理初次颁发和 showLearningCertificate 历史查看；cultivation_panel.js 只为通过且有证书记录的阶段提供「查看道印」。模板 partials/learning_certificate_reveal.html 与动态历史 DOM 使用同样内容结构。",
+      "params": "LQ createDomainModal(type=viewer)/createDialog/openDialog/createDomainButton；主奖章原生 button + choice，铭文 raised Surface。十阶段 SVG，透明 PNG 固定 1600×1850，内含课程/姓名/证号/日期；文件名净化与长文本折行。",
+      "states": "首次颁发/已见本地记录/服务端标记失败重试；历史查看不发 revealed、不写 seen；点击奖章打开收藏子层；系统 picker 取消、编码失败/可重试、写入中禁重复、无 picker 时浏览器下载；关闭/销毁取消动画与监听。窄屏与横屏布局、亮暗、quiet/off/reduced-motion/forced-colors。",
+      "rules": "图形颜色与有限庆祝是内容槽；不替换 LQ 外壳材质、焦点栈、滚动锁或进出场。读取已授权 progress 中证书；历史查看不得误标新的未读道印。系统 picker 必须在真实点击激活内调用，随后才异步编码；临时 URL 定时释放。正式构建隔离浏览器验证只覆盖本业务，不等于全平台验收。"
     }
   },
   "_tools": {
     "probe": "tools/ui/probe_layout_readability.cjs —— 隔离合成环境里按亮/暗外观遍历路由（可带点击步骤），统计\"有底无内边距 / 板块相贴 / 文字对比不足 / 浮层无磨砂\"四类候选；npm run probe:lq-layout。 2026-10-24 增加 capsule 检查：胶囊里文字超过两行，或嵌套的带底色元素离圆角端小于半个圆角。",
     "adaptive-fills": "tools/ui/adaptive_light_fills.py —— 把遗留 CSS 与模板内联 <style> 里写死的浅色底（含 --ls-c-* 调色板常量）改成 light-dark(原值, 同色相深色玻璃)，并把只为亮色写的语义色文字改成自适应；亮色外观逐像素不变，旧浏览器回退原值；幂等；npm run fix:lq-light-fills。"
+  },
+  "cultivation-emblem": {
+    "title": "Cultivation emblem 境界标志与道印图案身份",
+    "layer": "component",
+    "summary": "既有头像境界标志由 static/js/cultivation_emblems.js 与 components/cultivation-emblem.css 提供；本轮不修改该共享组件。2026-10-27 道印大徽章在 static/img/cultivation/awards/ 扩展相同十阶段图案身份，tools/ui/build_cultivation_awards.py 生成 SVG；展示与 PNG 保存统一消费 learning_certificate_art.js 的映射，避免展示/导出两张不同图。",
+    "params": "道印顺序 qi_awakening/qi_refining/foundation/application_seed/golden_core/practical_mastery/systems_thinking/nascent_soul/independent_path/mentor_heart；兼容 self_directed 与 teacher_guiding。主色依次天蓝、青绿、青、翡翠、金、橙、靛、紫、玫红、暖金。",
+    "states": "原头像标志状态保持；道印内容庆祝粒子 6–24、基础时长 1900–5140ms，单次有限播放；高阶段增加外环、扩散范围与多色光晕。quiet/off/reduced-motion 停止庆祝；forced-colors 隐藏装饰光效。",
+    "rules": "奖章 SVG/Canvas 是可导出的图形内容，不作为控件或面板材质；操作与信息区继续使用 LQ。图形色只描绘境界身份；不能将奖章特效推广成共享控件第二套动效。原组件颜色/z-index lint 候选本轮未豁免，见 2026-10-27 全平台审计。"
   }
 }

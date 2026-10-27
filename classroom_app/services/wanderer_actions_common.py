@@ -138,6 +138,8 @@ async def run_turn(
     if ctx.capped:
         return _capped_result()
     with ctx.connect() as conn:
+        from .wanderer_memory_service import invalidate_thread_cache
+        invalidate_thread_cache(ctx.wanderer_id, thread_key)
         system_prompt = build_system_prompt(conn, ctx.wanderer, scene=scene, thread_key=thread_key)
         conn.commit()  # persists the knowledge use_count bump
     message = "\n\n".join(part for part in (user_message, TURN_USER_MESSAGE) if part)
@@ -192,13 +194,16 @@ async def compact_memory(ctx: ActionContext, thread_key: str) -> bool:
     if ctx.capped:
         return False
     with ctx.connect() as conn:
-        text = thread_history_text(load_thread(conn, ctx.wanderer_id, thread_key))
+        from .wanderer_memory_service import invalidate_thread_cache
+        invalidate_thread_cache(ctx.wanderer_id, thread_key)
+        snapshot = load_thread(conn, ctx.wanderer_id, thread_key)
+        text = thread_history_text(snapshot)
     summary = await summarize_text(ctx.conn_factory, ctx.wanderer, text, ai_caller=ctx.ai_caller)
     ctx.ai_calls += 1
     if not summary:
         return False
     with ctx.connect() as conn:
-        compact_thread(conn, ctx.wanderer, thread_key, lambda _history: summary)
+        compact_thread(conn, ctx.wanderer, thread_key, lambda _history: summary, expected_thread=snapshot)
         conn.commit()
     return True
 

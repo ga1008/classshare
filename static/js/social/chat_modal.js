@@ -57,7 +57,7 @@ export function createChatModal(client, { openFriends }) {
     const layout = el('div', { class: 'social-chat', 'data-list-open': 'false', 'data-side-open': 'false' }, [listPane, main, side]);
     const dialog = createSocialDialog({
         id: 'social-chat', title: '聊天', size: 'full', body: layout, className: 'social-chat-dialog',
-        onClose: () => { client.focus(null); active = null; },
+        onClose: () => { client.focus(null); sidebar.clear(); active = null; },
     });
 
     const conversations = new Map();
@@ -245,12 +245,14 @@ export function createChatModal(client, { openFriends }) {
 
     /* ------------------------------------------------------------ select */
     async function select(key) {
+        if (composer.isBusy()) { notify('消息正在发送，请稍候再切换会话。', 'info'); return; }
         const item = ensureConversation(key);
         const type = key.startsWith('group:') ? 'group' : 'dm';
         active = {
             key, type, peer: type === 'dm' ? peerOf(key, client.me) : null, groupId: type === 'group' ? Number(key.slice(6)) : null,
-            messages: [], hasMore: false, peerRead: 0, detail: null, readSent: 0,
+            messages: [], hasMore: false, peerRead: 0, detail: null, readSent: 0, muted: Boolean(item.muted), mentionQuota: null,
         };
+        composer.setConversation({ key, type, writable: false, readOnlyReason: '正在读取会话…' });
         layout.dataset.type = type;
         profileButton.dataset.userCard = type === 'dm' && active.peer ? active.peer : 'off';
         profileButton.hidden = type !== 'dm' || !active.peer;
@@ -273,6 +275,9 @@ export function createChatModal(client, { openFriends }) {
             current.hasMore = Boolean(page.has_more);
             current.peerRead = Number(page.peer_read_message_id) || 0;
             current.detail = detail;
+            current.muted = Boolean(page.muted);
+            current.mentionQuota = page.mention_quota || null;
+            client.setMuted(key, current.muted);
             if (detail) { heading.textContent = detail.name; dialog.title.textContent = detail.name; }
             renderMessages();
             scrollToBottom();
@@ -292,10 +297,13 @@ export function createChatModal(client, { openFriends }) {
         if (!active) return;
         if (active.type === 'dm') {
             const writable = friends.has(active.peer);
-            composer.setConversation({ key: active.key, type: 'dm', peer: active.peer, writable, readOnlyReason: writable ? '' : '你们已不是好友，无法继续发送消息。' });
+            const friend = friends.get(active.peer);
+            composer.setConversation({ key: active.key, type: 'dm', peer: active.peer, members: friend ? [friend] : [], mentionQuota: active.mentionQuota,
+                writable, readOnlyReason: writable ? '' : '你们已不是好友，无法继续发送消息。' });
         } else {
             composer.setConversation({
                 key: active.key, type: 'group', members: active.detail?.members || [], myRole: active.detail?.my_role,
+                mentionQuota: active.mentionQuota,
                 writable: Boolean(active.detail), readOnlyReason: active.detail ? '' : '你不在该群聊中。',
             });
         }
@@ -303,7 +311,7 @@ export function createChatModal(client, { openFriends }) {
 
     function showSidebar() {
         if (!active) return;
-        if (active.type === 'dm') sidebar.showDm(active.peer, { key: active.key, writable: friends.has(active.peer) });
+        if (active.type === 'dm') sidebar.showDm(active.peer, { key: active.key, writable: friends.has(active.peer), muted: client.mutedKeys.has(active.key) });
         else if (active.detail) sidebar.showGroup(active.detail, { key: active.key });
         else sidebar.clear();
     }
@@ -393,9 +401,20 @@ export function createChatModal(client, { openFriends }) {
             else refreshListSoon();
         }),
         client.on('read', ({ conversation_key: key, reader, last_message_id: last }) => {
-            if (active?.key !== key || reader === client.me) return;
+            if (reader === client.me) { refreshListSoon(); return; }
+            if (active?.key !== key) return;
             active.peerRead = Math.max(active.peerRead, Number(last) || 0);
             updateReceipts();
+        }),
+        client.on('conversation_preferences', ({ conversation_key: key, muted }) => {
+            const item = conversations.get(key);
+            if (item) item.muted = Boolean(muted);
+            renderList();
+            if (active?.key === key) {
+                active.muted = Boolean(muted);
+                const input = sidebar.element.querySelector('#social-dm-muted, #social-group-muted');
+                if (input) input.checked = Boolean(muted);
+            }
         }),
         client.on('typing', ({ conversation_key: key, identity }) => {
             if (active?.key !== key || identity === client.me) return;

@@ -36,8 +36,16 @@ describe('message-center-sync helpers', () => {
         actorDisplayName: '张老师',
         categoryLabel: '通知',
         title: '新的作业反馈',
+        category: '',
+        metadata: {},
       },
     });
+  });
+
+  it('retains social attention routing metadata for the shared popup policy', () => {
+    const result = normalizeMessageCenterResponse({ latest_unread: { id: 42, category: 'social', metadata: { event_type: 'social_message', conversation_key: 'group:2' } } });
+    expect(result.latestUnread?.category).toBe('social');
+    expect(result.latestUnread?.metadata.event_type).toBe('social_message');
   });
 
   it('normalizes event summary payloads defensively', () => {

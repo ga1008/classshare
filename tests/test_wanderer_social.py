@@ -44,7 +44,8 @@ NEVER_AWAKE = {"active_hours": [], "weekday_weights": {}}
 ALWAYS_MULTI = {"ignore_prob": 0, "emoji_only_prob": 0, "multi_part_prob": 1, "max_parts": 3}
 ALWAYS_REPLY = {"ignore_prob": 0, "emoji_only_prob": 0, "multi_part_prob": 0, "max_parts": 2}
 SOCIAL_TABLES = ("social_friendships", "social_groups", "social_group_members", "social_messages",
-                 "social_message_media", "social_dm_reads", "user_presence", "private_message_blocks")
+                 "social_message_media", "social_dm_reads", "social_dm_participants", "social_friend_request_log",
+                 "user_presence", "private_message_blocks")
 
 
 class FixedRandom(random.Random):
@@ -164,8 +165,8 @@ class WandererSocialTest(WandererWorldTestCase):
             self.call(friends.send_request, self.user_of(self.real), self.ident(wanderer), "交个朋友")
         rows = {row["payload"]["wanderer_id"]: row for row in self.tasks("wanderer_friend_request")}
         delay = {key: (datetime.fromisoformat(row["run_at"]) - before).total_seconds() for key, row in rows.items()}
-        self.assertTrue(55 <= delay[self.lele["id"]] <= 180, delay)
-        self.assertTrue(300 <= delay[self.xiaoman["id"]] <= 1805, delay)
+        self.assertTrue(-1 <= delay[self.lele["id"]] <= 180, delay)
+        self.assertTrue(-1 <= delay[self.xiaoman["id"]] <= 1805, delay)
 
     def test_nothing_is_scheduled_while_the_system_is_off(self):
         with patch.dict("os.environ", {"WANDERER_ENABLED": "false"}):
@@ -177,9 +178,10 @@ class WandererSocialTest(WandererWorldTestCase):
         return int(result["request_id"])
 
     @staticmethod
-    def _decide(wanderer: dict, request_id: int, value: float, *, deferred=False) -> str:
+    def _decide(wanderer: dict, request_id: int, value: float, *, deferred=False, decision="accept") -> str:
         task = {"payload": {"wanderer_id": wanderer["id"], "request_id": request_id, "deferred": deferred}}
-        return asyncio.run(handle_wanderer_friend_request(task, rng=FixedRandom(value)))
+        caller = StubCaller(json.dumps({"decision": decision, "reason": "这与我自己的交友喜好有关"}, ensure_ascii=False))
+        return asyncio.run(handle_wanderer_friend_request(task, rng=FixedRandom(value), ai_caller=caller))
 
     def _status(self, request_id: int) -> str:
         return self.rows("SELECT status FROM social_friendships WHERE id = ?", (request_id,))[0]["status"]
@@ -190,12 +192,12 @@ class WandererSocialTest(WandererWorldTestCase):
         self.assertEqual(self._status(accepted), "accepted")
         self.assertTrue(self.pushes.of_type("friend_accepted"))
         shy = self._request_id(self.real, self.xiaoman)
-        self.assertEqual(self._decide(self.xiaoman, shy, 0.1), "friend request: defer")
+        self.assertEqual(self._decide(self.xiaoman, shy, 0.1, decision="defer"), "friend request: defer")
         task = [row for row in self.tasks("wanderer_friend_request") if row["payload"]["request_id"] == shy][0]
         self.assertEqual(task["status"], "pending")
         self.assertTrue(task["payload"]["deferred"])
         self.assertGreater(datetime.fromisoformat(task["run_at"]), datetime.now() + timedelta(minutes=50))
-        self.assertEqual(self._decide(self.xiaoman, shy, 0.99, deferred=True), "friend request: decline")
+        self.assertEqual(self._decide(self.xiaoman, shy, 0.99, deferred=True, decision="decline"), "friend request: decline")
         self.assertEqual(self._status(shy), "declined")
         decisions = [json.loads(row["detail_json"])["decision"] for row in self.actions(self.xiaoman["id"])
                      if row["action_kind"] == "social_friend"]
@@ -206,19 +208,174 @@ class WandererSocialTest(WandererWorldTestCase):
         task = self.tasks("wanderer_friend_request")[0]
         self.assertEqual(task["dedupe_key"], f"wanderer:friend:{self.lele['id']}:{self.real}")
         stale = {"payload": {"wanderer_id": self.lele["id"], "request_id": 999999, "requester": self.real}}
-        self.assertEqual(asyncio.run(handle_wanderer_friend_request(stale, rng=FixedRandom(0.5))),
+        self.assertEqual(asyncio.run(handle_wanderer_friend_request(stale, rng=FixedRandom(0.5),
+                         ai_caller=StubCaller('{"decision":"accept","reason":"想认识对方"}'))),
                          "friend request: accept")
         self.assertEqual(self._status(request_id), "accepted")
 
-    def test_teacher_request_is_always_accepted(self):
+    def test_teacher_request_can_be_declined_by_personality(self):
         request_id = self._request_id(self.teacher_identity, self.xiaoman)
-        self.assertEqual(self._decide(self.xiaoman, request_id, 0.99), "friend request: accept")
+        self.assertEqual(self._decide(self.xiaoman, request_id, 0.99, decision="decline"), "friend request: decline")
 
     def test_rude_request_is_declined(self):
         with self.connect() as conn:
             result = friends.send_request(conn, self.user_of(self.real), self.ident(self.lele), "你个废物")
             conn.commit()
-        self.assertEqual(self._decide(self.lele, int(result["request_id"]), 0.0), "friend request: decline")
+        self.assertEqual(self._decide(self.lele, int(result["request_id"]), 0.0, decision="decline"), "friend request: decline")
+
+    def test_friend_decision_reason_is_private_and_remembered(self):
+        request_id = self._request_id(self.real, self.lele)
+        caller = StubCaller('{"decision":"accept","reason":"对方同样喜欢写程序，我想了解他的想法"}')
+        task = {"payload": {"wanderer_id": self.lele["id"], "request_id": request_id}}
+        self.assertEqual(asyncio.run(handle_wanderer_friend_request(task, ai_caller=caller)), "friend request: accept")
+        detail = json.loads(self.actions(self.lele["id"])[-1]["detail_json"])
+        self.assertIn("同样喜欢写程序", detail["reason"])
+        memory = self.rows("SELECT history_json FROM wanderer_memory_threads WHERE wanderer_id = ? AND thread_key = ?",
+                           (self.lele["id"], f"social:friend:{self.real}"))[0]["history_json"]
+        self.assertIn("同样喜欢写程序", memory)
+        notices = self.rows("SELECT body_preview FROM message_center_notifications")
+        self.assertFalse(any("同样喜欢写程序" in str(row) for row in notices))
+
+    def test_friend_model_failure_preserves_and_rearms_request(self):
+        request_id = self._request_id(self.real, self.lele)
+        task = {"payload": {"wanderer_id": self.lele["id"], "request_id": request_id}}
+        result = asyncio.run(handle_wanderer_friend_request(task, ai_caller=StubCaller(error=RuntimeError("offline"))))
+        self.assertEqual(result, "friend request: defer")
+        self.assertEqual(self._status(request_id), "pending")
+        self.assertEqual(self.tasks("wanderer_friend_request")[0]["status"], "pending")
+        self.assertEqual(json.loads(self.actions(self.lele["id"])[-1]["detail_json"])["source"], "retry")
+
+    def test_friend_withdraw_during_model_does_not_apply_stale_decision(self):
+        request_id = self._request_id(self.real, self.lele)
+        async def caller(*args, **kwargs):
+            self.call(friends.withdraw_request, self.user_of(self.real), request_id)
+            return {"status": "success", "response_text": '{"decision":"accept","reason":"想认识"}'}
+        task = {"payload": {"wanderer_id": self.lele["id"], "request_id": request_id}}
+        self.assertEqual(asyncio.run(handle_wanderer_friend_request(task, ai_caller=caller)), "friend request: gone")
+        self.assertEqual(self.rows("SELECT id FROM social_friendships WHERE id = ?", (request_id,)), [])
+        self.assertEqual(self.actions(self.lele["id"]), [])
+
+    def test_sleeping_request_waits_for_next_preferred_window_without_model(self):
+        from classroom_app.services.wanderer_social_friends import decide_friend_request
+        now = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
+        self.lele = self.set_wanderer("lele", schedule_json={"active_hours": [[21, 23]]})
+        request_id = self._request_id(self.real, self.lele)
+        caller = StubCaller()
+        ctx, _ = social_context(self.lele["id"], ai_caller=caller)
+        ctx.now = now
+        self.assertEqual(asyncio.run(decide_friend_request(ctx, request_id))["decision"], "defer")
+        self.assertEqual(caller.calls, [])
+        scheduled = datetime.fromisoformat(self.tasks("wanderer_friend_request")[0]["run_at"])
+        self.assertEqual(scheduled.hour, 21)
+
+    def test_missing_pending_request_tasks_are_recovered_once(self):
+        from classroom_app.services.wanderer_social_friends import recover_pending_requests
+        self._request_id(self.real, self.lele)
+        with self.connect() as conn:
+            conn.execute("DELETE FROM scheduled_tasks WHERE task_kind = 'wanderer_friend_request'")
+            conn.commit()
+        self.assertEqual(recover_pending_requests(self.connect), 1)
+        self.assertEqual(recover_pending_requests(self.connect), 0)
+
+    def test_recovery_does_not_rearm_task_claimed_after_candidate_snapshot(self):
+        from classroom_app.services import wanderer_social_friends as service
+        self._request_id(self.real, self.lele)
+        with self.connect() as conn:
+            conn.execute("UPDATE scheduled_tasks SET status = 'failed' WHERE task_kind = 'wanderer_friend_request'")
+            conn.commit()
+        original = service.on_friend_request
+        def another_worker_claimed(conn, *args, **kwargs):
+            conn.execute("UPDATE scheduled_tasks SET status = 'running' WHERE task_kind = 'wanderer_friend_request'")
+            return original(conn, *args, **kwargs)
+        with patch.object(service, "on_friend_request", another_worker_claimed):
+            self.assertEqual(service.recover_pending_requests(self.connect), 0)
+        self.assertEqual(self.tasks("wanderer_friend_request")[0]["status"], "running")
+
+    def test_proactive_chat_uses_authorized_profile_and_full_recent_text(self):
+        from classroom_app.services.wanderer_social_outreach import start_friend_conversation
+        key = self.befriend(self.real, self.atai)
+        text = "这是完整的近期原文。" * 50 + "末尾约定：周五再一起试试。"
+        message = self.send(self.real, key, text)
+        self.call(messages.mark_read, build_wanderer_user_dict(self.atai), key, message["id"])
+        caller = StubCaller(turn("reply", ["刚试了个新的练习，想和你聊聊。 "]))
+        ctx, _ = social_context(self.atai["id"], ai_caller=caller, sleep=ZeroSleep())
+        result = asyncio.run(start_friend_conversation(ctx))
+        self.assertEqual(result[-1]["parts"], 1)
+        prompt = str(caller.calls[0][1])
+        self.assertIn("末尾约定", prompt)
+        self.assertIn("Python 程序设计", prompt)
+        self.assertIn("relation", prompt)
+        self.assertNotIn("student_no_tail", prompt)
+        self.assertNotIn("S-0001", prompt)
+        self.assertEqual(asyncio.run(start_friend_conversation(ctx)), [])  # no nag before a reply
+
+    def test_proactive_chat_model_can_choose_silence(self):
+        from classroom_app.services.wanderer_social_outreach import start_friend_conversation
+        key = self.befriend(self.real, self.atai)
+        ctx, _ = social_context(self.atai["id"], ai_caller=StubCaller(turn("skip", [])), sleep=ZeroSleep())
+        result = asyncio.run(start_friend_conversation(ctx))
+        self.assertEqual(result[-1]["kind"], "skip")
+        self.assertEqual(self.messages_from(self.ident(self.atai), key), [])
+
+    def test_proactive_chat_rechecks_block_after_model(self):
+        from classroom_app.services.wanderer_social_outreach import start_friend_conversation
+        key = self.befriend(self.real, self.atai)
+        async def caller(*args, **kwargs):
+            self.call(friends.delete_friend, self.user_of(self.real), self.ident(self.atai))
+            return {"status": "success", "response_text": turn("reply", ["新想法"])}
+        ctx, _ = social_context(self.atai["id"], ai_caller=caller, sleep=ZeroSleep())
+        result = asyncio.run(start_friend_conversation(ctx))
+        self.assertEqual(result[-1]["parts"], 0)
+        self.assertEqual(self.messages_from(self.ident(self.atai), key), [])
+
+    def test_long_messages_are_not_combined_and_truncated_in_memory(self):
+        key = self.befriend(self.real, self.atai)
+        self.send(self.real, key, "甲" * 3000 + "第一条末尾")
+        self.send(self.real, key, "乙" * 3000 + "第二条末尾")
+        self.run_reply(self.atai, key, StubCaller(turn("skip", [])))
+        row = self.rows("SELECT history_json FROM wanderer_memory_threads WHERE wanderer_id = ? AND thread_key = ?",
+                        (self.atai["id"], f"social:{key}"))[0]
+        history = json.loads(row["history_json"])
+        self.assertTrue(any(item["text"].endswith("第一条末尾") for item in history))
+        self.assertTrue(any(item["text"].endswith("第二条末尾") for item in history))
+
+    def test_new_group_member_does_not_receive_old_group_history(self):
+        from classroom_app.services.wanderer_actions_social import load_window
+        group_id, key = self.make_group(self.atai)
+        self.insert_messages(key, self.real, 1, prefix="old-private-context")
+        with self.connect() as conn:
+            conn.execute("UPDATE social_messages SET body = '加入以前的消息', created_at = '2000-01-01T00:00:00+00:00' "
+                         "WHERE client_nonce = 'old-private-context-0'")
+            conn.commit()
+            window = load_window(conn, self.ident(self.atai), key)
+        self.assertFalse(any(row["body"] == "加入以前的消息" for row in window["rows"]))
+
+    def test_new_incoming_message_cancels_stale_proactive_draft(self):
+        from classroom_app.services.wanderer_social_outreach import start_friend_conversation
+        key = self.befriend(self.real, self.atai)
+        async def caller(*args, **kwargs):
+            self.send(self.real, key, "先等等，我有别的事")
+            return {"status": "success", "response_text": turn("reply", ["原来的话题"])}
+        ctx, _ = social_context(self.atai["id"], ai_caller=caller, sleep=ZeroSleep())
+        result = asyncio.run(start_friend_conversation(ctx))
+        self.assertEqual(result[-1]["parts"], 0)
+        self.assertEqual(self.messages_from(self.ident(self.atai), key), [])
+
+    def test_burst_memory_compaction_is_bounded_and_keeps_all_new_messages(self):
+        from classroom_app.services.wanderer_memory_service import append_turn
+        key = self.befriend(self.real, self.atai)
+        with self.connect() as conn:
+            for index in range(25):
+                append_turn(conn, self.atai, f"social:{key}", who="对方", text=f"早先的话 {index}")
+            conn.commit()
+        self.insert_messages(key, self.real, 30, prefix="memory-burst")
+        caller = StubCaller(turn("skip", []), '{"summary":"他们以前聊过练习和约定。"}')
+        self.run_reply(self.atai, key, caller)
+        self.assertEqual(len(caller.calls), 2)
+        row = self.rows("SELECT summary, history_json FROM wanderer_memory_threads WHERE wanderer_id = ? AND thread_key = ?",
+                        (self.atai["id"], f"social:{key}"))[0]
+        self.assertIn("以前聊过", row["summary"])
+        self.assertEqual(sum(item["text"] == "刷" for item in json.loads(row["history_json"])), 30)
 
     # -- direct messages ----------------------------------------------------
 

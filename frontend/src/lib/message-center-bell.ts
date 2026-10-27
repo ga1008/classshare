@@ -7,6 +7,8 @@ export type MessageNotification = {
   actorDisplayName: string;
   categoryLabel: string;
   title: string;
+  category: string;
+  metadata: Record<string, unknown>;
 };
 
 export type MessageCenterResponse = {
@@ -56,6 +58,8 @@ export function normalizeMessageCenterResponse(value: unknown): MessageCenterRes
           actorDisplayName: textFrom(latestUnread.actor_display_name),
           categoryLabel: textFrom(latestUnread.category_label, '消息'),
           title: textFrom(latestUnread.title),
+          category: textFrom(latestUnread.category),
+          metadata: asRecord(latestUnread.metadata),
         }
       : null,
   };

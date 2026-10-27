@@ -43,15 +43,20 @@ class SocialClient {
         this.retryTimer = 0;
         this.pingTimer = 0;
         this.countTimer = 0;
+        this.bellTimer = 0;
         this.flashTimer = 0;
         this.baseTitle = doc.title;
         this.stopped = false;
         this.ui = null;
+        this.uiPromise = null;
+        this.seenMessages = new Set();
         this.bindEntries();
         doc.addEventListener('visibilitychange', () => this.onVisibility());
         window.addEventListener('online', () => this.reconnectSoon(0));
         this.connect();
         this.refreshCounts();
+        const linkedKey = new URL(window.location.href).searchParams.get('social_conversation');
+        if (linkedKey && /^(?:group:[1-9]\d*|dm:(?:student|teacher):[1-9]\d*\|(?:student|teacher):[1-9]\d*)$/.test(linkedKey)) void this.openChat(linkedKey);
     }
 
     /* ---------------------------------------------------------------- bus */
@@ -143,6 +148,14 @@ class SocialClient {
             this.emit('presence-changed', frame.identity);
             break;
         case 'message': this.onMessage(frame.message); break;
+        case 'conversation_preferences':
+            this.setMuted(frame.conversation_key, frame.muted);
+            this.refreshCounts();
+            break;
+        case 'read': case 'message_recalled':
+            this.refreshCounts();
+            this.refreshBellSoon();
+            break;
         case 'friend_request': case 'friend_accepted': case 'friend_removed': case 'group_changed':
             this.refreshCounts();
             break;
@@ -153,18 +166,38 @@ class SocialClient {
 
     onMessage(message) {
         if (!message) return;
+        if (typeof message.muted === 'boolean') this.setMuted(message.conversation_key, message.muted);
+        this.refreshCounts();
+        this.refreshBellSoon();
         const incoming = message.sender?.identity && message.sender.identity !== this.me
             && message.message_type !== 'system';
         const viewing = this.activeKey === message.conversation_key && !this.doc.hidden;
         // A backfill re-push repeats an old LAN message with server_ready now true.
         const backfilled = (message.media || []).some((item) => item.delivered_via === 'lan' && item.server_ready);
+        const identity = `${message.conversation_key}:${message.id}`;
+        if (this.seenMessages.has(identity)) return;
+        this.seenMessages.add(identity);
+        if (this.seenMessages.size > 500) this.seenMessages.delete(this.seenMessages.values().next().value);
         if (!incoming || viewing || message.recalled || backfilled) return;
+        this.unreadMessages += 1;
+        this.paintBadge();
         if (!this.mutedKeys.has(message.conversation_key)) {
-            this.unreadMessages += 1;
-            this.paintBadge();
             if (this.doc.hidden) this.startFlash(message.sender?.name || '新消息');
-            else if (!this.ui?.chatOpen?.()) this.toastIncoming(message);
+            else void this.toastIncoming(message);
         }
+    }
+
+    setMuted(key, muted) {
+        if (!key) return;
+        if (muted) this.mutedKeys.add(key); else this.mutedKeys.delete(key);
+    }
+
+    refreshBellSoon() {
+        if (this.bellTimer) return;
+        this.bellTimer = window.setTimeout(() => {
+            this.bellTimer = 0;
+            if (typeof window.refreshMessageCenterBell === 'function') void Promise.resolve(window.refreshMessageCenterBell({ allowPopup: false })).catch(() => {});
+        }, 900);
     }
 
     /* ---------------------------------------------------------------- counts */
@@ -175,7 +208,7 @@ class SocialClient {
                 const [conversations, requests] = await Promise.all([socialApi.conversations(), socialApi.requests()]);
                 const items = conversations?.items || [];
                 this.mutedKeys = new Set(items.filter((item) => item.muted).map((item) => item.conversation_key));
-                this.unreadMessages = items.filter((item) => !item.muted).reduce((sum, item) => sum + (Number(item.unread) || 0), 0);
+                this.unreadMessages = items.reduce((sum, item) => sum + (Number(item.unread) || 0), 0);
                 this.pendingIn = (requests?.incoming || []).length;
                 this.paintBadge();
                 this.emit('counts', { unread: this.unreadMessages, pendingIn: this.pendingIn, conversations: items });
@@ -219,15 +252,18 @@ class SocialClient {
     onVisibility() {
         if (this.doc.hidden) return;
         this.stopFlash();
+        this.refreshCounts();
         if (!this.ws) this.reconnectSoon(0);
         this.emit('visible', null);
     }
 
     async toastIncoming(message) {
         const { notify } = await import('./social_dom.js');
+        if (this.mutedKeys.has(message.conversation_key) || this.doc.hidden || this.activeKey === message.conversation_key) return;
         const preview = message.body ? String(message.body).replace(/\s+/g, ' ').slice(0, 40) : '[附件]';
         notify(`${message.sender?.name || '好友'}：${preview}`, 'info', {
             key: `social:${message.conversation_key}`,
+            duration: 6000,
             action: { label: '查看', onClick: () => this.openChat(message.conversation_key) },
         });
     }
@@ -244,11 +280,9 @@ class SocialClient {
     }
 
     async loadUi() {
-        if (!this.ui) {
-            const module = await import('./social_ui.js');
-            this.ui = await module.createSocialUi(this);
-        }
-        return this.ui;
+        if (!this.uiPromise) this.uiPromise = import('./social_ui.js').then((module) => module.createSocialUi(this))
+            .then((ui) => { this.ui = ui; return ui; }).catch((error) => { this.uiPromise = null; throw error; });
+        return this.uiPromise;
     }
 
     async openFriends(trigger = null) {

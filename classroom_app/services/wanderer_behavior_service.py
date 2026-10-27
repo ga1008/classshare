@@ -45,6 +45,7 @@ from .wanderer_actions_classroom import visit_classroom
 from .wanderer_actions_common import ActionContext, as_int, behavior_on, outcome, record_action, today_action_count
 from .wanderer_actions_knowledge import promotion_eligible, reflect_on_reviews, request_promotion, study_material
 from .wanderer_ai_service import AiCaller
+from .wanderer_social_outreach import outreach_candidates, start_friend_conversation
 from .wanderer_identity_service import (
     STATUS_ACTIVE,
     clamp_tier,
@@ -242,6 +243,8 @@ def choose_action(ctx: ActionContext, *, first: bool) -> str:
     if behavior_on(wanderer, "knowledge_read"):
         options.append(("knowledge", _knowledge_weight(wanderer)))
     with ctx.connect() as conn:
+        if behavior_on(wanderer, "social") and outreach_candidates(conn, ctx):
+            options.append(("social_outreach", 2.0))
         if promotion_eligible(ctx, conn):
             options.append(("promotion", 3.0))
         can_post = post_eligible(ctx, conn)
@@ -267,6 +270,7 @@ ACTIONS: dict[str, ActionFn] = {
     "knowledge": study_material,
     "promotion": request_promotion,
     "post": write_post,
+    "social_outreach": start_friend_conversation,
     "idle": _idle,
 }
 

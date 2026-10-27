@@ -30,6 +30,11 @@
 
 /* ---------------------------------------------------------------- friends */
 .social-friends { display: grid; gap: var(--ls-s-3); }
+.social-friends-dialog .lq-dialog__head { flex-wrap: wrap; gap: var(--ls-s-2); }
+.social-friends-dialog .lq-dialog__head > h2 { margin-inline-end: auto; }
+.social-friends-group .lq-collapsible__slot { display: grid; gap: var(--ls-s-3); }
+.social-add__outgoing { display: grid; gap: var(--ls-s-2); }
+.social-add__outgoing[hidden], .social-mention[hidden], .social-composer__mention-hint[hidden] { display: none; }
 .social-status:empty { display: none; }
 .social-friend-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
@@ -166,9 +171,9 @@
 .social-side__form, .social-inline-form { display: grid; gap: var(--ls-s-2); }
 .social-side__filters { display: flex; flex-wrap: wrap; gap: var(--ls-s-1); margin-bottom: var(--ls-s-2); }
 .social-members { display: grid; gap: var(--ls-s-2); margin: 0; padding: 0; list-style: none; max-height: 320px; overflow: auto; }
-.social-member { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2px var(--ls-s-2); }
+.social-member { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 2px var(--ls-s-2); }
 .social-member__copy > small { font-size: var(--ls-t-caption); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
-.social-member__actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: 2px; }
+.social-member__actions { grid-column: 3; justify-self: end; }
 .social-member[data-online="false"] .lq-avatar { filter: grayscale(.85); opacity: .72; }
 
 /* ---------------------------------------------------------------- 拍一拍 */

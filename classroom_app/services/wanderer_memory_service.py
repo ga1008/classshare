@@ -222,7 +222,9 @@ def compact_threshold_chars() -> int:
 
 
 def needs_compaction(thread: dict[str, Any]) -> bool:
-    return int(thread.get("total_chars") or 0) > compact_threshold_chars()
+    # Compact before the 40-turn working window starts evicting short messages.
+    return (len(thread.get("history") or []) >= HISTORY_DB_LIMIT - 6
+            or int(thread.get("total_chars") or 0) > compact_threshold_chars())
 
 
 def _format_turn(turn: dict[str, Any]) -> str:
@@ -243,6 +245,7 @@ def compact_thread(
     wanderer: dict[str, Any],
     thread_key: str,
     summarizer: Callable[[str], str],
+    *, expected_thread: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Fold the history into a <=3k summary, keep the last 20 turns. Caller commits.
 
@@ -250,6 +253,9 @@ def compact_thread(
     model call can never erase memory.
     """
     thread = _read_thread(conn, int(wanderer["id"]), str(thread_key))  # writes never trust the cache
+    if expected_thread is not None and (thread.get("summary") != expected_thread.get("summary")
+            or thread.get("history") != expected_thread.get("history")):
+        return thread  # concurrent arrivals are not covered by the generated summary
     summary = str(summarizer(thread_history_text(thread)) or "").strip()[:SUMMARY_MAX_CHARS]
     if not summary:
         raise ValueError("记忆压缩结果为空，保留原记忆")

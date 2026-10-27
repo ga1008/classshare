@@ -250,6 +250,7 @@ def dm_read_cursor(conn: Any, key: str, reader: str) -> int:
 
 
 def list_messages(conn: Any, user: dict, key: Any, *, before_id: Any = None, limit: Any = None) -> dict[str, Any]:
+    from .social_notification_service import mention_quota, muted_map
     me = user_identity(user)
     parsed = require_access(conn, me, key)
     size = max(1, min(PAGE_LIMIT_MAX, as_int(limit, PAGE_LIMIT_DEFAULT) or PAGE_LIMIT_DEFAULT))
@@ -268,7 +269,8 @@ def list_messages(conn: Any, user: dict, key: Any, *, before_id: Any = None, lim
     page = [row_dict(row) for row in rows]
     has_more = len(page) > size
     page = list(reversed(page[:size]))
-    payload = {"items": serialize_messages(conn, me, page), "has_more": has_more}
+    payload = {"items": serialize_messages(conn, me, page), "has_more": has_more,
+               "muted": muted_map(conn, parsed, [me]).get(me, False), "mention_quota": mention_quota(conn, user)}
     if parsed["type"] == "dm":  # additive: lets the client draw 已读
         payload["peer_read_message_id"] = dm_read_cursor(conn, parsed["key"], parsed["peer"])
     return payload
@@ -358,8 +360,11 @@ def dm_unread(conn: Any, me: str, key: str) -> int:
 def list_conversations(conn: Any, user: dict) -> list[dict[str, Any]]:
     """Direct and group conversations with a last message, newest first."""
     from .presence_service import presence_map
+    from .notification_delivery import load_preferences
+    from .social_notification_service import PREFERENCE_PREFIX
 
     me = user_identity(user)
+    preferences = load_preferences(conn, me)
     dm_last = dm_keys(conn, me)
     memberships = my_memberships(conn, me)
     group_last = group_last_ids(conn, memberships)
@@ -382,6 +387,7 @@ def list_conversations(conn: Any, user: dict) -> list[dict[str, Any]]:
             "unread": dm_unread(conn, me, key),
             "online": bool(presence[peer]["online"]) if peer in presence else None,
             "peer_identity": peer,
+            "muted": not preferences.get(PREFERENCE_PREFIX + key, True),
             "_sort": last_id,
         })
     for group_id, membership in memberships.items():
@@ -403,6 +409,5 @@ def list_conversations(conn: Any, user: dict) -> list[dict[str, Any]]:
 def unread_total(conn: Any, me: str) -> int:
     total = sum(dm_unread(conn, me, key) for key in dm_keys(conn, me))
     for membership in my_memberships(conn, me).values():
-        if not as_int(membership.get("muted")):
-            total += group_unread(conn, me, membership)
+        total += group_unread(conn, me, membership)
     return total

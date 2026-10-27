@@ -9,6 +9,7 @@
 import { createComponent } from '../lq/components.js';
 import { createForm } from '../lq/forms.js';
 import { confirm } from '../lq/dialogs.js';
+import { bindMenu, createMenu } from '../lq/menus.js';
 import { socialApi, errorText } from './social_api.js';
 import { el, emptyState, formatRelative, formatSize, lqAvatar, lqButton, notify } from './social_dom.js';
 
@@ -32,6 +33,8 @@ export function createChatSidebar({ client, onChanged }) {
     let token = 0;
     let fileKind = '';
     let files = null; // { holder, groupId } of the group sidebar on screen
+    let menus = [];
+    const clearMenus = () => { menus.forEach((menu) => menu.destroy()); menus = []; };
 
     async function guarded(button, task) {
         if (button) button.disabled = true;
@@ -41,6 +44,7 @@ export function createChatSidebar({ client, onChanged }) {
 
     /* ------------------------------------------------------------ DM */
     async function showDm(identity, ctx) {
+        clearMenus();
         files = null;
         const ticket = ++token;
         element.replaceChildren(el('p', { class: 'social-hint', text: '正在读取资料…' }));
@@ -91,6 +95,20 @@ export function createChatSidebar({ client, onChanged }) {
                 });
             });
             blocks.push(remarkForm);
+            const muted = createForm('switch', { id: 'social-dm-muted', label: '消息免打扰', name: 'muted', checked: Boolean(ctx.muted) });
+            const input = muted.querySelector('input');
+            input.addEventListener('change', async () => {
+                const value = input.checked;
+                input.disabled = true;
+                try {
+                    const result = await socialApi.updateConversationPreferences(ctx.key, { muted: value });
+                    client.setMuted(ctx.key, result.muted);
+                    notify(result.muted ? '已开启免打扰，消息仍会收入消息中心和未读数字。' : '已恢复消息提醒。', 'success');
+                    onChanged?.('preferences');
+                } catch (failure) { input.checked = !value; notify(errorText(failure), 'danger'); }
+                finally { input.disabled = false; }
+            });
+            blocks.push(section('消息提醒', [muted, el('p', { class: 'social-hint', text: '免打扰只关闭浮窗提醒，消息中心与未读数字照常保留。' })]));
         }
         const links = el('div', { class: 'social-side__actions' }, [
             ctx.writable ? lqButton({ label: '拍一拍', variant: 'soft', onClick: (event) => guarded(event.currentTarget, () => socialApi.nudge(ctx.key)) }) : null,
@@ -122,13 +140,20 @@ export function createChatSidebar({ client, onChanged }) {
         const isMe = member.identity === me;
         const actions = [];
         if (!isMe && myRole === 'owner') {
-            actions.push(lqButton({ label: member.group_role === 'admin' ? '取消管理员' : '设为管理员', variant: 'ghost', size: 'sm', attrs: { 'data-member-act': 'admin', 'data-identity': member.identity, 'data-admin': member.group_role === 'admin' ? '0' : '1' } }));
-            actions.push(lqButton({ label: '转让群主', variant: 'ghost', size: 'sm', attrs: { 'data-member-act': 'transfer', 'data-identity': member.identity, 'data-name': member.name } }));
+            actions.push({ id: 'admin', label: member.group_role === 'admin' ? '取消管理员' : '设为管理员', attrs: { 'data-member-act': 'admin', 'data-identity': member.identity, 'data-admin': member.group_role === 'admin' ? '0' : '1' } });
+            actions.push({ id: 'transfer', label: '转让群主', attrs: { 'data-member-act': 'transfer', 'data-identity': member.identity, 'data-name': member.name } });
         }
         if (!isMe && (myRole === 'owner' || (myRole === 'admin' && member.group_role === 'member'))) {
-            actions.push(lqButton({ label: '移出', variant: 'ghost', size: 'sm', attrs: { 'data-member-act': 'kick', 'data-identity': member.identity, 'data-name': member.name } }));
+            actions.push({ id: 'kick', label: '移出', danger: true, attrs: { 'data-member-act': 'kick', 'data-identity': member.identity, 'data-name': member.name } });
         }
-        if (!isMe) actions.push(lqButton({ label: '拍一拍', variant: 'ghost', size: 'sm', attrs: { 'data-member-act': 'nudge', 'data-identity': member.identity } }));
+        if (!isMe) actions.unshift({ id: 'nudge', label: '拍一拍', attrs: { 'data-member-act': 'nudge', 'data-identity': member.identity } });
+        let actionSlot = null;
+        if (actions.length) {
+            const trigger = lqButton({ icon: 'ellipsis', aria: `${member.nickname || member.name}的更多操作`, variant: 'ghost', attrs: { 'data-member-menu': member.identity } });
+            const menu = createMenu({ label: `${member.nickname || member.name}的操作`, items: actions });
+            actionSlot = el('span', { class: 'social-member__actions' }, [trigger, menu]);
+            menus.push(bindMenu(trigger, menu, { placement: 'bottom-end', onAction: (_id, button) => memberAction(button, detail, { key: detail.conversation_key || `group:${detail.id}` }) }));
+        }
         return el('li', { class: 'social-member', 'data-online': member.online ? 'true' : 'false' }, [
             el('span', { class: 'social-avatar', 'data-online': member.online ? 'true' : 'false' }, [
                 lqAvatar(member.name, member.avatar_url, 32), el('span', { class: 'social-avatar__dot', 'aria-hidden': 'true' }),
@@ -138,7 +163,7 @@ export function createChatSidebar({ client, onChanged }) {
                     : lqButton({ label: member.nickname || member.name, variant: 'link', attrs: { 'data-user-card': member.identity, 'aria-haspopup': 'dialog', 'data-social-member-name': '' } }),
                 el('small', { text: [ROLE_LABEL[member.group_role] || '', member.online ? '在线' : '离线', member.is_wanderer ? '散修' : ''].filter(Boolean).join(' · ') }),
             ]),
-            actions.length ? el('span', { class: 'social-member__actions' }, actions) : null,
+            actionSlot,
         ]);
     }
 
@@ -159,6 +184,7 @@ export function createChatSidebar({ client, onChanged }) {
     }
 
     function showGroup(detail, ctx) {
+        clearMenus();
         token += 1;
         const manage = ['owner', 'admin'].includes(detail.my_role);
         const blocks = [el('div', { class: 'social-side__profile' }, [
@@ -187,10 +213,6 @@ export function createChatSidebar({ client, onChanged }) {
         }
 
         const members = el('ul', { class: 'social-members', role: 'list', 'aria-label': '群成员' }, (detail.members || []).map((member) => memberRow(member, detail, client.me)));
-        members.addEventListener('click', (event) => {
-            const button = event.target.closest('[data-member-act]');
-            if (button) void memberAction(button, detail, ctx);
-        });
         blocks.push(section(`成员（${detail.member_count}）`, [members]));
 
         const filesHolder = el('div', { class: 'social-side__files' });
@@ -215,12 +237,13 @@ export function createChatSidebar({ client, onChanged }) {
             event.preventDefault();
             void guarded(mine.querySelector('[type="submit"]'), async () => {
                 await socialApi.updateMe(detail.id, { nickname: mine.elements.nickname.value.trim(), muted: mine.elements.muted.checked });
+                client.setMuted(ctx.key, mine.elements.muted.checked);
                 notify('已保存。', 'success');
                 client.refreshCounts();
                 onChanged?.('me');
             });
         });
-        blocks.push(section('我的设置', [mine]));
+        blocks.push(section('我的设置', [mine, el('p', { class: 'social-hint', text: '免打扰只关闭浮窗提醒，消息中心与未读数字照常保留。' })]));
         blocks.push(el('div', { class: 'social-side__actions social-side__actions--danger' }, [
             detail.my_role === 'owner'
                 ? lqButton({ label: '解散群组', variant: 'destructive', onClick: (event) => leaveOrDissolve(event.currentTarget, detail, true) })
@@ -259,6 +282,6 @@ export function createChatSidebar({ client, onChanged }) {
         element, showDm, showGroup,
         /** A new attachment arrived in the open group: reload its file list. */
         refreshFiles(groupId) { if (files?.holder.isConnected && files.groupId === groupId) void renderFiles(files.holder, groupId); },
-        clear() { token += 1; files = null; element.replaceChildren(); },
+        clear() { token += 1; clearMenus(); files = null; element.replaceChildren(); },
     };
 }

@@ -22,6 +22,7 @@ from .social_common import (
     normalize_identity,
     now_iso,
     row_dict,
+    serialize_on,
     user_identity,
 )
 from .social_conversation_service import (
@@ -344,6 +345,7 @@ def _mark_left(conn: Any, group_id: int, identity: str) -> None:
 def remove_member(conn: Any, user: dict, group_id: int, identity: Any, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
     target = normalize_identity(identity)
+    serialize_on(conn, "social-attention", [group_key(group_id)])
     _active_group(conn, group_id)
     mine = _require_member(conn, group_id, me, roles=(ROLE_OWNER, ROLE_ADMIN))
     theirs = load_membership(conn, group_id, target)
@@ -361,6 +363,7 @@ def remove_member(conn: Any, user: dict, group_id: int, identity: Any, events: O
 
 def leave_group(conn: Any, user: dict, group_id: int, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
+    serialize_on(conn, "social-attention", [group_key(group_id)])
     _active_group(conn, group_id)
     mine = _require_member(conn, group_id, me)
     if mine["role"] == ROLE_OWNER:
@@ -374,6 +377,7 @@ def leave_group(conn: Any, user: dict, group_id: int, events: Optional[list] = N
 
 def dissolve_group(conn: Any, user: dict, group_id: int, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
+    serialize_on(conn, "social-attention", [group_key(group_id)])
     _active_group(conn, group_id)
     _require_member(conn, group_id, me, roles=(ROLE_OWNER,))
     insert_system_message(conn, group_key(group_id), f"{_display(conn, group_id, [me])} 解散了群聊", events)
@@ -394,6 +398,7 @@ def _require_other_member(conn: Any, group_id: int, me: str, target: str) -> dic
 def transfer_owner(conn: Any, user: dict, group_id: int, identity: Any, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
     target = normalize_identity(identity)
+    serialize_on(conn, "social-attention", [group_key(group_id)])
     _active_group(conn, group_id)
     _require_member(conn, group_id, me, roles=(ROLE_OWNER,))
     _require_other_member(conn, group_id, me, target)
@@ -413,6 +418,7 @@ def set_admin(conn: Any, user: dict, group_id: int, identity: Any, admin: Any,
               events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
     target = normalize_identity(identity)
+    serialize_on(conn, "social-attention", [group_key(group_id)])
     _active_group(conn, group_id)
     _require_member(conn, group_id, me, roles=(ROLE_OWNER,))
     _require_other_member(conn, group_id, me, target)
@@ -425,7 +431,8 @@ def set_admin(conn: Any, user: dict, group_id: int, identity: Any, admin: Any,
     return {"group_id": int(group_id), "identity": target, "role": role}
 
 
-def update_me(conn: Any, user: dict, group_id: int, *, nickname: Any = None, muted: Any = None) -> dict[str, Any]:
+def update_me(conn: Any, user: dict, group_id: int, *, nickname: Any = None, muted: Any = None,
+              events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
     _active_group(conn, group_id)
     mine = _require_member(conn, group_id, me)
@@ -433,7 +440,11 @@ def update_me(conn: Any, user: dict, group_id: int, *, nickname: Any = None, mut
         conn.execute("UPDATE social_group_members SET nickname = ? WHERE id = ?",
                      (str(nickname or "").strip()[:NICKNAME_MAX], int(mine["id"])))
     if muted is not None:
+        if not isinstance(muted, bool):
+            raise SocialError("免打扰设置必须是开启或关闭。", 400)
         conn.execute("UPDATE social_group_members SET muted = ? WHERE id = ?", (1 if bool(muted) else 0, int(mine["id"])))
+        add_event(events, [me], {"type": "conversation_preferences", "conversation_key": group_key(group_id),
+                                "muted": muted})
     fresh = load_membership(conn, group_id, me) or {}
     return {"group_id": int(group_id), "nickname": str(fresh.get("nickname") or ""),
             "muted": bool(as_int(fresh.get("muted")))}

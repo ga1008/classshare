@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { createMessageBellTargets, type MessageBellTargetResolver } from '../../../static/js/message_center_bell_dom.js';
+import { isSocialChatNotification } from '../../../static/js/message_notification_policy.js';
 
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
 import {
@@ -130,6 +131,7 @@ function syncBellState(
   const shouldPopup = Boolean(
     allowPopup
       && latestUnread
+      && !isSocialChatNotification(latestUnread)
       && unreadTotal > 0
       && (
         !state.initialized

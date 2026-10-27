@@ -53,6 +53,9 @@ export const socialApi = Object.freeze({
     },
 
     conversations: () => call('/conversations'),
+    mentionQuota: () => call('/mention-quota'),
+    conversationPreferences: (key) => call(`/conversations/${seg(key)}/preferences`),
+    updateConversationPreferences: (key, patch) => call(`/conversations/${seg(key)}/preferences`, { method: 'PATCH', body: patch }),
     messages: (key, beforeId = 0, limit = 50) => call(`/conversations/${seg(key)}/messages?limit=${limit}${beforeId ? `&before_id=${beforeId}` : ''}`),
     send: (key, payload) => call(`/conversations/${seg(key)}/messages`, { method: 'POST', body: payload }),
     read: (key, last_message_id) => call(`/conversations/${seg(key)}/read`, { method: 'POST', body: { last_message_id } }),

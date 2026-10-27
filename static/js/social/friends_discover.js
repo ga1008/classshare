@@ -1,5 +1,5 @@
 /**
- * 好友浮窗「添加」与「推荐」的第二轮内容 (social doc §12.1–§12.3, §12.5/§12.6):
+ * 好友浮窗推荐分组与「新朋友」二层内容 (social doc §12.1–§12.3, §12.5/§12.6):
  *   - 境界解锁阶梯：LQ Steps（已解锁=complete、当前=current）+ 下一境界提示（Alert）；
  *   - 推荐：「互补搭档」「志趣相近」两组，各 ≤5 张，只显示接口给的 hint；
  *   - AI 找人：scope.ai_search 时出现，示例 Chip、条件摘要、理由、今日剩余次数。
@@ -123,51 +123,20 @@ function recommendCard(user) {
     return el('li', { class: 'social-rec' }, [card]);
 }
 
-function recommendGroup(title, items, emptyText) {
+function recommendGroup(title, items) {
     const shown = (Array.isArray(items) ? items : []).slice(0, REC_LIMIT);
+    if (!shown.length) return null;
     return el('section', { class: 'social-rec-group', 'aria-label': title }, [
         el('h3', { class: 'social-section-title', text: title }),
-        shown.length
-            ? el('ul', { class: 'social-rec-grid', role: 'list' }, shown.map(recommendCard))
-            : el('p', { class: 'social-hint', text: emptyText }),
+        el('ul', { class: 'social-rec-grid', role: 'list' }, shown.map(recommendCard)),
     ]);
 }
 
-/**
- * Render GET /recommendations into `panel` (the 推荐 tab).
- * @param {HTMLElement} panel
- * @returns {Promise<void>}
- */
-export async function renderRecommendations(panel) {
-    let scope = null;
-    try { scope = await loadScope(); } catch { scope = null; }
-    if (isLocked(scope)) {
-        panel.replaceChildren(lockedState());
-        return;
-    }
-    let data;
-    try {
-        data = await socialApi.recommendations();
-    } catch (failure) {
-        panel.replaceChildren(failure?.status === 404
-            ? emptyState('推荐暂未开放', '稍后再来看看。')
-            : emptyState('推荐加载失败', errorText(failure), 'error'));
-        return;
-    }
-    if (data?.locked) {
-        panel.replaceChildren(lockedState());
-        return;
-    }
-    const complement = data?.complement || [];
-    const similar = data?.similar || [];
-    const head = el('p', { class: 'social-hint social-rec__lead', text: NEUTRAL_LINE });
-    if (!complement.length && !similar.length) {
-        panel.replaceChildren(head, emptyState('暂时没有推荐', '多参与课堂与互动，明天再来看看。'));
-        return;
-    }
-    panel.replaceChildren(head,
-        recommendGroup('互补搭档', complement, '暂时没有互补搭档'),
-        recommendGroup('志趣相近', similar, '暂时没有志趣相近的同学'));
+/** Pure content slot; empty recommendation groups never occupy the friends page. */
+export function recommendationContent(data) {
+    if (!data || data.locked) return [];
+    const groups = [recommendGroup('互补搭档', data.complement), recommendGroup('志趣相近', data.similar)].filter(Boolean);
+    return groups.length ? [el('p', { class: 'social-hint social-rec__lead', text: NEUTRAL_LINE }), ...groups] : [];
 }
 
 /* ---------------------------------------------------------------- AI 找人 */
