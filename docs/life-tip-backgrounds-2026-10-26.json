@@ -64,7 +64,7 @@
   "retired": [],
   "generation_calls": 2,
   "old_entries_and_hashes_preserved": true,
-  "status": "verified-assets-awaiting-release",
+  "status": "completed",
   "prompt_evidence": {
     "batch_id": "2026-10-26",
     "verified_at": "2026-10-27",
@@ -141,5 +141,7 @@
     "retries": 0,
     "external_paid_calls": 0
   },
-  "compression_note": "Day scene at 1600px exceeded 120KiB even at lowest existing ladder quality; deterministic resize to 1440x810 quality42 produced 117320 bytes. Night1600x900 quality78 90160 bytes. No image generation retry."
+  "compression_note": "Day scene at 1600px exceeded 120KiB even at lowest existing ladder quality; deterministic resize to 1440x810 quality42 produced 117320 bytes. Night1600x900 quality78 90160 bytes. No image generation retry.",
+  "production_published": true,
+  "release_id": "20261027-102432-662cab694dac"
 }

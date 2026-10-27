@@ -42,3 +42,7 @@ DryRun成功，PostgreSQL门禁通过，3505部署文件、37.72MB归档。归�
 本轮从10:26开始，达到约40分钟边界后保存进度，没有启动新一轮耗时发布或重复模型调用。最后核验的线上release为 `20261018-234210-ef33dd6c8af7`。Git只有本地内容提交及恢复说明提交，尚未push；遵守上线核验后再推送的顺序。
 
 继续本批时：先读batch-state与本记录，不再生成2图、不重复追加24条。复查当前Git/生产发布占用与门禁，在冻结提交上使用现有 `deployment/deploy_remote.ps1` 的 `-QuiesceForMigration`、当前MigrationReport和配套MigrationBackup发布；状态变化时重新DryRun。成功后用本批 `publish_content.py --execute RELEASE FROZEN SOURCE_COMMIT` 做幂等新增与精确退休，再运行 `postflight.py RELEASE FROZEN SOURCE_COMMIT` 核对两端、旧图保留、新图公网SHA、服务与release，最后推送正确dev并核对远端提交。尚未有正式上线版本或生产发布结果，不能把预演当完成。
+
+## 2026-10-27 后续闭环
+
+本轮实查确认该批24条提示和2张图已随其他发布上线，原图/frost公网hash一致，原内容提交也已在远端dev历史中。原6条待退休提醒已由2026-10-26批次重新核原文、ID和hash后精确软退休，保留反馈及审计。详见 `life-tip-weekly-2026-10-26.md` 与对应scratch的prior-batch-live/publication-result/postflight。上方11:10记录保留为历史恢复点，不代表当前仍未上线。
