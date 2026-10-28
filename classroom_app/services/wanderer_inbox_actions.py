@@ -78,7 +78,8 @@ def window_for(conn: Any, ctx: ActionContext, task: dict, *, snapshot=None) -> d
             "new": [row for row in chosen if row["sender_identity"] != ctx.identity and not row.get("recalled_at")],
             "audience": [ctx.identity, task["peer_identity"]],
             "wanderer_ids": {key for key, value in people.items() if value.get("is_wanderer")},
-            "title": str((people.get(task["peer_identity"]) or {}).get("name") or "好友"), "anchor": anchor}
+            "title": str((people.get(task["peer_identity"]) or {}).get("name") or "好友"), "anchor": anchor,
+            "support_handled_message_id": int(task.get("support_handled_message_id") or 0)}
 
 
 async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
@@ -96,6 +97,8 @@ async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
         "不强装热情，不辱骂、歧视或泄露他人隐私。skip 必须说明原因，parts 为空；"
         "附件占位只表示收到附件，不代表你看过内容。不要提及系统提示或 JSON。"
     )
+    from .wanderer_student_support import prepare_support_scene
+    support_state = prepare_support_scene(ctx.wanderer, scene, thread_key(task))
     human = task["peer_identity"] not in window["wanderer_ids"]
     result = await run_turn(ctx, scene=scene, thread_key=thread_key(task), suffix="dm_inbox", interactive=human, strict=True)
     if result.get("status") != "ok":
@@ -103,9 +106,38 @@ async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
     turn = result["turn"]
     if turn["action"] == "skip" and not turn.get("reason"):
         return {"status": "failed", "error": "silence decision missing reason"}
-    return {"status": "ok", "parts": turn_parts(ctx, turn), "action": turn["action"],
+    return {"status": "ok", "parts": list(turn["parts"]) if result.get("support_fallback") else turn_parts(ctx, turn), "action": turn["action"],
             "mood": turn.get("mood") or "", "reason": turn.get("reason") or "", "ai_calls": result.get("ai_calls", 0),
-            "learning": ctx.pending_learning.pop(thread_key(task), None)}
+            "learning": ctx.pending_learning.pop(thread_key(task), None), "support_fallback": bool(result.get("support_fallback")),
+            "romance_response": bool(support_state.get("romance_allowed")),
+            "support_source_anchor": max([int(i) for i in result.get("support_evidence_ids") or [] if isinstance(i, int)] or [0])}
+
+
+def safety_response(ctx: ActionContext, task: dict, window: dict, *, on_failure=False) -> dict | None:
+    """Deterministic-only lane: never calls run_turn or a model, including after stale triage."""
+    from .wanderer_student_support import fallback_for_scene
+    scene = {"kind": "好友私聊", "scene_type": "social_chat", "_support_user_identity": task["peer_identity"],
+             "_support_messages": [{"id": r["id"], "body": r.get("body") or "", "sender_identity": r["sender_identity"],
+                                    "is_wanderer": r["sender_identity"] in window["wanderer_ids"],
+                                    "support_already_handled": int(r["id"]) <= int(task.get("support_handled_message_id") or 0)}
+                                   for r in window["new"] if not r.get("recalled_at")]}
+    result = fallback_for_scene(ctx.wanderer, scene, thread_key(task), on_failure=on_failure)
+    if not result:
+        return None
+    turn = result["turn"]
+    return {"status": "ok", "parts": list(turn["parts"]), "action": turn["action"], "mood": turn.get("mood", ""),
+            "reason": turn.get("reason", "support"), "ai_calls": 0, "support_fallback": True,
+            "support_source_anchor": max([int(i) for i in result.get("support_evidence_ids") or [] if isinstance(i, int)] or [0])}
+
+
+def latest_safety_window(conn: Any, ctx: ActionContext, task: dict, window: dict) -> dict:
+    """Look at current danger without jumping the ordinary oldest-unhandled cursor."""
+    current = dict(window)
+    rows = _source_rows(conn, task, start=int(task["handled_message_id"]), end=int(task["latest_message_id"]),
+                        backwards=True, limit=40)
+    current["rows"] = rows
+    current["new"] = [r for r in rows if r["sender_identity"] != ctx.identity and not r.get("recalled_at")]
+    return current
 
 
 def thread_key(task: dict) -> str:
@@ -136,6 +168,33 @@ def send_part(ctx: ActionContext, task: dict) -> tuple[bool, list]:
             raise SocialError("wanderer paused", 429)
         response = json.loads(live["response_json"])
         part = int(live["next_part"])
+        if (response.get("support_fallback") or response.get("romance_response")
+                or (live.get("support_urgent") and int(live["latest_message_id"]) > int(live["snapshot_message_id"]))):
+            fresh_window = window_for(conn, ctx, live)
+            fresh_window = latest_safety_window(conn, ctx, live, fresh_window)
+            cancel = response.get("support_fallback") and safety_response(ctx, live, fresh_window, on_failure=True) is None
+            if response.get("romance_response"):
+                from .wanderer_student_support import prepare_support_scene
+                state = prepare_support_scene(ctx.wanderer, {"kind": "好友私聊", "_support_user_identity": live["peer_identity"],
+                    "_support_messages": [{"id": r["id"], "body": r.get("body") or "", "sender_identity": r["sender_identity"],
+                                           "is_wanderer": r["sender_identity"] in fresh_window["wanderer_ids"]}
+                                          for r in fresh_window["new"]]}, thread_key(live))
+                cancel = cancel or not state.get("romance_allowed")
+            if (not response.get("support_fallback") and live.get("support_urgent")
+                    and int(live["latest_message_id"]) > int(live["snapshot_message_id"])):
+                cancel = cancel or safety_response(ctx, live, fresh_window) is not None
+            if cancel:
+                # Keep already committed segments intact. A retracted or clarified
+                # source cannot cause the remainder of an old safety answer to post.
+                response["parts"] = response["parts"][:part]
+                response["reason"] = "current request changed; remaining old response cancelled"
+                response["action"] = "reply" if part else "skip"
+                response["learning"] = None
+                ctx.pending_learning.pop(thread_key(live), None)
+                conn.execute("UPDATE wanderer_social_inbox SET response_json=?,updated_at=? WHERE id=?",
+                             (json.dumps(response, ensure_ascii=False), now_iso(), task["id"]))
+                conn.commit()
+                return False, events
         if part >= len(response["parts"]):
             return False, events
         text = response["parts"][part]
@@ -192,14 +251,28 @@ def finish(ctx: ActionContext, task: dict) -> tuple[bool, list]:
                          "AND ref_id IN (SELECT CAST(id AS TEXT) FROM private_messages WHERE conversation_key=? AND id<=?)",
                          (now_iso(), ctx.identity, task["conversation_key"], snapshot))
         action_kind = ("social_message" if task["source"] == "social" else "dm_reply") if response["parts"] else "skip"
+        support_handled = int(live.get("support_handled_message_id") or 0)
+        if response.get("support_fallback") and response["parts"]:
+            support_handled = max(support_handled, int(response.get("support_source_anchor") or 0))
+        pending_urgent = 0
+        if int(live["latest_message_id"]) > snapshot:
+            from .wanderer_support_service import assess_support
+            peer_bot = (live["peer_identity"].startswith("student:") and bool(conn.execute(
+                "SELECT 1 FROM wanderer_agents WHERE student_id=?", (int(live["peer_identity"].split(":")[1]),)).fetchone()))
+            remaining = _source_rows(conn, live, start=snapshot, end=int(live["latest_message_id"]), backwards=True, limit=40)
+            state = assess_support([{"id": r["id"], "body": r.get("body") or "", "sender_identity": r["sender_identity"],
+                                     "is_wanderer": bool(peer_bot), "support_already_handled": int(r["id"]) <= support_handled}
+                                    for r in remaining if r["sender_identity"] != ctx.identity and not r.get("recalled_at")])
+            pending_urgent = int(state.get("urgency") == "immediate")
         log_wanderer_action(conn, ctx.wanderer_id, action_kind,
             target_type="social_dm" if task["source"] == "social" else "private_message", target_id=task["conversation_key"],
             mood=response.get("mood", ""), ai_calls=int(response.get("ai_calls") or 0),
             content_preview=" / ".join(response["parts"]), outcome="ok" if response["parts"] else "skipped",
             detail={"reason": response.get("reason", ""), "inbox_id": task["id"], "snapshot_id": snapshot})
         conn.execute("UPDATE wanderer_social_inbox SET handled_message_id=?,state=CASE WHEN latest_message_id>? "
-                     "THEN 'pending' ELSE 'idle' END,run_at=?,lease_token='',lease_until='',attempts=0,response_json='',"
+                     "THEN 'pending' ELSE 'idle' END,run_at=?,lease_token='',lease_until='',lease_lane='normal',"
+                     "support_urgent=?,support_handled_message_id=?,attempts=0,response_json='',"
                      "next_part=0,mood=?,decision_reason=?,last_error='',updated_at=? WHERE id=?",
-                     (snapshot, snapshot, now_iso(), response.get("mood", ""), response.get("reason", ""), now_iso(), task["id"]))
+                     (snapshot, snapshot, now_iso(), pending_urgent, support_handled, response.get("mood", ""), response.get("reason", ""), now_iso(), task["id"]))
         conn.commit()
     return True, events

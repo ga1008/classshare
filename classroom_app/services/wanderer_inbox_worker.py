@@ -56,19 +56,32 @@ async def _run_claim(task: dict, *, factory=None, ai_caller=None, sleep=None) ->
         conn.commit()
         window = actions.window_for(conn, ctx, live, snapshot=live.get("snapshot_message_id") if live["response_json"] else None)
     if not live["response_json"]:
+        if live.get("lease_lane") == "safety":
+            with ctx.connect() as conn:
+                safety_window = actions.latest_safety_window(conn, ctx, live, window)
+            response = actions.safety_response(ctx, live, safety_window)
+        else:
+            response = None
+        if live.get("lease_lane") == "safety" and response is None:
+            inbox.release(task, "support triage no longer urgent", factory=factory, delay=0, clear_support=True)
+            return "normal_pending"
         if task["source"] == "social":
             with ctx.connect() as conn:
                 sent = _sent_since(conn, ctx.identity, task["conversation_key"], iso_before(seconds=RATE_WINDOW_SECONDS))
             if sent >= RATE_LIMIT:
                 inbox.release(task, "conversation rate limit", factory=factory, delay=RATE_WINDOW_SECONDS)
                 return "deferred"
-        if not window["new"]:
+        if response is not None:
+            pass
+        elif not window["new"]:
             response = {"status": "ok", "parts": [], "action": "skip", "mood": live["mood"], "reason": "没有待回应的有效消息"}
         elif (window["new"][-1]["sender_identity"] in window["wanderer_ids"]
               and wanderer_streak(window["rows"], window["wanderer_ids"]) >= 2):
             response = {"status": "ok", "parts": [], "action": "skip", "mood": live["mood"], "reason": "结束散修之间的连续互答"}
         else:
-            response = await actions.compose(ctx, live, window)
+            response = await _compose_or_handoff(ctx, live, window, factory=factory)
+            if response is None:
+                return "support_pending"
         if response.get("status") != "ok":
             capped = response.get("status") == "capped"
             # Preserve the platform daily cap; never impersonate a decision with an emoji.
@@ -98,7 +111,9 @@ async def _run_claim(task: dict, *, factory=None, ai_caller=None, sleep=None) ->
         await ctx.sleep(min(1.5, max(0.3, len(response["parts"][index]) * 0.025)))
         sent, events = actions.send_part(ctx, task)
         if not sent:
-            return "lease_lost"
+            finished, completion_events = actions.finish(ctx, task)
+            await social_push_service.push_events(completion_events)
+            return "done" if finished else "lease_lost"
         await social_push_service.push_events(events)
     # Optional compaction follows delivery, so it cannot delay the first answer.
     # The existing archive/source-message truth is retained on summary failure.
@@ -108,15 +123,40 @@ async def _run_claim(task: dict, *, factory=None, ai_caller=None, sleep=None) ->
         key = actions.thread_key(task)
         invalidate_thread_cache(ctx.wanderer_id, key)
         thread = load_thread(conn, ctx.wanderer_id, key)
-    if thread["history"] and len(thread["history"]) + len(window["new"]) + len(response["parts"]) >= HISTORY_DB_LIMIT - 6:
+    if (live.get("lease_lane") != "safety" and not response.get("support_fallback") and thread["history"]
+            and len(thread["history"]) + len(window["new"]) + len(response["parts"]) >= HISTORY_DB_LIMIT - 6):
         await compact_memory(ctx, key)
     finished, events = actions.finish(ctx, task)
     await social_push_service.push_events(events)
     return "done" if finished else "lease_lost"
 
 
+async def _compose_or_handoff(ctx, task, window, *, factory=None):
+    """Cooperative handoff, never a token steal or a refund of a reserved AI call."""
+    generation = asyncio.create_task(actions.compose(ctx, task, window))
+    try:
+        while True:
+            done, _pending = await asyncio.wait({generation}, timeout=2)
+            with ctx.connect() as conn:
+                fresh = inbox.owned(conn, task)
+                conn.commit()
+            if (fresh and fresh.get("support_urgent") and int(fresh["latest_message_id"]) > int(window["anchor"])):
+                generation.cancel()
+                with suppress(asyncio.CancelledError):
+                    await generation
+                inbox.release(task, "new current safety request; model await interrupted", factory=factory, delay=0)
+                return None
+            if done:
+                return await generation
+    finally:
+        if not generation.done():
+            generation.cancel()
+            with suppress(asyncio.CancelledError):
+                await generation
+
+
 async def process_once(*, factory=None, ai_caller=None, sleep=None, limit=None) -> list[str]:
-    tasks = inbox.claim(limit or inbox.concurrency(), factory=factory)
+    tasks = inbox.claim_safety(factory=factory) + inbox.claim(limit or inbox.concurrency(), factory=factory)
     return await asyncio.gather(*(run_claim(task, factory=factory, ai_caller=ai_caller, sleep=sleep) for task in tasks))
 
 
@@ -135,8 +175,12 @@ async def run_forever() -> None:
                 if time.monotonic() - recovered_at >= 60:
                     inbox.recover()
                     recovered_at = time.monotonic()
-                for task in inbox.claim(max(0, inbox.concurrency() - len(active))):
-                    active.add(asyncio.create_task(run_claim(task)))
+                normal_active = sum(getattr(task, "_wanderer_lane", "normal") == "normal" for task in active)
+                tasks = inbox.claim_safety() + inbox.claim(max(0, inbox.concurrency() - normal_active))
+                for task in tasks:
+                    pending = asyncio.create_task(run_claim(task))
+                    pending._wanderer_lane = task.get("lease_lane", "normal")
+                    active.add(pending)
             except Exception as exc:
                 print(f"[WANDERER_INBOX] poll failed: {type(exc).__name__}: {exc}")
             await asyncio.sleep(2)

@@ -63,6 +63,7 @@ class ActionContext:
     now: Optional[datetime] = None
     ai_calls: int = 0
     pending_learning: dict[str, dict[str, Any]] = field(default_factory=dict)
+    support_threads: set[str] = field(default_factory=set)
 
     def connect(self) -> Any:
         if self.conn_factory is not None:
@@ -138,13 +139,24 @@ async def run_turn(
     ``user_message`` carries long reading material (knowledge study) that would not
     fit the scene body; it must already be wrapped in the injection guard.
     """
-    if ctx.capped:
-        return _capped_result()
     scene = dict(scene)
+    from .wanderer_student_support import fallback_for_scene, prepare_student_support
+    fallback = fallback_for_scene(ctx.wanderer, scene, thread_key)
+    if fallback:
+        ctx.pending_learning.pop(thread_key, None)
+        ctx.support_threads.add(thread_key)
+        return fallback
+    if ctx.capped:
+        ctx.pending_learning.pop(thread_key, None)
+        fallback = fallback_for_scene(ctx.wanderer, scene, thread_key, on_failure=True)
+        if fallback:
+            ctx.support_threads.add(thread_key)
+        return fallback or _capped_result()
     with ctx.connect() as conn:
         from .wanderer_memory_service import invalidate_thread_cache
         from .wanderer_learning_service import prepare_learning_safely
         invalidate_thread_cache(ctx.wanderer_id, thread_key)
+        prepare_student_support(conn, ctx.wanderer, thread_key, scene)
         prepare_learning_safely(conn, ctx.wanderer, thread_key, scene)
         system_prompt = build_system_prompt(conn, ctx.wanderer, scene=scene, thread_key=thread_key)
         conn.commit()  # persists the knowledge use_count bump
@@ -158,6 +170,12 @@ async def run_turn(
     if result.get("status") == "capped":
         ctx.capped = True
     ctx.ai_calls += int(result.get("ai_calls") or 0)
+    if result.get("status") != "ok" or (result.get("turn") or {}).get("action") in {"skip", "emoji"}:
+        fallback = fallback_for_scene(ctx.wanderer, scene, thread_key, on_failure=True)
+        if fallback:
+            ctx.pending_learning.pop(thread_key, None)
+            ctx.support_threads.add(thread_key)
+            return {**fallback, "ai_calls": int(result.get("ai_calls") or 0)}
     from .wanderer_learning_service import parse_learning
     if result.get("status") == "ok":
         ctx.pending_learning[thread_key] = parse_learning(result.get("raw_text") or "", scene.get("_learning_snapshot"))
@@ -199,7 +217,9 @@ async def remember(
                                  counterpart_identity=counterpart_identity)
         commit_learning(ctx, conn, thread_key)
         conn.commit()
-    if thread is not None and needs_compaction(thread):
+    support = thread_key in ctx.support_threads
+    ctx.support_threads.discard(thread_key)
+    if not support and thread is not None and needs_compaction(thread):
         await compact_memory(ctx, thread_key)
 
 

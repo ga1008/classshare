@@ -151,6 +151,9 @@ def _post_scene(ctx: ActionContext, conn: Any, post: dict[str, Any], detail: dic
         "context_lines": _floor_lines(ctx, conn, int(post["id"])),
         "tags": list(ctx.wanderer.get("interests") or []),
         "counterpart": author,
+        "_support_messages": [{"id": int(post["id"]), "body": detail.get("content_md") or post.get("summary") or "",
+                               "sender_identity": str(post.get("author_identity") or ""), "is_wanderer": bool(author.get("is_wanderer"))}],
+        "_support_user_identity": str(post.get("author_identity") or "") if post.get("author_display_mode", "real_name") == "real_name" else "",
         "task": "你刚刷到这篇帖子。按你的性格决定：是否点赞（like）、是否评论（不想说就 skip，想说就 reply/emoji/multi）。",
     }
 
@@ -277,10 +280,15 @@ async def browse_blog(ctx: ActionContext) -> list[dict[str, Any]]:
         done.append(outcome("browse_post"))
     focus = picked[0]
     wants_ai = behavior_on(ctx.wanderer, "blog_comment") or behavior_on(ctx.wanderer, "blog_like")
-    if ctx.capped or not wants_ai:
-        return done + _browse_without_ai(ctx, focus)
+    from .wanderer_student_support import fallback_for_scene
     with ctx.connect() as conn:
         scene = _post_scene(ctx, conn, focus, details[int(focus["id"])])
+    support = fallback_for_scene(ctx.wanderer, scene, _thread_key(int(focus["id"])))
+    if support and behavior_on(ctx.wanderer, "blog_comment"):
+        ctx.support_threads.add(_thread_key(int(focus["id"])))
+        return done + await _apply_post_turn(ctx, focus, support)
+    if ctx.capped or not wants_ai:
+        return done + _browse_without_ai(ctx, focus)
     result = await run_turn(ctx, scene=scene, thread_key=_thread_key(int(focus["id"])), suffix="blog_post")
     if result.get("status") == "capped":
         return done + _browse_without_ai(ctx, focus)
@@ -354,16 +362,26 @@ def _reply_scene(ctx: ActionContext, conn: Any, comment: dict[str, Any], mode: s
         "meta": f"{counterpart['name']} 在帖子下对你说话", "body": comment.get("post_summary") or "",
         "context_lines": _floor_lines(ctx, conn, int(comment["post_id"]), root_id=root),
         "tags": list(ctx.wanderer.get("interests") or []), "counterpart": counterpart, "task": task,
+        "_support_messages": [{"id": int(comment["id"]), "body": str(comment.get("content_md") or ""),
+                               "sender_identity": str(comment.get("author_identity") or ""),
+                               "is_wanderer": bool(counterpart.get("is_wanderer"))}],
+        "_support_user_identity": str(comment.get("author_identity") or "") if real_name else "",
     }
 
 
 async def _generate_reply_parts(ctx: ActionContext, *, mode: str, scene_builder, thread_key: str,
                                 suffix: str) -> tuple[list[str], int, str, str]:
     """(parts, ai_calls, mood, turn_action). Emoji mode and the capped path cost no AI call."""
-    if mode == "emoji" or ctx.capped:
-        return [emoji_for(ctx)], 0, "", "emoji"
     with ctx.connect() as conn:
         scene = scene_builder(conn)
+    from .wanderer_student_support import fallback_for_scene
+    fallback = fallback_for_scene(ctx.wanderer, scene, thread_key)
+    if fallback:
+        ctx.support_threads.add(thread_key)
+        turn = fallback["turn"]
+        return list(turn["parts"]), 0, str(turn.get("mood") or ""), str(turn["action"])
+    if mode == "emoji" or ctx.capped:
+        return [emoji_for(ctx)], 0, "", "emoji"
     result = await run_turn(ctx, scene=scene, thread_key=thread_key, suffix=suffix)
     turn = result.get("turn") or {}
     parts = turn_parts(ctx, turn)
@@ -377,7 +395,10 @@ async def _answer_comment(ctx: ActionContext, note: dict[str, Any]) -> list[dict
     if not comment or comment.get("author_identity") == ctx.identity or not as_int(comment.get("allow_comments")):
         return []
     target = {"target_type": "blog_comment", "target_id": comment["id"]}
-    mode = policy_roll(ctx) if behavior_on(ctx.wanderer, "reply") else "disabled"
+    from .wanderer_student_support import fallback_for_scene
+    with ctx.connect() as conn:
+        support = fallback_for_scene(ctx.wanderer, _reply_scene(ctx, conn, comment, "reply"), _thread_key(int(comment["post_id"])))
+    mode = ("reply" if support else policy_roll(ctx)) if behavior_on(ctx.wanderer, "reply") else "disabled"
     if mode in {"ignore", "disabled"}:
         record_action(ctx, "skip", **target, outcome="skipped", detail={"reason": f"{mode}_policy"})
         return [outcome("skip", "skipped")]

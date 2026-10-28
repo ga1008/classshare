@@ -65,6 +65,8 @@ async def start_friend_conversation(ctx: ActionContext) -> list[dict[str, Any]]:
         return []
     scene = chat_scene(ctx, window, "multi", False)
     scene["kind"] = "想起一位好友"
+    scene["_support_messages"] = []  # No new human request: history cannot reopen emotional/romantic consent.
+    scene["_support_user_identity"] = ""
     scene["meta"] = "目前没有需要你回复的新消息，你可以自行决定是否主动找这位好友说话。"
     scene["task"] = ("依据你的人格、关系记忆、完整近期对话和对方当前可见资料，自选话题和表达。"
                      "分享想法、见闻或邀请都可以；没有想说的就 skip，不必硬找话题，不催促、不刷屏。")

@@ -179,6 +179,9 @@ def _table_statements(id_column: str) -> list[str]:
             next_part INTEGER NOT NULL DEFAULT 0,
             mood TEXT NOT NULL DEFAULT '',
             decision_reason TEXT NOT NULL DEFAULT '',
+            support_urgent INTEGER NOT NULL DEFAULT 0,
+            support_handled_message_id INTEGER NOT NULL DEFAULT 0,
+            lease_lane TEXT NOT NULL DEFAULT 'normal',
             last_error TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
@@ -194,6 +197,7 @@ _INDEX_STATEMENTS = (
     "CREATE INDEX IF NOT EXISTS idx_wanderer_learning_retry "
     "ON wanderer_action_log (wanderer_id, action_kind, outcome, id)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_inbox_due ON wanderer_social_inbox (state, run_at)",
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_inbox_support_due ON wanderer_social_inbox (state, support_urgent, run_at)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_agents_status ON wanderer_agents (status, id)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_knowledge_active "
     "ON wanderer_knowledge_entries (wanderer_id, status, use_count, created_at)",
@@ -210,6 +214,9 @@ _INDEX_STATEMENTS = (
 # Columns added after the first release (round 2, design §10.2); tables created
 # before then gain them through ``_add_column_if_missing``.
 ADDED_COLUMNS = (
+    ("wanderer_social_inbox", "support_urgent", "INTEGER NOT NULL DEFAULT 0"),
+    ("wanderer_social_inbox", "support_handled_message_id", "INTEGER NOT NULL DEFAULT 0"),
+    ("wanderer_social_inbox", "lease_lane", "TEXT NOT NULL DEFAULT 'normal'"),
     ("wanderer_agents", "origin", "TEXT NOT NULL DEFAULT 'seed'"),  # 'seed' | 'dao'
     ("wanderer_agents", "created_by_review_id", "INTEGER"),
     # Avatar chain (design §11): illustrated file under static/img/wanderers/, then a silhouette key.
@@ -239,8 +246,10 @@ def ensure_wanderer_schema(conn: Any, *, engine: str | None = None) -> None:
     if _SCHEMA_READY:
         return
     resolved_engine = str(engine or get_configured_db_engine()).strip().lower()
-    for statement in wanderer_schema_statements(resolved_engine):
+    for statement in _table_statements(_id_column(resolved_engine)):
         conn.execute(statement)
     for table, column, definition in ADDED_COLUMNS:
         _add_column_if_missing(conn, resolved_engine, table, column, definition)
+    for statement in _INDEX_STATEMENTS:
+        conn.execute(statement)
     _SCHEMA_READY = True

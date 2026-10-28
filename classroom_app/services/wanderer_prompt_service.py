@@ -247,6 +247,8 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
     for actions with a different output shape (``write_post``).
     """
     scene = dict(scene or {})
+    from .wanderer_student_support import prepare_student_support
+    support = prepare_student_support(conn, wanderer, thread_key, scene)
     from .wanderer_learning_service import prepare_learning_safely, learning_output_contract
     if "_learning_context_block" not in scene:
         prepare_learning_safely(conn, wanderer, thread_key, scene)
@@ -265,6 +267,7 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
         _dao_block(conn, wanderer),
         _memory_block(conn, wanderer, thread_key, scene),
         learning,
+        support,
         _social_block(scene),
         _scene_block(scene),
         learning_output_contract(),

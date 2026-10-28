@@ -34,7 +34,7 @@ from typing import Any, Callable, Optional
 
 from . import social_push_service
 from .rate_limit_service import RateLimitExceededError
-from .social_common import SocialError, as_int, blocked_either, iso_before, loads_list, utc_day_start_iso
+from .social_common import SocialError, as_int, blocked_either, iso_before, loads_list, utc_day_start_iso, serialize_on
 from .social_conversation_service import dm_read_cursor, load_group, load_membership, participants, require_access
 from .social_identity_service import load_people
 from .social_message_service import mark_read, nudge, send_message
@@ -285,6 +285,11 @@ def chat_scene(ctx: ActionContext, window: dict[str, Any], mode: str, mentioned:
         "counterpart": _counterpart(window),
         "participants": _roster(window, ctx.identity),
         "_learning_message_ids": [int(row["id"]) for row in window["rows"]],
+        "_support_messages": [{"id": row["id"], "body": row.get("body") or "", "sender_identity": row["sender_identity"],
+                               "is_wanderer": row["sender_identity"] in window["wanderer_ids"],
+                               "support_already_handled": int(row["id"]) <= int(window.get("support_handled_message_id") or 0)}
+                              for row in window["new"] if not row.get("recalled_at")],
+        "_support_user_identity": str(window["new"][-1]["sender_identity"]) if window["new"] else "",
         "task": task,
     }
 
@@ -306,6 +311,10 @@ async def _mark_read(ctx: ActionContext, window: dict[str, Any]) -> None:
 async def _compose(ctx: ActionContext, window: dict[str, Any], mode: str,
                    mentioned: bool) -> tuple[list[str], int, str, str]:
     """(parts, ai_calls, mood, action). Emoji mode costs no AI call; when capped DMs get an emoji."""
+    if window.get("_support_fallback"):
+        turn = window["_support_fallback"]["turn"]
+        ctx.support_threads.add(f"social:{window['key']}")
+        return list(turn["parts"]), 0, str(turn.get("mood") or ""), str(turn["action"])
     if mode == "emoji" or (ctx.capped and window["type"] == "dm"):
         return [emoji_for(ctx)], 0, "", "emoji"
     if ctx.capped:
@@ -386,7 +395,7 @@ async def _remember_exchange(ctx: ActionContext, window: dict[str, Any], said: t
         thread = load_thread(conn, ctx.wanderer_id, key)
     # At most one optional compaction per exchange, before evicting older work memory.
     # A failed/capped summary leaves the original mirror intact and never loops on a burst.
-    if thread["history"] and len(thread["history"]) + len(entries) >= HISTORY_DB_LIMIT - 6:
+    if key not in ctx.support_threads and thread["history"] and len(thread["history"]) + len(entries) >= HISTORY_DB_LIMIT - 6:
         await compact_memory(ctx, key)
     with ctx.connect() as conn:
         for speaker, text in entries:
@@ -394,6 +403,7 @@ async def _remember_exchange(ctx: ActionContext, window: dict[str, Any], said: t
         from .wanderer_actions_common import commit_learning
         commit_learning(ctx, conn, key)
         conn.commit()
+    ctx.support_threads.discard(key)
 
 
 def _target(window: dict[str, Any]) -> dict[str, Any]:
@@ -431,7 +441,11 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
             await _mark_read(ctx, window)
         return await _skip(ctx, window, reason)
     mentioned = mentioned or any(is_mentioned(row, ctx.identity) for row in window["new"])
-    mode = _pick_mode(ctx, window, mentioned)
+    from .wanderer_student_support import fallback_for_scene
+    support = fallback_for_scene(ctx.wanderer, chat_scene(ctx, window, "reply", mentioned), f"social:{key}")
+    if support:
+        window["_support_fallback"] = support
+    mode = "reply" if support else _pick_mode(ctx, window, mentioned)
     await _mark_read(ctx, window)
     if mode in {"", "ignore"}:
         return await _skip(ctx, window, "wanderer_pause" if not mode else "ignore_policy")
@@ -482,6 +496,11 @@ def _consider(conn: Any, wanderer: dict[str, Any], identity: str, group_id: int,
     if not new:
         return None
     key = f"group:{int(group_id)}"
+    from .wanderer_support_service import assess_support
+    support = assess_support([{"id": row["id"], "body": row.get("body") or "", "sender_identity": row["sender_identity"],
+                               "is_wanderer": row["sender_identity"] in wanderer_ids}
+                              for row in new if not row.get("recalled_at")])
+    urgent = support.get("urgency") == "immediate"
     mentioned = any(is_mentioned(row, identity) for row in new)
     interest = interest_score(wanderer.get("interests") or [], *(row.get("body") for row in new))
     chance = group_reply_probability(
@@ -489,7 +508,7 @@ def _consider(conn: Any, wanderer: dict[str, Any], identity: str, group_id: int,
         last_is_wanderer=new[-1]["sender_identity"] in wanderer_ids,
         sent_today=_sent_since(conn, identity, key, utc_day_start_iso()),
     )
-    return {"identity": identity, "mentioned": mentioned, "chance": chance, "last_id": int(rows[-1]["id"])}
+    return {"identity": identity, "mentioned": mentioned, "chance": chance, "last_id": int(rows[-1]["id"]), "support_urgent": urgent}
 
 
 async def watch_group(group_id: int, *, conn_factory: ConnFactory = None, rng: Optional[random.Random] = None,
@@ -502,6 +521,7 @@ async def watch_group(group_id: int, *, conn_factory: ConnFactory = None, rng: O
     with _connect(conn_factory) as conn:
         if not is_wanderer_runtime_enabled(conn):
             return {"status": "disabled", "scheduled": [], "passed": []}
+        serialize_on(conn, "wanderer-group-support", [str(group_id)])
         group = load_group(conn, int(group_id))
         if not group or group.get("dissolved_at"):
             return {"status": "gone", "scheduled": [], "passed": []}
@@ -514,12 +534,16 @@ async def watch_group(group_id: int, *, conn_factory: ConnFactory = None, rng: O
         order = list(wanderers.items())
         rng.shuffle(order)
         offset = 0
+        support_taken = False
         for identity, wanderer in order:
             seen = _consider(conn, wanderer, identity, int(group_id), rows, wanderer_ids, streak)
             if seen is None:
                 continue
             delay: Optional[float] = None
-            if rng.random() < seen["chance"]:
+            if seen.get("support_urgent"):
+                if not support_taken:
+                    delay, support_taken = 0.0, True
+            elif rng.random() < seen["chance"]:
                 offset += rng.randint(*STAGGER_SECONDS)
                 if is_awake_now(wanderer, moment):
                     delay = float(offset)

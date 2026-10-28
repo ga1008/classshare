@@ -128,6 +128,23 @@ class WandererLearningTest(WandererWorldTestCase):
         reflect["evidence_ids"] = [f"social_messages:{own['id']}", f"social_messages:{later['id']}"]
         self.assertEqual(self.apply(self.package([reflect]))["saved"], 1)
 
+    def test_crisis_and_exclusive_partner_labels_do_not_become_permanent_experience(self):
+        source = self.send(self.real, self.key, "我今天很难受，想让你说话慢一点。")
+        for content in ("对方一直想自杀，需要永远看住。", "她是我的女朋友，我是唯一依靠。",
+                        "对方患有抑郁症，应当依赖我。"):
+            with self.subTest(content=content):
+                self.assertEqual(self.apply(self.package([self.note(source, content=content)]))["rejected"], 1)
+        self.assertEqual(self.apply(self.package([self.note(source, content="对方希望交流节奏慢一点，先听完再回应。")]))["saved"], 1)
+
+    def test_old_sensitive_experience_is_not_reintroduced_by_retrieval(self):
+        source = self.send(self.real, self.key, "交流慢一点就好")
+        self.apply(self.package([self.note(source)]))
+        with self.connect() as conn:
+            conn.execute("UPDATE wanderer_experience_notes SET content='他是我的恋人，永远不离开' WHERE wanderer_id=?",
+                         (self.atai["id"],))
+            conn.commit()
+        self.assertNotIn("永远不离开", self.context())
+
     def test_correction_supersedes_only_current_same_thread_note(self):
         source = self.send(self.real, self.key, "我希望你先给结论")
         self.apply(self.package([self.note(source)]))

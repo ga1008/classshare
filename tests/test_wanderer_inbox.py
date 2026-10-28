@@ -268,7 +268,8 @@ class WandererInboxTest(WandererWorldTestCase):
         self.send(self.real, key, "仅彼此可见的内容")
         snapshot = inbox.health_snapshot(factory=self.connect)
         self.assertEqual(snapshot["counts"], {"pending": 1})
-        self.assertEqual(set(snapshot), {"counts", "active_leases", "concurrency", "oldest_due_seconds"})
+        self.assertEqual(set(snapshot), {"counts", "active_leases", "concurrency", "oldest_due_seconds", "active_by_lane", "safety_concurrency"})
+        self.assertEqual(snapshot["safety_concurrency"], 1)
         self.assertNotIn(key, json.dumps(snapshot))
 
     def test_legacy_resume_only_counts_successfully_committed_parts(self):

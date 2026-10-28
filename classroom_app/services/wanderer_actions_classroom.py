@@ -14,6 +14,7 @@ multi-part turn is joined into one message.
 from __future__ import annotations
 
 import re
+import json
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -196,6 +197,28 @@ def _classroom_scene(ctx: ActionContext, offering: dict[str, Any], lines: list[s
     }
 
 
+def _support_seen(conn: Any, offering_id: int, ctx: ActionContext) -> int:
+    visit = conn.execute("SELECT detail_json FROM wanderer_action_log WHERE wanderer_id=? AND action_kind='classroom_visit' "
+                         "AND target_id=? ORDER BY id DESC LIMIT 1", (ctx.wanderer_id, str(offering_id))).fetchone()
+    try:
+        return int(json.loads(visit["detail_json"] or "{}").get("support_seen_id") or 0) if visit else 0
+    except (ValueError, TypeError):
+        return 0
+
+
+def _support_messages(conn: Any, offering_id: int, ctx: ActionContext, *, through_id: int | None = None) -> list[dict]:
+    seen = _support_seen(conn, offering_id, ctx)
+    bound = " AND id<=?" if through_id is not None else ""
+    rows = [dict(r) for r in conn.execute("SELECT id,user_id,user_role,message FROM chat_logs WHERE class_offering_id=? "
+        "AND logged_at>=? AND id>?" + bound + " ORDER BY id DESC LIMIT ?",
+        [offering_id, (ctx.current_time()-timedelta(minutes=10)).isoformat(timespec="seconds"),
+         seen, *([through_id] if through_id is not None else []), CHAT_CONTEXT_LIMIT])]
+    bots = load_wanderers_by_student_ids(conn, [r["user_id"] for r in rows if r["user_role"] == "student"])
+    return [{"id": r["id"], "body": r["message"], "sender_identity": f"{r['user_role']}:{r['user_id']}",
+             "is_wanderer": r["user_role"] == "student" and int(r["user_id"]) in bots}
+            for r in reversed(rows) if r["user_role"] in {"student", "teacher"} and str(r.get("user_id") or "").isdigit()]
+
+
 async def _post_message(ctx: ActionContext, offering_id: int, text: str) -> dict[str, Any]:
     from .chat_handler import save_chat_message
 
@@ -210,10 +233,15 @@ async def _post_message(ctx: ActionContext, offering_id: int, text: str) -> dict
 
 
 async def _speak(ctx: ActionContext, offering: dict[str, Any], online: int, state: dict[str, Any],
-                 lines: list[str]) -> dict[str, Any]:
+                 lines: list[str], *, prepared_scene: dict | None = None) -> dict[str, Any]:
     offering_id = int(offering["id"])
     thread_key = f"classroom:{offering_id}"
-    result = await run_turn(ctx, scene=_classroom_scene(ctx, offering, lines, online, state),
+    scene = prepared_scene or _classroom_scene(ctx, offering, lines, online, state)
+    if "_support_messages" not in scene:
+        with ctx.connect() as conn:
+            scene["_support_messages"] = _support_messages(conn, offering_id, ctx)
+        scene["_support_user_identity"] = scene["_support_messages"][-1]["sender_identity"] if scene["_support_messages"] else ""
+    result = await run_turn(ctx, scene=scene,
                             thread_key=thread_key, suffix="classroom")
     turn = result.get("turn") or {}
     calls = int(result.get("ai_calls") or 0)
@@ -228,7 +256,7 @@ async def _speak(ctx: ActionContext, offering: dict[str, Any], online: int, stat
         record_action(ctx, "classroom_message", target_type="classroom", target_id=offering_id,
                       class_offering_id=offering_id, content_preview=text, ai_calls=calls, outcome="failed",
                       detail={"error": f"{type(exc).__name__}: {exc}"[:240]})
-        return outcome("classroom_message", "failed", ai_calls=calls)
+        return outcome("classroom_message", "failed", ai_calls=calls, support_pending=bool(result.get("support_fallback")))
     record_action(ctx, "classroom_message", target_type="chat_log", target_id=stored.get("id"),
                   class_offering_id=offering_id, content_preview=text, ai_calls=calls,
                   mood=str(turn.get("mood") or ""), detail={"online": online, "in_progress": state["in_progress"]})
@@ -240,18 +268,28 @@ async def _speak(ctx: ActionContext, offering: dict[str, Any], online: int, stat
 
 
 async def _maybe_speak(ctx: ActionContext, offering: dict[str, Any], online: int,
-                       state: dict[str, Any]) -> Optional[dict[str, Any]]:
+                       state: dict[str, Any], *, support_anchor: int | None = None) -> Optional[dict[str, Any]]:
     """None when the wanderer stays silent without asking the model (throttle, cap, switch, mood)."""
     offering_id = int(offering["id"])
     with ctx.connect() as conn:
         throttled = recently_posted(conn, offering_id, ctx.student_id, ctx.current_time())
         lines = _chat_lines(ctx, conn, offering_id)
-    if throttled or ctx.capped or not behavior_on(ctx.wanderer, "classroom_message"):
+        messages = _support_messages(conn, offering_id, ctx, through_id=support_anchor)
+    scene = _classroom_scene(ctx, offering, lines, online, state)
+    scene["_support_messages"] = messages
+    scene["_support_user_identity"] = messages[-1]["sender_identity"] if messages else ""
+    from .wanderer_student_support import fallback_for_scene
+    support = fallback_for_scene(ctx.wanderer, scene, f"classroom:{offering_id}")
+    if throttled or not behavior_on(ctx.wanderer, "classroom_message"):
+        return outcome("skip", "skipped", reason="classroom_throttled_or_disabled", support_pending=True) if support else None
+    if support:
+        return await _speak(ctx, offering, online, state, lines, prepared_scene=scene)
+    if ctx.capped:
         return None
     speak_probability = SPEAK_PROBABILITY_IN_CLASS if state["in_progress"] else SPEAK_PROBABILITY_IDLE
     if ctx.rng.random() >= speak_probability:
         return None
-    return await _speak(ctx, offering, online, state, lines)
+    return await _speak(ctx, offering, online, state, lines, prepared_scene=scene)
 
 
 async def visit_classroom(ctx: ActionContext) -> list[dict[str, Any]]:
@@ -270,13 +308,16 @@ async def visit_classroom(ctx: ActionContext) -> list[dict[str, Any]]:
     online_count = online.get(offering_id, 0)
     with ctx.connect() as conn:
         state = session_state(conn, offering_id, ctx.current_time())
+        support_seen = _support_seen(conn, offering_id, ctx)
+        support_anchor = int(conn.execute("SELECT COALESCE(MAX(id),0) AS id FROM chat_logs WHERE class_offering_id=?", (offering_id,)).fetchone()["id"])
         bump_stats(conn, ctx.wanderer_id, {"classroom_visits": 1}, visited_offering=offering_id)
         conn.commit()
-    spoken = await _maybe_speak(ctx, offering, online_count, state)
+    spoken = await _maybe_speak(ctx, offering, online_count, state, support_anchor=support_anchor)
     silent_calls = int(spoken["ai_calls"]) if spoken and spoken["kind"] == "skip" else 0
     record_action(ctx, "classroom_visit", target_type="classroom", target_id=offering_id,
                   class_offering_id=offering_id, content_preview=str(offering.get("course_name") or ""),
-                  ai_calls=silent_calls, detail={"online": online_count, "in_progress": state["in_progress"]})
+                  ai_calls=silent_calls, detail={"online": online_count, "in_progress": state["in_progress"],
+                  "support_seen_id": support_seen if spoken and spoken.get("support_pending") else support_anchor})
     done = [outcome("classroom_visit", ai_calls=silent_calls)]
     if spoken and spoken["kind"] != "skip":
         done.append(spoken)
