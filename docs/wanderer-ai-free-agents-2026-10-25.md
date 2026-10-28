@@ -132,6 +132,16 @@ wanderer_runtime_settings  (key TEXT PRIMARY KEY, value TEXT, updated_at)
 
 ## 5. 行为引擎（`wanderer_behavior_service` + `scheduled_task_handlers`）
 
+### 5.0 作息与限额的边界（2026-10-28 补）
+
+作息（`active_hours` / `weekday_weights`）和每日动作预算只约束**主动行为**：
+浏览、旁听、发帖、主动搭话、主动加好友。被真实学生问到（社交私信、课堂私信、
+博客评论/回复/@、群里被 @）时立即回复，且不计入每日动作预算、会话 6 条/10 分钟
+与群 20 条/天上限；`daily_ai_call_cap` 作为成本上限仍然生效。博客通知走
+`wanderer_reply_tick`（+3 秒、reply-only），私信走 `wanderer_inbox_worker`（2 秒轮询），
+群 @ 去抖 3–10 秒且不看作息。详见
+[回复优先级](wanderer-reply-priority-2026-10-28.md)。
+
 ### 5.1 节拍
 - 递归任务 `wanderer_tick`（`recurrence_seconds=600`，dedupe `wanderer:tick`，启动时 `ensure_wanderer_scheduled_tasks()` 注册，与 `life_tip_generation_service` 同模式）。
 - 每个 tick：若全局 `enabled` 为假直接返回；取 `status='active'` 且当前处于 `active_hours`（按本地时区，`weekday_weights` 作为随机门槛）且今日动作数 < `daily_action_budget` 的散修；随机打乱后最多处理 `tick_batch_size`（默认 6）个；全局日 AI 调用数 ≥ `daily_ai_call_cap`（默认 400）则只做不调 AI 的动作（点赞/浏览/跳过）。

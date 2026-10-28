@@ -65,7 +65,9 @@ async def _run_claim(task: dict, *, factory=None, ai_caller=None, sleep=None) ->
         if live.get("lease_lane") == "safety" and response is None:
             inbox.release(task, "support triage no longer urgent", factory=factory, delay=0, clear_support=True)
             return "normal_pending"
-        if task["source"] == "social":
+        # 被问不计入互动限额：普通私聊直接回答。安全兜底车道仍保留原反刷屏限制，
+        # 避免危机期间被同一会话的连续消息刷屏（wanderer-support-delivery）。
+        if task["source"] == "social" and live.get("lease_lane") == "safety":
             with ctx.connect() as conn:
                 sent = _sent_since(conn, ctx.identity, task["conversation_key"], iso_before(seconds=RATE_WINDOW_SECONDS))
             if sent >= RATE_LIMIT:
@@ -101,11 +103,13 @@ async def _run_claim(task: dict, *, factory=None, ai_caller=None, sleep=None) ->
     response = json.loads(live["response_json"])
     for index in range(int(live["next_part"]), len(response["parts"])):
         if task["source"] == "social":
-            with ctx.connect() as conn:
-                sent = _sent_since(conn, ctx.identity, task["conversation_key"], iso_before(seconds=RATE_WINDOW_SECONDS))
-            if sent >= RATE_LIMIT:
-                inbox.release(task, "conversation rate limit", factory=factory, delay=RATE_WINDOW_SECONDS)
-                return "deferred"
+            if live.get("lease_lane") == "safety":
+                with ctx.connect() as conn:
+                    sent = _sent_since(conn, ctx.identity, task["conversation_key"],
+                                       iso_before(seconds=RATE_WINDOW_SECONDS))
+                if sent >= RATE_LIMIT:
+                    inbox.release(task, "conversation rate limit", factory=factory, delay=RATE_WINDOW_SECONDS)
+                    return "deferred"
             await social_push_service.push([task["peer_identity"]],
                 {"type": "typing", "conversation_key": task["conversation_key"], "identity": ctx.identity})
         await ctx.sleep(min(1.5, max(0.3, len(response["parts"][index]) * 0.025)))

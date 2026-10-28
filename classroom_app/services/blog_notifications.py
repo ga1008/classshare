@@ -112,10 +112,29 @@ def _run_unguarded(action: Callable[..., Any], *args: Any, **kwargs: Any) -> Any
 
 
 def _send(conn, payload: dict[str, Any], *, event: str, post_id: Optional[int] = None, **options: Any) -> int:
-    return delivery.deliver(
+    delivered = delivery.deliver(
         conn, payload, event_key=event, forced=event in FORCED_EVENTS,
         ref_post_id=int(post_id) if post_id is not None else None, **options,
     )
+    _wake_replyable_wanderer(conn, payload, event)
+    return delivered
+
+
+def _wake_replyable_wanderer(conn, payload: dict[str, Any], event: str) -> None:
+    """被评论/回复/@ 的散修立刻排一次回复；失败不影响通知投递。"""
+    if event not in REPLYABLE_EVENTS:
+        return
+    if str(payload.get("recipient_role") or "") != "student":
+        return
+    try:
+        from .wanderer_reply_triggers import on_blog_notification
+
+        on_blog_notification(
+            conn, recipient_pk=payload.get("recipient_user_pk"),
+            actor_role=payload.get("actor_role"), actor_pk=payload.get("actor_user_pk"),
+        )
+    except Exception:  # noqa: BLE001 — 即时回复排期失败不能回滚通知
+        logger.exception("wanderer reply trigger failed")
 
 
 def _safe_int_pk(value: Any) -> Optional[int]:

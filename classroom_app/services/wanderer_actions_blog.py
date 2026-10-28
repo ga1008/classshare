@@ -299,26 +299,40 @@ async def browse_blog(ctx: ActionContext) -> list[dict[str, Any]]:
 # Pending blog replies (DMs use wanderer_inbox_worker)
 # ---------------------------------------------------------------------------
 
-def pending_blog_notifications(conn: Any, identity: str, limit: int) -> list[dict[str, Any]]:
+def pending_blog_notifications(conn: Any, identity: str, limit: int, *,
+                              real_only: bool = False) -> list[dict[str, Any]]:
+    """``real_only`` drops notifications whose actor is another 散修 (no AI-to-AI wake-ups)."""
     placeholders = ",".join("?" for _ in REPLY_NOTIFICATION_CATEGORIES)
+    real_sql = (
+        " AND NOT (COALESCE(actor_role, '') = 'student' AND actor_user_pk IN "
+        "(SELECT student_id FROM wanderer_agents))" if real_only else ""
+    )
     rows = conn.execute(
         "SELECT id, category, ref_type, ref_id, actor_display_name FROM message_center_notifications "
-        f"WHERE recipient_identity = ? AND read_at IS NULL AND category IN ({placeholders}) ORDER BY id LIMIT ?",
+        f"WHERE recipient_identity = ? AND read_at IS NULL AND category IN ({placeholders}){real_sql} "
+        "ORDER BY id LIMIT ?",
         (identity, *REPLY_NOTIFICATION_CATEGORIES, int(limit)),
     ).fetchall()
     return [_row_dict(row) for row in rows]
 
 
-def has_pending_work(ctx: ActionContext) -> bool:
+def has_pending_work(ctx: ActionContext, *, real_only: bool = False) -> bool:
     with ctx.connect() as conn:
-        return bool(pending_blog_notifications(conn, ctx.identity, 1))
+        return bool(pending_blog_notifications(conn, ctx.identity, 1, real_only=real_only))
 
 
-def _mark_notification_read(ctx: ActionContext, notification_id: int) -> None:
+def _claim_notification(ctx: ActionContext, notification_id: int) -> bool:
+    """Atomically take one notification so the regular tick and the immediate reply tick
+    never answer the same comment twice. A failed answer still leaves it read (same as the
+    old ``finally`` behaviour), so one broken item can never loop forever.
+    """
     with ctx.connect() as conn:
-        conn.execute("UPDATE message_center_notifications SET read_at = ? WHERE id = ? AND read_at IS NULL",
-                     (local_iso(), int(notification_id)))
+        cursor = conn.execute(
+            "UPDATE message_center_notifications SET read_at = ? WHERE id = ? AND read_at IS NULL",
+            (local_iso(), int(notification_id)),
+        )
         conn.commit()
+        return bool(getattr(cursor, "rowcount", 0))
 
 
 def _policy_prob(policy: dict[str, Any], key: str) -> float:
@@ -422,16 +436,14 @@ async def _answer_comment(ctx: ActionContext, note: dict[str, Any]) -> list[dict
 
 
 async def _handle_notification(ctx: ActionContext, note: dict[str, Any]) -> list[dict[str, Any]]:
-    try:
-        if note.get("category") == "blog_like":
-            with ctx.connect() as conn:
-                bump_stats(conn, ctx.wanderer_id, {"likes_received": 1})
-                conn.commit()
-            return []
-        return await _answer_comment(ctx, note)
-    finally:
-        # Read even when answering failed, so one broken item never loops forever.
-        _mark_notification_read(ctx, int(note["id"]))
+    if not _claim_notification(ctx, int(note["id"])):
+        return []  # another worker (regular tick / immediate reply tick) took it
+    if note.get("category") == "blog_like":
+        with ctx.connect() as conn:
+            bump_stats(conn, ctx.wanderer_id, {"likes_received": 1})
+            conn.commit()
+        return []
+    return await _answer_comment(ctx, note)
 
 
 async def handle_pending_replies(ctx: ActionContext) -> list[dict[str, Any]]:

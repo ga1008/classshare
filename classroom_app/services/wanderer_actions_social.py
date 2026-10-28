@@ -74,6 +74,8 @@ GROUP_DAILY_CAP = 20
 TYPING_SECONDS_PER_CHAR = 0.12
 TYPING_BOUNDS = (1.0, 8.0)
 WANDERER_REACT_PROB = 0.25
+# 直接对话（私聊 / 被 @）不设会话与群日限额，条数上限只由输出合同约束。
+DIRECT_REPLY_QUOTA = 5
 WANDERER_STREAK_LIMIT = 2
 NUDGE_BACK_PROB = 0.04
 NUDGED_BACK_PROB = 0.5
@@ -191,8 +193,14 @@ def load_window(conn: Any, identity: str, key: str) -> Optional[dict[str, Any]]:
 
 
 def _gate(conn: Any, identity: str, window: dict[str, Any], *, require_new: bool = True,
-          check_streak: bool = True) -> tuple[str, int]:
-    """(skip reason or '', how many messages may still be sent)."""
+          check_streak: bool = True, direct: bool = False) -> tuple[str, int]:
+    """(skip reason or '', how many messages may still be sent).
+
+    ``direct`` marks a message addressed to the wanderer (a DM or an @-mention).
+    Those bypass the per-conversation rate limit and the per-group daily cap:
+    被问/被@ 不计入互动限额 (docs/wanderer-reply-priority-2026-10-28.md). The AI
+    daily cap and the AI-to-AI loop guard still apply.
+    """
     parsed, key = window["parsed"], window["key"]
     if parsed["type"] == "dm":
         if blocked_either(conn, identity, parsed["peer"]) or not are_friends(conn, identity, parsed["peer"]):
@@ -203,6 +211,8 @@ def _gate(conn: Any, identity: str, window: dict[str, Any], *, require_new: bool
         return "nothing_new", 0
     if check_streak and window["streak"] >= WANDERER_STREAK_LIMIT:
         return "wanderer_loop", 0
+    if direct:
+        return "", DIRECT_REPLY_QUOTA
     quota = RATE_LIMIT - _sent_since(conn, identity, key, iso_before(seconds=RATE_WINDOW_SECONDS))
     if parsed["type"] == "group":
         quota = min(quota, GROUP_DAILY_CAP - _sent_since(conn, identity, key, utc_day_start_iso()))
@@ -330,7 +340,8 @@ async def _compose(ctx: ActionContext, window: dict[str, Any], mode: str,
     return ([] if action == "skip" else parts), int(result.get("ai_calls") or 0), str(turn.get("mood") or ""), action
 
 
-async def post_parts(ctx: ActionContext, window: dict[str, Any], parts: list[str]) -> tuple[int, str]:
+async def post_parts(ctx: ActionContext, window: dict[str, Any], parts: list[str], *,
+                      direct: bool = False) -> tuple[int, str]:
     """Send each part as its own message after a typing push and a typing-length pause."""
     user = build_wanderer_user_dict(ctx.wanderer)
     key = window["key"]
@@ -351,7 +362,8 @@ async def post_parts(ctx: ActionContext, window: dict[str, Any], parts: list[str
                 current = load_window(conn, ctx.identity, key)
                 own_part = bool(index > 0 and current and current["rows"]
                                 and current["rows"][-1]["sender_identity"] == ctx.identity)
-                reason, _quota = (_gate(conn, ctx.identity, current, require_new=False, check_streak=not own_part)
+                reason, _quota = (_gate(conn, ctx.identity, current, require_new=False,
+                                        check_streak=not own_part, direct=direct)
                                    if current else ("no_access", 0))
                 if (window.get("nonce_prefix") and index == 0 and current
                         and [row["id"] for row in current["rows"]] != [row["id"] for row in window["rows"]]):
@@ -433,14 +445,18 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
     """Read what is new in ``key`` and (maybe) answer it. Returns the action outcomes."""
     with ctx.connect() as conn:
         window = load_window(conn, ctx.identity, key)
-        reason, quota = _gate(conn, ctx.identity, window) if window else ("no_access", 0)
+        if window:
+            mentioned = mentioned or any(is_mentioned(row, ctx.identity) for row in window["new"])
+            direct = window["type"] == "dm" or mentioned
+            reason, quota = _gate(conn, ctx.identity, window, direct=direct)
+        else:
+            direct, reason, quota = False, "no_access", 0
     if reason == "nothing_new":
         return []
     if reason:
         if window:
             await _mark_read(ctx, window)
         return await _skip(ctx, window, reason)
-    mentioned = mentioned or any(is_mentioned(row, ctx.identity) for row in window["new"])
     from .wanderer_student_support import fallback_for_scene
     support = fallback_for_scene(ctx.wanderer, chat_scene(ctx, window, "reply", mentioned), f"social:{key}")
     if support:
@@ -453,7 +469,7 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
     parts = parts[:quota]
     if not parts:
         return await _skip(ctx, window, f"turn:{action}", ai_calls=calls, mood=mood)
-    sent, error = await post_parts(ctx, window, parts)
+    sent, error = await post_parts(ctx, window, parts, direct=direct)
     nudged = await _maybe_nudge(ctx, window) if sent else False
     status = "ok" if sent == len(parts) else "failed"
     record_action(ctx, "social_message", **_target(window), content_preview=" / ".join(parts[:sent] or parts),
@@ -470,10 +486,12 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
 def group_reply_probability(wanderer: dict[str, Any], *, interest: float, mentioned: bool, streak: int,
                             last_is_wanderer: bool, sent_today: int) -> float:
     """Chance that a wanderer joins in now (pure; no AI)."""
-    if sent_today >= GROUP_DAILY_CAP or streak >= WANDERER_STREAK_LIMIT:
+    if streak >= WANDERER_STREAK_LIMIT:
         return 0.0
     if mentioned:
-        return 1.0
+        return 1.0  # @ 是直接对话，不受群日上限约束；AI 循环保护仍在上一条
+    if sent_today >= GROUP_DAILY_CAP:
+        return 0.0
     chance = 0.05 + 0.3 * sociability(wanderer) + min(0.3, 0.1 * float(interest))
     if last_is_wanderer:
         chance *= WANDERER_REACT_PROB
@@ -545,11 +563,11 @@ async def watch_group(group_id: int, *, conn_factory: ConnFactory = None, rng: O
                     delay, support_taken = 0.0, True
             elif rng.random() < seen["chance"]:
                 offset += rng.randint(*STAGGER_SECONDS)
-                if is_awake_now(wanderer, moment):
+                if seen["mentioned"]:
+                    # 被 @ 等于有人点名问你：不看作息，错峰几秒就回。
                     delay = float(offset)
-                elif seen["mentioned"]:
-                    wait = seconds_until_awake(wanderer, moment)
-                    delay = None if wait is None else wait + rng.uniform(*WAKE_JITTER_SECONDS)
+                elif is_awake_now(wanderer, moment):
+                    delay = float(offset)
             if delay is None:
                 _mark_group_read(conn, int(group_id), identity, seen["last_id"])  # read, chose silence
                 passed.append(identity)

@@ -45,7 +45,7 @@ ALWAYS_MULTI = {"ignore_prob": 0, "emoji_only_prob": 0, "multi_part_prob": 1, "m
 ALWAYS_REPLY = {"ignore_prob": 0, "emoji_only_prob": 0, "multi_part_prob": 0, "max_parts": 2}
 SOCIAL_TABLES = ("social_friendships", "social_groups", "social_group_members", "social_messages",
                  "social_message_media", "social_dm_reads", "social_dm_participants", "social_friend_request_log",
-                 "user_presence", "private_message_blocks")
+                 "user_presence", "private_message_blocks", "social_daily_counters")
 
 
 class FixedRandom(random.Random):
@@ -482,14 +482,16 @@ class WandererSocialTest(WandererWorldTestCase):
         self.assertEqual(self.tasks("wanderer_social_reply"), [])
         self.assertEqual(self.run_reply(self.atai, key, StubCaller()), "skipped: social_off")
 
-    def test_per_conversation_rate_limit(self):
+    def test_direct_message_is_not_blocked_by_the_conversation_quota(self):
+        # 被问不计数入互动限额：散修已经连发 6 条，学生再问仍然要回。
         key = self.befriend(self.real, self.atai)
         self.insert_messages(key, self.ident(self.atai), 6, prefix="seed")
         self.send(self.real, key, "你怎么这么多话")
         caller = StubCaller(turn("reply", ["嘿嘿"]))
         self.run_reply(self.atai, key, caller)
-        self.assertEqual(caller.calls, [])
-        self.assertIn("rate limit", self.rows("SELECT last_error FROM wanderer_social_inbox WHERE conversation_key=?", (key,))[0]["last_error"])
+        self.assertEqual(len(caller.calls), 1)
+        sent = [row["body"] for row in self.messages_from(self.ident(self.atai), key) if row["message_type"] == "text"]
+        self.assertEqual(sent[-1], "嘿嘿")
 
     # -- groups -------------------------------------------------------------
 
@@ -535,14 +537,42 @@ class WandererSocialTest(WandererWorldTestCase):
         steps = [delays[0]] + [later - earlier for earlier, later in zip(delays, delays[1:])]
         self.assertTrue(all(5 <= step <= 40 for step in steps), steps)
 
-    def test_group_daily_cap_per_wanderer(self):
+    def test_group_daily_cap_limits_unprompted_chatter(self):
+        group_id, key = self.make_group(self.atai)
+        self.insert_messages(key, self.ident(self.atai), GROUP_DAILY_CAP, prefix="cap")
+        self.send(self.real, key, "还在吗")
+        summary = asyncio.run(watch_group(group_id, rng=FixedRandom(0.0)))
+        self.assertEqual(summary["scheduled"], [])
+        self.assertEqual(group_reply_probability(self.atai, interest=0, mentioned=False, streak=0,
+                                                 last_is_wanderer=False, sent_today=GROUP_DAILY_CAP), 0.0)
+
+    def test_group_mention_is_answered_even_at_the_group_daily_cap(self):
         group_id, key = self.make_group(self.atai)
         self.insert_messages(key, self.ident(self.atai), GROUP_DAILY_CAP, prefix="cap")
         self.send(self.real, key, "@阿泰 还在吗", mentions=[self.ident(self.atai)])
         summary = asyncio.run(watch_group(group_id, rng=FixedRandom(0.0)))
-        self.assertEqual(summary["scheduled"], [])
+        self.assertEqual([item["identity"] for item in summary["scheduled"]], [self.ident(self.atai)])
         self.assertEqual(group_reply_probability(self.atai, interest=0, mentioned=True, streak=0,
-                                                 last_is_wanderer=False, sent_today=GROUP_DAILY_CAP), 0.0)
+                                                 last_is_wanderer=False, sent_today=GROUP_DAILY_CAP), 1.0)
+
+    def test_group_mention_wakes_an_asleep_wanderer_immediately(self):
+        self.set_wanderer("atai", schedule_json={"active_hours": [], "weekday_weights": {}})
+        group_id, key = self.make_group(self.atai)
+        self.send(self.real, key, "@阿泰 在吗", mentions=[self.ident(self.atai)])
+        summary = asyncio.run(watch_group(group_id, rng=FixedRandom(0.0)))
+        self.assertEqual([item["identity"] for item in summary["scheduled"]], [self.ident(self.atai)])
+        self.assertLessEqual(summary["scheduled"][0]["delay"], 40)
+        self.assertTrue(summary["scheduled"][0]["mentioned"])
+
+    def test_group_mention_debounce_is_short_and_pulls_earlier(self):
+        _group_id, key = self.make_group(self.atai)
+        self.send(self.real, key, "大家好啊")
+        first = self.tasks("wanderer_group_watch")[0]["run_at"]
+        self.send(self.real, key, "@阿泰 在吗", mentions=[self.ident(self.atai)])
+        second = self.tasks("wanderer_group_watch")[0]["run_at"]
+        delay = (datetime.fromisoformat(second) - datetime.now()).total_seconds()
+        self.assertLessEqual(delay, 12, delay)
+        self.assertLessEqual(datetime.fromisoformat(second), datetime.fromisoformat(first))
 
     def test_wanderer_loop_guard(self):
         group_id, key = self.make_group(self.atai, self.lele, self.xiaoman)

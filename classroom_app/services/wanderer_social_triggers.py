@@ -34,6 +34,9 @@ SOCIAL_BEHAVIOR = "social"
 FRIEND_DELAY_SECONDS = (0, 1800)
 REPLY_DELAY_SECONDS = (20, 600)
 GROUP_DEBOUNCE_SECONDS = (30, 120)
+# 群里被 @ 是直接对话：只做很短的去抖，不再等 30–120 秒。
+MENTION_DEBOUNCE_SECONDS = (3, 10)
+MENTION_ALL = "all"
 WAKE_JITTER_SECONDS = (60, 900)
 NEXT_WINDOW_HORIZON_HOURS = 48
 TASK_PRIORITY = 110
@@ -149,15 +152,34 @@ def _merge_flags(conn: Any, task: dict[str, Any], merge: dict[str, Any]) -> None
                      (json.dumps(updated, ensure_ascii=False, separators=(",", ":")), int(task["id"])))
 
 
+def _pull_earlier(conn: Any, task: dict[str, Any], run_at: datetime) -> None:
+    """Move a pending task earlier (never later) so an @ is not stuck behind a debounce."""
+    current = str(task.get("run_at") or "")
+    wanted = run_at.isoformat(timespec="seconds")
+    try:
+        if datetime.fromisoformat(current) <= run_at:
+            return
+    except ValueError:
+        if current and current <= wanted:
+            return
+    conn.execute("UPDATE scheduled_tasks SET run_at = ? WHERE id = ?", (wanted, int(task["id"])))
+
+
 def schedule_coalesced(conn: Any, *, task_kind: str, dedupe_key: str, run_at: datetime, payload: dict[str, Any],
-                       title: str, merge: Optional[dict[str, Any]] = None) -> int:
-    """Keep a pending task (OR-merging ``merge`` flags into its payload); re-arm anything else."""
+                       title: str, merge: Optional[dict[str, Any]] = None, earlier: bool = False) -> int:
+    """Keep a pending task (OR-merging ``merge`` flags into its payload); re-arm anything else.
+
+    ``earlier=True`` also moves a pending task forward when the new run time is
+    sooner: a late mention must not wait for an older debounce.
+    """
     from .scheduled_task_service import get_owner_task_by_dedupe, schedule_task
 
     existing = get_owner_task_by_dedupe(conn, dedupe_key)
     if existing and str(existing.get("status") or "") == "pending":
         if merge:
             _merge_flags(conn, existing, merge)
+        if earlier:
+            _pull_earlier(conn, existing, run_at)
         return int(existing["id"])
     return schedule_task(conn, task_kind=task_kind, run_at=run_at, payload=payload, dedupe_key=dedupe_key,
                          owner_role="system", title=title, priority=TASK_PRIORITY, max_attempts=TASK_MAX_ATTEMPTS,
@@ -209,7 +231,7 @@ def social_wanderers(conn: Any, identities: Iterable[str]) -> dict[str, dict[str
 # ---------------------------------------------------------------------------
 
 def on_message_created(conn: Any, parsed: dict[str, Any], sender: str, *, rng: Optional[random.Random] = None,
-                       now: Optional[datetime] = None) -> list[int]:
+                       now: Optional[datetime] = None, mentions: Any = None) -> list[int]:
     """A text/media/nudge message was stored in ``parsed['key']`` by ``sender``."""
     rng = rng or random.Random()
     moment = now or datetime.now()
@@ -224,13 +246,17 @@ def on_message_created(conn: Any, parsed: dict[str, Any], sender: str, *, rng: O
     from .social_relations import group_member_identities
 
     members = [item for item in group_member_identities(conn, parsed["group_id"]) if item != sender]
-    if not social_wanderers(conn, members) or not _enabled(conn):
+    wanderers = social_wanderers(conn, members)
+    if not wanderers or not _enabled(conn):
         return []
     group_id = int(parsed["group_id"])
+    said = [str(item or "") for item in (mentions or [])]
+    pointed_at_wanderer = MENTION_ALL in said or any(item in wanderers for item in said)
+    debounce = MENTION_DEBOUNCE_SECONDS if pointed_at_wanderer else GROUP_DEBOUNCE_SECONDS
     return [schedule_coalesced(
         conn, task_kind=TASK_KIND_GROUP_WATCH, dedupe_key=group_watch_dedupe_key(group_id),
-        run_at=moment + timedelta(seconds=rng.randint(*GROUP_DEBOUNCE_SECONDS)), payload={"group_id": group_id},
-        title="散修群聊观察",
+        run_at=moment + timedelta(seconds=rng.randint(*debounce)), payload={"group_id": group_id},
+        title="散修群聊观察", earlier=pointed_at_wanderer,
     )]
 
 

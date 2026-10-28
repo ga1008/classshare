@@ -3071,7 +3071,10 @@ def create_private_message(
         for item in prepared_attachments
     ):
         raise ValueError("AI 助教私信支持文字和图片，其他文件请使用课堂即时对话")
-    _enforce_private_message_rate_limit(conn, sender_identity=current_identity)
+    # 散修不是真人用户：它的发言上限由每日 AI 调用配额约束，
+    # 被问时的连发消息不应被 5 条/分钟的发送频率挡住。
+    if not bool(user.get("is_wanderer")):
+        _enforce_private_message_rate_limit(conn, sender_identity=current_identity)
 
     normalized_scope = _safe_int(contact.get("class_offering_id"))
     if normalized_scope is None:

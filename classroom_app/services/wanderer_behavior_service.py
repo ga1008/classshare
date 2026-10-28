@@ -37,6 +37,7 @@ from .wanderer_actions_blog import (
     browse_blog,
     handle_pending_replies,
     has_pending_work,
+    pending_blog_notifications,
     post_eligible,
     wants_to_post,
     write_post,
@@ -70,6 +71,7 @@ from .wanderer_settings_service import (
 )
 
 TASK_KIND_WANDERER_TICK = "wanderer_tick"
+TASK_KIND_WANDERER_REPLY_TICK = "wanderer_reply_tick"
 TASK_KIND_WANDERER_DAO_DAILY = "wanderer_dao_daily_review"
 TICK_DEDUPE_KEY = "wanderer:tick"
 DAO_DAILY_DEDUPE_KEY = "wanderer:dao-daily"
@@ -211,6 +213,72 @@ def select_awake_wanderers(
     return candidates[: max(0, int(limit))]
 
 
+def reply_behaviors_on(wanderer: dict[str, Any]) -> bool:
+    return behavior_on(wanderer, "reply") or behavior_on(wanderer, "dm_reply")
+
+
+def _waiting_for_blog_reply(conn: Any, wanderer: dict[str, Any]) -> bool:
+    if not reply_behaviors_on(wanderer):
+        return False
+    return bool(pending_blog_notifications(conn, f"student:{wanderer['student_id']}", 1, real_only=True))
+
+
+def select_tick_wanderers(
+    conn: Any, *, now: datetime, rng: random.Random, limit: int,
+    wanderer_ids: Optional[Iterable[Any]] = None, reply_only: bool = False,
+) -> list[tuple[dict[str, Any], bool]]:
+    """``[(wanderer, reply_only)]`` for one tick.
+
+    * normal: awake and under today's action budget;
+    * reply-only: someone is waiting for an answer. These run even while the
+      wanderer is "asleep" and even when its interaction budget is used up —
+      the schedule governs proactive exploring, not answering a person
+      (docs/wanderer-reply-priority-2026-10-28.md). The AI call cap is still
+      enforced by ``generate_turn``, so cost stays bounded.
+    """
+    limit = max(0, int(limit))
+    if limit == 0:
+        return []
+    wanted = {as_int(item) for item in wanderer_ids or [] if as_int(item) > 0}
+    active = [w for w in list_wanderers(conn, statuses=[STATUS_ACTIVE])
+              if not wanted or int(w["id"]) in wanted]
+    if reply_only:
+        waiting = [w for w in active if _waiting_for_blog_reply(conn, w)]
+        rng.shuffle(waiting)
+        return [(w, True) for w in waiting[:limit]]
+
+    def waiting_ones(excluded: set[int]) -> list[dict[str, Any]]:
+        rows = [w for w in active if int(w["id"]) not in excluded and _waiting_for_blog_reply(conn, w)]
+        rng.shuffle(rows)
+        return rows
+
+    if wanted:
+        # Admin "run now": everyone chosen still gets a full turn when it can;
+        # over-budget chosen wanderers only answer the people waiting for them.
+        normal = [w for w in active if today_action_count(conn, int(w["id"]), now) < daily_budget(w)]
+        rng.shuffle(normal)
+        picked: list[tuple[dict[str, Any], bool]] = [(w, False) for w in normal[:limit]]
+        remaining = limit - len(picked)
+        if remaining > 0:
+            picked.extend((w, True) for w in waiting_ones({int(w["id"]) for w, _only in picked})[:remaining])
+        return picked
+
+    # Regular tick: people first — a waiting reply is served before proactive exploring.
+    picked = [(w, True) for w in waiting_ones(set())[:limit]]
+    remaining = limit - len(picked)
+    if remaining <= 0:
+        return picked
+    taken = {int(w["id"]) for w, _only in picked}
+    awake = [
+        w for w in active
+        if int(w["id"]) not in taken and is_awake(w, now, rng)
+        and today_action_count(conn, int(w["id"]), now) < daily_budget(w)
+    ]
+    rng.shuffle(awake)
+    picked.extend((w, False) for w in awake[:remaining])
+    return picked
+
+
 # ---------------------------------------------------------------------------
 # Action choice (§5.2)
 # ---------------------------------------------------------------------------
@@ -313,8 +381,23 @@ def _still_runnable(ctx: ActionContext) -> bool:
     return (fresh.get("behaviors") or {}) == (ctx.wanderer.get("behaviors") or {})
 
 
-async def run_wanderer_actions(ctx: ActionContext, *, budget_left: int) -> dict[str, Any]:
-    """Reflection, then 1-3 actions; returns the per-wanderer summary."""
+async def run_wanderer_actions(
+    ctx: ActionContext, *, budget_left: int, reply_only: bool = False,
+) -> dict[str, Any]:
+    """Reflection, then 1-3 actions; returns the per-wanderer summary.
+
+    ``reply_only`` answers waiting people and nothing else: no browsing, no
+    posting, no reflection, no budget consumption beyond the AI calls themselves.
+    """
+    if reply_only:
+        done = await _run_guarded(ctx, "replies", ACTIONS["replies"])
+        died = _check_death(ctx)
+        return {
+            "wanderer_id": ctx.wanderer_id, "slug": ctx.wanderer.get("slug"), "died": died,
+            "actions": [item["kind"] for item in done],
+            "failed": sum(1 for item in done if item["outcome"] == "failed"),
+            "ai_calls": ctx.ai_calls, "stopped": False, "reply_only": True,
+        }
     done = await _run_guarded(ctx, "reflect", reflect_on_reviews)
     planned = min(actions_per_tick(ctx.wanderer.get("activity_level"), ctx.rng), max(0, budget_left - len(done)))
     stopped = False
@@ -342,9 +425,9 @@ def _cap_reached(conn: Any) -> bool:
     return daily_ai_calls(conn) >= daily_cap(conn)
 
 
-async def _run_one(ctx: ActionContext, budget_left: int) -> dict[str, Any]:
+async def _run_one(ctx: ActionContext, budget_left: int, *, reply_only: bool = False) -> dict[str, Any]:
     try:
-        return await run_wanderer_actions(ctx, budget_left=budget_left)
+        return await run_wanderer_actions(ctx, budget_left=budget_left, reply_only=reply_only)
     except Exception as exc:  # noqa: BLE001 - the next wanderer still runs
         return {"wanderer_id": ctx.wanderer_id, "slug": ctx.wanderer.get("slug"), "actions": [], "failed": 1,
                 "error": f"{type(exc).__name__}: {exc}"[:200], "ai_calls": ctx.ai_calls}
@@ -361,11 +444,13 @@ async def run_wanderer_tick_once(
     rng: Optional[random.Random] = None,
     now: Optional[datetime] = None,
     social_upkeep: Optional[bool] = None,
+    reply_only: bool = False,
 ) -> dict[str, Any]:
     """Run one tick. ``force`` skips the enabled switch (admin "tick now").
 
     ``social_upkeep`` defaults to on for regular ticks and off when explicit
-    ``wanderer_ids`` are given.
+    ``wanderer_ids`` are given. ``reply_only`` runs just the pending blog
+    replies of the selected wanderers (used by the immediate reply trigger).
 
     Bounded by ``tick_max_seconds``; on timeout returns status ``timeout`` with
     the wanderers completed so far.
@@ -382,7 +467,7 @@ async def run_wanderer_tick_once(
     try:
         await asyncio.wait_for(
             _tick_body(conn_factory, summaries, state, limit=limit, wanderer_ids=wanderer_ids, ai_caller=ai_caller,
-                       sleep=sleep, rng=rng, now=now, moment=moment),
+                       sleep=sleep, rng=rng, now=now, moment=moment, reply_only=reply_only),
             timeout=max_seconds,
         )
     except asyncio.TimeoutError:
@@ -419,19 +504,39 @@ async def _tick_body(
     conn_factory: Optional[Callable[[], Any]], summaries: list[dict[str, Any]], state: dict[str, Any], *,
     limit: Optional[int], wanderer_ids: Optional[Iterable[Any]], ai_caller: Optional[AiCaller],
     sleep: Optional[SleepFn], rng: random.Random, now: Optional[datetime], moment: datetime,
+    reply_only: bool = False,
 ) -> None:
     """Select and run the batch, appending each finished wanderer to ``summaries``."""
     with _connection(conn_factory) as conn:
-        batch = select_awake_wanderers(conn, now=moment, rng=rng, limit=limit or tick_batch_size(conn),
-                                       wanderer_ids=wanderer_ids)
+        batch = select_tick_wanderers(
+            conn, now=moment, rng=rng, limit=limit or tick_batch_size(conn),
+            wanderer_ids=wanderer_ids, reply_only=reply_only,
+        )
         state["capped"] = _cap_reached(conn)
         budgets = {int(item["id"]): daily_budget(item) - today_action_count(conn, int(item["id"]), moment)
-                   for item in batch}
-    for wanderer in batch:
+                   for item, run_reply_only in batch if not run_reply_only}
+    for wanderer, run_reply_only in batch:
         ctx = ActionContext(conn_factory=conn_factory, wanderer=wanderer, ai_caller=ai_caller,
                             sleep=sleep or asyncio.sleep, rng=rng, capped=state["capped"], now=now)
-        summaries.append(await _run_one(ctx, budgets.get(int(wanderer["id"]), 0)))
+        summaries.append(await _run_one(ctx, budgets.get(int(wanderer["id"]), 0), reply_only=run_reply_only))
         state["capped"] = state["capped"] or ctx.capped
+
+
+async def handle_wanderer_reply_tick(
+    task: dict[str, Any], *, ai_caller: Optional[AiCaller] = None, sleep: Optional[SleepFn] = None,
+    conn_factory: Optional[Callable[[], Any]] = None,
+) -> str:
+    """One-shot reply-only tick registered by ``wanderer_reply_triggers``."""
+    payload = task.get("payload") or {}
+    wanderer_id = as_int(payload.get("wanderer_id"))
+    summary = await run_wanderer_tick_once(
+        conn_factory, wanderer_ids=[wanderer_id] if wanderer_id else None,
+        reply_only=True, social_upkeep=False, ai_caller=ai_caller, sleep=sleep,
+    )
+    if summary["status"] not in {"ok", "timeout"}:
+        return f"wanderer reply tick: {summary['status']}"
+    return (f"wanderer reply tick: status={summary['status']} processed={summary['processed']} "
+            f"actions={summary['actions']} ai_calls={summary['ai_calls']} failed={summary['failed']}")
 
 
 async def handle_wanderer_tick(task: dict[str, Any]) -> str:

@@ -156,13 +156,14 @@ def _valid_reply(conn: Any, key: str, reply_to_id: Any) -> Optional[int]:
 # Send
 # ---------------------------------------------------------------------------
 
-def _wake_wanderers(conn: Any, parsed: dict[str, Any], sender: str) -> None:
+def _wake_wanderers(conn: Any, parsed: dict[str, Any], sender: str,
+                    mentions: Any = None) -> None:
     """Register 散修 reaction tasks (social doc §10); never sinks the send."""
     from ..db.savepoint import best_effort
     from .wanderer_social_triggers import on_message_created
 
     with best_effort(conn, "wanderer_social_hook", log_prefix="[SOCIAL]"):
-        on_message_created(conn, parsed, sender)
+        on_message_created(conn, parsed, sender, mentions=mentions)
 
 
 def push_message(events: Optional[list], conn: Any, parsed: dict[str, Any], message: dict[str, Any]) -> None:
@@ -236,7 +237,7 @@ def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], event
         media_service.attach_lan_media(conn, message_id, me, parsed["peer"], lan_specs)
     message = serialize_messages(conn, me, [load_message_row(conn, message_id)])[0]
     notify_message(conn, me, parsed, message)
-    _wake_wanderers(conn, parsed, me)
+    _wake_wanderers(conn, parsed, me, mentions)
     push_message(events, conn, parsed, message)
     return {**message, "mention_quota": quota}
 
