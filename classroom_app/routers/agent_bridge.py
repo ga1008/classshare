@@ -68,6 +68,12 @@ class BridgeWebPayload(BaseModel):
     mode: str = Field(default="text")  # text=去标签正文, raw=原始响应体
 
 
+class BridgeWebSearchPayload(BaseModel):
+    model_config = {"extra": "forbid"}
+    query: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=128)
+
+
 class BridgeQuestionPayload(BaseModel):
     request_id: str = Field(min_length=8, max_length=128)
     questions: list[dict[str, Any]] = Field(min_length=1, max_length=3)
@@ -269,6 +275,32 @@ async def bridge_web(payload: BridgeWebPayload, authorization: Optional[str] = H
             await asyncio.shield(run_in_threadpool(finish_tool_http_budget, lease, status))
 
 
+async def bridge_web_search(payload: BridgeWebSearchPayload, authorization: Optional[str] = ""):
+    """Derive quota ownership from the live, revocable task credential."""
+    import uuid
+    from starlette.concurrency import run_in_threadpool
+    from ..services.agent_delegation_service import verify_task_delegation
+    from ..services.ai_web_search_service import search_for_user
+
+    token = str(authorization or "")
+    if not token.lower().startswith("bearer lsagt_"):
+        raise HTTPException(401, "需要有效的任务授权。")
+    token = token[7:].strip()
+
+    def authorize():
+        with get_db_connection() as conn:
+            grant = verify_task_delegation(conn, token, purpose="tools", required_scope="web:fetch")
+            task, actor = resolve_live_task_actor(conn, int(grant.task["id"]))
+            return int(task["id"]), actor.as_user()
+
+    task_id, user = await run_in_threadpool(authorize)
+    logical = "agent:" + uuid.uuid5(uuid.NAMESPACE_URL, f"{task_id}:{payload.request_id}").hex
+    result = await search_for_user(user, payload.query, logical, channel="agent", ori_question=payload.query)
+    # Do not hand data back to a task whose authority disappeared while waiting.
+    await run_in_threadpool(authorize)
+    return result
+
+
 def _mcp_tools(actor):
     from ..services.agent_file_capability_catalog import file_transport_tools
     def tool(name, description, properties=None, required=None):
@@ -311,6 +343,9 @@ def _mcp_tools(actor):
     ]
     if actor.role == "teacher":
         tools.extend([
+            tool("web_search", "搜索公开网页；与普通对话独立，每账号每天最多10次，成功结果附剩余额度。同一搜索重试复用request_id。",
+                 {"query": {"type": "string", "minLength": 1, "maxLength": 128},
+                  "request_id": {"type": "string", "minLength": 1, "maxLength": 128}}, ["query", "request_id"]),
             tool("platform_query_catalog", "列出当前教师可用的授权统计查询名称及参数。"),
             tool("platform_query", "执行服务端命名查询，范围由当前身份决定；不支持任意SQL。",
                  {"query": string, "params": obj, "limit": {"type": "integer", "minimum": 1, "maximum": 200}}, ["query"]),
@@ -444,6 +479,8 @@ async def bridge_mcp(request: Request, authorization: Optional[str] = Header(def
                 value = await run_in_threadpool(bridge_download, BridgeFilePayload(**arguments), authorization)
             elif name == "public_fetch":
                 value = await bridge_web(BridgeWebPayload(**arguments), authorization)
+            elif name == "web_search":
+                value = await bridge_web_search(BridgeWebSearchPayload(**arguments), authorization)
             else:
                 raise HTTPException(404, "工具不存在。")
             text = json.dumps(value, ensure_ascii=False, allow_nan=False)

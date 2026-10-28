@@ -151,6 +151,8 @@
     background: transparent;
 }
 #ai-chat-modal .input-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: end; gap: 6px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+#ai-chat-modal .ai-chat-search-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ls-s-2); margin-block-end: var(--ls-s-2); min-width: 0; }
+#ai-chat-modal .ai-chat-search-tools small { overflow-wrap: anywhere; }
 #ai-chat-modal .left-buttons, #ai-chat-modal .right-buttons { display: flex; gap: 4px; padding-bottom: 3px; }
 #ai-chat-modal .ai-chat-input-area textarea {
     width: 100%; min-width: 0; min-height: 42px; max-height: 132px;

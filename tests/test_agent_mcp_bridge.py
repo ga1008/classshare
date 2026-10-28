@@ -1,6 +1,6 @@
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from classroom_app.db.schema_agent_authority import ensure_agent_authority_schema
 from classroom_app.db.schema_agent_request_budget import ensure_agent_request_budget_schema
@@ -47,6 +47,39 @@ class McpBridgeTests(unittest.TestCase):
         tools = self.call("tools/list").json()["result"]["tools"]
         self.assertIn("platform_read", [tool["name"] for tool in tools])
         self.assertNotIn("sql", str([tool["name"] for tool in tools]))
+
+    def test_web_search_is_teacher_only_and_derives_actor_from_live_credential(self):
+        from classroom_app.services import ai_web_search_service as search
+        for role in ("teacher", "student"):
+            names = [item["name"] for item in self.call("tools/list", role=role).json()["result"]["tools"]]
+            self.assertEqual("web_search" in names, role == "teacher")
+        payload = {"name": "web_search", "arguments": {"query": "DeepSeek官方文档", "request_id": "same-search-id"}}
+        result = {"status": "success", "text": "公开来源", "quota": {"remaining": 9}}
+        with patch.object(search, "search_for_user", AsyncMock(return_value=result)) as execute:
+            first = self.call("tools/call", payload).json()["result"]
+            second = self.call("tools/call", payload).json()["result"]
+            spoof = self.call("tools/call", {**payload, "arguments": {**payload["arguments"], "actor_id": 200}}).json()
+        self.assertFalse(first["isError"]); self.assertFalse(second["isError"])
+        self.assertEqual(execute.await_count, 2)
+        self.assertEqual(execute.await_args_list[0].args[0]["id"], 1)
+        self.assertEqual(execute.await_args_list[0].args[0]["role"], "teacher")
+        self.assertEqual(execute.await_args_list[0].kwargs["channel"], "agent")
+        self.assertEqual(execute.await_args_list[0].args[2], execute.await_args_list[1].args[2])
+        self.assertIn("error", spoof)
+
+    def test_canceled_task_cannot_dispatch_or_spend_search_quota(self):
+        from classroom_app.services import ai_web_search_service as search
+        self.conn.execute("UPDATE agent_tasks SET status='canceled' WHERE id=7"); self.conn.commit()
+        with patch.object(search, "search_for_user", AsyncMock()) as execute:
+            response = self.call("tools/call", {"name": "web_search", "arguments": {"query": "公开资料", "request_id": "canceled-search"}})
+        self.assertEqual(response.status_code, 401)
+        execute.assert_not_called()
+
+    def test_invalid_web_query_never_reaches_provider(self):
+        from classroom_app.services import ai_web_search_service as search
+        with patch.object(search, "search_for_user", AsyncMock()) as execute:
+            result = self.call("tools/call", {"name": "web_search", "arguments": {"query": "x" * 129, "request_id": "invalid-search"}}).json()["result"]
+        self.assertTrue(result["isError"]); execute.assert_not_called()
 
     def test_same_number_student_and_teacher_receive_own_identity_and_catalog(self):
         for role in ("teacher", "student"):

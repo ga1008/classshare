@@ -143,6 +143,8 @@ LanShare 有两条互相独立、但共用同一批模型厂商的智能链路�
 
 ### 3.6 用量、预算与费用
 
+2026-10-28 新增公开网页搜索预算：普通聊天（含深思）、教师 Agent、每个散修分别有独立的每日 10 次额度，无管理员豁免。主应用通过 `ai_web_search_service` 识别可信身份和预留，AI 服务只接受签名的一次性派发；`ai_search_quota_service` 持有跨进程、跨日的防重和结算。明确失败释放、未知已发出占额，搜索成功后模型失败不退款。禁止直接绕过账本把新增聊天/Agent/散修搜索接到旧无身份摘要接口。Search 自带正文，本轮不额外开放 Fetch。身份、缓存、工具续轮与验收合同见 [公开网页搜索设计](ai-web-search-2026-10-28.md)。
+
 - **真源**：生产厂商真实用量在 AI 容器 `logs/ai_usage.jsonl`（含 provider、model、tokens、估算费用、task_label、fallback 标记）；应用侧 `ai_usage_log` 只是估算 token 与业务归因。
 - `_estimate_provider_cost_cny` 价表必须与厂商官方价一致（DeepSeek flash 2/0.04/8，pro 9/0.3/27，非高峰 ×0.5；2026-09-11 校正）。改价表要在实施记录中给出来源链接。
 - 每课堂周预算：`ai_usage_budget_service`（`load/save_offering_ai_budget_config`、`should_defer_low_priority_ai_task`、超额通知超管）；仲裁日配额：`reserve_grading_review`（全局/课堂两级原子预约，重放不重复占额）。
@@ -358,7 +360,8 @@ venv/Scripts/python.exe -m unittest tests.test_approval_workflow -q
 | 提示词池 | `prompt_pool_service.py`、`static/js/prompt_pool.js` | `docs/prompt-pool-guidelines.md` | `tests/test_prompt_pool_service.py` |
 | 文档类 AI 功能 | `*_generation_service.py`、`*_import_service.py`、`material_final_document_service.py` | `docs/document-feature-ai-implementation-guide.md` | 各 `tests/test_*_plan*` / `*_evaluation*` |
 | 课次知识树（课次生命周期） | `session_knowledge_tree_service.py`（归一化/比重/进度真源）、`session_knowledge_tree_generation_service.py`（durable 目标 `session_knowledge_tree`，思考档 + 标准档重试，生成令牌防迟到覆盖）、`routers/session_knowledge_trees.py` | `docs/session-knowledge-tree-2026-10-17.md` | `tests/test_session_knowledge_tree.py` |
-| 联网检索 | `ai_web_research.py`；`ai_assistant.py` `/api/ai/web-search` | 模块 docstring | — |
+| 公开网页搜索与每日额度（2026-10-28） | `ai_web_search_service.py` / `ai_search_quota_service.py` / `ai_search_transport.py` / `deepseek_search_provider.py`；`ai_assistant.py` `/api/ai/search-dispatch`；普通聊天与授权 Agent bridge / 散修主入口 | `docs/ai-web-search-2026-10-28.md` | `tests/test_ai_search_*.py`、`tests/test_wanderer_web_search.py`、`tests/e2e/components/lq-ai-web-search*.spec.ts`、`lq-wanderer-search-usage-live.spec.ts` |
+| 独立后台研究 | `ai_web_research.py`；`ai_assistant.py` `/api/ai/web-search`（职业网络等既有后台流程；新增用户搜索不得调用此接口绕过日额） | 模块 docstring | — |
 | 轻量聊天查询 | `chat_platform_query_service.py` | 模块 docstring | `tests/test_agent_g9_light_query_eval.py` |
 | 材料知识检索与页面文字注入（2026-10-24） | `material_text_extraction_service.py`（页/课次/章节级抽取）、`material_search_index_service.py`（调度器 `material_search_index` 维护索引）、`material_knowledge_search_service.py`（按角色圈定 + `ensure_user_material_access` 复核）、`page_context_text_service.py`（页面文字清洗/脱敏/限长）、`routers/ai.py` `_material_knowledge_retrieval_events`、`routers/material_knowledge_search.py` | `docs/material-knowledge-search-2026-10-24.md` | `tests/test_material_knowledge_search.py` |
 | 教师课堂全知与本人确认动作（2026-10-24） | `teacher_classroom_brief_service.py`（课堂全景简报）、`chat_platform_query_service.py`（课堂视图 + `context_class_offering_id`）、`chat_action_service.py` / `chat_action_schema.py` / `routers/chat_actions.py`（提案→确认→执行）、`routers/ai.py` `_classroom_context_blocks` / `_classroom_action_proposal_events` | `docs/teacher-classroom-ai-2026-10-24.md` | `tests/test_teacher_classroom_ai.py` |

@@ -9,6 +9,7 @@ from starlette.requests import Request
 
 from classroom_app.services.ai_workspace_policy import ai_workspace_policy
 from classroom_app.services.manage_nav_service import build_manage_nav
+from classroom_app.lq import lq_props
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +37,7 @@ class AiWorkspaceTemplateTests(unittest.TestCase):
         }
         self.env = Environment(loader=ChoiceLoader([DictLoader(fixtures), FileSystemLoader(ROOT / 'templates')]), autoescape=True)
         self.env.globals.update(
+            lq_props=lq_props,
             ai_workspace_policy=ai_workspace_policy,
             asset_url=lambda name: '/static/' + name,
             static_asset_revision=lambda: 'fixture',
@@ -71,6 +73,10 @@ class AiWorkspaceTemplateTests(unittest.TestCase):
         capture = next(attrs for _, attrs in tags if attrs.get('id') == 'ai-chat-btn-capture')
         self.assertEqual(capture.get('aria-label'), '截取并标注当前页面')
         self.assertEqual(sum('resizer' in attrs.get('class', '').split() for _, attrs in tags), 8)
+        search = next(attrs for _, attrs in tags if attrs.get('id') == 'ai-web-search-btn')
+        self.assertEqual(search.get('data-lq-component'), 'button')
+        self.assertEqual(search.get('aria-pressed'), 'false')
+        self.assertEqual(search.get('aria-describedby'), 'ai-web-search-quota')
 
     def test_student_and_teacher_share_one_authenticated_entry_on_navbar_and_base(self):
         for role in ('student', 'teacher'):

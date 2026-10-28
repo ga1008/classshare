@@ -18,7 +18,7 @@ from typing import Any, Awaitable, Callable
 import httpx
 from agents import FunctionTool, RunContextWrapper
 
-from ...config import AGENT_TASK_MAX_WEB_SEARCHES, AI_ASSISTANT_URL
+from ...config import AGENT_TASK_MAX_WEB_SEARCHES
 from .bridge import BridgeAuthorityLost, BridgeClient, BridgeToolError
 from .recorder import EventRecorder, clip
 
@@ -82,6 +82,10 @@ def _tool(name: str, description: str, properties: dict[str, Any], required: lis
             arguments = json.loads(raw or "{}")
             if not isinstance(arguments, dict):
                 raise ToolFailure("参数必须是 JSON 对象。")
+            if name == "web_search":
+                # The model cannot choose a different account or spoof an SDK
+                # call identity. Retries of this tool invocation reuse its ID.
+                arguments["_search_call_id"] = str(getattr(wrapper, "tool_call_id", "") or uuid.uuid4())
             return _dump(await handler(ctx, arguments))
         except BridgeAuthorityLost as exc:
             ctx.authority_lost = str(exc) or "任务授权已失效"
@@ -242,22 +246,15 @@ async def task_context(ctx: RunContext, args: dict[str, Any]) -> Any:
 
 async def web_search(ctx: RunContext, args: dict[str, Any]) -> Any:
     query = str(args.get("query") or "").strip()
-    if not query:
-        raise ToolFailure("请提供搜索内容。")
+    if not query or len(query) > 128:
+        raise ToolFailure("请提供1至128个字符的公开搜索主题。")
     if ctx.web_searches >= AGENT_TASK_MAX_WEB_SEARCHES:
         raise ToolFailure(f"本任务联网搜索次数已达上限（{AGENT_TASK_MAX_WEB_SEARCHES} 次），请基于已有信息完成。")
     ctx.web_searches += 1
 
     async def search() -> Any:
-        async with httpx.AsyncClient(base_url=AI_ASSISTANT_URL, timeout=90.0) as client:
-            response = await client.post("/api/ai/web-search", json={
-                "query": query[:400], "instructions": str(args.get("focus") or "")[:400] or None,
-                "task_label": f"agent_task:web_search:{ctx.task_id}"})
-            response.raise_for_status()
-            text = str((response.json() or {}).get("text") or "")
-        if not text:
-            raise ToolFailure("联网搜索暂时没有返回结果，可换个说法或用 web_fetch 读取已知网址。")
-        return {"query": query, "text": text}
+        return await ctx.bridge.call("web_search", {"query": query,
+            "request_id": str(args.get("_search_call_id") or uuid.uuid4())})
 
     return await _read_step(ctx, "web_search", f"联网搜索：{clip(query, 60)}", search, target=query)
 
@@ -501,8 +498,8 @@ def build_tools(ctx: RunContext) -> list[FunctionTool]:
         _tool("task_context", "追问/续做时读取上一次任务的结果、回执与产物，避免重复执行已完成的操作。",
               {"task_id": {"type": "integer", "minimum": 1}, "offset": {"type": "integer", "minimum": 0},
                "limit": {"type": "integer", "minimum": 1, "maximum": 5}}, [], task_context),
-        _tool("web_search", "联网搜索最新、准确的公开信息（政策、资料、新闻、技术文档），返回带来源的摘要。",
-              {"query": {"type": "string"}, "focus": {"type": "string", "description": "希望重点关注的方面（可选）"}}, ["query"], web_search),
+        _tool("web_search", "联网搜索最新公开信息，返回来源与当日剩余额度。每账号每日独立10次；额度用尽时基于已有资料回答，不反复调用。禁止搜索私人账号、学号或聊天内容。",
+              {"query": {"type": "string", "minLength": 1, "maxLength": 128}}, ["query"], web_search),
         _tool("web_fetch", "打开一个公网网页并读取正文（不能访问内网）。", {"url": {"type": "string"}}, ["url"], web_fetch),
         _tool("save_artifact", "把成品（报告、名单、文稿、表格 CSV、网页）保存为本任务文件，供用户下载或后续上传。",
               {"filename": {"type": "string", "description": "如 期中成绩分析.md / 名单.csv"}, "content": {"type": "string"},

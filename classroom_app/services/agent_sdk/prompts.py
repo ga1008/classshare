@@ -82,6 +82,13 @@ def build_instructions(task: dict[str, Any], conn) -> str:
     blocks = [POLICY.format(name=task.get("teacher_name") or "当前", thinking_line=thinking_line),
               f"# 当前时间\n{_now_text()}", f"# 任务类型\n{definition['label']}"]
     try:
+        from ..ai_web_search_service import snapshot_for_user, search_context_block
+        quota = snapshot_for_user(conn, {"id": actor_id, "role": actor_role}, "agent")
+        blocks.append("# Agent 联网额度\n" + search_context_block(quota)
+                      + "工具返回的剩余额度为准；与普通对话额度独立，不能借用其他通道额度。")
+    except Exception:
+        blocks.append("# 联网额度\nAgent 每日独立最多10次，工具返回真实剩余数。额度暂不可读时不能声称仍有额度；用尽后基于现有资料完成。")
+    try:
         from ..platform_knowledge_service import build_platform_overview_block, build_user_knowledge_block
 
         blocks.append(build_platform_overview_block(actor_role))

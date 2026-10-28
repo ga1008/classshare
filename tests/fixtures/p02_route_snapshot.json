@@ -536,6 +536,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/ai/search-quota",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_ai_search_quota",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/ai/workspace-chat",
     "methods": [
       "POST"
@@ -7169,6 +7177,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/social/conversations/{key}/preferences",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_conversation_preferences",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/conversations/{key}/preferences",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "social_set_conversation_preferences",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/social/conversations/{key}/read",
     "methods": [
       "POST"
@@ -7390,6 +7414,14 @@
       "POST"
     ],
     "name": "social_media_backfill",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/social/mention-quota",
+    "methods": [
+      "GET"
+    ],
+    "name": "social_mention_quota",
     "include_in_schema": true
   },
   {

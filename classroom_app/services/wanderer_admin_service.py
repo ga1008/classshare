@@ -504,6 +504,7 @@ def _social_counts(conn: Any, wanderer: dict[str, Any]) -> dict[str, int]:
 
 def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
     from .wanderer_learning_service import admin_learning_summary
+    from .wanderer_public_service import web_search_usage
     wanderer = require_wanderer(conn, wanderer_id)
     number = int(wanderer["id"])
     totals = _action_totals(conn, number)
@@ -519,6 +520,7 @@ def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
         },
         "knowledge": knowledge_summary(conn, wanderer),
         "learning": admin_learning_summary(conn, number),
+        "web_search_usage": web_search_usage(conn, wanderer),
         "profile": _profile_payload(wanderer),
         "avatar": _avatar_payload(wanderer),
         "reviews": [_serialize_review(row) for row in _recent(conn, "wanderer_dao_reviews", number, DETAIL_RECENT_REVIEWS)],

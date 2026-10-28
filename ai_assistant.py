@@ -4546,6 +4546,7 @@ async def _do_provider_call(
                 return {
                     "text": response_content or "",
                     "tool_calls": tool_calls,
+                    "reasoning_content": response_thinking or "",
                 }
 
             if not response_content:
@@ -5376,10 +5377,8 @@ async def ai_chat_task_stream(req: AIChatRequest):
 
     # 2. 将新消息添加到历史记录中
     history = list(req.messages or [])
-    history.append({
-        "role": "user",
-        "content": new_user_message_content
-    })
+    if req.new_message or image_inputs or req.file_texts or not history:
+        history.append({"role": "user", "content": new_user_message_content})
 
     # 3. 创建流式生成器
     stream_generator = _call_ai_platform_chat_stream_events(
@@ -5415,10 +5414,8 @@ async def ai_chat_task(req: AIChatRequest):
     # 4. 将新消息添加到历史记录中
     # (注意: VolcEngine 和 OpenAI 都能处理这种多部分 "content" 列表)
     history = list(req.messages or [])
-    history.append({
-        "role": "user",
-        "content": new_user_message_content
-    })
+    if req.new_message or image_inputs or req.file_texts or not history:
+        history.append({"role": "user", "content": new_user_message_content})
 
     execution_metadata: dict[str, Any] = {}
     try:
@@ -5445,6 +5442,10 @@ async def ai_chat_task(req: AIChatRequest):
                 "status": "success", "execution_metadata": execution_metadata,
                 "response_text": str((ai_tool_result or {}).get("text") or ""),
                 "tool_calls": (ai_tool_result or {}).get("tool_calls") or [],
+                "provider_tool_calls": [{"id": item.get("id", ""), "type": "function", "function": {
+                    "name": item.get("name", ""), "arguments": json.dumps(item.get("arguments") or {}, ensure_ascii=False),
+                }} for item in ((ai_tool_result or {}).get("tool_calls") or [])],
+                "reasoning_content": str((ai_tool_result or {}).get("reasoning_content") or ""),
             }
 
         if req.response_format == "json":
@@ -5543,6 +5544,34 @@ async def ai_web_search(req: WebSearchRequest):
     except Exception as e:  # noqa: BLE001
         print(f"[WARN] 联网检索失败（已降级为空结果）: {e}")
         return {"status": "success", "text": "", "degraded": True}
+
+
+@app.post("/api/ai/search-dispatch", include_in_schema=False)
+async def ai_search_dispatch(request: Request):
+    """Private one-shot provider dispatch; only a signed durable reservation is accepted."""
+    from classroom_app.services.ai_search_transport import (
+        TIMESTAMP_HEADER, SIGNATURE_HEADER, verify_search_request,
+    )
+    from classroom_app.services.ai_web_search_service import dispatch_reserved_search
+    # Reject before decoding or looking up any reservation. Search API key and
+    # dispatch credentials are never sent to browsers or exposed as tool args.
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > 4096:
+            raise HTTPException(413, 'search dispatch payload too large')
+        chunks.append(chunk)
+    body = b''.join(chunks)
+    verify_search_request(body, request.headers.get(TIMESTAMP_HEADER), request.headers.get(SIGNATURE_HEADER))
+    try:
+        payload = json.loads(body)
+    except (ValueError, UnicodeError):
+        raise HTTPException(422, 'invalid search dispatch payload') from None
+    if (not isinstance(payload, dict) or set(payload) != {'call_id', 'dispatch_token', 'query'}
+            or any(not isinstance(payload.get(key), str) or not 1 <= len(payload[key]) <= 128 for key in payload)):
+        raise HTTPException(422, 'invalid search dispatch payload')
+    config = PLATFORMS_CONFIG.get('deepseek') or {}
+    return await dispatch_reserved_search(payload, api_key=config.get('api_key') or '', enabled=bool(config.get('enabled')))
 
 
 @app.post("/api/ai/submit-grading-job")

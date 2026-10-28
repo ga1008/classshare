@@ -5,6 +5,7 @@ Isolated SQLite + TestClient with the login dependency overridden; no model call
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -44,6 +45,15 @@ class WandererPublicHomeTest(WandererDbTestCase):
         self.assertIn("夜猫子哲学家", response.text)
         self.assertIn("种子散修", response.text)
         self.assertIn("wanderer-home", response.text)
+
+    def test_homepage_shows_daily_search_reservations_and_uncertain_requests(self):
+        usage = {"limit": 10, "used": 2, "reserved": 1, "unknown": 1, "remaining": 6,
+                 "date": "2026-10-28", "reset_at": "2026-10-29T00:00:00+08:00", "available": True}
+        with patch("classroom_app.services.wanderer_public_service.web_search_usage", return_value=usage):
+            response = self.client.get("/wanderers/linwanzhou")
+        self.assertEqual(response.status_code, 200)
+        for text in ("data-wanderer-search-usage", "今日搜索", "2 / 10", "剩余 6 次", "处理中 1 次", "待确认 1 次", "北京时间零点重置"):
+            self.assertIn(text, response.text)
 
     def test_unknown_slugs_and_real_students_are_404(self):
         for path in ("/wanderers/nobody", "/wanderers/S-HOME-1", "/wanderers/" + "x" * 60):

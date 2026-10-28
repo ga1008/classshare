@@ -295,6 +295,9 @@ async def startup_event():
             from .services.material_workflow_storage_service import ensure_material_workflow_cleanup_task
 
             ensure_material_workflow_cleanup_task(align_conn)
+            from .services.ai_search_quota_service import ensure_ai_search_cleanup_task
+
+            ensure_ai_search_cleanup_task(align_conn)
             from .services.material_search_index_service import ensure_material_search_index_task
 
             ensure_material_search_index_task(align_conn)

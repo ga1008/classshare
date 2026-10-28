@@ -40,6 +40,7 @@ async function mount(page: Page, { visual = false, appearance = 'light' } = {}) 
     }
     if (url.pathname.startsWith('/api/')) {
       apiCalls.push(`${request.method()} ${url.pathname}`);
+      if (url.pathname === '/api/ai/search-quota') return json({ status: 'success', channel: 'chat', quota: { limit: 10, used: 0, reserved: 0, remaining: 10, unknown: 0 } });
       if (url.pathname === '/api/ai/workspace/sessions') return json({ sessions: [{ session_uuid: session, title: '当前页面对话', updated_at: '2026-09-24T09:30:00' }, { session_uuid: 'fixture-earlier-session', title: '之前的课程备课', updated_at: '2026-09-23T18:00:00' }] });
       if (url.pathname === `/api/ai/workspace/history/${session}`) return json({ messages, pending: false });
       if (url.pathname === '/api/ai/workspace/history/fixture-earlier-session') return json({ messages: [{ role: 'user', message: '上次的备课问题' }, { role: 'assistant', message: '这是之前会话的完整备课回复。' }], pending: false });

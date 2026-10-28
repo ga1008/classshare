@@ -37,6 +37,21 @@ def public_interests(wanderer: dict[str, Any]) -> list[str]:
     return [str(item) for item in wanderer.get("interests") or []][:6]
 
 
+def web_search_usage(conn: Any, wanderer: dict[str, Any]) -> dict[str, Any]:
+    """Only aggregate daily counters are public; never queries or conversation data."""
+    from .ai_web_search_service import snapshot_for_wanderer
+
+    try:
+        quota = snapshot_for_wanderer(conn, wanderer)
+        return {"limit": int(quota.get("limit") or 10),
+                **{key: max(0, int(quota.get(key) or 0)) for key in ("used", "reserved", "unknown", "remaining")},
+                "date": str(quota.get("date") or ""), "reset_at": str(quota.get("reset_at") or ""),
+                "available": bool(quota.get("available", True))}
+    except Exception:
+        # A temporarily unavailable counter must not remove the existing homepage.
+        return {"limit": 10, "used": 0, "reserved": 0, "unknown": 0, "remaining": 0, "date": "", "reset_at": "", "available": False}
+
+
 def _row_dict(row: Any) -> dict[str, Any]:
     if isinstance(row, dict):
         return dict(row)
@@ -189,6 +204,7 @@ def build_wanderer_home(conn: Any, viewer: dict[str, Any], slug: str) -> Optiona
         "is_dead": status == STATUS_DEAD,
         "status_label": {"dead": "已陨落", "paused": "闭关中"}.get(status, "修行中"),
         "stats": _stats(conn, wanderer),
+        "web_search_usage": web_search_usage(conn, wanderer),
         "actions": recent_public_actions(conn, int(wanderer["id"])),
         "posts": _public_posts(conn, viewer, int(wanderer["student_id"])),
         "reviews": public_reviews(conn, int(wanderer["id"])),

@@ -351,7 +351,13 @@ function statsSection(detail) {
         title: '动作分布（全部）', limit: 8, tone: 'info',
         items: stats.by_kind.map(item => ({ label: item.label, value: item.count })),
     });
-    return el('div', { class: 'wd-stats' }, [meter, daily, kinds]);
+    const usage = detail.web_search_usage;
+    const search = usage ? createContent('card', { title: '今日搜索', variant: 'stat',
+        value: usage.available ? `${usage.used} / ${usage.limit}` : '暂不可用',
+        meta: usage.available ? `剩余 ${usage.remaining} 次${usage.reserved ? ` · 处理中 ${usage.reserved} 次` : ''}${usage.unknown ? ` · 待确认 ${usage.unknown} 次` : ''} · 北京时间零点重置` : '统计暂不可用，稍后刷新',
+        attrs: { 'data-wanderer-search-usage': '' },
+    }) : null;
+    return el('div', { class: 'wd-stats' }, [meter, daily, kinds, search].filter(Boolean));
 }
 
 function listOrEmpty(label, rows) {

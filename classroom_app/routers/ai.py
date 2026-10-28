@@ -1603,6 +1603,53 @@ def _encode_stream_event(event: str, **payload: Any) -> str:
     return json.dumps({"event": event, **payload}, ensure_ascii=False) + "\n"
 
 
+def _owned_search_quota(user: dict, channel: str = "chat") -> dict:
+    from ..services.ai_web_search_service import snapshot_for_user
+    with get_db_connection() as conn:
+        return snapshot_for_user(conn, user, channel)
+
+
+async def _web_search_retrieval_events(user: dict, message: str, chat_payload: Dict[str, Any], *,
+                                       enabled: bool, logical_call_id: str) -> AsyncIterator[str]:
+    """Optional public search; account quota/identity never comes from the model."""
+    if not enabled:
+        return
+    try:
+        from ..services.ai_web_search_service import search_for_user
+        from ..services.chat_web_search_service import plan_web_search
+
+        quota = await asyncio.to_thread(_owned_search_quota, user)
+        yield _encode_stream_event("web_search_quota", channel="chat", quota=quota)
+        if quota.get("available") is False:
+            chat_payload["system_prompt"] += "\n本轮搜索额度暂不可读，联网未执行，不得声称已核验。"
+            yield _encode_stream_event("search_status", tool="web_search", stage="unavailable", message="搜索额度暂不可用，继续正常回答…")
+            return
+        if int(quota.get("remaining") or 0) <= 0:
+            yield _encode_stream_event("search_status", tool="web_search", stage="limited",
+                                       message="今日可用搜索额度不足，正在基于已有信息回答…")
+            chat_payload["system_prompt"] += "\n本轮剩余可用搜索额度为零。不得声称已联网核验；时效信息应明确说明未核验。"
+            return
+        yield _encode_stream_event("search_status", tool="web_search", stage="detecting", message="正在判断是否需要联网…")
+        query = await plan_web_search(message, chat_payload.get("messages"), user=user, logical_call_id=logical_call_id)
+        if not query:
+            yield _encode_stream_event("search_status", tool="web_search", stage="none", message="")
+            return
+        yield _encode_stream_event("search_status", tool="web_search", stage="searching", message="正在检索公开网页…")
+        result = await search_for_user(user, query, logical_call_id + ":search", channel="chat",
+                                       ori_question=query)
+        if isinstance(result.get("quota"), dict):
+            yield _encode_stream_event("web_search_quota", channel="chat", quota=result["quota"])
+        if result.get("status") == "success" and result.get("text"):
+            chat_payload["system_prompt"] += "\n\n" + result["text"]
+            yield _encode_stream_event("search_status", tool="web_search", stage="done", message="网页检索完成，正在核对来源并回答…")
+        else:
+            chat_payload["system_prompt"] += "\n本轮联网没有取得可用结果。不得编造来源或声称已核验；可基于已有知识回答并说明时效限制。"
+            yield _encode_stream_event("search_status", tool="web_search", stage="unavailable", message="本轮没有可用网页结果，正在基于已有信息回答…")
+    except Exception:
+        chat_payload["system_prompt"] += "\n本轮联网暂不可用，不得声称已联网核验。"
+        yield _encode_stream_event("search_status", tool="web_search", stage="unavailable", message="联网暂不可用，继续正常回答…")
+
+
 def _encode_tool_status(tool: str, label: str, stage: str, message: str, **payload: Any) -> str:
     return _encode_stream_event(
         "tool_status",
@@ -2532,6 +2579,14 @@ def _build_material_knowledge_block(user: dict, extra_context: str) -> str:
     )
 
 
+@router.get("/ai/search-quota", response_class=JSONResponse)
+async def get_ai_search_quota(request: Request, channel: Literal["chat", "agent"] = "chat",
+                              user: dict = Depends(get_current_user)):
+    if channel == "agent" and user.get("role") != "teacher":
+        raise HTTPException(403, "Agent 仅向教师开放。")
+    return {"status": "success", "channel": channel, "quota": await asyncio.to_thread(_owned_search_quota, user, channel)}
+
+
 @router.get("/ai/workspace/sessions", response_class=JSONResponse)
 async def get_workspace_sessions(request: Request, user: dict = Depends(get_current_user)):
     from ..services.ai_workspace_legacy_service import list_legacy_sessions
@@ -2594,6 +2649,7 @@ async def handle_ai_workspace_chat(
         message: str = Form(""),
         user: dict = Depends(get_current_user),
         deep_thinking: bool = Form(False),
+        web_search_enabled: bool = Form(False),
         context_prompt_extra: str = Form(""),
         session_uuid: str = Form(...),
         request_id: str = Form(""),
@@ -2603,6 +2659,7 @@ async def handle_ai_workspace_chat(
     """
     Account-owned assistant with history independent of the current classroom.
     """
+    web_search_enabled = web_search_enabled is True
     user_pk, user_role = _get_user_pk_role(user)
     with get_db_connection() as conn:
         ensure_ai_workspace_access(conn, user, request, page_path=page_path, extra_context=context_prompt_extra)
@@ -2623,6 +2680,7 @@ async def handle_ai_workspace_chat(
         with get_db_connection() as conn:
             return workspace_store.begin_request(conn, session_uuid, user, request_id, cleaned_message,
                 uploads["attachments"], {"message": cleaned_message, "deep_thinking": bool(deep_thinking),
+                                       "web_search_enabled": bool(web_search_enabled),
                                        "file_texts": uploads["file_texts"], "images": uploads["base64_urls"]},
                 image_uploads=uploads["private_images"])
 
@@ -2653,6 +2711,14 @@ async def handle_ai_workspace_chat(
         if request_state.get("replay"):
             answer = workspace_store.completed_reply(conn, request_state["session_id"], request_state["request_id"])
             async def replay():
+                # Admission already matched the original request fingerprint,
+                # including its search choice. Replays refresh display only.
+                if web_search_enabled:
+                    try:
+                        quota = await asyncio.to_thread(_owned_search_quota, user)
+                        yield _encode_stream_event("web_search_quota", channel="chat", quota=quota)
+                    except Exception:
+                        pass  # A quota read outage must not erase the saved reply.
                 yield _encode_stream_event("answer_delta", delta=answer["final_answer"] or answer["message"])
                 yield _encode_stream_event("done", has_thinking=False)
             return StreamingResponse(replay(), media_type=STREAM_EVENT_MEDIA_TYPE, headers=STREAM_RESPONSE_HEADERS)
@@ -2766,6 +2832,10 @@ async def handle_ai_workspace_chat(
             yield material_event
         async for action_event in _classroom_action_proposal_events(user, cleaned_message, chat_payload, context_offering_id or None):
             yield action_event
+        async for web_event in _web_search_retrieval_events(user, cleaned_message, chat_payload,
+                enabled=web_search_enabled, logical_call_id="workspace:" + uuid.uuid5(uuid.NAMESPACE_URL,
+                    str(request_state['session_id']) + ":" + request_state['request_id']).hex):
+            yield web_event
         try:
             async with ai_client.stream(
                     "POST",
@@ -2886,6 +2956,7 @@ async def handle_ai_chat(
         class_offering_id: int = Form(...),  # (从 classroom 变量中获取)
         user: dict = Depends(get_current_user),
         deep_thinking: bool = Form(False),
+        web_search_enabled: bool = Form(False),
         context_prompt_extra: str = Form(""),
         page_path: str = Form(""),
         page_text: str = Form(""),
@@ -2895,6 +2966,7 @@ async def handle_ai_chat(
     处理 AI 聊天消息 (核心路由)
     接收文本和文件，流式调用 AI 助教，异步保存记录，返回流式响应
     """
+    web_search_enabled = web_search_enabled is True
     user_pk, user_role = _get_user_pk_role(user)
 
     # 1. 验证会话所有权并获取会话 DB ID
@@ -2949,7 +3021,7 @@ async def handle_ai_chat(
 
     # 4. 保存用户的消息到数据库
     with get_db_connection() as conn:
-        conn.execute(
+        user_message_id = execute_insert_returning_id(conn,
             """
             INSERT INTO ai_chat_messages (session_id, role, message, attachments_json)
             VALUES (?, 'user', ?, ?)
@@ -3178,6 +3250,9 @@ async def handle_ai_chat(
             yield material_event
         async for action_event in _classroom_action_proposal_events(user, message, chat_payload, int(class_offering_id)):
             yield action_event
+        async for web_event in _web_search_retrieval_events(user, message, chat_payload,
+                enabled=web_search_enabled, logical_call_id=f"classroom:{session_db_id}:{user_message_id}"):
+            yield web_event
 
         try:
             async with ai_client.stream(

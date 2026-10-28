@@ -655,11 +655,11 @@
 - `templates/partials/academic_sync_dialog.html` ×52
 - `static/js/message_center.js` ×51
 - `templates/manage/signature_workflows.html` ×49
+- `templates/partials/ai_workspace_widget.html` ×49
 - `templates/manage/offerings.html` ×48
 - `static/js/classroom_materials.js` ×47
 - `frontend/src/islands/dashboard-workspace.tsx` ×45
 - `static/js/attendance_reports.js` ×45
-- `templates/partials/ai_workspace_widget.html` ×45
 - `classroom_app/services/document_render_service.py` ×44
 - `static/js/signature_multi_select.js` ×44
 - `static/js/signature_point_workflow.js` ×44
@@ -1006,7 +1006,7 @@
 - **设计摘要**：消息/评论输入外壳：content 槽（附件/引用）+ 无框 textarea + actions（tools 槽与发送）；焦点环落在整个外壳；`enhanceComposer` 处理自动增高、Enter 策略、固定底部与键盘避让，不发请求。
 - **参数 / 变体**：`label, name, value, placeholder, required, maxlength, disabled, busy, hasContent, enter(newline|send), attachment, emoji, sendLabel, submit_name/value`。
 - **状态**：disabled / busy（readonly + 发送禁用）/ hasContent / data-lq-composer-fixed。
-- **规则**：领域已有输入 owner（如私信）可只复用槽位结构与 CSS，不重复调用 enhanceComposer；发送、草稿、冷却由业务控制器持有。 2026-10-27 私信/群聊的 @ 元数据、按会话保存的姓名映射和文本草稿、异步加载只读态、配额提示由 social/chat_composer.js 与 chat_modal.js 持有。IME 不触发候选或发送；429 保留草稿，允许移除 @ 后发送普通消息；网络发送中不切会话。配额与授权仍以服务器为准。
+- **规则**：领域已有输入 owner（如私信）可只复用槽位结构与 CSS，不重复调用 enhanceComposer；发送、草稿、冷却由业务控制器持有。 2026-10-27 私信/群聊的 @ 元数据、按会话保存的姓名映射和文本草稿、异步加载只读态、配额提示由 social/chat_composer.js 与 chat_modal.js 持有。IME 不触发候选或发送；429 保留草稿，允许移除 @ 后发送普通消息；网络发送中不切会话。配额与授权仍以服务器为准。 2026-10-28普通AI联网按钮复用LQ Button/aria-pressed与状态文本，独立布局行不挤原生textarea；默认off，深思共用chat日额。HTTP读代次不能覆盖较新的流额度，额度失败不阻断普通聊天。
 - **根类**：`lq-composer`
 - **Jinja 宏** `templates/macros/lq/composer.html`：`lq_composer`
 - **JS 入口** `static/js/lq/composer.js`：`COMPOSER_KINDS`, `composer`, `composerMarkup`, `composerProps`, `createComposer`, `enhanceComposer`, `html`
@@ -1048,7 +1048,7 @@
 - `templates/dev/lq_content.html` ×20
 - `templates/assignment_detail_student.html` ×15
 - `templates/dashboard.html` ×15
-- `templates/wanderers/home.html` ×14
+- `templates/wanderers/home.html` ×15
 - `static/js/attendance_reports.js` ×13
 - `templates/macros/manage_page.html` ×13
 - `templates/manage/system/password_resets.html` ×13
@@ -1091,6 +1091,7 @@
 - `templates/partials/materials/modals_generate.html` ×6
 - `templates/partials/materials/modals_library.html` ×6
 - `templates/partials/profile/portfolio.html` ×6
+- `static/js/manage_wanderers.js` ×5
 - `static/js/profile_signatures.js` ×5
 - `templates/blog.html` ×5
 - `templates/manage/attendance_reports.html` ×5
@@ -1098,7 +1099,6 @@
 - `templates/partials/session_material_ai_modal.html` ×5
 - `templates/points_shop.html` ×5
 - `static/js/blog.js` ×4
-- `static/js/manage_wanderers.js` ×4
 - `static/js/social/chat_messages.js` ×4
 - `static/js/social/social_people.js` ×4
 - `templates/achievements.html` ×4

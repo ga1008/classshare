@@ -760,3 +760,10 @@ from .social_recommendation_service import (  # noqa: E402
 
 # 好友推荐（社交 §12.2）：每日特质卡增量抽取 + 范围桶排序。
 register_task_handler(SOCIAL_RECOMMENDATIONS_TASK_KIND, handle_social_recommendations_daily)
+
+from .ai_search_quota_service import (  # noqa: E402
+    CACHE_CLEANUP_TASK_KIND as AI_SEARCH_CACHE_CLEANUP_TASK_KIND,
+    handle_ai_search_cache_cleanup,
+)
+
+register_task_handler(AI_SEARCH_CACHE_CLEANUP_TASK_KIND, handle_ai_search_cache_cleanup)

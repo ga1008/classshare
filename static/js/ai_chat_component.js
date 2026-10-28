@@ -85,6 +85,11 @@ class AIChatComponent {
 
         // --- 新增: 深度思考状态 ---
         this.isDeepThinking = false;
+        this.webSearchEnabled = false;
+        this.webSearchBtn = document.getElementById('ai-web-search-btn');
+        this.webSearchQuotaLabel = document.getElementById('ai-web-search-quota');
+        this.searchQuotaPromise = null;
+        this.searchQuotaRevision = 0;
 
         // 获取深度思考按钮
         this.deepThinkBtn = document.getElementById('ai-deep-think-btn');
@@ -484,7 +489,45 @@ class AIChatComponent {
 
         // 新增: 深度思考按钮点击事件
         this.deepThinkBtn.addEventListener('click', this.toggleDeepThinking.bind(this));
+        this.webSearchBtn?.addEventListener('click', () => {
+            if (this.isLoading) return;
+            this.webSearchEnabled = !this.webSearchEnabled;
+            this.webSearchBtn.setAttribute('aria-pressed', String(this.webSearchEnabled));
+            if (this.webSearchEnabled) this.webSearchBtn.dataset.lqSelected = 'true';
+            else delete this.webSearchBtn.dataset.lqSelected;
+            this.onDraftChange?.();
+            void this.refreshSearchQuota();
+        });
+        window.addEventListener('ai-workspace:opened', () => void this.refreshSearchQuota());
         this.updateSendButtonState();
+    }
+
+    updateSearchQuota(quota) {
+        if (!this.webSearchQuotaLabel || !quota || !Number.isFinite(Number(quota.remaining)) || !Number.isFinite(Number(quota.limit))) return;
+        if (quota.available === false) {
+            this.webSearchQuotaLabel.textContent = '搜索额度暂不可用';
+            return;
+        }
+        const pending = Number(quota.unknown) > 0 ? ` · ${Number(quota.unknown)}次待确认` : '';
+        this.webSearchQuotaLabel.textContent = `今日搜索剩余 ${Number(quota.remaining)}/${Number(quota.limit)}${pending}`;
+        this.webSearchQuotaLabel.title = `普通对话与深度思考共用；${quota.reset_at || '次日零点'}重置`;
+    }
+
+    async refreshSearchQuota() {
+        if (!this.webSearchBtn) return;
+        if (this.searchQuotaPromise) return this.searchQuotaPromise;
+        const revision = this.searchQuotaRevision;
+        this.searchQuotaPromise = (async () => {
+            try {
+                const response = await fetch('/api/ai/search-quota?channel=chat', { credentials: 'same-origin' });
+                if (!response.ok) throw new Error('quota unavailable');
+                const data = await response.json();
+                if (revision === this.searchQuotaRevision) this.updateSearchQuota(data.quota);
+            } catch {
+                if (revision === this.searchQuotaRevision && this.webSearchQuotaLabel) this.webSearchQuotaLabel.textContent = '搜索额度暂不可用';
+            } finally { this.searchQuotaPromise = null; }
+        })();
+        return this.searchQuotaPromise;
     }
 
     updateSendButtonState() {
@@ -492,6 +535,7 @@ class AIChatComponent {
         const hasContent = Boolean(this.textarea?.value.trim()) || this.pendingFiles.length > 0;
         const missingSession = (!this.contextOnly || this.workspace) && !this.currentSessionUUID;
         this.sendBtn.disabled = this.isLoading || missingSession || !hasContent;
+        if (this.webSearchBtn) this.webSearchBtn.disabled = this.isLoading;
     }
 
     /**
@@ -761,6 +805,12 @@ class AIChatComponent {
                 if (!streamState.finalAnswer && !streamState.thinkingContent && event.message) {
                     streamState.statusText = event.message;
                     streamState.searchStatusActive = true;
+                }
+                break;
+            case 'web_search_quota':
+                if (event.channel === 'chat') {
+                    this.searchQuotaRevision += 1;
+                    this.updateSearchQuota(event.quota);
                 }
                 break;
             case 'tool_status':
@@ -1186,6 +1236,7 @@ class AIChatComponent {
             formData.append('class_offering_id', this.classOfferingId);
         }
         formData.append('deep_thinking', this.isDeepThinking); // 新增参数
+        formData.append('web_search_enabled', this.webSearchEnabled);
         const liveContextPromptExtra = this.getContextPromptExtra
             ? String(this.getContextPromptExtra() || '').trim()
             : this.contextPromptExtra;
@@ -1345,7 +1396,7 @@ class AIChatComponent {
     }
 
     draftFingerprint() {
-        return JSON.stringify([this.currentSessionUUID, this.textarea.value.trim(), this.pendingFiles.map(f => [f.name, f.size, f.type, f.lastModified])]);
+        return JSON.stringify([this.currentSessionUUID, this.textarea.value.trim(), this.pendingFiles.map(f => [f.name, f.size, f.type, f.lastModified]), this.isDeepThinking, this.webSearchEnabled]);
     }
 
     /**

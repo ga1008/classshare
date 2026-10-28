@@ -2,14 +2,14 @@
 
 此报告是源码入口清单，不是组件完成率或页面验收证明。所有记录仍为 pending/unknown；JSON 保存逐条文件、行号、类名、来源、建议 owner 与源文件 SHA256。
 
-扫描 584 个作者源码文件，覆盖 208 个 HTML 模板，发现 5618 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
+扫描 584 个作者源码文件，覆盖 208 个 HTML 模板，发现 5621 个组件/控件候选入口。共享定义和调用分别登记；互斥模板分支均计入，不能作为运行时控件总数。
 
 | 类别 | 源码入口数 |
 |---|---:|
-| button | 2249 |
+| button | 2250 |
 | field | 762 |
 | select | 304 |
-| surface | 742 |
+| surface | 744 |
 | menu | 38 |
 | dialog | 31 |
 | tab | 37 |
@@ -25,14 +25,14 @@
 
 | 来源 | 数量 |
 |---|---:|
-| component-declared | 3730 |
+| component-declared | 3731 |
 | external-icon-content-slot | 28 |
 | factory-ownership-unknown | 49 |
 | legacy-or-native | 134 |
 | lq-marked-native | 131 |
 | runtime-output-unknown | 688 |
 | shared-adapter-call-candidate | 81 |
-| shared-component-call | 723 |
+| shared-component-call | 725 |
 | shared-definition | 54 |
 
 ## 页面台账缺口

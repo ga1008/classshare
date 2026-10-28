@@ -3,12 +3,12 @@
   "summary": {
     "files": 584,
     "htmlTemplates": 208,
-    "entries": 5618,
+    "entries": 5621,
     "byKind": {
       "toolbar": 136,
-      "surface": 742,
+      "surface": 744,
       "choice": 212,
-      "button": 2249,
+      "button": 2250,
       "field": 762,
       "unknown": 829,
       "menu": 38,
@@ -23,26 +23,26 @@
       "handle": 1
     },
     "bySyntax": {
-      "jinja-component-call": 524,
-      "jinja-html": 2494,
+      "jinja-component-call": 525,
+      "jinja-html": 2495,
       "dynamic-html-sink": 688,
       "js-html-candidate": 1380,
       "create-element": 184,
-      "component-factory-call": 166,
+      "component-factory-call": 167,
       "react-jsx": 158,
       "python-generated-jinja-html": 24
     },
     "byCanonicalContract": {
-      "not-declared": 1806,
-      "canonical-declared-pending": 3720,
+      "not-declared": 1808,
+      "canonical-declared-pending": 3721,
       "declared-missing-canonical": 6,
       "canonical-resolution-pending": 5,
       "adapter-call-pending-runtime": 81
     },
     "byProvenance": {
-      "shared-component-call": 723,
+      "shared-component-call": 725,
       "lq-marked-native": 131,
-      "component-declared": 3730,
+      "component-declared": 3731,
       "runtime-output-unknown": 688,
       "legacy-or-native": 134,
       "shared-definition": 54,
@@ -51,7 +51,7 @@
       "external-icon-content-slot": 28
     },
     "byStatus": {
-      "pending": 4789,
+      "pending": 4792,
       "unknown": 829
     },
     "largestFiles": [

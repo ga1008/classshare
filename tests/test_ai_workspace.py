@@ -69,6 +69,20 @@ class WorkspaceTests(unittest.TestCase):
             return store.begin_request(conn, session['session_uuid'], user, request_id, message,
                                        [{'name': 'private.txt', 'type': 'text'}], {'message': message})
 
+    def test_search_choice_is_part_of_request_identity_and_cannot_be_changed_on_replay(self):
+        from fastapi import HTTPException
+        session = self.session()
+        with self.connect() as conn:
+            first = store.begin_request(conn, session['session_uuid'], TEACHER, 'same-search-request', '查询公开资料', [],
+                {'message': '查询公开资料', 'deep_thinking': False, 'web_search_enabled': False})
+        with self.connect() as conn:
+            self.assertTrue(store.begin_request(conn, session['session_uuid'], TEACHER, 'same-search-request', '查询公开资料', [],
+                {'message': '查询公开资料', 'deep_thinking': False, 'web_search_enabled': False})['pending'])
+        with self.connect() as conn, self.assertRaises(HTTPException) as rejected:
+            store.begin_request(conn, session['session_uuid'], TEACHER, 'same-search-request', '查询公开资料', [],
+                {'message': '查询公开资料', 'deep_thinking': False, 'web_search_enabled': True})
+        self.assertEqual(rejected.exception.status_code, 409)
+
     def finish(self, state, user=TEACHER, success=True, answer='回答'):
         with self.connect() as conn:
             return store.finish_request(conn, state['session_id'], state['request_id'], user, answer, success=success)
@@ -277,6 +291,64 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(history['messages'][-1]['status'], 'failed')
             app.dependency_overrides[routes.get_current_user] = lambda: {**TEACHER, 'id': 2}
             self.assertEqual(client.get('/api/ai/workspace/history/'+session['session_uuid']).status_code, 403)
+
+    def test_actual_search_chat_stream_replay_does_not_search_again_and_keeps_normal_bucket(self):
+        from classroom_app.services import ai_web_search_service as search
+        from classroom_app.services import chat_web_search_service as planner
+        app = FastAPI(); app.include_router(routes.router)
+        app.dependency_overrides[routes.get_current_user] = lambda: TEACHER
+        upstream_payloads = []
+        class Response:
+            is_success = True
+            async def aiter_lines(self):
+                for event in ({'event': 'answer_delta', 'delta': '搜索后的正常回答'}, {'event': 'done'}):
+                    yield json.dumps(event, ensure_ascii=False)
+        @asynccontextmanager
+        async def upstream(*args, **kwargs):
+            upstream_payloads.append(kwargs['json']); yield Response()
+        async def no_retrieval(*args, **kwargs):
+            if False: yield ''
+        quota = {'limit': 10, 'used': 0, 'reserved': 0, 'remaining': 10}
+        result = {'status': 'success', 'text': '真实受控来源片段', 'quota': {**quota, 'used': 1, 'remaining': 9}}
+        with patch.object(routes, 'get_db_connection', self.connect), \
+             patch.object(routes, 'build_user_knowledge_block', return_value=''), \
+             patch.object(routes, '_gongwen_retrieval_events', no_retrieval), \
+             patch.object(routes, '_platform_data_retrieval_events', no_retrieval), \
+             patch.object(routes, '_material_knowledge_retrieval_events', no_retrieval), \
+             patch.object(routes, '_classroom_action_proposal_events', no_retrieval), \
+             patch.object(search, 'snapshot_for_user', side_effect=lambda *args: {**quota}), \
+             patch.object(planner, 'plan_web_search', AsyncMock(return_value='DeepSeek官方文档')) as plan, \
+             patch.object(search, 'search_for_user', AsyncMock(return_value=result)) as execute, \
+             patch.object(routes.ai_client, 'stream', upstream), TestClient(app) as client:
+            session = client.post('/api/ai/workspace/session/new').json()['session']
+            data = {'session_uuid': session['session_uuid'], 'request_id': 'search-replay', 'message': '查询最新技术资料',
+                    'deep_thinking': 'true', 'web_search_enabled': 'true'}
+            reply = client.post('/api/ai/workspace-chat', data=data)
+            self.assertEqual(reply.status_code, 200, reply.text)
+            self.assertIn('web_search_quota', reply.text)
+            self.assertIn('真实受控来源片段', upstream_payloads[0]['system_prompt'])
+            self.assertEqual(execute.await_args.kwargs['channel'], 'chat')
+            self.assertEqual(execute.await_args.args[0], TEACHER)
+            quota.update(used=4, remaining=6)
+            replay = client.post('/api/ai/workspace-chat', data=data)
+            self.assertEqual(replay.status_code, 200)
+            replay_events = [json.loads(line) for line in replay.text.splitlines()]
+            self.assertEqual(replay_events[0]['event'], 'web_search_quota')
+            self.assertEqual(replay_events[0]['quota']['remaining'], 6)
+            self.assertEqual(replay_events[1]['delta'], '搜索后的正常回答')
+            self.assertEqual(execute.await_count, 1); self.assertEqual(plan.await_count, 1)
+            self.assertEqual(len(upstream_payloads), 1)
+            with patch.object(search, 'snapshot_for_user', side_effect=RuntimeError('private-diagnostic-must-not-escape')):
+                unavailable_replay = client.post('/api/ai/workspace-chat', data=data)
+            self.assertEqual(unavailable_replay.status_code, 200)
+            self.assertIn('搜索后的正常回答', unavailable_replay.text)
+            self.assertNotIn('private-diagnostic', unavailable_replay.text)
+            self.assertEqual(execute.await_count, 1)
+            self.assertEqual(client.post('/api/ai/workspace-chat', data={**data, 'web_search_enabled': 'false'}).status_code, 409)
+            data.update(request_id='ordinary-no-search', web_search_enabled='false')
+            self.assertEqual(client.post('/api/ai/workspace-chat', data=data).status_code, 200)
+            self.assertEqual(execute.await_count, 1)
+            self.assertEqual(len(upstream_payloads), 2)
 
     def test_actual_route_disconnect_saves_answer_then_history_recovers(self):
         session = self.session()

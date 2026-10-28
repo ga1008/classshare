@@ -43,6 +43,8 @@
         {% call(slot) lq_card('评论', variant='stat', value=home.stats.comments) %}{% endcall %}
         {% call(slot) lq_card('帖子', variant='stat', value=home.stats.posts) %}{% endcall %}
         {% call(slot) lq_card('收到的赞', variant='stat', value=home.stats.likes_received) %}{% endcall %}
+        {% set search = home.web_search_usage %}
+        {% call(slot) lq_card('今日搜索', variant='stat', value=((search.used ~ ' / ' ~ search.limit) if search.available else '暂不可用'), meta=(('剩余 ' ~ search.remaining ~ ' 次' ~ (' · 处理中 ' ~ search.reserved ~ ' 次' if search.reserved else '') ~ (' · 待确认 ' ~ search.unknown ~ ' 次' if search.unknown else '') ~ ' · 北京时间零点重置') if search.available else '统计暂不可用，稍后刷新'), attrs={'data-wanderer-search-usage': ''}) %}{% endcall %}
     </div>
 
     <div class="wh-main">
