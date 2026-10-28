@@ -35,4 +35,18 @@
 
 私聊专项正式资产浏览器验收 27/27 通过（22.5 秒），覆盖五组桌面/手机/短屏/深色/关闭透明、公开字段、懒读、失败重试、部分成功、免打扰推送、权限竞态、迟到响应、取消和关系操作。1440×900、1440×560、360×780、360×568 的截图及 `geometry.json` 已复核：无横向溢出，196–204px 雷达可完整滚入有界侧栏；玻璃开启时主层一个实时模糊、开设置共两个，关闭透明时为零，三张资料卡自身始终不增加模糊。切换/关闭导致旧卡请求 `net::ERR_ABORTED` 是取消合同的正常终态，测试同时验证完成或取消后均不能恢复旧 DOM 或抢焦点。
 
-证据保存在任务私有 `.codex-temp/dm-sidebar-mock-verified.log`、`dm-sidebar-regression-final.txt`、`dm-sidebar-ssr-accepted.txt` 及对应截图目录；合计 144 项浏览器验收通过。正式发布结果在上线后补录。
+证据保存在任务私有 `.codex-temp/dm-sidebar-mock-verified.log`、`dm-sidebar-regression-final.txt`、`dm-sidebar-ssr-accepted.txt` 及对应截图目录；合计 144 项浏览器验收通过。
+
+## 正式发布
+
+产品提交 `71300e0d24796a63cb5295cc04eb654e18ddf69f`，发布版本 `20261028-142130-54b463742222`。干净专用 worktree 经 Git filter 后逐源文件核对，与主目录部署脚本字节一致；dry-run、原生 PostgreSQL gate、quiesced 写入暂停/数据库备份、正式部署均成功。代码备份 `code-20261028-142144.tgz`，最终停写备份 `db-cutover-20261028-142144.sql.gz`，按现有默认保留两组。`/lanshare/data` 保持受保护（3.4G），未写入生产测试数据。
+
+2026-10-28 14:24 完成只读上线核验：
+
+- 公网与容器报告相同 release ID；7 个产品源文件 SHA256、12 个公共正式资源和完整 manifest 与验收资源图一致。
+- 8 个服务均运行，有健康检查的服务均 healthy；主服务/AI 正常，182 个必需 PostgreSQL 表齐全，调度器近 5 分钟无 inbox/Traceback 错误。
+- 既有好友、群别名、通知/邮件配置、散修声线/学习记忆和安全队列合同保留；无过期 inbox lease，近期学习错误为零。
+- 学生与教师登录页正常，缓存失效仅 `Clear-Site-Data: "cache"`，不清 cookies/storage；四个匿名社交 API 均返回 401。
+- 健康快照的历史失败累计仍为 918，当前逐项任务全正常、stale 为零；不将该历史累计当成本次上线失败。
+
+发布日志、冻结记录和只读核验 JSON 保存在 `.codex-temp/dm-sidebar-release/`。本节为上线后的纯文档记录，不改变已部署产品源码；Git 推送后核对 `origin/dev` 与最终 HEAD 一致。
