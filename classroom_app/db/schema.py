@@ -51,6 +51,7 @@ from .schema_scheduler import ensure_scheduler_schema
 from .schema_gongwen import ensure_gongwen_schema
 from .schema_study_group_scheme import ensure_study_group_scheme_schema
 from .seeds import init_default_exam_paper
+from .startup_lock import postgres_schema_startup_guard
 
 
 def _ensure_blog_closed_loop(*, label: str) -> None:
@@ -79,6 +80,12 @@ def _ensure_blog_closed_loop(*, label: str) -> None:
 
 
 def init_database():
+    """One owner across all PostgreSQL startup phases, with the original public API."""
+    with postgres_schema_startup_guard():
+        return _init_database_unlocked()
+
+
+def _init_database_unlocked():
     """
     Initialize the LanShare database schema without changing the public startup entrypoint.
     """

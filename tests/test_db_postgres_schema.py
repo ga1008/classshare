@@ -26,6 +26,9 @@ class FakeCursor:
     def fetchall(self):
         return list(self._rows)
 
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
 
 class FakePostgresConnection:
     def __init__(self, *, missing_tables=(), missing_columns=None):
@@ -42,6 +45,11 @@ class FakePostgresConnection:
         if normalized in ("SET LOCAL lock_timeout = '5s'", "SET LOCAL statement_timeout = '60s'"):
             return FakeCursor([])
         if "pg_advisory_xact_lock" in normalized:
+            return FakeCursor([])
+        if normalized in {
+            "SELECT set_config('lock_timeout', ?, false), set_config('statement_timeout', ?, false)",
+            "SELECT pg_advisory_lock(?, ?)", "SELECT pg_advisory_unlock(?, ?)",
+        }:
             return FakeCursor([])
         if "SELECT is_nullable FROM information_schema.columns" in normalized:
             return FakeCursor([{"is_nullable": "YES"}])
@@ -838,8 +846,11 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         original_engine = config.DB_ENGINE
         config.DB_ENGINE = "postgres"
         conn = FakePostgresConnection()
+        guard_conn = FakePostgresConnection()
         try:
-            with patch("classroom_app.db.schema.get_db_connection", return_value=conn), patch(
+            with patch("classroom_app.db.startup_lock.connect_postgres", return_value=guard_conn), patch(
+                "classroom_app.db.schema.get_db_connection", return_value=conn
+            ), patch(
                 "classroom_app.db.schema.ensure_foundation_schema"
             ) as sqlite_initializer, patch(
                 "classroom_app.db.schema.ensure_cultivation_progress_schema"
@@ -860,6 +871,10 @@ class PostgresSchemaValidationTests(unittest.TestCase):
 
         self.assertEqual("ok", report["status"])
         self.assertTrue(conn.closed)
+        self.assertTrue(guard_conn.closed)
+        self.assertTrue(guard_conn.rolled_back)
+        self.assertTrue(any('pg_advisory_lock' in sql for sql, _ in guard_conn.executed_sql))
+        self.assertTrue(any('pg_advisory_unlock' in sql for sql, _ in guard_conn.executed_sql))
         cultivation_schema.assert_called_once_with(conn, engine="postgres")
         signature_workflow_schema.assert_called_once_with(conn)
         ai_jobs_schema.assert_called_once_with(conn, engine="postgres")
