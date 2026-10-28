@@ -84,6 +84,8 @@ def window_for(conn: Any, ctx: ActionContext, task: dict, *, snapshot=None) -> d
 async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
     from .wanderer_actions_social import chat_scene
     scene = chat_scene(ctx, window, "multi", False)
+    scene["_learning_conversation_key"] = task["conversation_key"]
+    scene["_learning_class_offering_id"] = task.get("class_offering_id")
     scene["meta"] = f"{len(window['new'])} 条待你考虑的来信；近期原文窗口有界，更早交流见长期记忆。"
     scene["task"] = "请根据完整语境、人格和你对这段关系的感受自行决定回应或沉默，不必讨好对方。"
     scene["relationship_emotion"] = {"mood": task.get("mood") or "", "reason": task.get("decision_reason") or ""}
@@ -102,7 +104,8 @@ async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
     if turn["action"] == "skip" and not turn.get("reason"):
         return {"status": "failed", "error": "silence decision missing reason"}
     return {"status": "ok", "parts": turn_parts(ctx, turn), "action": turn["action"],
-            "mood": turn.get("mood") or "", "reason": turn.get("reason") or "", "ai_calls": result.get("ai_calls", 0)}
+            "mood": turn.get("mood") or "", "reason": turn.get("reason") or "", "ai_calls": result.get("ai_calls", 0),
+            "learning": ctx.pending_learning.pop(thread_key(task), None)}
 
 
 def thread_key(task: dict) -> str:
@@ -175,6 +178,8 @@ def finish(ctx: ActionContext, task: dict) -> tuple[bool, list]:
         for part in response["parts"]:
             append_turn(conn, ctx.wanderer, thread_key(task), who=ctx.display_name, text=part,
                         counterpart_identity=task["peer_identity"])
+        from .wanderer_learning_service import apply_learning_safely
+        apply_learning_safely(conn, ctx.wanderer, response.get("learning"))
         if task["source"] == "social":
             from .social_message_service import mark_read
             mark_read(conn, build_wanderer_user_dict(ctx.wanderer), task["conversation_key"], snapshot, events)

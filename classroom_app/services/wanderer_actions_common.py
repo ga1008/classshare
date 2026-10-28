@@ -62,6 +62,7 @@ class ActionContext:
     capped: bool = False
     now: Optional[datetime] = None
     ai_calls: int = 0
+    pending_learning: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def connect(self) -> Any:
         if self.conn_factory is not None:
@@ -139,9 +140,12 @@ async def run_turn(
     """
     if ctx.capped:
         return _capped_result()
+    scene = dict(scene)
     with ctx.connect() as conn:
         from .wanderer_memory_service import invalidate_thread_cache
+        from .wanderer_learning_service import prepare_learning_safely
         invalidate_thread_cache(ctx.wanderer_id, thread_key)
+        prepare_learning_safely(conn, ctx.wanderer, thread_key, scene)
         system_prompt = build_system_prompt(conn, ctx.wanderer, scene=scene, thread_key=thread_key)
         conn.commit()  # persists the knowledge use_count bump
     message = "\n\n".join(part for part in (user_message, TURN_USER_MESSAGE) if part)
@@ -154,6 +158,11 @@ async def run_turn(
     if result.get("status") == "capped":
         ctx.capped = True
     ctx.ai_calls += int(result.get("ai_calls") or 0)
+    from .wanderer_learning_service import parse_learning
+    if result.get("status") == "ok":
+        ctx.pending_learning[thread_key] = parse_learning(result.get("raw_text") or "", scene.get("_learning_snapshot"))
+    else:
+        ctx.pending_learning.pop(thread_key, None)
     return result
 
 
@@ -188,9 +197,15 @@ async def remember(
         for part in said:
             thread = append_turn(conn, ctx.wanderer, thread_key, who=ctx.display_name, text=part,
                                  counterpart_identity=counterpart_identity)
+        commit_learning(ctx, conn, thread_key)
         conn.commit()
     if thread is not None and needs_compaction(thread):
         await compact_memory(ctx, thread_key)
+
+
+def commit_learning(ctx: ActionContext, conn: Any, thread_key: str) -> dict:
+    from .wanderer_learning_service import apply_learning_safely
+    return apply_learning_safely(conn, ctx.wanderer, ctx.pending_learning.pop(thread_key, None))
 
 
 async def compact_memory(ctx: ActionContext, thread_key: str) -> bool:
@@ -289,7 +304,7 @@ def day_start_iso(now: datetime) -> str:
 def today_action_count(conn: Any, wanderer_id: int, now: datetime) -> int:
     row = conn.execute(
         "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND created_at >= ? "
-        "AND action_kind <> 'knowledge_forget'",
+        "AND action_kind NOT IN ('knowledge_forget','experience_learn')",
         (int(wanderer_id), day_start_iso(now)),
     ).fetchone()
     return as_int(_row_value(row, "n"))

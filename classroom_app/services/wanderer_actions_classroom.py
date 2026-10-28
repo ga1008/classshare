@@ -219,6 +219,7 @@ async def _speak(ctx: ActionContext, offering: dict[str, Any], online: int, stat
     calls = int(result.get("ai_calls") or 0)
     parts = turn_parts(ctx, turn)
     if turn.get("action") == "skip" or not parts:
+        await remember(ctx, thread_key)
         return outcome("skip", "skipped", ai_calls=calls)
     text = " ".join(parts)
     try:

@@ -147,7 +147,7 @@ def measure_platform_activity(conn: Any, now: Optional[datetime] = None) -> dict
         activity[f"real_actions_{label}"] = sum(counts.values())
         activity[f"wanderer_actions_{label}"] = _count(
             conn, "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE created_at >= ? AND outcome = 'ok' "
-                  "AND action_kind <> 'skip'", (since,))
+                  "AND action_kind NOT IN ('skip', 'experience_learn')", (since,))
     activity["wanderers_total"] = len(student_ids)
     activity["measured_at"] = local_iso()
     return activity
@@ -193,7 +193,7 @@ _SEED_EXAMPLE = {
     "slug": "xiaoyu", "display_name": "许小雨", "archetype": "雨天写诗的理科生", "gender": "女",
     "hometown": "四川成都", "childhood": "2–3 句童年经历", "schooling": "2–3 句求学经历",
     "interests": ["3–6 个兴趣标签"], "public_intro": "一句公开自述（≤ 40 字）",
-    "speech_style": {"catchphrases": ["1–4 句口头禅"], "punctuation": "标点习惯", "emoji": "表情偏好",
+    "speech_style": {"voice_profile": "reflective", "catchphrases": [], "punctuation": "标点习惯", "emoji": "表情偏好",
                      "length": "长短习惯"},
     "temperament": ["3–5 条性格特征"], "interaction_habit": "一句互动习惯",
     "interaction_frequency": {"activity_level": 3, "active_hours": [[12, 14], [21, 23]],
@@ -213,6 +213,7 @@ def _existing_wanderers(conn: Any) -> list[dict[str, str]]:
 
 
 def genesis_message(existing: list[dict[str, str]], planned: int, activity: dict[str, Any]) -> str:
+    from .wanderer_voice_service import genesis_voice_catalog
     return (
         f"本次不是裁决，而是「天道造人」：平台近来冷清，请创造 {planned} 位新的散修（AI 电子学生）。\n"
         "要求：\n"
@@ -221,6 +222,10 @@ def genesis_message(existing: list[dict[str, str]], planned: int, activity: dict
         "不得与已有散修重名，也不要用常见的真实人名组合。\n"
         "3. 新散修从零开始修行（第 0 境），initial_knowledge 正好 3 条，只是背景常识。\n"
         "4. 字段与示例完全一致，数值在示例给出的范围内；文字自然、口语，不用 Markdown。\n"
+        "5. speech_style.voice_profile 选择最符合个人气质的一项，出生即绑定对应讲话指南和情境案例。"
+        "catchphrases 可以为空，最多四条低频偏好，不用固定口头禅或表情替代完整性格。"
+        "同一种声线也要有不同关注点、背景和关系距离。\n"
+        f"可用声线：{genesis_voice_catalog()}\n"
         f"已有散修（slug / 名字 / 原型）：{json.dumps(existing, ensure_ascii=False)}\n"
         f"平台活跃度：{json.dumps(activity, ensure_ascii=False, sort_keys=True)}\n"
         f"单个种子的格式示例：{json.dumps(_SEED_EXAMPLE, ensure_ascii=False)}\n"

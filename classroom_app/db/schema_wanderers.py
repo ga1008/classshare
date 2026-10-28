@@ -102,6 +102,25 @@ def _table_statements(id_column: str) -> list[str]:
         )
         """,
         f"""
+        CREATE TABLE IF NOT EXISTS wanderer_experience_notes (
+            {id_column},
+            wanderer_id INTEGER NOT NULL,
+            thread_key TEXT NOT NULL,
+            scope_key TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            content TEXT NOT NULL,
+            evidence_json TEXT NOT NULL DEFAULT '[]',
+            evidence_hash TEXT NOT NULL,
+            source_anchor INTEGER NOT NULL DEFAULT 0,
+            state TEXT NOT NULL DEFAULT 'active',
+            replaces_id INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (wanderer_id, thread_key, kind, evidence_hash, topic)
+        )
+        """,
+        f"""
         CREATE TABLE IF NOT EXISTS wanderer_action_log (
             {id_column},
             wanderer_id INTEGER NOT NULL,
@@ -170,6 +189,10 @@ def _table_statements(id_column: str) -> list[str]:
 
 
 _INDEX_STATEMENTS = (
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_experience_scope "
+    "ON wanderer_experience_notes (wanderer_id, scope_key, state, id)",
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_learning_retry "
+    "ON wanderer_action_log (wanderer_id, action_kind, outcome, id)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_inbox_due ON wanderer_social_inbox (state, run_at)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_agents_status ON wanderer_agents (status, id)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_knowledge_active "

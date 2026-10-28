@@ -40,7 +40,7 @@ DEFAULT_BEHAVIORS = {
 ACTION_KINDS = frozenset({
     "browse_post", "like_post", "like_comment", "comment", "reply", "dm_reply",
     "classroom_visit", "classroom_message", "knowledge_read", "knowledge_forget",
-    "request_promotion", "reflect", "skip", "write_post",
+    "request_promotion", "reflect", "skip", "write_post", "experience_learn",
     # 好友/群聊 (social doc §10): friend decisions + proactive requests, chat messages sent.
     "social_friend", "social_message",
 })
@@ -211,6 +211,7 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
     """Insert the agent row when missing. Returns True when this call created it."""
     if conn.execute("SELECT 1 FROM wanderer_agents WHERE slug = ? LIMIT 1", (seed["slug"],)).fetchone():
         return False
+    from .wanderer_voice_service import normalized_speech_style
     frequency = seed.get("interaction_frequency") or {}
     schedule = {
         "active_hours": frequency.get("active_hours") or [],
@@ -228,7 +229,7 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
         """,
         (
             student_id, seed["slug"], seed["display_name"], seed["archetype"], seed["persona_prompt"],
-            _dumps(seed.get("speech_style") or {}), _dumps(list(seed.get("interests") or [])),
+            _dumps(normalized_speech_style(seed)), _dumps(list(seed.get("interests") or [])),
             _dumps(schedule), int(frequency.get("activity_level") or 3),
             int(seed.get("daily_action_budget") or 10), _dumps(seed.get("reply_policy") or {}),
             clamp_tier(seed.get("initial_tier")), STATUS_ACTIVE,
@@ -412,7 +413,7 @@ def daily_budget_factor(tier: Any) -> float:
 
 
 _WISDOM_DIRECTIVES = (
-    (2, "你的境界尚浅：说话口语化、多用短句，偶尔会犯点小错或理解偏差，不引用专业术语，不装高深。"),
+    (2, "你的境界尚浅：知识范围有限，不懂就坦白或求证，不装高深，也不故意犯错。已经学会的术语可以自然使用，语气仍由你自己的性格和当前情境决定。"),
     (5, "你已有些积累：能举具体例子说明观点，偶尔引用自己知识库里学过的内容，但不卖弄。"),
     (8, "你修为扎实：表达条理清楚，会追问对方的关键前提，看到明显错误会温和地纠正。"),
     (10, "你已近可为人师：言简意赅、点到为止，偶尔用典，不长篇说教，也不卖弄境界。"),

@@ -204,7 +204,8 @@ async def _post_comments(
                       content_preview=part, ai_calls=calls, mood=mood,
                       detail={"post_id": int(post_id), "parent_comment_id": parent_comment_id, "part": index + 1,
                               "parts": len(parts), "moderation_state": created.get("moderation_state")})
-        results.append(outcome(action_kind, ai_calls=calls))
+        results.append(outcome(action_kind, ai_calls=calls,
+                               remembered_text=part if mod_states.is_public_state(created.get("moderation_state")) else ""))
     return results
 
 
@@ -232,12 +233,13 @@ async def _apply_post_turn(ctx: ActionContext, post: dict[str, Any], result: dic
         heard = _heard_post(ctx, post)
         done.extend(await _post_comments(ctx, post_id, parts, parent_comment_id=None, action_kind="comment",
                                          ai_calls=calls, mood=str(turn.get("mood") or "")))
-        await remember(ctx, _thread_key(post_id), said=parts, heard=heard,
+        await remember(ctx, _thread_key(post_id), said=[item["remembered_text"] for item in done if item.get("remembered_text")], heard=heard,
                        counterpart_identity=str(post.get("author_identity") or ""))
         return done
     record_action(ctx, "skip", target_type="blog_post", target_id=post_id, ai_calls=calls,
                   mood=str(turn.get("mood") or ""), outcome="skipped",
                   detail={"reason": f"turn:{turn.get('action')}", "status": result.get("status")})
+    await remember(ctx, _thread_key(post_id))
     return [*done, outcome("skip", "skipped", ai_calls=calls)]
 
 
@@ -345,7 +347,7 @@ def _reply_scene(ctx: ActionContext, conn: Any, comment: dict[str, Any], mode: s
                                       user_pk=comment.get("author_user_pk"),
                                       name=str(comment.get("author_display_name") or ""), real_name=real_name)
     task = "有人在博客里回复或提到了你。按你的性格决定回不回、怎么回。"
-    task += "这次你想多说几句，可以用 multi 连发几条短消息。" if mode == "multi" else "这次最多回一条（reply），或者 skip。"
+    task += "一句能说清就用 reply；确有不同内容再用 multi，不为凑条数拆成连续评论，也可以 skip。"
     root = as_int(comment.get("root_comment_id")) or int(comment["id"])
     return {
         "kind": "博客评论回复", "title": comment.get("post_title") or "",
@@ -365,8 +367,6 @@ async def _generate_reply_parts(ctx: ActionContext, *, mode: str, scene_builder,
     result = await run_turn(ctx, scene=scene, thread_key=thread_key, suffix=suffix)
     turn = result.get("turn") or {}
     parts = turn_parts(ctx, turn)
-    if mode != "multi":
-        parts = parts[:1]
     action = str(turn.get("action") or "skip")
     return ([] if action == "skip" else parts), int(result.get("ai_calls") or 0), str(turn.get("mood") or ""), action
 
@@ -395,7 +395,8 @@ async def _answer_comment(ctx: ActionContext, note: dict[str, Any]) -> list[dict
         return [outcome("skip", "skipped", ai_calls=calls)]
     done = await _post_comments(ctx, post_id, parts, parent_comment_id=int(comment["id"]), action_kind="reply",
                                 ai_calls=calls, mood=mood)
-    await remember(ctx, _thread_key(post_id), said=parts, heard=heard, counterpart_identity=counterpart_identity)
+    await remember(ctx, _thread_key(post_id), said=[item["remembered_text"] for item in done if item.get("remembered_text")],
+                   heard=heard, counterpart_identity=counterpart_identity)
     return done
 
 

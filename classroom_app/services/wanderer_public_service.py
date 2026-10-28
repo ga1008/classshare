@@ -109,7 +109,7 @@ def _stats(conn: Any, wanderer: dict[str, Any]) -> dict[str, Any]:
         "knowledge": _count(conn, "SELECT COUNT(*) AS n FROM wanderer_knowledge_entries WHERE wanderer_id = ? "
                                   "AND status = 'active'", (wanderer_id,)),
         "actions": _count(conn, "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? "
-                                "AND outcome = 'ok' AND action_kind <> 'skip'", (wanderer_id,)),
+                                "AND outcome = 'ok' AND action_kind NOT IN ('skip', 'experience_learn')", (wanderer_id,)),
         "comments": _count(conn, "SELECT COUNT(*) AS n FROM blog_comments WHERE author_identity = ? "
                                  "AND status = 'active'", (identity,)),
         "posts": _count(conn, "SELECT COUNT(*) AS n FROM blog_posts WHERE author_identity = ? "

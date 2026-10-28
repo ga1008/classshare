@@ -264,7 +264,7 @@ def _counterpart(window: dict[str, Any]) -> Optional[dict[str, Any]]:
 
 def chat_scene(ctx: ActionContext, window: dict[str, Any], mode: str, mentioned: bool) -> dict[str, Any]:
     group = window["type"] == "group"
-    more = "这次想多说几句，可以用 multi 连发几条短消息。" if mode == "multi" else "这次最多回一条（reply）。"
+    more = "一句能说清就用 reply；确有不同内容再用 multi，不为凑条数连续发送。"
     if group:
         task = ("群里有新消息。" + ("有人 @ 了你，认真想想要不要回。" if mentioned else "没人点你，不想插话就 skip。")
                 + "要说就简短自然，可以只回表情（emoji）。" + more)
@@ -284,6 +284,7 @@ def chat_scene(ctx: ActionContext, window: dict[str, Any], mode: str, mentioned:
         "tags": list(ctx.wanderer.get("interests") or []),
         "counterpart": _counterpart(window),
         "participants": _roster(window, ctx.identity),
+        "_learning_message_ids": [int(row["id"]) for row in window["rows"]],
         "task": task,
     }
 
@@ -317,8 +318,6 @@ async def _compose(ctx: ActionContext, window: dict[str, Any], mode: str,
     if result.get("status") == "capped":
         return ([emoji_for(ctx)] if window["type"] == "dm" else []), 0, "", "capped"
     parts = turn_parts(ctx, turn)
-    if mode != "multi":
-        parts = parts[:1]
     return ([] if action == "skip" else parts), int(result.get("ai_calls") or 0), str(turn.get("mood") or ""), action
 
 
@@ -392,6 +391,8 @@ async def _remember_exchange(ctx: ActionContext, window: dict[str, Any], said: t
     with ctx.connect() as conn:
         for speaker, text in entries:
             append_turn(conn, ctx.wanderer, key, who=speaker, text=text, counterpart_identity=peer)
+        from .wanderer_actions_common import commit_learning
+        commit_learning(ctx, conn, key)
         conn.commit()
 
 

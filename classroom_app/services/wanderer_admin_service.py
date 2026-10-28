@@ -66,6 +66,7 @@ ACTION_LABELS = {
     "knowledge_read": "研读固化", "knowledge_forget": "遗忘知识", "request_promotion": "申请升阶",
     "reflect": "反思", "skip": "跳过", "write_post": "发帖",
     "social_friend": "好友往来", "social_message": "聊天发言",
+    "experience_learn": "交流学习",
 }
 REVIEW_KIND_LABELS = {
     "promotion": "升阶", "discipline": "纪律", "daily_audit": "日审", "mention_reply": "@天道",
@@ -502,6 +503,7 @@ def _social_counts(conn: Any, wanderer: dict[str, Any]) -> dict[str, int]:
 
 
 def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
+    from .wanderer_learning_service import admin_learning_summary
     wanderer = require_wanderer(conn, wanderer_id)
     number = int(wanderer["id"])
     totals = _action_totals(conn, number)
@@ -516,6 +518,7 @@ def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
             "social": _social_counts(conn, wanderer),
         },
         "knowledge": knowledge_summary(conn, wanderer),
+        "learning": admin_learning_summary(conn, number),
         "profile": _profile_payload(wanderer),
         "avatar": _avatar_payload(wanderer),
         "reviews": [_serialize_review(row) for row in _recent(conn, "wanderer_dao_reviews", number, DETAIL_RECENT_REVIEWS)],

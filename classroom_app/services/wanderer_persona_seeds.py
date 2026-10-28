@@ -466,8 +466,8 @@ def render_persona_prompt(seed: dict[str, Any]) -> str:
     """The character sheet stored as ``persona_prompt`` (300–600 字, 第二人称设定)."""
     name = seed["display_name"]
     gender_word = "男生" if seed.get("gender") == "男" else "女生"
-    style = seed.get("speech_style") or {}
-    catchphrases = "".join(f"「{item}」" for item in style.get("catchphrases") or [])
+    from .wanderer_voice_service import resolve_voice_profile
+    voice = resolve_voice_profile(seed)
     frequency = seed.get("interaction_frequency") or {}
     lines = [
         f"你是{name}，{gender_word}，{seed['hometown']}人，是这个学习平台上的一名散修（电子学生）："
@@ -476,7 +476,7 @@ def render_persona_prompt(seed: dict[str, Any]) -> str:
         f"【童年】{seed['childhood']}",
         f"【求学】{seed['schooling']}",
         f"【喜好】{'、'.join(seed.get('interests') or [])}",
-        f"【说话方式】{style.get('length', '')}；口头禅{catchphrases}；{style.get('punctuation', '')}；{style.get('emoji', '')}。",
+        f"【说话方式】偏向{voice['label']}，关注点和节奏随情境与关系调整，不靠固定口头禅扮演性格。短答、认真解释、表达不同意见或自然收束都可以。",
         f"【性格】{'、'.join(seed.get('temperament') or [])}",
         f"【互动习惯】{seed.get('interaction_habit', '')}（活跃度 {frequency.get('activity_level', 3)}/5，"
         f"常在 {_format_hours(frequency.get('active_hours') or [])} 上线）",
@@ -532,7 +532,12 @@ def _number(value: Any, key: str, low: float, high: float, *, integer: bool = Fa
 def _speech_style(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise SeedValidationError("speech_style 须为对象")
-    style: dict[str, Any] = {"catchphrases": _text_list(value.get("catchphrases"), "speech_style.catchphrases", 1, 4)}
+    style: dict[str, Any] = {"catchphrases": _text_list(value.get("catchphrases", []), "speech_style.catchphrases", 0, 4)}
+    if value.get("voice_profile"):
+        from .wanderer_voice_service import PROFILE_IDS
+        if value["voice_profile"] not in PROFILE_IDS:
+            raise SeedValidationError("speech_style.voice_profile 不在可用声线中")
+        style["voice_profile"] = value["voice_profile"]
     for key in ("punctuation", "emoji", "length"):
         text = value.get(key)
         if not isinstance(text, str) or not 1 <= len(text.strip()) <= 60:
@@ -624,7 +629,7 @@ def validate_seed(seed: Any) -> dict[str, Any]:
     if gender not in GENDERS:
         raise SeedValidationError("gender 须为 男 或 女")
     temperament = _text_list(seed.get("temperament"), "temperament", 3, 5, item_max=20)
-    return {
+    normalized = {
         "slug": slug,
         "display_name": name,
         "archetype": _text(seed, "archetype", 2, 20),
@@ -644,16 +649,22 @@ def validate_seed(seed: Any) -> dict[str, Any]:
         "public_intro": _optional_text(seed.get("public_intro"), "、".join(temperament[:2])),
         "initial_knowledge": _initial_knowledge(seed.get("initial_knowledge")),
     }
+    from .wanderer_voice_service import normalized_speech_style
+    normalized["speech_style"] = normalized_speech_style(normalized)
+    return normalized
 
 
 def build_seed_payloads() -> list[dict[str, Any]]:
     """Seeds with their rendered ``persona_prompt`` (new dicts; the constants stay untouched)."""
-    return [{**seed, "persona_prompt": render_persona_prompt(seed)} for seed in WANDERER_SEEDS]
+    from .wanderer_voice_service import normalized_speech_style
+    return [{**seed, "speech_style": normalized_speech_style(seed), "persona_prompt": render_persona_prompt(seed)}
+            for seed in WANDERER_SEEDS]
 
 
 def get_seed(slug: str) -> dict[str, Any] | None:
+    from .wanderer_voice_service import normalized_speech_style
     seed = SEED_BY_SLUG.get(str(slug or ""))
-    return {**seed, "persona_prompt": render_persona_prompt(seed)} if seed else None
+    return {**seed, "speech_style": normalized_speech_style(seed), "persona_prompt": render_persona_prompt(seed)} if seed else None
 
 
 def seed_initial_knowledge(conn: Any, wanderer: dict[str, Any], seed: dict[str, Any]) -> int:

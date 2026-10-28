@@ -26,6 +26,7 @@ ONLY_BLOG = {"blog_browse": 1, "blog_like": 1, "blog_comment": 1, "reply": 1, "d
              "classroom_visit": 0, "classroom_message": 0, "knowledge_read": 0, "promotion": 0, "blog_post": 0}
 ONLY_CLASSROOM = {**{key: 0 for key in ONLY_BLOG}, "classroom_visit": 1, "classroom_message": 1}
 _RESET_TABLES = (
+    "wanderer_experience_notes",
     "wanderer_social_inbox",
     "wanderer_action_log", "wanderer_memory_threads", "wanderer_dao_reviews", "message_center_notifications",
     "private_messages", "chat_logs", "blog_likes", "blog_comments", "blog_posts", "scheduled_tasks",

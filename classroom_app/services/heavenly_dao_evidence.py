@@ -52,6 +52,7 @@ def _iso(moment: datetime) -> str:
 def actions_by_kind(conn: Any, wanderer_id: int, since: str) -> dict[str, int]:
     rows = conn.execute(
         "SELECT action_kind, outcome, COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND created_at >= ? "
+        "AND action_kind <> 'experience_learn' "
         "GROUP BY action_kind, outcome",
         (int(wanderer_id), since),
     ).fetchall()

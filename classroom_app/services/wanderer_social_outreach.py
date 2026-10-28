@@ -76,6 +76,7 @@ async def start_friend_conversation(ctx: ActionContext) -> list[dict[str, Any]]:
     if not parts or turn.get("action") == "skip":
         record_action(ctx, "skip", target_type=OUTREACH_TARGET_TYPE, target_id=key, ai_calls=calls,
                       outcome="skipped", detail={"reason": "chose_silence", "status": result.get("status")})
+        await remember(ctx, f"social:{key}")
         return [outcome("skip", "skipped", ai_calls=calls)]
     anchor = max((int(row["id"]) for row in window["rows"]), default=0)
     window["nonce_prefix"] = f"wanderer-outreach:{ctx.wanderer_id}:{anchor}:{ctx.current_time().date().isoformat()}"
