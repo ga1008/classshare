@@ -492,7 +492,11 @@ export function createChatModal(client, { openFriends }) {
         if (!active || !isVisible() || (!window.matchMedia('(min-width: 1101px)').matches && layout.dataset.sideOpen !== 'true')) return;
         if (sidebarKey === active.key) return;
         sidebarKey = active.key;
-        if (active.type === 'dm') sidebar.showDm(active.peer, { key: active.key, writable: friends.has(active.peer), muted: client.mutedKeys.has(active.key) });
+        if (active.type === 'dm') {
+            const friend = friends.get(active.peer);
+            sidebar.showDm(active.peer, { key: active.key, writable: friends.has(active.peer),
+                muted: client.mutedKeys.has(active.key), displayName: friend?.remark || friend?.name || conversations.get(active.key)?.title });
+        }
         else if (active.detail) sidebar.showGroup(active.detail, { key: active.key });
         else sidebar.clear();
     }

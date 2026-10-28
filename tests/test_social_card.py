@@ -9,7 +9,7 @@ from classroom_app.services.cultivation_display_service import invalidate_emblem
 from tests.social_test_support import SocialDbTestCase
 
 CARD_KEYS = {"identity", "name", "role", "role_label", "avatar_url", "is_wanderer", "tier_badge", "archetype",
-             "homepage_url", "org", "student_no_tail", "mood", "courses", "radar", "cultivation_hidden",
+             "homepage_url", "interests", "org", "student_no_tail", "mood", "courses", "radar", "cultivation_hidden",
              "relation", "can_add", "add_blocked_reason", "online", "friend_extras"}
 SECRETS = ("13800000000", "qq-secret-778899", "wx-secret-id", "card-b@example.test", "2026001234")
 
@@ -63,6 +63,24 @@ class SocialCardTest(SocialDbTestCase):
         self.assertTrue(card["courses"][0]["emblem"])
         self.assertIsNotNone(card["tier_badge"])
         self.assertFalse(card["cultivation_hidden"])
+        self.assertEqual(card["interests"], [])
+
+    def test_internal_interest_inferences_are_never_public(self):
+        private_interest = "内部推断兴趣不得公开"
+        with self.connect() as conn:
+            for identity in (self.b, self.teacher):
+                conn.execute(
+                    "INSERT INTO social_trait_cards (identity, source_hash, traits_json, updated_at) "
+                    "VALUES (?, 'private-source', ?, '2026-10-28T08:00:00')",
+                    (identity, json.dumps({"interests": [private_interest], "learning_style": "私有学习画像"})))
+            conn.commit()
+        # Even friendship does not make inferred interests or learning profiles public.
+        self.befriend(self.a, self.b)
+        for target in (self.b, self.teacher):
+            card = self.card(self.a, target)
+            self.assertEqual(card["interests"], [])
+            self.assertNotIn(private_interest, json.dumps(card, ensure_ascii=False))
+            self.assertNotIn("私有学习画像", json.dumps(card, ensure_ascii=False))
 
     def test_hidden_cultivation_hides_tiers_and_radar(self):
         pk = int(self.b.split(":")[1])
@@ -96,6 +114,7 @@ class SocialCardTest(SocialDbTestCase):
         self.assertEqual(card["mood"], "今天学得很开心")
         self.assertIsNotNone(card["online"])
         self.assertFalse(card["can_add"])
+        self.assertEqual(card["interests"], [])
 
     def test_blocked_relation_gets_minimal_card(self):
         self.run_service(friends.block_user, self.user(self.a), self.b)
@@ -125,12 +144,15 @@ class SocialCardTest(SocialDbTestCase):
 
     def test_wanderer_variant_shows_archetype_and_homepage(self):
         from classroom_app.services.wanderer_identity_service import ensure_wanderer_students
+        from classroom_app.services.wanderer_public_service import build_wanderer_home
 
+        interests = ["天文", "星图", "摄影", "夜读", "科普", "观星", "写作"]
         seed = {"slug": "card-test-wanderer", "display_name": "卡片散修", "archetype": "爱看星星的观察者",
-                "persona_prompt": "合成人格", "interests": ["天文"], "initial_tier": 2}
+                "persona_prompt": "合成人格", "interests": interests, "initial_tier": 2}
         with self.connect() as conn:
             student_id = ensure_wanderer_students(conn, [seed])["card-test-wanderer"]
             conn.commit()
+            home = build_wanderer_home(conn, self.user(self.teacher), "card-test-wanderer")
         card = self.card(self.teacher, f"student:{student_id}")
         self.assertTrue(card["is_wanderer"])
         self.assertEqual(card["archetype"], "爱看星星的观察者")
@@ -138,4 +160,8 @@ class SocialCardTest(SocialDbTestCase):
         self.assertIsNone(card["student_no_tail"])
         self.assertIsNone(card["radar"])
         self.assertTrue(card["can_add"])
+        self.assertEqual(card["interests"], interests[:6])
+        self.assertEqual(card["interests"], home["interests"])
         self.assertNotIn("合成人格", json.dumps(card, ensure_ascii=False))
+        self.run_service(friends.block_user, self.user(self.teacher), f"student:{student_id}")
+        self.assertEqual(self.card(self.teacher, f"student:{student_id}")["interests"], [])

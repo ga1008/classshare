@@ -429,6 +429,78 @@ test('focus handoff is cancellable; opening a new layer during exit prevents sta
   })).toEqual({ handed: 'after', events: ['cancelled'], focus: 'c-first' });
 });
 
+for (const native of [false, true]) for (const accept of [false, true]) {
+test(`owned dirty confirmation ${accept ? 'accepts' : 'cancels'} a ${native ? 'native' : 'fallback'} modal close with correct focus`, async ({ page }) => {
+  await page.evaluate(async native => {
+    const w = window as any, { confirm } = await import('/static/js/lq/dialogs.js');
+    w.create('dirty-parent', { native });
+    w.openLayer('dirty-parent', { trigger: document.querySelector('#before'), beforeClose: () => confirm({
+      title: '放弃修改？', message: '修改尚未保存。', confirmLabel: '放弃修改', danger: true,
+    }), onReturnFocus: () => w.events.push('parent-return') });
+    w.dirtyClose = w.system.close(w.handles['dirty-parent'], 'escape');
+  }, native);
+  const confirmation = page.getByRole('dialog', { name: '放弃修改？', exact: true });
+  await confirmation.getByRole('button', { name: accept ? '放弃修改' : '取消', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).dirtyClose)).toBe(accept);
+  if (accept) {
+    await expect(page.locator('#dirty-parent')).toBeHidden();
+    await expect(page.locator('#before')).toBeFocused();
+    expect(await page.evaluate(() => (window as any).events)).toEqual(['parent-return']);
+  } else {
+    await expect(page.locator('#dirty-parent')).toBeVisible();
+    await expect(page.locator('#dirty-parent-first')).toBeFocused();
+    expect(await page.evaluate(() => (window as any).events)).toEqual([]);
+    expect(await page.locator('#background').evaluate(node => (node as HTMLElement).inert)).toBe(true);
+  }
+});
+}
+
+test('an unrelated opened and closed modal permanently invalidates a pending close focus return before an owned confirmation', async ({ page }) => {
+  await page.evaluate(async () => {
+    const w = window as any, { confirm } = await import('/static/js/lq/dialogs.js');
+    let continueClose: () => void;
+    const ready = new Promise<void>(resolve => { continueClose = resolve; });
+    const parent = w.openLayer('dirty-parent', { trigger: document.querySelector('#before'),
+      beforeClose: async () => { await ready; return confirm({ title: '继续放弃？', confirmLabel: '放弃修改' }); },
+      onReturnFocus: () => w.events.push('stale-parent-return'),
+    });
+    w.dirtyClose = w.system.close(parent, 'escape');
+    const other = w.openLayer('unrelated', { parentLayer: null });
+    await w.system.close(other);
+    document.querySelector<HTMLElement>('#dirty-parent-first')!.focus();
+    continueClose!();
+  });
+  await page.getByRole('dialog', { name: '继续放弃？', exact: true }).getByRole('button', { name: '放弃修改', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).dirtyClose)).toBe(true);
+  await expect(page.locator('#before')).not.toBeFocused();
+  expect(await page.evaluate(() => (window as any).events)).toEqual([]);
+});
+
+for (const owned of [false, true]) {
+test(`an ${owned ? 'owned' : 'unrelated'} ordered external opening preserves the pending close focus ownership`, async ({ page }) => {
+  await page.evaluate(async owned => {
+    const w = window as any, { confirm } = await import('/static/js/lq/dialogs.js');
+    const external = document.createElement('aside'); document.body.append(external);
+    w.openLayer('dirty-parent', { trigger: document.querySelector('#before'), beforeClose: () => {
+      let open = true;
+      w.externalLease = w.system.registerExternal({ mode: 'ordered', root: () => external,
+        trigger: () => document.querySelector(owned ? '#dirty-parent-first' : '#before'),
+        isOpen: () => open, dismissTop: () => { open = false; },
+      });
+      open = false; w.externalLease.refresh();
+      return confirm({ title: '外部层之后确认？', confirmLabel: '放弃修改' });
+    }, onReturnFocus: () => w.events.push('parent-return') });
+    w.dirtyClose = w.system.close(w.handles['dirty-parent'], 'escape');
+  }, owned);
+  await page.getByRole('dialog', { name: '外部层之后确认？', exact: true }).getByRole('button', { name: '放弃修改', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).dirtyClose)).toBe(true);
+  expect(await page.evaluate(() => (window as any).events)).toEqual(owned ? ['parent-return'] : []);
+  if (owned) await expect(page.locator('#before')).toBeFocused();
+  else await expect(page.locator('#before')).not.toBeFocused();
+  await page.evaluate(() => (window as any).externalLease.destroy());
+});
+}
+
 test('close timeout bounds a never-ending surface; destroy during pending check is immediate', async ({ page }) => {
   expect(await page.evaluate(async () => {
     const w = window as any;

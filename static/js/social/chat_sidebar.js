@@ -1,28 +1,23 @@
 /**
  * Chat window right sidebar.
- *   DM    → profile: avatar, presence, mood, 修为摘要, 最新动态, 备注, 拍一拍,
- *           删除好友, 拉黑, 课堂私信 / 散修主页 links.
+ *   DM    → compact public profile, cultivation/interests and shared ability radar.
+ *           Private controls belong to the child settings dialog.
  *   Group → 公告 (editable by owner/admin), 群名, members online-first with
  *           role actions per my role, 群文件 by kind, 我的群昵称/免打扰, 退出/解散.
  * Every destructive intent goes through the shared LQ confirm dialog.
  */
 import { createComponent } from '../lq/components.js';
-import { createForm } from '../lq/forms.js';
 import { confirm as confirmDialog } from '../lq/dialogs.js';
 import { bindMenu, createMenu } from '../lq/menus.js';
+import { renderAbilityRadar } from '../ability_radar.js';
 import { socialApi, errorText } from './social_api.js';
-import { el, emptyState, formatRelative, lqAvatar, lqButton, notify } from './social_dom.js';
+import { el, emptyState, lqAvatar, lqButton, notify } from './social_dom.js';
 import { createGroupSettings } from './group_settings.js';
 import { createGroupInvite } from './group_invite.js';
 import { createGroupFiles } from './group_files.js';
+import { createDmSettings } from './dm_settings.js';
 
 const ROLE_LABEL = { owner: '群主', admin: '管理员', member: '成员' };
-const REMARK_MAX = 30;
-
-const section = (title, children) => el('section', { class: 'social-side__section' }, [
-    el('h3', { class: 'social-section-title', text: title }), ...children,
-]);
-
 function safeLink(url) {
     const text = String(url || '');
     return text.startsWith('/') && !text.startsWith('//') ? text : null;
@@ -32,9 +27,11 @@ export function createChatSidebar({ client, onChanged }) {
     const element = el('div', { class: 'social-side__inner' });
     let token = 0;
     let group = null;
+    let dm = null;
     let menus = [];
     const clearMenus = () => { menus.forEach((menu) => menu.destroy()); menus = []; };
     const clearGroup = () => { group?.settings.destroy(); group?.invite.destroy(); group?.files.destroy(); group = null; };
+    const clearDm = () => { dm?.readController?.abort(); dm?.settings?.destroy(); dm = null; };
 
     async function guarded(button, task) {
         if (button) button.disabled = true;
@@ -47,91 +44,93 @@ export function createChatSidebar({ client, onChanged }) {
         clearMenus();
         clearGroup();
         const ticket = ++token;
-        element.replaceChildren(el('p', { class: 'social-hint', text: '正在读取资料…' }));
-        let profile;
-        try { profile = await socialApi.profile(identity); } catch (failure) {
-            if (ticket === token) element.replaceChildren(emptyState('资料暂时无法读取', errorText(failure), 'error'));
+        if (dm?.identity !== identity || dm.key !== ctx.key) {
+            clearDm();
+            dm = { identity, key: ctx.key, ctx, card: null, settings: null };
+            element.replaceChildren(el('p', { class: 'social-hint', text: '正在读取资料…' }));
+        } else {
+            dm.ctx = ctx;
+            if (dm.card) dm.settings.update(dm.card, ctx);
+        }
+        const current = dm;
+        current.readController?.abort();
+        current.readController = new AbortController();
+        let card;
+        try { card = await socialApi.card(identity, current.readController.signal); } catch (failure) {
+            if (ticket === token && !current.card) element.replaceChildren(
+                emptyState('资料暂时无法读取', errorText(failure), 'error'),
+                lqButton({ label: '重试', variant: 'soft', onClick: () => void showDm(identity, current.ctx) }),
+            );
             return;
         }
-        if (ticket !== token) return;
+        if (ticket !== token || dm !== current) return;
+        current.card = card;
+        if (!current.settings) current.settings = createDmSettings({ client, identity, profile: card, context: current.ctx,
+            onChanged: (reason, payload) => {
+                if (dm !== current) return;
+                if (payload?.profile) {
+                    current.ctx = { ...current.ctx, displayName: payload.profile.remark || payload.profile.name };
+                    current.card = { ...current.card, relation: payload.profile.relation };
+                }
+                if (payload?.preferences) current.ctx = { ...current.ctx, muted: Boolean(payload.preferences.muted) };
+                renderDm(current);
+                onChanged?.(reason, payload);
+            },
+        });
+        else current.settings.update(card, current.ctx);
+        renderDm(current);
+    }
+
+    function dmCard(title, children, action, name) {
+        return el('section', { class: 'lq-surface social-dm-card', 'data-lq-component': 'surface', 'data-lq-surface': 'embedded', 'data-dm-card': name }, [
+            el('div', { class: 'social-dm-card__head' }, [el('h3', { class: 'social-section-title', text: title }), action]), ...children,
+        ]);
+    }
+
+    function renderDm(current) {
+        const { identity, card: profile } = current;
+        const publicCard = profile.relation === 'blocked' ? null : profile;
         const presenceKnown = profile.online !== null && profile.online !== undefined;
-        const online = client.isOnline(identity) || Boolean(profile.online);
+        const online = profile.relation !== 'blocked' && (client.isOnline(identity) || Boolean(profile.online));
+        const org = publicCard?.org || {};
+        const orgText = [...new Set([org.college, org.department, org.major, org.class_name].filter(Boolean))].join(' · ');
+        const settings = current.settingsButton ||= lqButton({ label: '设置', variant: 'ghost', attrs: { 'data-dm-settings-open': '', 'aria-haspopup': 'dialog' }, onClick: event => current.settings.open(event.currentTarget) });
+        const displayName = current.ctx.displayName || profile.name;
         const head = el('div', { class: 'social-side__profile' }, [
             el('span', { class: 'social-avatar', 'data-online': online ? 'true' : 'false' }, [
                 lqAvatar(profile.name, profile.avatar_url, 56), el('span', { class: 'social-avatar__dot', 'aria-hidden': 'true' }),
             ]),
             el('div', { class: 'social-side__who' }, [
-                el('strong', { text: profile.remark || profile.name }),
-                el('small', { text: [profile.remark ? profile.name : '', profile.role_label, profile.org_label].filter(Boolean).join(' · ') }),
-                presenceKnown || online ? el('small', { text: online ? '在线' : (profile.last_seen_at ? `${formatRelative(profile.last_seen_at)}在线` : '离线') }) : null,
-                profile.is_wanderer ? createComponent('chip', { label: '散修', tone: 'info', size: 'sm' }) : null,
+                el('strong', { text: displayName }),
+                el('small', { text: [displayName !== profile.name ? profile.name : '', profile.role_label, orgText].filter(Boolean).join(' · ') }),
+                presenceKnown || online ? el('small', { text: online ? '在线' : '离线' }) : null,
             ]),
         ]);
-        const blocks = [head];
-        if (profile.mood) blocks.push(el('p', { class: 'social-side__mood', text: `心情：${profile.mood}` }));
-        if (profile.cultivation) {
-            const c = profile.cultivation;
-            blocks.push(section('修为', [el('div', { class: 'social-side__cultivation' }, [
-                c.emblem ? el('img', { src: c.emblem, alt: '', width: '32', height: '32', loading: 'lazy' }) : null,
-                el('span', { text: [c.tier_name, c.score !== null && c.score !== undefined ? `修为 ${Number(c.score).toFixed(1).replace(/\.0$/, '')}` : ''].filter(Boolean).join(' · ') }),
-            ])]));
+        const blocks = [dmCard('好友资料', [head,
+            profile.mood && profile.relation !== 'blocked' ? el('p', { class: 'social-side__mood', text: profile.mood }) : null,
+        ], settings, 'profile')];
+        const cultivation = [];
+        const badge = publicCard?.role !== 'teacher' && !publicCard?.cultivation_hidden ? publicCard?.tier_badge : null;
+        if (badge) {
+            const score = badge.score !== null && badge.score !== undefined && Number.isFinite(Number(badge.score))
+                ? `修为 ${Number(badge.score).toFixed(1).replace(/\.0$/, '')}` : '';
+            const emblem = safeLink(typeof badge === 'string' ? badge : badge.emblem_url || badge.url);
+            cultivation.push(el('div', { class: 'social-side__cultivation' }, [
+                emblem ? el('img', { class: 'lq-cultivation-emblem-img', src: emblem, alt: '', width: '32', height: '32', loading: 'lazy', decoding: 'async' }) : null,
+                el('span', { text: [badge.name || badge.short_name, score].filter(Boolean).join(' · ') }),
+            ]));
         }
-        const recent = (profile.recent || []).filter((item) => safeLink(item.url));
-        blocks.push(section('最新动态', [recent.length
-            ? el('ul', { class: 'social-side__links', role: 'list' }, recent.map((item) => el('li', {}, [
-                el('a', { href: safeLink(item.url), text: item.title || '动态' }), el('small', { text: formatRelative(item.at) }),
-            ])))
-            : el('p', { class: 'social-hint', text: '暂无公开动态' })]));
-
-        if (profile.relation === 'friend') {
-            const remark = createForm('input', { id: 'social-remark', label: '备注', name: 'remark', value: profile.remark || '', maxLength: REMARK_MAX, placeholder: '给好友起个备注' });
-            const remarkForm = el('form', { class: 'social-inline-form' }, [remark, lqButton({ label: '保存', variant: 'soft', type: 'submit' })]);
-            remarkForm.addEventListener('submit', (event) => {
-                event.preventDefault();
-                void guarded(remarkForm.querySelector('[type="submit"]'), async () => {
-                    await socialApi.setRemark(identity, remarkForm.elements.remark.value.trim());
-                    notify('备注已保存。', 'success');
-                    onChanged?.('remark');
-                });
-            });
-            blocks.push(remarkForm);
-            const muted = createForm('switch', { id: 'social-dm-muted', label: '消息免打扰', name: 'muted', checked: Boolean(ctx.muted) });
-            const input = muted.querySelector('input');
-            input.addEventListener('change', async () => {
-                const value = input.checked;
-                input.disabled = true;
-                try {
-                    const result = await socialApi.updateConversationPreferences(ctx.key, { muted: value });
-                    client.setMuted(ctx.key, result.muted);
-                    notify(result.muted ? '已开启免打扰，消息仍会收入消息中心和未读数字。' : '已恢复消息提醒。', 'success');
-                    onChanged?.('preferences');
-                } catch (failure) { input.checked = !value; notify(errorText(failure), 'danger'); }
-                finally { input.disabled = false; }
-            });
-            blocks.push(section('消息提醒', [muted, el('p', { class: 'social-hint', text: '免打扰只关闭浮窗提醒，消息中心与未读数字照常保留。' })]));
+        const interests = [...new Set((Array.isArray(publicCard?.interests) ? publicCard.interests : []).filter(value => typeof value === 'string' && value.trim()).map(value => value.trim()))].slice(0, 6);
+        if (interests.length) cultivation.push(el('div', { class: 'social-dm-card__interests', 'data-dm-interests': '', 'aria-label': '兴趣' }, interests.map(label => createComponent('chip', { label, size: 'sm' }))));
+        if (cultivation.length) blocks.push(dmCard(badge ? (interests.length ? '修为与兴趣' : '修为') : '兴趣', cultivation, null, 'cultivation'));
+        if (publicCard?.role === 'student' && !publicCard.is_wanderer && !publicCard.cultivation_hidden && publicCard.radar?.available && Array.isArray(publicCard.radar.axes) && publicCard.radar.axes.length) {
+            const radar = renderAbilityRadar(publicCard.radar, { selfLabel: profile.name || 'TA' });
+            // The graph already includes all axis values in its accessible label.
+            // Its expanded comparison list belongs to the full personal card.
+            radar.querySelector('.lq-radar__detail')?.remove();
+            blocks.push(dmCard('能力雷达', [radar], null, 'radar'));
         }
-        const links = el('div', { class: 'social-side__actions' }, [
-            ctx.writable ? lqButton({ label: '拍一拍', variant: 'soft', onClick: (event) => guarded(event.currentTarget, () => socialApi.nudge(ctx.key)) }) : null,
-            safeLink(profile.private_message_url) ? lqButton({ label: '课堂私信记录', variant: 'ghost', href: safeLink(profile.private_message_url) }) : null,
-            safeLink(profile.homepage_url) ? lqButton({ label: '散修主页', variant: 'ghost', href: safeLink(profile.homepage_url) }) : null,
-        ]);
-        const danger = el('div', { class: 'social-side__actions social-side__actions--danger' }, [
-            profile.relation === 'friend' ? lqButton({ label: '删除好友', variant: 'ghost', onClick: (event) => removeFriend(event.currentTarget, profile) }) : null,
-            // Teachers are classroom duty contacts and can never be blocked (message_center rule).
-            profile.relation !== 'blocked' ? lqButton({ label: '拉黑', variant: 'destructive', onClick: (event) => blockUser(event.currentTarget, profile) }) : null,
-        ]);
-        blocks.push(links, danger);
         element.replaceChildren(...blocks);
-    }
-
-    async function removeFriend(button, profile) {
-        if (!await confirmDialog({ title: '删除好友', message: `删除后聊天记录会保留，但不能再给「${profile.name}」发消息。`, confirmLabel: '删除', danger: true })) return;
-        await guarded(button, async () => { await socialApi.deleteFriend(profile.identity); notify('已删除好友。', 'success'); onChanged?.('unfriended'); });
-    }
-
-    async function blockUser(button, profile) {
-        if (!await confirmDialog({ title: '拉黑', message: `拉黑「${profile.name}」会同时解除好友，对方无法再加你或给你发消息。可在黑名单中移出。`, confirmLabel: '拉黑', danger: true })) return;
-        await guarded(button, async () => { await socialApi.block(profile.identity); notify('已拉黑。', 'success'); onChanged?.('blocked'); });
     }
 
     /* ------------------------------------------------------------ group */
@@ -176,6 +175,7 @@ export function createChatSidebar({ client, onChanged }) {
 
     function showGroup(detail, ctx) {
         token += 1;
+        clearDm();
         const id = Number(detail.id);
         if (group?.id !== id) {
             clearMenus(); clearGroup();
@@ -242,13 +242,15 @@ export function createChatSidebar({ client, onChanged }) {
         /** A new attachment arrived in the open group: reload its file list. */
         refreshFiles(groupId) { if (group?.id === Number(groupId)) void group.files.refresh(); },
         updatePreferences(key, preferences) {
-            const input = element.querySelector('#social-dm-muted');
-            if (input) input.checked = Boolean(preferences.muted);
+            if (dm?.key === key) {
+                dm.ctx = { ...dm.ctx, muted: Boolean(preferences.muted) };
+                dm.settings?.updatePreferences(preferences);
+            }
             if (group?.key === key) {
                 group.detail.me = { ...group.detail.me, muted: Boolean(preferences.muted) };
                 group.settings.updatePreferences(preferences);
             }
         },
-        clear() { token += 1; clearMenus(); clearGroup(); element.replaceChildren(); },
+        clear() { token += 1; clearMenus(); clearGroup(); clearDm(); element.replaceChildren(); },
     };
 }

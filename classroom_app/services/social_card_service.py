@@ -8,7 +8,8 @@ number / any learning-support or conversation content.
 
 * Hidden cultivation: no badge, no per-course 境界, no radar, no breakthroughs.
 * Teachers: college/department and the courses they teach.
-* 散修: archetype and their homepage.
+* 散修: archetype, already public persona interests and their homepage. Real
+  users' inferred interests / learning-support traits are never exposed.
 * Friends additionally get ``friend_extras``: recent real-name blog posts,
   achievements and breakthroughs, plus the real-name post list. Pen-name and
   anonymous posts never appear (they would de-anonymise the author).
@@ -201,17 +202,11 @@ def _empty_card(person: dict[str, Any], relation: str) -> dict[str, Any]:
         "identity": person["identity"], "name": person["name"], "role": person["role"],
         "role_label": person["role_label"], "avatar_url": avatar_url(person["identity"]),
         "is_wanderer": bool(person["is_wanderer"]), "tier_badge": None, "archetype": None, "homepage_url": None,
+        "interests": [],
         "org": {key: "" for key in ORG_KEYS},
         "student_no_tail": None, "mood": None, "courses": [], "radar": None, "cultivation_hidden": False,
         "relation": relation, "can_add": False, "add_blocked_reason": None, "online": None, "friend_extras": None,
     }
-
-
-def _wanderer_archetype(conn: Any, student_id: int) -> Optional[str]:
-    from .wanderer_identity_service import load_wanderer_by_student_id
-
-    wanderer = load_wanderer_by_student_id(conn, student_id) or {}
-    return str(wanderer.get("archetype") or "") or None
 
 
 def user_card(conn: Any, user: dict, identity: Any) -> dict[str, Any]:
@@ -242,7 +237,12 @@ def user_card(conn: Any, user: dict, identity: Any) -> dict[str, Any]:
         card["org"] = _teacher_org(conn, pk)
         card["courses"] = _teacher_courses(conn, pk)
     elif person["is_wanderer"]:
-        card["archetype"] = _wanderer_archetype(conn, pk)
+        from .wanderer_identity_service import load_wanderer_by_student_id
+        from .wanderer_public_service import public_interests
+
+        wanderer = load_wanderer_by_student_id(conn, pk) or {}
+        card["archetype"] = str(wanderer.get("archetype") or "") or None
+        card["interests"] = public_interests(wanderer)
         card["homepage_url"] = homepage_url(person)
     else:
         org = student_org_rows(conn, [pk]).get(pk) or {}

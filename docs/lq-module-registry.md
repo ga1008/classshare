@@ -25,7 +25,7 @@
 | [Page backdrop 页面背景层](#page-backdrop) | foundation | `lq-page-backdrop` | 仅 CSS | 1 |
 | [Prose copy 正文排版](#prose-copy) | foundation | — | 仅 CSS | 0 |
 | [React bridges](#react-bridges) | foundation | `lq-avatar-link` | 仅 CSS | 1 |
-| [Ability radar 六边形能力雷达](#ability-radar) | component | `lq-radar` | 仅 CSS | 2 |
+| [Ability radar 六边形能力雷达](#ability-radar) | component | `lq-radar` | 仅 CSS | 3 |
 | [Business 业务呈现（DeadlineClock / JobStatus / QuestionNavigator）](#business) | component | `lq-clock`, `lq-job`, `lq-nav-grid` | 宏 / JS / Py | 1 |
 | [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 278 |
 | [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 36 |
@@ -33,8 +33,8 @@
 | [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 8 |
 | [Composer 输入区](#composer) | component | `lq-composer` | 宏 / JS / Py | 5 |
 | [Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）](#content) | component | `lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list` … | 宏 / JS / Py / React | 174 |
-| [Cultivation emblem 境界标志与道印图案身份](#cultivation-emblem) | component | `lq-cultivation-emblem`, `lq-cultivation-emblem-img`, `lq-cultivation-host`, `cultivation-card__emblem` | 仅 CSS | 7 |
-| [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 32 |
+| [Cultivation emblem 境界标志与道印图案身份](#cultivation-emblem) | component | `lq-cultivation-emblem`, `lq-cultivation-emblem-img`, `lq-cultivation-host`, `cultivation-card__emblem` | 仅 CSS | 8 |
+| [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 33 |
 | [EmojiPicker 表情选择器](#emoji-picker) | component | `.emoji-picker`, `.emoji-picker-item`, `.emoji-picker-grid`, `createEmojiPicker` | JS | 5 |
 | [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 178 |
 | [Indicators 徽标 / 头像 / 进度 / 加载](#indicators) | component | `lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner` | 宏 / JS / Py / React | 19 |
@@ -48,7 +48,7 @@
 | [Search 搜索包装](#search) | component | `lq-search` | 仅 CSS | 12 |
 | [Selection / Dropdown 选择列表](#selection) | component | `lq-dropdown`, `lq-selection` | 宏 / JS / Py | 9 |
 | [Skeleton 骨架屏](#skeleton) | component | `lq-skeleton` | 宏 / JS / Py | 22 |
-| [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 21 |
+| [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 22 |
 | [Table / Pager / BulkBar / ResultCount](#tables) | component | `lq-bulk-bar`, `lq-pager`, `lq-result-count`, `lq-table`, `lq-table-shell` | 宏 / JS / Py / React | 11 |
 | [Toast 通知](#toast) | component | `lq-toast`, `lq-toast-fallback`, `lq-toasts` | JS | 4 |
 | [Tooltip 提示](#tooltips) | component | `lq-tooltip` | 宏 / JS / Py | 2 |
@@ -426,6 +426,7 @@
 - `static/js/materials_manage.js` ×2
 - `static/js/resume_section.js` ×2
 - `static/js/signature_point_workflow.js` ×2
+- `static/js/social/chat_sidebar.js` ×2
 - `static/js/tree_select_form_modal.js` ×2
 - `templates/dev/lq_insights.html` ×2
 - `templates/dev/lq_status.html` ×2
@@ -476,7 +477,6 @@
 - `static/js/resume_personal.js` ×1
 - `static/js/signature_multi_select.js` ×1
 - `static/js/signature_pad.js` ×1
-- `static/js/social/chat_sidebar.js` ×1
 - `static/js/ui_explanation.js` ×1
 - `templates/achievements.html` ×1
 - `templates/base_navbar.html` ×1
@@ -564,15 +564,16 @@
 
 **Ability radar 六边形能力雷达** · 层：component · CSS：`static/css/lq/components/ability-radar.css`
 
-- **设计摘要**：六轴能力雷达（ability_radar_service.build_ability_radar 载荷，几何由服务端算好）。服务端页用 templates/partials/ability_radar.html；异步浮层用 static/js/ability_radar.js renderAbilityRadar(payload, {selfLabel})，两者输出同一 DOM/类名（lq-radar__*）。2026-10-27 起个人信息面板（social/user_card.js）消费 JS 版。
+- **设计摘要**：六轴能力雷达（ability_radar_service.build_ability_radar 载荷，几何由服务端算好）。服务端页用 templates/partials/ability_radar.html；异步浮层用 static/js/ability_radar.js renderAbilityRadar(payload, {selfLabel})，两者输出同一 DOM/类名（lq-radar__*）。2026-10-27 起个人信息面板（social/user_card.js）消费 JS 版。 2026-10-28私聊侧栏也消费JS版，在领域内容槽保留图与图例、去除重复明细，并限定图尺寸；不创建第二套几何或评分。
 - **规则**：改雷达 DOM 时 Jinja 宏与 JS 渲染器同步修改；JS 版只用 textContent/setAttribute，不拼 HTML；颜色只在 ability-radar.css。
 - **根类**：`lq-radar`
-- **消费者**：2 个文件
+- **消费者**：3 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `templates/partials/ability_radar.html` ×27
 - `static/js/ability_radar.js` ×26
+- `static/js/social/chat_sidebar.js` ×1
 
 </details>
 
@@ -1225,13 +1226,14 @@
 - **状态**：头像宿主isolation、共享raised层级、精细指针hover/键盘focus、quiet/standard/expressive/off、系统reduce零过渡、forced-colors无外部阴影；隐藏修为和SSR/动态更新保留。原头像标志状态保持；道印内容庆祝粒子 6–24、基础时长 1900–5140ms，单次有限播放；高阶段增加外环、扩散范围与多色光晕。quiet/off/reduced-motion 停止庆祝；forced-colors 隐藏装饰光效。
 - **规则**：奖章 SVG/Canvas 是可导出的图形内容，不作为控件或面板材质；操作与信息区继续使用 LQ。图形色只描绘境界身份；不能将奖章特效推广成共享控件第二套动效。四项硬编码阻断已用现有令牌修复，不增加例外。除六个原登记消费者，还覆盖partials/cultivation_card.html及learning_path、profile/hero、hero_lq、overview父模板；测试tests/e2e/components/lq-cultivation-emblem.spec.ts。
 - **根类**：`lq-cultivation-emblem`, `lq-cultivation-emblem-img`, `lq-cultivation-host`, `cultivation-card__emblem`
-- **消费者**：7 个文件
+- **消费者**：8 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `static/js/cultivation_emblems.js` ×20
 - `static/js/social/user_card.js` ×2
 - `static/js/manage_wanderers.js` ×1
+- `static/js/social/chat_sidebar.js` ×1
 - `static/js/social/user_card_trigger.js` ×1
 - `templates/manage/system/wanderers.html` ×1
 - `templates/partials/cultivation_card.html` ×1
@@ -1245,12 +1247,12 @@
 
 - **设计摘要**：模态与非模态浮层外壳：raised Surface、scrim、头/体/脚槽；`openDialog` 与 `confirm/choose` 返回 Promise，取消不执行分支；关闭可被未保存草稿否决。
 - **状态**：open / closing（可取消）/ busy 否决关闭 / nested child。
-- **规则**：浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。 2026-10-27 好友页「+新朋友」复用二层 Dialog，取消后恢复触发器，已发申请与找人草稿由同一持久 owner 保留。道印点击后 createDialog/openDialog 创建 parentLayer 为 Viewer 的保存子层，取消只关闭子层、焦点回到道印；写入期间否决关闭与重复保存。 2026-10-27用户管理4个原生表单继续由manage_users.js显式createDomainModal托管；confirm导入别名confirmDialog区分共享确认与浏览器原生确认，未更改取消/脏草稿/忙碌合同。 2026-10-28群设置与邀请由social_dom适配共享Dialog；busy阻重复与关闭，dirty关闭用共享confirm；对话失权/切换的销毁不保留孤立子层，网络失败保留输入。
+- **规则**：浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。 2026-10-27 好友页「+新朋友」复用二层 Dialog，取消后恢复触发器，已发申请与找人草稿由同一持久 owner 保留。道印点击后 createDialog/openDialog 创建 parentLayer 为 Viewer 的保存子层，取消只关闭子层、焦点回到道印；写入期间否决关闭与重复保存。 2026-10-27用户管理4个原生表单继续由manage_users.js显式createDomainModal托管；confirm导入别名confirmDialog区分共享确认与浏览器原生确认，未更改取消/脏草稿/忙碌合同。 2026-10-28群设置与邀请由social_dom适配共享Dialog；busy阻重复与关闭，dirty关闭用共享confirm；对话失权/切换的销毁不保留孤立子层，网络失败保留输入。 2026-10-28私聊设置遵循同一子层合同，读取失败原位重试、保存失败留稿、成功字段推进基线、防止部分成功后重复写入。
 - **根类**：`lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim`, `lq-sheet`
 - **Jinja 宏** `templates/macros/lq/dialogs.html`：`lq_dialog`
 - **JS 入口** `static/js/lq/dialogs.js`：`choiceProps`, `choose`, `confirm`, `createDialog`, `dialogMarkup`, `dialogProps`, `disposeDialog`, `openDialog`
 - **Python props** `classroom_app/lq_dialogs.py`
-- **消费者**：32 个文件
+- **消费者**：33 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1276,6 +1278,7 @@
 - `static/js/materials_explorer.js` ×2
 - `static/js/session_knowledge_tree.js` ×2
 - `static/js/social/chat_sidebar.js` ×2
+- `static/js/social/dm_settings.js` ×2
 - `static/js/social/friends_modal.js` ×2
 - `static/js/social/group_settings.js` ×2
 - `static/js/social/user_card.js` ×2
@@ -1450,7 +1453,7 @@
 - `static/js/profile_signatures.js` ×4
 - `static/js/signature_point_workflow.js` ×4
 - `static/js/signature_workflows.js` ×4
-- `static/js/social/chat_sidebar.js` ×4
+- `static/js/social/dm_settings.js` ×4
 - `static/js/social/group_invite.js` ×4
 - `static/js/ui_color_picker.js` ×4
 - `templates/career_path.html` ×4
@@ -1571,7 +1574,7 @@
 **Layer 层栈** · 层：component · CSS：`static/css/lq/components/layers.css`
 
 - **设计摘要**：`getLayerSystem()` 唯一持有层级、焦点、背景 inert、滚动锁、嵌套顺序与关闭；可移植领域弹层显式注册。
-- **规则**：禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。
+- **规则**：禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。 2026-10-28 close 的 beforeClose 自有确认子层沿祖先推进 pending 序号，成功关闭仍返回有效触发器；无关新层打断后不再恢复旧焦点请求。覆盖新开/重开/ordered external，保留新窗口防抢焦点与取消合同，见 social-dm-sidebar-2026-10-28 和 layer-core 浏览器回归。
 - **JS 入口** `static/js/lq/layer.js`：`getLayerSystem`
 - **消费者**：25 个文件
 
@@ -1824,7 +1827,7 @@
 - **JS 入口** `static/js/lq/status.js`：`STATUS_KINDS`, `alert`, `conflict`, `createStatus`, `html`, `saveStatus`, `save_status`, `status`, `statusMarkup`, `statusProps`
 - **Python props** `classroom_app/lq_status.py`
 - **React 适配器**：`LqStatus`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：21 个文件
+- **消费者**：22 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1836,6 +1839,7 @@
 - `static/js/social/group_invite.js` ×4
 - `static/js/learning_certificate_reveal.js` ×3
 - `static/js/session_knowledge_tree.js` ×3
+- `static/js/social/dm_settings.js` ×3
 - `static/js/social/group_settings.js` ×3
 - `frontend/src/islands/classroom-workspace.tsx` ×2
 - `frontend/src/islands/dashboard-workspace.tsx` ×2

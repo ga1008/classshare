@@ -23,7 +23,7 @@
     "countMeaning": "Source occurrences, including mutually exclusive Jinja branches; not rendered element counts. Component calls and their definitions are separate records, not a completion ratio."
   },
   "summary": {
-    "files": 583,
+    "files": 584,
     "htmlTemplates": 208,
     "entries": 5618,
     "byKind": {
@@ -2533,7 +2533,7 @@
     },
     {
       "file": "static/js/lq/layer.js",
-      "sha256": "cd357449a5803e216e11a4cb15b222c578bcd529ed915b588e2cf662bd6cdecd",
+      "sha256": "0af8bf90d898a657e6b81f53f5d5f653ba18864f9af638725aa4121eb14a8092",
       "entryCount": 0
     },
     {
@@ -3103,13 +3103,18 @@
     },
     {
       "file": "static/js/social/chat_modal.js",
-      "sha256": "e4fb8a6bde26f7b59b0777bd7f42ca5f792ad6cbdd4aea404cdf7485c74e389a",
+      "sha256": "7345f25f8db69b3fa3d94bc63ba06827e49802fb91124e6ee3b9ee292f9a6180",
       "entryCount": 0
     },
     {
       "file": "static/js/social/chat_sidebar.js",
-      "sha256": "23448637bee33609b2b8cad063209bbcf701cd0b83d9e36c285a4e1804180002",
-      "entryCount": 3
+      "sha256": "ddf7996568d65a7f4f17239cd7144a51160798be5b89aab79c8f89026be61263",
+      "entryCount": 1
+    },
+    {
+      "file": "static/js/social/dm_settings.js",
+      "sha256": "c64635d321f5135e76a7a0ad8b5d039371f1944173abb9332b44a49bc43c5839",
+      "entryCount": 2
     },
     {
       "file": "static/js/social/friends_discover.js",
@@ -158665,9 +158670,9 @@
     },
     {
       "file": "static/js/social/chat_sidebar.js",
-      "line": 67,
-      "column": 39,
-      "offset": 3443,
+      "line": 124,
+      "column": 166,
+      "offset": 7259,
       "kind": "chip",
       "syntax": "component-factory-call",
       "tagOrFactory": "createComponent",
@@ -158690,10 +158695,10 @@
       "auditId": "lq-source-05242"
     },
     {
-      "file": "static/js/social/chat_sidebar.js",
-      "line": 87,
-      "column": 28,
-      "offset": 4713,
+      "file": "static/js/social/dm_settings.js",
+      "line": 16,
+      "column": 20,
+      "offset": 1039,
       "kind": "field",
       "syntax": "component-factory-call",
       "tagOrFactory": "createForm",
@@ -158716,10 +158721,10 @@
       "auditId": "lq-source-05243"
     },
     {
-      "file": "static/js/social/chat_sidebar.js",
-      "line": 98,
-      "column": 27,
-      "offset": 5490,
+      "file": "static/js/social/dm_settings.js",
+      "line": 17,
+      "column": 19,
+      "offset": 1202,
       "kind": "choice",
       "syntax": "component-factory-call",
       "tagOrFactory": "createForm",

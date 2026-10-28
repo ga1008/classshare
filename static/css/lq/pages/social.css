@@ -95,10 +95,10 @@
 .social-chat__composer { flex: none; padding-block-start: var(--ls-s-2); }
 
 /* Sidebar cards are embedded shared Surfaces; child dialogs retain LQ owners. */
-.social-group-card { display: grid; gap: var(--ls-s-3); min-width: 0; padding: var(--ls-s-3); }
-.social-group-card__head { display: flex; align-items: center; justify-content: space-between; gap: var(--ls-s-2); }
-.social-group-card__head .social-section-title { margin: 0; }
-.social-group-card__head > .lq-btn { flex: none; }
+.social-group-card, .social-dm-card { display: grid; gap: var(--ls-s-3); min-width: 0; padding: var(--ls-s-3); }
+.social-group-card__head, .social-dm-card__head { display: flex; align-items: center; justify-content: space-between; gap: var(--ls-s-2); }
+:is(.social-group-card__head, .social-dm-card__head) .social-section-title { margin: 0; }
+:is(.social-group-card__head, .social-dm-card__head) > .lq-btn { flex: none; }
 .social-group-card__title { overflow-wrap: anywhere; }
 .social-group-settings, .social-group-settings__section, .social-group-settings__fields,
 .social-group-invite, .social-group-files { display: grid; gap: var(--ls-s-3); min-width: 0; }
@@ -198,6 +198,25 @@
 .social-side__actions { display: flex; flex-wrap: wrap; gap: var(--ls-s-2); margin-top: var(--ls-s-2); }
 .social-side__form, .social-inline-form { display: grid; gap: var(--ls-s-2); }
 .social-side__filters { display: flex; flex-wrap: wrap; gap: var(--ls-s-1); margin-bottom: var(--ls-s-2); }
+
+/* Private profile cards keep public content compact; controls live in a child dialog. */
+.social-dm-card .social-side__profile { align-items: flex-start; }
+.social-dm-card .social-side__who > strong { overflow-wrap: anywhere; }
+.social-dm-card .social-side__who > small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.social-dm-card .social-side__mood { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.social-dm-card__interests { display: flex; flex-wrap: wrap; gap: var(--ls-s-1); min-width: 0; }
+.social-dm-card__interests .lq-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.social-dm-card .lq-radar__inner { grid-template-columns: minmax(0, 1fr); gap: 0; }
+.social-dm-card .lq-radar__svg { max-width: 280px; max-height: 212px; }
+.social-dm-settings, .social-dm-settings__section, .social-dm-settings__fields { display: grid; gap: var(--ls-s-3); min-width: 0; }
+.social-dm-settings__fields { margin: 0; padding: 0; border: 0; }
+.social-dm-settings__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--ls-s-2); }
+.social-dm-settings__status:empty { display: none; }
+.social-dm-settings [hidden] { display: none; }
+@media (max-height: 700px) {
+    .social-side__inner:has(> .social-dm-card) { gap: var(--ls-s-1); padding-block-end: var(--ls-s-2); }
+    .social-dm-card { gap: var(--ls-s-2); padding: var(--ls-s-2); }
+}
 .social-members { display: grid; gap: var(--ls-s-2); margin: 0; padding: 0; list-style: none; max-height: 320px; overflow: auto; }
 .social-member { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 2px var(--ls-s-2); }
 .social-member__copy > small { font-size: var(--ls-t-caption); color: hsl(var(--lq-material-muted, var(--ls-ink-2))); }
@@ -242,7 +261,7 @@
     .social-msg .lq-bubble { max-width: 88%; }
     .social-add__fields { grid-template-columns: minmax(0, 1fr); }
     .social-group-settings__section > .lq-btn { justify-self: start; }
-    .social-group-settings__actions, .social-group-invite__actions {
+    .social-group-settings__actions, .social-group-invite__actions, .social-dm-settings__actions {
         justify-content: flex-start; padding-inline-end: var(--ls-s-16);
     }
 }

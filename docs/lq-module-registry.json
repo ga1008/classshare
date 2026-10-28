@@ -439,6 +439,10 @@
       "hits": 2
      },
      {
+      "path": "static/js/social/chat_sidebar.js",
+      "hits": 2
+     },
+     {
       "path": "static/js/tree_select_form_modal.js",
       "hits": 2
      },
@@ -639,10 +643,6 @@
       "hits": 1
      },
      {
-      "path": "static/js/social/chat_sidebar.js",
-      "hits": 1
-     },
-     {
       "path": "static/js/ui_explanation.js",
       "hits": 1
      },
@@ -768,13 +768,13 @@
    "title": "Ability radar 六边形能力雷达",
    "layer": "component",
    "notes": {
-    "summary": "六轴能力雷达（ability_radar_service.build_ability_radar 载荷，几何由服务端算好）。服务端页用 templates/partials/ability_radar.html；异步浮层用 static/js/ability_radar.js renderAbilityRadar(payload, {selfLabel})，两者输出同一 DOM/类名（lq-radar__*）。2026-10-27 起个人信息面板（social/user_card.js）消费 JS 版。",
+    "summary": "六轴能力雷达（ability_radar_service.build_ability_radar 载荷，几何由服务端算好）。服务端页用 templates/partials/ability_radar.html；异步浮层用 static/js/ability_radar.js renderAbilityRadar(payload, {selfLabel})，两者输出同一 DOM/类名（lq-radar__*）。2026-10-27 起个人信息面板（social/user_card.js）消费 JS 版。 2026-10-28私聊侧栏也消费JS版，在领域内容槽保留图与图例、去除重复明细，并限定图尺寸；不创建第二套几何或评分。",
     "params": "",
     "states": "",
     "rules": "改雷达 DOM 时 Jinja 宏与 JS 渲染器同步修改；JS 版只用 textContent/setAttribute，不拼 HTML；颜色只在 ability-radar.css。"
    },
    "consumers": {
-    "count": 2,
+    "count": 3,
     "files": [
      {
       "path": "templates/partials/ability_radar.html",
@@ -783,6 +783,10 @@
      {
       "path": "static/js/ability_radar.js",
       "hits": 26
+     },
+     {
+      "path": "static/js/social/chat_sidebar.js",
+      "hits": 1
      }
     ]
    }
@@ -3221,7 +3225,7 @@
     "rules": "奖章 SVG/Canvas 是可导出的图形内容，不作为控件或面板材质；操作与信息区继续使用 LQ。图形色只描绘境界身份；不能将奖章特效推广成共享控件第二套动效。四项硬编码阻断已用现有令牌修复，不增加例外。除六个原登记消费者，还覆盖partials/cultivation_card.html及learning_path、profile/hero、hero_lq、overview父模板；测试tests/e2e/components/lq-cultivation-emblem.spec.ts。"
    },
    "consumers": {
-    "count": 7,
+    "count": 8,
     "files": [
      {
       "path": "static/js/cultivation_emblems.js",
@@ -3233,6 +3237,10 @@
      },
      {
       "path": "static/js/manage_wanderers.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/social/chat_sidebar.js",
       "hits": 1
      },
      {
@@ -3946,10 +3954,10 @@
     "summary": "模态与非模态浮层外壳：raised Surface、scrim、头/体/脚槽；`openDialog` 与 `confirm/choose` 返回 Promise，取消不执行分支；关闭可被未保存草稿否决。",
     "params": "",
     "states": "open / closing（可取消）/ busy 否决关闭 / nested child。",
-    "rules": "浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。 2026-10-27 好友页「+新朋友」复用二层 Dialog，取消后恢复触发器，已发申请与找人草稿由同一持久 owner 保留。道印点击后 createDialog/openDialog 创建 parentLayer 为 Viewer 的保存子层，取消只关闭子层、焦点回到道印；写入期间否决关闭与重复保存。 2026-10-27用户管理4个原生表单继续由manage_users.js显式createDomainModal托管；confirm导入别名confirmDialog区分共享确认与浏览器原生确认，未更改取消/脏草稿/忙碌合同。 2026-10-28群设置与邀请由social_dom适配共享Dialog；busy阻重复与关闭，dirty关闭用共享confirm；对话失权/切换的销毁不保留孤立子层，网络失败保留输入。"
+    "rules": "浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。 2026-10-27 好友页「+新朋友」复用二层 Dialog，取消后恢复触发器，已发申请与找人草稿由同一持久 owner 保留。道印点击后 createDialog/openDialog 创建 parentLayer 为 Viewer 的保存子层，取消只关闭子层、焦点回到道印；写入期间否决关闭与重复保存。 2026-10-27用户管理4个原生表单继续由manage_users.js显式createDomainModal托管；confirm导入别名confirmDialog区分共享确认与浏览器原生确认，未更改取消/脏草稿/忙碌合同。 2026-10-28群设置与邀请由social_dom适配共享Dialog；busy阻重复与关闭，dirty关闭用共享confirm；对话失权/切换的销毁不保留孤立子层，网络失败保留输入。 2026-10-28私聊设置遵循同一子层合同，读取失败原位重试、保存失败留稿、成功字段推进基线、防止部分成功后重复写入。"
    },
    "consumers": {
-    "count": 32,
+    "count": 33,
     "files": [
      {
       "path": "templates/manage/system/users.html",
@@ -4037,6 +4045,10 @@
      },
      {
       "path": "static/js/social/chat_sidebar.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/social/dm_settings.js",
       "hits": 2
      },
      {
@@ -4926,7 +4938,7 @@
       "hits": 4
      },
      {
-      "path": "static/js/social/chat_sidebar.js",
+      "path": "static/js/social/dm_settings.js",
       "hits": 4
      },
      {
@@ -5357,7 +5369,7 @@
     "summary": "`getLayerSystem()` 唯一持有层级、焦点、背景 inert、滚动锁、嵌套顺序与关闭；可移植领域弹层显式注册。",
     "params": "",
     "states": "",
-    "rules": "禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。"
+    "rules": "禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。 2026-10-28 close 的 beforeClose 自有确认子层沿祖先推进 pending 序号，成功关闭仍返回有效触发器；无关新层打断后不再恢复旧焦点请求。覆盖新开/重开/ordered external，保留新窗口防抢焦点与取消合同，见 social-dm-sidebar-2026-10-28 和 layer-core 浏览器回归。"
    },
    "consumers": {
     "count": 25,
@@ -6379,7 +6391,7 @@
     "rules": "警告/错误/保存语义优先复用这里的填充与前景配对，不把有色前景放到任意透明背景。"
    },
    "consumers": {
-    "count": 21,
+    "count": 22,
     "files": [
      {
       "path": "templates/dev/lq_status.html",
@@ -6411,6 +6423,10 @@
      },
      {
       "path": "static/js/session_knowledge_tree.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/social/dm_settings.js",
       "hits": 3
      },
      {
@@ -7750,12 +7766,18 @@
    "declarative"
   ],
   "static/js/social/chat_sidebar.js": [
+   "ability-radar",
    "chip",
+   "cultivation-emblem",
    "dialogs",
-   "forms",
    "materials",
    "menus",
    "skeleton"
+  ],
+  "static/js/social/dm_settings.js": [
+   "dialogs",
+   "forms",
+   "status"
   ],
   "static/js/social/friends_discover.js": [
    "button",

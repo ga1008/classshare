@@ -53,6 +53,16 @@ function createLayerSystem(doc) {
         return false;
     };
     const descendants = (parent) => stack.filter((item) => descendantOf(item, parent));
+    // Owned child checks continue the same close intent. An unrelated opening
+    // breaks that sequence permanently, even if another owned child opens later.
+    function advanceOpening(parent) {
+        const previous = openingSequence++;
+        for (; parent; parent = parent.parentLayer) {
+            const pending = records.get(parent)?.pending;
+            if (pending?.sequence === previous) pending.sequence = openingSequence;
+        }
+        return openingSequence;
+    }
     const modal = () => [...stack].reverse().find((item) => active(item) && item.modality === 'modal') || null;
     const externalActive = (item) => item.isActive?.() ?? item.isOpen();
     const externalPresent = (item) => item.isPresent?.() ?? item.isOpen();
@@ -420,10 +430,9 @@ function createLayerSystem(doc) {
         if (record.pending) return record.pending.promise;
         if (reason === 'parent-destroyed') { destroyHandle(handle, reason); return Promise.resolve(true); }
         const generation = ++record.generation;
-        const sequence = openingSequence;
         let resolve;
         const promise = new Promise((done) => { resolve = done; });
-        record.pending = { promise, resolve };
+        const pending = record.pending = { promise, resolve, sequence: openingSequence };
         setState(handle, 'checking');
         const current = () => active(handle) && record.generation === generation;
         void (async () => {
@@ -453,7 +462,7 @@ function createLayerSystem(doc) {
             release(handle);
             // Adapter cleanup in either completion hook cannot revoke a completed exit.
             settle(record, true);
-            returnFocus(handle, sequence);
+            returnFocus(handle, pending.sequence);
             call(handle, 'onClose', reason);
         })();
         return promise;
@@ -502,7 +511,7 @@ function createLayerSystem(doc) {
         if (existing) {
             update(existing, options);
             if (['checking', 'closing'].includes(existing.state)) {
-                const record = records.get(existing); record.generation++; settle(record, false); openingSequence++;
+                const record = records.get(existing); record.generation++; settle(record, false); advanceOpening(existing.parentLayer);
                 reveal(existing);
             }
             return existing;
@@ -553,7 +562,7 @@ function createLayerSystem(doc) {
         record.onHostClose = () => destroyHandle(handle, 'parent-destroyed');
         record.hostDialog?.addEventListener('close', record.onHostClose);
         root.addEventListener('cancel', record.onCancel); root.addEventListener('close', record.onNativeClose);
-        stack.push(handle); record.order = ++openingSequence; listen();
+        stack.push(handle); record.order = advanceOpening(parentLayer); listen();
         try {
             if (nativeModal) {
                 if (batchNative) syncBackground({ scrollSnapshot, relocateCompanions: false });
@@ -598,8 +607,8 @@ function createLayerSystem(doc) {
                 if (!record) return;
                 const open = adapter.isOpen();
                 if (ordered(adapter) && open && !record.open) {
-                    record.order = ++openingSequence;
                     record.parentLayer = findPopoverParent(stack, adapter.trigger(), (item) => item.root);
+                    record.order = advanceOpening(record.parentLayer);
                 }
                 const closed = record.open && !open;
                 record.open = open;

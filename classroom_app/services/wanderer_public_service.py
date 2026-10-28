@@ -32,6 +32,11 @@ PUBLIC_REVIEWS = {
 ORIGIN_LABELS = {"seed": "种子散修", "dao": "天道所造"}
 
 
+def public_interests(wanderer: dict[str, Any]) -> list[str]:
+    """The persona's already public interests, shared by homepage and social cards."""
+    return [str(item) for item in wanderer.get("interests") or []][:6]
+
+
 def _row_dict(row: Any) -> dict[str, Any]:
     if isinstance(row, dict):
         return dict(row)
@@ -172,7 +177,7 @@ def build_wanderer_home(conn: Any, viewer: dict[str, Any], slug: str) -> Optiona
         "display_name": str(wanderer.get("display_name") or ""),
         "archetype": str(wanderer.get("archetype") or ""),
         "intro": str(wanderer.get("public_intro") or ""),
-        "interests": [str(item) for item in wanderer.get("interests") or []][:6],
+        "interests": public_interests(wanderer),
         "avatar_url": wanderer_avatar_url(wanderer["student_id"]),
         "badge": wanderer_badge(tier),
         "tier": tier,
