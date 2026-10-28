@@ -101,3 +101,25 @@
    "+3 秒 + 最多 20 秒"；社交私信由 2 秒轮询，明显更快。
 4. **管理员立即运行**仍以完整动作为先，不会因为有人等待而只回复；这是保留的管理语义。
 5. 作息、活跃度、发帖概率、主动加好友上限、每日动作预算全部未改。
+
+## 6. 发布记录（2026-10-28 20:25，北京时间）
+
+| 项目 | 结果 |
+|---|---|
+| 功能提交 | `9c971140`（基于 `b05b7f45`，已推送 `origin/dev`） |
+| 线上发布标识 | `20261028-202506-007b46844625` |
+| 迁移门禁 | `.codex-temp/reply-priority-native/native-report.json`：同一 2026-09-23 原始备份两次独立恢复基线一致；增量迁移与两次新进程全启动通过；81 个迁移源哈希匹配；`native-validation.json` 为 `ok` |
+| 部署 | `deploy_remote.ps1 -DryRun -QuiesceForMigration` 通过后执行正式 `-QuiesceForMigration`；`DEPLOY_DONE` |
+| 备份 | 代码 `/tmp/lanshare-deploy-backups/code-20261028-202519.tgz`；停写后数据库 `/tmp/lanshare-deploy-backups/db-cutover-20261028-202519.sql.gz`；保留最近两组回滚镜像 |
+| 健康 | app/ai/mailer/postgres/nginx/scheduler/agent-worker/blog-crawler 全部运行；`release_id` 与公网缓存标识一致；部署日志 `NO_RECENT_ERROR_LOGS` |
+| 代码一致性 | 容器内 `wanderer_reply_triggers.py`、`wanderer_behavior_service.py`、`wanderer_inbox_worker.py`、`blog_notifications.py` 的 SHA-256 与本地提交逐字节一致 |
+| 调度注册 | scheduler 启动日志的 kind 列表包含 `wanderer_reply_tick` |
+
+### 发布过程中的一次纠正
+
+19:53 的第一次上线误用了本地落后 `origin/dev` 11 个提交的分支（含当天的学生支持与联网
+搜索发布）：线上代码在约 32 分钟内缺少这些新功能。数据库没有被回退或破坏，也没有执行
+破坏性迁移。发现后把本地提交 rebase 到 `origin/dev`（保留本文件的回复优先级改动），
+重新生成并验证原生 PostgreSQL 报告，20:25 用 `9c971140` 覆盖上线；上面的"代码一致性"
+与健康检查均针对最终发布。此后发版前必须先 `git fetch` 并确认 `git status -sb` 不是
+`behind`。
