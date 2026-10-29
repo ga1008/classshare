@@ -1,7 +1,7 @@
 # 群聊性能诊断与改进计划（2026-10-30）
 
 > 现象：好友聊天"人越多越卡"，打开群时更卡，群越大越卡。
-> 本文是诊断结论 + 改进计划。**P0-1、P0-2、P0-3 已于 2026-10-30 施工并复测**（实测见 §4「P0-1 / P0-2 施工结果」与「P0-3 施工结果」）；P0-4 及以后尚未动工。
+> 本文是诊断结论 + 改进计划。**P0-1、P0-2、P0-3 已于 2026-10-30 施工、复测并全部上线**（P0-1/P0-2 随 `6f3c1a0a`，P0-3 随 `df0badf5` / release `20261030-061707-7137ba9d3212`；实测见 §4「P0-1 / P0-2 施工结果」与「P0-3 施工结果」）；P0-4 及以后尚未动工。
 
 ---
 
@@ -255,6 +255,7 @@ N=200、p=0.5、D=40 → 400 + 100×96 ≈ **1 万条**；D=200 → **5 万条**
 - **开群渲染成本未动**（DOM 仍 6996 节点、`visible` 90–151 ms）：名册首屏与 keyed diff 分别是 P0-4 / P0-5。
 - **回归**：`test_social_groups` 14、`test_social_messages` / `security` / `authorization_races` / `attention` / `wanderer_social` 113、`test_social_frontend_contract` / `test_social_ws` 25、`test_social_friends` 12、`test_architecture_route_snapshot` 1，全绿。新增两测：换人不改人数时版本号必须变；带命中 ETag 的非成员仍须 403。
 - **原始数据**：`.codex-temp/social-group-open-after-20261030.json`、`.codex-temp/social-group-open-p03-before-20261030.json`、`.codex-temp/social-group-server-20261030.json`。「施工前」一列是把 HEAD 版 `chat_modal.js` / `social_api.js` 放回同一哈希 revision 目录后跑的同一套 harness（跑完已 `build:assets` 还原，revision 仍为 `474d882b…`）。
+- **上线（2026-10-30）**：commit `df0badf5`，release `20261030-061707-7137ba9d3212`，已推 `origin/dev`。核验：8 容器 healthy、容器内 `group_detail_if_changed` / `_if_none_match_versions` 在位、线上 manifest revision `af2b39e9…` 的 `chat_modal.js` 含 `GROUP_DETAIL_CACHE_MAX`、`social_api.js` 含 `notModified`、未登录 `/api/social/groups/1` 401、根 303→`/student/login`、app 日志无异常。本次未改 `classroom_app/db/*` 与 `config.py`，复用 `.codex-temp/reply-priority-native/native-report.json` + `E:/CodexTemp/lanshare-lq-release-20260923/snapshot.dump` 门禁对（81 源文件 0 mismatch），从冻结树 `.codex-temp/social-p03-deploy/frozen-df0badf5` 发布（发布后已清理）。
 
 ### P1 结构性（预计 3–5 天）
 
