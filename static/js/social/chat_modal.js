@@ -346,8 +346,9 @@ export function createChatModal(client, { openFriends }) {
         if (last <= (current.readSent || 0)) return;
         current.readSent = last;
         const item = conversations.get(current.key);
+        const cleared = Number(item?.unread) || 0;
         if (item) { item.unread = 0; renderList(); }
-        try { await socialApi.read(current.key, last); client.refreshCounts(); } catch { current.readSent = 0; }
+        try { await socialApi.read(current.key, last); client.settleRead(cleared); } catch { current.readSent = 0; }
     }, READ_DEBOUNCE_MS);
 
     /* ------------------------------------------------------------ select */

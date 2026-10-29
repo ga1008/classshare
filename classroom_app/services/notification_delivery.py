@@ -28,13 +28,18 @@ from datetime import datetime, timedelta
 from typing import Any, Iterable, Optional
 
 from ..db.connection import get_configured_db_engine
-from .message_center_service import _insert_notification, _insert_notification_if_allowed, _now_iso
+from .message_center_service import (_insert_notification, _insert_notification_if_allowed, _now_iso,
+                                     notification_severity_for_category)
 
 TARGET_STATE_GONE_POST = "gone_post"
 TARGET_STATE_GONE_COMMENT = "gone_comment"
 SEEN_PREFIX = "seen:"
 MAX_AGGREGATE_MEMBERS = 500
 MAX_AGGREGATE_RECENT = 4
+# Rows per batched fan-out chunk: keeps one multi-row VALUES under SQLite's
+# 32 766 bind-parameter ceiling (19 columns × 200 = 3 800) while still covering
+# the largest group a single chunk.
+MAX_FANOUT_ROWS = 200
 _MEMBERS_KEY = "aggregate_members"
 _RECENT_KEY = "aggregate_recent"
 
@@ -255,6 +260,156 @@ def deliver(
     if dedupe:
         return _insert_notification_if_allowed(conn, fields)
     return _insert_notification(conn, fields)
+
+
+def _marks(values: Iterable[Any]) -> tuple[str, list[Any]]:
+    items = list(values)
+    return ", ".join("?" for _ in items), items
+
+
+def deliver_aggregate_many(conn, payloads: list[dict[str, Any]], *, aggregate_key: str) -> int:
+    """Give every recipient the same aggregated event in a constant number of statements.
+
+    Each payload must come from ``_build_notification_payload`` for the *same*
+    event and differ only in ``recipient_identity`` / ``recipient_role`` /
+    ``recipient_user_pk`` — which is exactly what a group-chat fan-out looks
+    like. Calling ``deliver`` per member costs two statements each (a SELECT
+    plus an UPDATE or INSERT) and made a 200-member send 419 statements
+    (docs/social-group-performance-2026-10-30.md §3 R1).
+
+    The write rules match ``deliver`` with an empty ``aggregate_member``: fold
+    into each recipient's newest unread card for ``aggregate_key``, otherwise
+    start one at ``aggregate_count`` 1 with the title rendered for one event.
+    No mail is queued — callers on this path set
+    ``email_notification_allowed = False``, which ``_insert_notification``
+    already short-circuits before touching the outbox.
+
+    Returns how many recipients end up holding an unread card.
+    """
+    by_identity: dict[str, dict[str, Any]] = {}
+    for payload in payloads:
+        identity = str(payload.get("recipient_identity") or "")
+        if identity and identity not in by_identity:
+            by_identity[identity] = payload
+    if not by_identity:
+        return 0
+    title_template = str(next(iter(by_identity.values())).get("title") or "")
+    identities = list(by_identity)
+    delivered = 0
+    for start in range(0, len(identities), MAX_FANOUT_ROWS):
+        delivered += _aggregate_chunk(
+            conn, identities[start:start + MAX_FANOUT_ROWS], by_identity, aggregate_key, title_template,
+        )
+    return delivered
+
+
+def _aggregate_chunk(conn, identities: list[str], by_identity: dict[str, dict[str, Any]],
+                     aggregate_key: str, title_template: str) -> int:
+    marks, params = _marks(identities)
+    # Newest unread card per recipient, mirroring `_merge_into_unread`'s
+    # `ORDER BY id DESC LIMIT 1` without one query per member.
+    open_ids: dict[str, int] = {}
+    for row in conn.execute(
+        f"SELECT id, recipient_identity FROM message_center_notifications "
+        f"WHERE aggregate_key = ? AND read_at IS NULL AND recipient_identity IN ({marks}) ORDER BY id",
+        (aggregate_key, *params),
+    ).fetchall():
+        open_ids[str(row["recipient_identity"])] = int(row["id"])
+    template = by_identity[identities[0]]
+    delivered, reread = _increment_open_cards(conn, open_ids, template, title_template) if open_ids else (0, [])
+    fresh = [identity for identity in identities if identity not in open_ids] + reread
+    if fresh:
+        delivered += _insert_fresh_cards(conn, fresh, by_identity, aggregate_key, title_template)
+    return delivered
+
+
+def _increment_open_cards(conn, open_ids: dict[str, int], template: dict[str, Any],
+                          title_template: str) -> tuple[int, list[str]]:
+    """Bump every open card in one UPDATE; report recipients whose card was read meanwhile."""
+    marks, params = _marks(list(open_ids.values()))
+    metadata = _loads(template.get("metadata_json"))
+    metadata.setdefault(_MEMBERS_KEY, [])
+    metadata.setdefault(_RECENT_KEY, [])
+    cursor = conn.execute(
+        f"""
+        UPDATE message_center_notifications
+        SET aggregate_count = aggregate_count + 1,
+            title = replace(?, '{{count}}', CAST(aggregate_count + 1 AS TEXT)),
+            body_preview = ?, actor_identity = ?, actor_role = ?, actor_user_pk = ?,
+            actor_display_name = ?, link_url = ?, metadata_json = ?, created_at = ?
+        WHERE id IN ({marks}) AND read_at IS NULL
+        """,
+        (
+            title_template,
+            template["body_preview"],
+            template["actor_identity"],
+            template["actor_role"],
+            template["actor_user_pk"],
+            template["actor_display_name"],
+            template["link_url"],
+            json.dumps(metadata, ensure_ascii=False),
+            template["created_at"],
+            *params,
+        ),
+    )
+    updated = int(cursor.rowcount or 0)
+    if updated == len(open_ids):
+        return updated, []
+    # Read between the SELECT and here: that recipient starts a fresh card
+    # instead of silently losing the event, exactly as `deliver` does.
+    still_unread = {
+        int(row["id"])
+        for row in conn.execute(
+            f"SELECT id FROM message_center_notifications WHERE id IN ({marks}) AND read_at IS NULL",
+            params,
+        ).fetchall()
+    }
+    return updated, [identity for identity, row_id in open_ids.items() if row_id not in still_unread]
+
+
+def _insert_fresh_cards(conn, identities: list[str], by_identity: dict[str, dict[str, Any]],
+                        aggregate_key: str, title_template: str) -> int:
+    rows: list[tuple[Any, ...]] = []
+    for identity in identities:
+        payload = by_identity[identity]
+        metadata = _loads(payload.get("metadata_json"))
+        metadata[_MEMBERS_KEY] = []
+        metadata[_RECENT_KEY] = []
+        rows.append((
+            payload["recipient_identity"],
+            payload["recipient_role"],
+            payload["recipient_user_pk"],
+            payload["category"],
+            payload.get("severity") or notification_severity_for_category(payload["category"]),
+            payload["actor_identity"],
+            payload["actor_role"],
+            payload["actor_user_pk"],
+            payload["actor_display_name"],
+            _render_title(title_template, 1),
+            payload["body_preview"],
+            payload["link_url"],
+            payload["class_offering_id"],
+            payload["ref_type"],
+            payload["ref_id"],
+            json.dumps(metadata, ensure_ascii=False),
+            payload["created_at"],
+            aggregate_key,
+            1,
+        ))
+    row_marks = "(" + ", ".join("?" for _ in rows[0]) + ")"
+    conn.execute(
+        f"""
+        INSERT INTO message_center_notifications (
+            recipient_identity, recipient_role, recipient_user_pk,
+            category, severity, actor_identity, actor_role, actor_user_pk, actor_display_name,
+            title, body_preview, link_url, class_offering_id,
+            ref_type, ref_id, metadata_json, created_at, aggregate_key, aggregate_count
+        )
+        VALUES {', '.join(row_marks for _ in rows)}
+        """,
+        [value for row in rows for value in row],
+    )
+    return len(rows)
 
 
 # --- read and stale state ---------------------------------------------------

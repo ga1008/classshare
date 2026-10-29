@@ -122,7 +122,7 @@ def _contexts(conn: Any, parsed: dict, targets: list[str], message_id: int) -> d
 
 def notify_message(conn: Any, me: str, parsed: dict, message: dict) -> None:
     from .message_center_service import _build_notification_payload
-    from .notification_delivery import deliver
+    from .notification_delivery import deliver, deliver_aggregate_many
     from .social_conversation_service import participants
 
     # Serializes the absent-row aggregation case and read cursor with sends.
@@ -143,6 +143,7 @@ def notify_message(conn: Any, me: str, parsed: dict, message: dict) -> None:
     mentioned_targets = [t for t in targets if t not in blocked and message.get("message_type") != "nudge"
                          and (t in mentions or "all" in mentions)]
     contexts = _contexts(conn, parsed, mentioned_targets, message["id"])
+    ordinary: list[dict[str, Any]] = []
     for target in targets:
         if target in blocked:
             continue
@@ -165,7 +166,14 @@ def notify_message(conn: Any, me: str, parsed: dict, message: dict) -> None:
             metadata=metadata)
         if not mentioned:
             payload["email_notification_allowed"] = False
-        deliver(conn, payload, aggregate_key="" if mentioned else AGGREGATE_PREFIX + parsed["key"])
+            ordinary.append(payload)
+            continue
+        # A mention carries per-recipient context, so it keeps its own card.
+        deliver(conn, payload)
+    # Every ordinary recipient gets the identical aggregated event, so one batch
+    # replaces two statements per member (419 for a 200-member send;
+    # docs/social-group-performance-2026-10-30.md §3 R1).
+    deliver_aggregate_many(conn, ordinary, aggregate_key=AGGREGATE_PREFIX + parsed["key"])
 
 
 def settle_read(conn: Any, me: str, key: str, through: int) -> None:

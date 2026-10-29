@@ -20,6 +20,9 @@ const PING_MS = 25_000;
 const RETRY_MIN_MS = 1_000;
 const RETRY_MAX_MS = 30_000;
 const COUNT_DEBOUNCE_MS = 600;
+// Socket chatter (a busy group) must never turn into one request per message:
+// the authoritative totals are re-read at most this often.
+const COUNT_CHATTER_MS = 4_000;
 const FLASH_MS = 1_200;
 const AUTH_CLOSE_CODE = 1008;
 // The server closes the oldest socket when an account opens more than 5 tabs;
@@ -43,6 +46,7 @@ class SocialClient {
         this.retryTimer = 0;
         this.pingTimer = 0;
         this.countTimer = 0;
+        this.countsAt = 0;          // when the totals were last read (throttle floor)
         this.bellTimer = 0;
         this.flashTimer = 0;
         this.baseTitle = doc.title;
@@ -152,12 +156,20 @@ class SocialClient {
             this.setMuted(frame.conversation_key, frame.muted);
             this.refreshCounts();
             break;
-        case 'read': case 'message_recalled':
-            this.refreshCounts();
+        // Someone reading my messages leaves my own unread untouched; a recall can
+        // withdraw a card, so it still re-reads the totals.
+        case 'read': break;
+        case 'message_recalled':
+            this.refreshCounts(COUNT_CHATTER_MS);
             this.refreshBellSoon();
             break;
-        case 'friend_request': case 'friend_accepted': case 'friend_removed': case 'group_changed':
+        case 'friend_request': case 'friend_accepted': case 'friend_removed':
             this.refreshCounts();
+            break;
+        // Broadcast to every member on each membership edit, so a burst has to
+        // collapse into one re-read.
+        case 'group_changed':
+            this.refreshCounts(COUNT_CHATTER_MS);
             break;
         default: break;
         }
@@ -167,8 +179,6 @@ class SocialClient {
     onMessage(message) {
         if (!message) return;
         if (typeof message.muted === 'boolean') this.setMuted(message.conversation_key, message.muted);
-        this.refreshCounts();
-        this.refreshBellSoon();
         const incoming = message.sender?.identity && message.sender.identity !== this.me
             && message.message_type !== 'system';
         const viewing = this.activeKey === message.conversation_key && !this.doc.hidden;
@@ -178,6 +188,12 @@ class SocialClient {
         if (this.seenMessages.has(identity)) return;
         this.seenMessages.add(identity);
         if (this.seenMessages.size > 500) this.seenMessages.delete(this.seenMessages.values().next().value);
+        // No totals refresh here: the increment below is the same arithmetic the
+        // server would return, and re-reading a 200-conversation list once per
+        // received message is what made big groups crawl
+        // (docs/social-group-performance-2026-10-30.md §3 R2). The socket's
+        // `hello`, a visible tab, a read or `group_changed` re-sync it.
+        this.refreshBellSoon();
         if (!incoming || viewing || message.recalled || backfilled) return;
         this.unreadMessages += 1;
         this.paintBadge();
@@ -201,9 +217,20 @@ class SocialClient {
     }
 
     /* ---------------------------------------------------------------- counts */
-    refreshCounts() {
+    /**
+     * Re-read the authoritative unread totals.
+     * @param {number} [minInterval] floor in ms since the previous read, so a burst
+     *   of socket frames coalesces into one request. The default reproduces the
+     *   original 600 ms debounce for actions that need the badge to settle now
+     *   (opening the panel, marking read, adding a friend).
+     */
+    refreshCounts(minInterval = COUNT_DEBOUNCE_MS) {
         window.clearTimeout(this.countTimer);
+        // Anchored on the last read rather than on the last call, so repeated
+        // frames converge on one deadline instead of pushing it back forever.
+        const wait = Math.max(COUNT_DEBOUNCE_MS, minInterval - (Date.now() - this.countsAt));
         this.countTimer = window.setTimeout(async () => {
+            this.countsAt = Date.now();
             try {
                 const [conversations, requests] = await Promise.all([socialApi.conversations(), socialApi.requests()]);
                 const items = conversations?.items || [];
@@ -213,7 +240,25 @@ class SocialClient {
                 this.paintBadge();
                 this.emit('counts', { unread: this.unreadMessages, pendingIn: this.pendingIn, conversations: items });
             } catch { /* badge keeps its last value; the socket or next action retries */ }
-        }, COUNT_DEBOUNCE_MS);
+        }, wait);
+    }
+
+    /**
+     * The open conversation was just read.
+     *
+     * Drop its share from the badge straight away, then let one throttled
+     * re-read confirm the total: re-reading every conversation after each read
+     * is what made a busy group cost two requests per message
+     * (docs/social-group-performance-2026-10-30.md §3 R2).
+     * @param {number} cleared the unread count the conversation held
+     */
+    settleRead(cleared) {
+        const count = Math.max(0, Number(cleared) || 0);
+        if (count) {
+            this.unreadMessages = Math.max(0, this.unreadMessages - count);
+            this.paintBadge();
+        }
+        this.refreshCounts(COUNT_CHATTER_MS);
     }
 
     paintBadge() {
