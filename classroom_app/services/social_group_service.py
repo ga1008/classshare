@@ -8,6 +8,7 @@ Join / leave / kick / announcement changes produce system messages.
 """
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Iterable, Optional
 
 from .presence_service import presence_map
@@ -238,11 +239,32 @@ def _member_cards(conn: Any, me: str, group_id: int) -> list[dict[str, Any]]:
     return members
 
 
+def _detail_version(conn: Any, group_id: int, updated_at: Any) -> str:
+    """Structural fingerprint of a group detail, used as its HTTP ETag.
+
+    ``updated_at`` alone misses "member count unchanged, but one person left and
+    another joined", so the newest membership row and join stamp are folded in
+    too. Presence and unread stay out: they change constantly and would turn
+    every conditional request into a miss.
+    """
+    row = row_dict(conn.execute(
+        "SELECT COUNT(*) AS total, COALESCE(MAX(id), 0) AS newest_id, "
+        "COALESCE(MAX(joined_at), '') AS newest_joined "
+        "FROM social_group_members WHERE group_id = ? AND left_at IS NULL",
+        (int(group_id),)).fetchone())
+    stamp = "|".join(str(part) for part in (
+        updated_at or "", row["total"] or 0, row["newest_id"] or 0, row["newest_joined"] or "",
+    ))
+    return hashlib.sha256(stamp.encode("utf-8")).hexdigest()[:32]
+
+
 def group_detail(conn: Any, user: dict, group_id: int) -> dict[str, Any]:
     """GroupCard + announcement, owner and members (online first)."""
-    me = user_identity(user)
-    group = _active_group(conn, group_id)
-    mine = _require_member(conn, group_id, me)
+    detail, _version = group_detail_versioned(conn, user, group_id)
+    return detail
+
+
+def _build_detail(conn: Any, me: str, mine: dict, group: dict, group_id: int) -> dict[str, Any]:
     detail = group_card(conn, me, group_id)
     detail.update({
         "announcement": str(group["announcement"] or ""),
@@ -255,6 +277,30 @@ def group_detail(conn: Any, user: dict, group_id: int) -> dict[str, Any]:
                "alias": str(mine.get("alias") or "")},
     })
     return detail
+
+
+def group_detail_versioned(conn: Any, user: dict, group_id: int) -> tuple[dict[str, Any], str]:
+    """``group_detail`` plus the version string the route exposes as its ETag."""
+    detail, version = group_detail_if_changed(conn, user, group_id)
+    return detail, version
+
+
+def group_detail_if_changed(conn: Any, user: dict, group_id: int,
+                            known_versions: tuple[str, ...] = ()) -> tuple[Optional[dict[str, Any]], str]:
+    """Detail and version, with ``None`` detail when the client already has it.
+
+    Permission and existence checks run before the comparison, so a rejected
+    reader still gets 403 rather than a 304. The version is computed before any
+    roster projection: answering "unchanged" costs three small queries instead
+    of assembling every member card.
+    """
+    me = user_identity(user)
+    group = _active_group(conn, group_id)
+    mine = _require_member(conn, group_id, me)
+    version = _detail_version(conn, group_id, group["updated_at"])
+    if version in known_versions or "*" in known_versions:
+        return None, version
+    return _build_detail(conn, me, mine, group, group_id), version
 
 
 # ---------------------------------------------------------------------------

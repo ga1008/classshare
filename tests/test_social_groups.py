@@ -182,6 +182,54 @@ class SocialGroupTest(SocialDbTestCase):
         self.assertEqual(events, [])
         self.assertEqual(self.system_lines(card["id"]), before)
 
+    def test_detail_version_changes_when_one_member_swaps_for_another(self):
+        card, _ = self.create([self.b, self.c])
+        gid = card["id"]
+        with self.connect() as conn:
+            before = groups.group_detail_versioned(conn, self.user(self.a), gid)[1]
+        # Same member count, untouched ``social_groups.updated_at``: only the
+        # membership fingerprint can tell that the roster changed.
+        with self.connect() as conn:
+            conn.execute("UPDATE social_group_members SET left_at = '2026-10-30T12:00:00' "
+                         "WHERE group_id = ? AND member_identity = ?", (gid, self.b))
+            conn.execute("INSERT INTO social_group_members (group_id, member_identity, joined_at) "
+                         "VALUES (?, ?, '2026-10-30T12:00:01')", (gid, self.d))
+            conn.commit()
+            after = groups.group_detail_versioned(conn, self.user(self.a), gid)[1]
+        self.assertEqual(len(before), 32)
+        self.assertNotEqual(before, after)
+
+    def test_detail_route_answers_not_modified_for_an_unchanged_roster(self):
+        card, _ = self.create([self.b, self.c])
+        gid = card["id"]
+        client = self.client_as(self.a)
+        first = client.get(f"/api/social/groups/{gid}")
+        self.assertEqual(first.status_code, 200, first.text)
+        etag = first.headers["ETag"]
+        self.assertTrue(etag)
+        again = client.get(f"/api/social/groups/{gid}", headers={"If-None-Match": etag})
+        self.assertEqual(again.status_code, 304)
+        self.assertEqual(again.content, b"")
+        self.assertEqual(again.headers["Cache-Control"], "private, no-cache")
+        self.assertEqual(client.get(f"/api/social/groups/{gid}",
+                                   headers={"If-None-Match": "*"}).status_code, 304)
+        self.assertEqual(client.get(f"/api/social/groups/{gid}",
+                                   headers={"If-None-Match": f"W/{etag}"}).status_code, 304)
+        self.run_service(groups.update_group, self.user(self.a), gid, name="改名了")
+        fresh = client.get(f"/api/social/groups/{gid}", headers={"If-None-Match": etag})
+        self.assertEqual(fresh.status_code, 200)
+        self.assertNotEqual(fresh.headers["ETag"], etag)
+
+    def test_conditional_detail_still_refuses_non_members(self):
+        card, _ = self.create([self.b])
+        gid = card["id"]
+        etag = self.client_as(self.a).get(f"/api/social/groups/{gid}").headers["ETag"]
+        # Membership is checked before the version comparison: a stolen ETag
+        # must not turn a 403 into a 304.
+        refused = self.client_as(self.c).get(f"/api/social/groups/{gid}",
+                                            headers={"If-None-Match": etag})
+        self.assertEqual(refused.status_code, 403)
+
     def test_http_routes(self):
         client = self.client_as(self.a)
         created = client.post("/api/social/groups", json={"name": "HTTP 群", "member_identities": [self.b]})

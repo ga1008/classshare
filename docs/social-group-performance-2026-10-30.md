@@ -1,7 +1,7 @@
 # 群聊性能诊断与改进计划（2026-10-30）
 
 > 现象：好友聊天"人越多越卡"，打开群时更卡，群越大越卡。
-> 本文是诊断结论 + 改进计划。**P0-1 与 P0-2 已于 2026-10-30 施工并复测**（实测见 §4「P0-1 / P0-2 施工结果」）；P0-3 及以后尚未动工。
+> 本文是诊断结论 + 改进计划。**P0-1、P0-2、P0-3 已于 2026-10-30 施工并复测**（实测见 §4「P0-1 / P0-2 施工结果」与「P0-3 施工结果」）；P0-4 及以后尚未动工。
 
 ---
 
@@ -17,7 +17,7 @@
 | **R2** | 每个收件人客户端收到任意消息都 `refreshCounts()` → `/conversations` + `/friends/requests` | `/conversations` 在 40 私聊时已 **99 条 SQL**（每私聊 2 条）；**P0-1 后群消息不再触发重读** | `social_client.js:179-204`、`227-262`；`social_conversation_service.py:360-414` |
 | **R3** | R1 × R2 相乘：200 人群、100 在线时，一条消息 ≈ **200 + 100×~100 = 约 2 万条 SQL**，2 核 VPS 直接饱和 | 见 §3.4 放大模型 | — |
 | **R4** | 打开群必然重拉全量成员表并全量重建 DOM | payload **2.3 → 19.7 → 77.6 KB**；节点 **1734 → 2946 → 6999** | `social_group_service.py:216-257`；`chat_sidebar.js:221` |
-| **R5** | 群成员/资料变更广播后，**每个在线成员各自**重拉完整群详情 + 重建名册 | 3 次 `group_changed`：N=200 时 **CPU 114–234 ms / 布局 12–27 ms**，每次附带一次 77 KB 拉取 | `chat_modal.js:656`、`515`；`social_group_service.py:171-173` |
+| **R5** | 群成员/资料变更广播后，**每个在线成员各自**重拉完整群详情 + 重建名册 | 3 次 `group_changed`：N=200 时 **CPU 114–234 ms / 布局 12–27 ms**，每次附带一次 77 KB 拉取；**P0-3 后合并为 1 次 304、不重建名册，CPU 3–72 ms** | `chat_modal.js:656`、`515`；`social_group_service.py:171-173` |
 | **R6** | 一次开群就发 4 次 `/conversations`、2 次 `/friends/requests`（热开也有 4 个请求） | 冷开 **15 个请求**，热开 **7 个** | 实测请求序列见 §2.2 |
 
 **一句话**：群消息的**扇出成本**（服务端按人写通知、客户端按人拉全量列表）没有被任何批处理或增量机制吸收，人数一多就变成 N²；而开群的**名册**既没有缓存也没有增量，每次都整份往返、整份重建。
@@ -229,6 +229,33 @@ N=200、p=0.5、D=40 → 400 + 100×96 ≈ **1 万条**；D=200 → **5 万条**
 - **回归**：`tests.test_social_attention` / `test_social_messages` / `test_social_groups` / `test_social_ws` / `test_social_frontend_contract` 63 项通过；`test_social_authorization_races` + `test_blog_p5_notifications` 47 项通过；LQ 社交 sha256 契约 3 项通过。`test_social_attention_postgres.py` 未跑（需真实 PG，未连业务库）。
 - **原始数据**（隔离 SQLite fixture + Playwright，未连业务库）：`.codex-temp/social-group-server-20261030{,-before}.json`、`.codex-temp/social-group-open-20261030{,-before}.json`、`.codex-temp/social-group-arrival-{before,after}.json`。
 
+#### P0-3 施工结果（2026-10-30 复测）
+
+三条均已落地，未改 `schema_social.py`：
+
+- **服务端版本号**：`GET /api/social/groups/{id}` 返回 `ETag: "<32 位十六进制>"`，取自 `sha256(updated_at | 活跃成员数 | max(member_id) | max(joined_at))`；`If-None-Match` 命中（含 `W/` 弱校验与 `*`）返回 `304`，附 `Cache-Control: private, no-cache`（可存但每次重校验）。**权限与存在性检查在比对之前**，非成员仍是 403 而非 304；**版本比对也在名册投影之前**，304 不组装任何成员卡。
+- **客户端**：`reloadGroupDetail()` 加 500 ms 去抖 + `groupVersion` 序号丢弃过期响应；`group_changed` 与列表刷新合并为一次 `conversationChanged` 批处理；同会话 30 s 内已有 detail 时开群直接用缓存，后台带 ETag 校验。缓存按群 id 记账、上限 8 份（200 人 detail ≈ 76 KB），403/404 时删除该条目。
+
+| 指标 | 施工前 | 施工后 | §5 目标 |
+|---|---|---|---|
+| `group_detail` 无变更时（服务端直测 N=200） | 37 条 SQL / 3.96 ms / 77.6 KB | **3 条 SQL / 0.05 ms / 0 字节** | 304 / 0 字节（**达标**） |
+| 热开 `group_detail`（客户端探针 N=200） | 200 + 76 159 B | **304 / 0 B** | 304 / 0 字节（**达标**） |
+| 一个开群周期内 `group_detail` 拉取（开群 + 3× `group_changed`）N=200 | 4 次，4 × 76 159 = 304 636 B | **2 次**（1×200 + 1×304；热开 0 B） | 风暴合并为一次（**达标**） |
+| 3× `group_changed` CPU / 布局 N=200 | 89–500 ms / 10–25 ms | **3–72 ms / 0–1 ms** | ≤ 40 ms（3 轮中 2 轮达标） |
+| 一次开群请求数 冷 / 热 | 8–9 / 3–4 | 8–9 / **3** | 冷 ≤ 8 / 热 ≤ 3（热端达标） |
+| 开群窗口 `/conversations` | 冷 1–2 / 热 0 | 冷 1–2 / 热 0 | 只出现 1 次（冷端仍有 2） |
+| 开群 DOM 节点 / 冷开 `visible` N=200 | 6996 / 100 ms | 6996 / 92 ms | 属 P0-4/P0-5，未变即符合预期 |
+
+结论与偏差：
+
+- **`group_changed` 风暴确实合并了**：3 次事件从"3 次全量拉取 + 3 次名册整表重建"变成"1 次 304 + 不重建"，N=200 时峰值 CPU 从 500 ms 降到 72 ms、布局从 25 ms 降到 1 ms 以内。这是本次最大收益。
+- **304 不再是"伪省流"**：版本号比名册投影先算，所以热开在服务端也只花 3 条 SQL（比 200 路径的 37 条少 34 条，其中 26 条是 `member_cards`）。
+- **请求条数没降，这是预期**：§5「冷 15 / 热 4」的基数含页面初始化的 `quota`/`conversations`/`friends`；按"开群窗口"同一口径复测，施工前本来就只有 6–9 条。P0-3 省的是**字节与重建次数**，不是请求条数。
+- **冷开 `/conversations` 仍会出现 2 次**：一次来自初始化，一次是 `COUNT_CHATTER_MS = 4 s` 的计数节流恰好落在 30 s 内窗口里，属 P1-2 作用面。
+- **开群渲染成本未动**（DOM 仍 6996 节点、`visible` 90–151 ms）：名册首屏与 keyed diff 分别是 P0-4 / P0-5。
+- **回归**：`test_social_groups` 14、`test_social_messages` / `security` / `authorization_races` / `attention` / `wanderer_social` 113、`test_social_frontend_contract` / `test_social_ws` 25、`test_social_friends` 12、`test_architecture_route_snapshot` 1，全绿。新增两测：换人不改人数时版本号必须变；带命中 ETag 的非成员仍须 403。
+- **原始数据**：`.codex-temp/social-group-open-after-20261030.json`、`.codex-temp/social-group-open-p03-before-20261030.json`、`.codex-temp/social-group-server-20261030.json`。「施工前」一列是把 HEAD 版 `chat_modal.js` / `social_api.js` 放回同一哈希 revision 目录后跑的同一套 harness（跑完已 `build:assets` 还原，revision 仍为 `474d882b…`）。
+
 ### P1 结构性（预计 3–5 天）
 
 **P1-1 名册字段瘦身 + `can_add` 惰性化**（对应 R4）
@@ -279,7 +306,7 @@ N=200、p=0.5、D=40 → 400 + 100×96 ≈ **1 万条**；D=200 → **5 万条**
 | 3× `group_changed` CPU（N=200） | 114–234 ms | **≤ 40 ms** |
 | 200 人在线、一条群消息的服务端总 SQL | ~1 万 | **≤ 1500** |
 
-**当前状态（2026-10-30）**：P0-1/P0-2 已施工并复测，`send_message(group)` SQL 条数（419 → 23）与"收到群消息的网络请求"（2 → 0）两行达标；其余行属 P0-3～P0-5 / P1，尚未动工，数值与"现状"一列相同。逐项实测见 §4「P0-1 / P0-2 施工结果」。
+**当前状态（2026-10-30）**：P0-1/P0-2/P0-3 已施工并复测。已达标：`send_message(group)` SQL 条数（419 → 23）、"收到群消息的网络请求"（2 → 0）、"`group_detail` 无变更时"（200 + 77 KB → 304 / 0 字节）。部分达标：一次开群请求数（热 4 → 3 达标，冷端 8–9 与 §5 的 15 基数口径不同，见 §4）；`group_changed` CPU（N=200 从 114–234 ms 降到 3–72 ms，3 轮中 2 轮进 40 ms 内）。其余行属 P0-4/P0-5 与 P1，尚未动工。逐项实测见 §4「P0-1 / P0-2 施工结果」与「P0-3 施工结果」。
 
 复测命令：
 

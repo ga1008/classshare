@@ -7,7 +7,7 @@
  * window is visible and draws DM read receipts. Rendering lives in
  * chat_messages.js, input in chat_composer.js, the side panel in chat_sidebar.js.
  */
-import { socialApi, errorText } from './social_api.js';
+import { groupDetail as conditionalDetail, socialApi, errorText } from './social_api.js';
 import { lanStore } from './social_lan.js';
 import { createChatComposer } from './chat_composer.js';
 import { createChatSidebar } from './chat_sidebar.js';
@@ -26,6 +26,10 @@ const READ_DEBOUNCE_MS = 400;
 // A warm window reuses its DOM while the live socket has kept this snapshot
 // current. Reconnects, relevant pushes and an older snapshot revalidate it.
 const SNAPSHOT_MS = 30_000;
+// Group-changed storms arrive in bursts; one refresh per burst is enough.
+const DETAIL_DEBOUNCE_MS = 500;
+// A 200-member roster is ~77 KB, so keep only a handful of them.
+const GROUP_DETAIL_CACHE_MAX = 8;
 
 function reconcileChildren(parent, nodes) {
     let cursor = parent.firstChild;
@@ -91,6 +95,7 @@ export function createChatModal(client, { openFriends }) {
             markReadSoon.cancel();
             refreshFilesSoon.cancel();
             refreshListSoon.cancel();
+            conversationChanged.cancel();
             window.clearTimeout(typingTimer);
         },
     });
@@ -115,6 +120,10 @@ export function createChatModal(client, { openFriends }) {
     const rows = new Map();
     const messageNodes = new Map();
     const dayNodes = new Map();
+    // Group roster snapshots: reopening a group inside SNAPSHOT_MS paints from
+    // the cached payload and only revalidates it — a 304 leaves the DOM alone.
+    const groupDetails = new Map();
+    const groupDetailFlight = new Map();
     const historyHint = el('p', { class: 'social-chat__more' });
     const isVisible = () => dialog.isOpen() && dialog.root.dataset.lqLayerState !== 'closing';
     const isFresh = (stamp) => client.status === 'online' && Date.now() - stamp < SNAPSHOT_MS;
@@ -238,6 +247,12 @@ export function createChatModal(client, { openFriends }) {
     }
     const refreshFilesSoon = debounce((groupId) => { if (isVisible()) sidebar.refreshFiles(groupId); }, 800);
     const refreshListSoon = debounce(() => { if (isVisible()) void loadConversations(true).catch(() => {}); }, 500);
+    // One conversation changed: refresh the list and the open group in one pass.
+    const conversationChanged = debounce(() => {
+        if (!isVisible()) return;
+        void loadConversations(true).catch(() => {});
+        void reloadGroupDetail();
+    }, DETAIL_DEBOUNCE_MS);
 
     /* ------------------------------------------------------------ messages */
     const ctxFor = () => ({
@@ -412,12 +427,22 @@ export function createChatModal(client, { openFriends }) {
         current.loading = pending;
         return pending;
 
+        /** Roster on open: a recent snapshot paints at once and revalidates in
+         *  the background, so a warm open costs no roster bytes at all. */
+        function groupDetailFor(groupId) {
+            const cached = cachedGroupDetail(groupId);
+            if (!cached) return readGroupDetail(groupId).then((result) => result.detail);
+            current.detail = cached.detail;
+            void reloadGroupDetail();
+            return cached.detail;
+        }
+
         async function readConversation() {
         let completed = false;
         try {
             const [page, detail] = await Promise.all([
                 socialApi.messages(key, 0, PAGE),
-                type === 'group' ? socialApi.group(current.groupId) : null,
+                type === 'group' ? groupDetailFor(current.groupId) : null,
             ]);
             if (active !== current || version !== windowVersion || !isVisible()) return;
             const latest = page.items || [];
@@ -513,17 +538,62 @@ export function createChatModal(client, { openFriends }) {
         } else subline.textContent = '';
     }
 
+    function cachedGroupDetail(groupId) {
+        const entry = groupDetails.get(Number(groupId));
+        if (!entry || client.status !== 'online' || Date.now() - entry.at >= SNAPSHOT_MS) return null;
+        return entry;
+    }
+
+    function keepGroupDetail(id, entry) {
+        groupDetails.set(id, entry);
+        while (groupDetails.size > GROUP_DETAIL_CACHE_MAX) {
+            let oldestKey = null;
+            let oldestAt = Infinity;
+            for (const [key, value] of groupDetails) {
+                if (key !== id && value.at < oldestAt) { oldestAt = value.at; oldestKey = key; }
+            }
+            if (oldestKey === null) break;
+            groupDetails.delete(oldestKey);
+        }
+    }
+
+    /**
+     * Conditional detail fetch, shared by every caller while one is in flight.
+     * Resolves `{ detail, notModified }`; on a 304 `detail` is the snapshot the
+     * caller already had, or null when there was none to reuse.
+     */
+    function readGroupDetail(groupId) {
+        const id = Number(groupId);
+        const inFlight = groupDetailFlight.get(id);
+        if (inFlight) return inFlight;
+        const cached = groupDetails.get(id);
+        const pending = conditionalDetail(id, { etag: cached?.etag || '' }).then((result) => {
+            if (result.notModified) {
+                if (cached) cached.at = Date.now();
+                return { detail: cached?.detail || null, notModified: Boolean(cached) };
+            }
+            if (result.detail) keepGroupDetail(id, { detail: result.detail, etag: result.etag, at: Date.now() });
+            return { detail: result.detail, notModified: false };
+        }).finally(() => { if (groupDetailFlight.get(id) === pending) groupDetailFlight.delete(id); });
+        groupDetailFlight.set(id, pending);
+        return pending;
+    }
+
     async function reloadGroupDetail() {
         if (!active || active.type !== 'group' || !isVisible()) return;
         const current = active;
         const version = ++groupVersion;
-        let detail;
-        try { detail = await socialApi.group(current.groupId); }
+        let result;
+        try { result = await readGroupDetail(current.groupId); }
         catch (failure) {
             if (![403, 404].includes(failure.status)) return;
-            detail = null;
+            groupDetails.delete(Number(current.groupId));
+            result = { detail: null, notModified: false };
         }
         if (active !== current || version !== groupVersion || !isVisible()) return;
+        // ETag hit: the roster, counts and title already on screen are current.
+        if (result.notModified) return;
+        const detail = result.detail;
         current.detail = detail;
         if (detail) {
             const title = detail.display_name || detail.name;
@@ -659,8 +729,9 @@ export function createChatModal(client, { openFriends }) {
             listVersion++;
             if (active?.groupId === Number(groupId)) active.dirty = true;
             if (!isVisible()) return;
-            refreshListSoon();
-            if (active?.type === 'group' && active.groupId === Number(groupId)) void reloadGroupDetail();
+            // A burst of group changes costs one list refresh plus one detail check.
+            if (active?.type === 'group' && active.groupId === Number(groupId)) conversationChanged();
+            else refreshListSoon();
         }),
         client.on('friend_removed', async ({ identity }) => {
             friendsLoadedAt = 0;
@@ -737,6 +808,7 @@ export function createChatModal(client, { openFriends }) {
             markReadSoon.cancel();
             refreshFilesSoon.cancel();
             refreshListSoon.cancel();
+            conversationChanged.cancel();
             window.clearTimeout(typingTimer);
             sidebar.clear();
             dialog.destroy();

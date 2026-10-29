@@ -88,6 +88,26 @@ export async function putChunk(uploadId, index, blob, signal) {
     return data;
 }
 
+/**
+ * Conditional group detail. Resolves `{ detail, etag, notModified }`; a 304
+ * reports `notModified` so the caller keeps the roster it already has.
+ * Raw fetch: apiFetch throws on any status outside `response.ok`, and 304 is not.
+ */
+export async function groupDetail(id, { etag = '', signal } = {}) {
+    const headers = { Accept: 'application/json' };
+    if (etag) headers['If-None-Match'] = etag;
+    const response = await fetch(`${BASE}/groups/${seg(id)}`, { headers, signal, credentials: 'same-origin' });
+    if (response.status === 304) return { detail: null, etag, notModified: true };
+    let data = null;
+    try { data = await response.json(); } catch { data = null; }
+    if (!response.ok) {
+        const error = new Error(typeof data?.detail === 'string' ? data.detail : `请求失败（${response.status}）`);
+        error.status = response.status;
+        throw error;
+    }
+    return { detail: data, etag: response.headers.get('ETag') || '', notModified: false };
+}
+
 /** User-facing text for an API failure. */
 export function errorText(error, fallback = '操作失败，请稍后重试。') {
     if (!error) return fallback;

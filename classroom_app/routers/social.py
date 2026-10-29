@@ -16,7 +16,7 @@ from urllib.parse import quote
 import asyncio
 import os
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from ..database import get_db_connection
 from ..dependencies import get_current_user
@@ -208,9 +208,22 @@ async def social_create_group(data: dict = Body(default={}), user: dict = Depend
         conn, user, _field(data, "name"), _field(data, "member_identities", []), events))
 
 
+def _if_none_match_versions(header: Optional[str]) -> tuple[str, ...]:
+    """Validators from ``If-None-Match``; weak tags compare by value (RFC 9110)."""
+    return tuple(tag.strip().removeprefix("W/").strip('"')
+                 for tag in (header or "").split(",") if tag.strip())
+
+
 @router.get("/groups/{group_id}")
-async def social_group_detail(group_id: int, user: dict = Depends(get_current_user)):
-    return await _run(lambda conn, events: groups.group_detail(conn, user, group_id))
+async def social_group_detail(group_id: int, if_none_match: Optional[str] = Header(default=None),
+                              user: dict = Depends(get_current_user)):
+    known = _if_none_match_versions(if_none_match)
+    detail, version = await _run(
+        lambda conn, events: groups.group_detail_if_changed(conn, user, group_id, known))
+    headers = {"ETag": f'"{version}"', "Cache-Control": "private, no-cache"}
+    if detail is None:
+        return Response(status_code=304, headers=headers)
+    return JSONResponse(detail, headers=headers)
 
 
 @router.patch("/groups/{group_id}")
