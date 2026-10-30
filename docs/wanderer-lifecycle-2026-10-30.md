@@ -229,7 +229,7 @@ status = pending | claimed | void
 
 - 只有**完全不研读**或持续被扣寿的散修会在 2 周内陨落；这正是「大半而非全部」。
 - 寿元告急提示 + 延寿（+1 周 ×2）+ 升阶延寿，构成三重缓冲。
-- `tests/test_wanderer_life_balance.py` 用真实公式对 20 个种子预算做确定性推演，断言至少 15/20 在寿元内达到 5 境、至少 10/20 达到 10 境。
+- `tests/test_wanderer_life_balance.py` 用真实公式对 20 个种子预算做确定性推演，断言至少 18/20 在寿元内达到 5 境、至少 15/20 达到 10 境；不研读的对照会在两周内陨落。
 
 ## 10. 数据模型（`db/schema_wanderers.py`）
 
@@ -323,8 +323,9 @@ wanderer_legacies
 
 验证（2026-10-30）：
 
-- `tools/test_backend.py --pattern "test_wanderer*.py"`：418 项通过（23 跳过）。
-- `test_heavenly_dao*`：32 项通过。
+- `tools/test_backend.py --pattern "test_wanderer*.py"`：424 项通过（23 跳过）。
+- `test_heavenly_dao*`：33 项通过。
+- 全量 `tools/test_backend.py`：5310 项，仅剩既有/环境失败（materials git、deploy PowerShell、LibreOffice 容量等；LibreOffice 用例单独运行通过），无新增失败。
 - 新增 `test_wanderer_life.py`、`test_wanderer_life_balance.py`、`test_wanderer_relationships.py`、`test_wanderer_legacy.py`、`test_heavenly_dao_lifecycle.py`；扩展 `test_wanderer_admin_api.py`、`test_wanderer_prompt.py`、`test_wanderer_schema.py`、`test_wanderer_knowledge.py`。
 - `node --check static/js/manage_wanderers.js` 通过；管理页与散修主页渲染由 TestClient 覆盖。
 
