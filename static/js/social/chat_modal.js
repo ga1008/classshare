@@ -169,7 +169,6 @@ export function createChatModal(client, { openFriends }) {
             const avatarKey = `${item.title}|${item.avatar_url || ''}|${item.type}`;
             if (row.avatarKey !== avatarKey) {
                 row.avatar.replaceChildren(lqAvatar(item.title, item.avatar_url, 40));
-                if (item.type === 'dm') row.avatar.append(el('span', { class: 'social-avatar__dot', 'aria-hidden': 'true' }));
                 row.avatarKey = avatarKey;
             }
             if (item.type === 'dm' && row.avatar.dataset.online !== String(online)) row.avatar.dataset.online = String(online);
@@ -723,7 +722,14 @@ export function createChatModal(client, { openFriends }) {
             layout.classList.add('is-nudged');
             window.setTimeout(() => layout.classList.remove('is-nudged'), NUDGE_SHAKE_MS);
         }),
-        client.on('presence-changed', () => { if (isVisible()) { renderList(); setSubline(); } }),
+        // Hundreds of presence frames can land in one burst; the client
+        // coalesces them into one settled event per frame.
+        client.on('presence-settled', () => {
+            if (!isVisible()) return;
+            renderList();
+            setSubline();
+            sidebar.applyPresence();
+        }),
         client.on('group_changed', ({ group_id: groupId }) => {
             listLoadedAt = 0;
             listVersion++;

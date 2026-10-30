@@ -23,6 +23,8 @@ function safeLink(url) {
     return text.startsWith('/') && !text.startsWith('//') ? text : null;
 }
 
+const memberMeta = (member, online) => [ROLE_LABEL[member.group_role] || '', online ? '在线' : '离线', member.is_wanderer ? '散修' : ''].filter(Boolean).join(' · ');
+
 export function createChatSidebar({ client, onChanged }) {
     const element = el('div', { class: 'social-side__inner' });
     let token = 0;
@@ -32,6 +34,14 @@ export function createChatSidebar({ client, onChanged }) {
     const clearMenus = () => { menus.forEach((menu) => menu.destroy()); menus = []; };
     const clearGroup = () => { group?.settings.destroy(); group?.invite.destroy(); group?.files.destroy(); group = null; };
     const clearDm = () => { dm?.readController?.abort(); dm?.settings?.destroy(); dm = null; };
+    // The socket presence cache wins for identities it knows; a group roster
+    // snapshot fills in members whose status has not changed since connect.
+    const isOnline = (identity, fallback) => client.presence?.has(identity) ? client.isOnline(identity) : Boolean(fallback);
+    const setOnline = (node, online) => {
+        if (!node) return;
+        const value = online ? 'true' : 'false';
+        if (node.dataset.online !== value) node.dataset.online = value;
+    };
 
     async function guarded(button, task) {
         if (button) button.disabled = true;
@@ -90,20 +100,24 @@ export function createChatSidebar({ client, onChanged }) {
     function renderDm(current) {
         const { identity, card: profile } = current;
         const publicCard = profile.relation === 'blocked' ? null : profile;
-        const presenceKnown = profile.online !== null && profile.online !== undefined;
-        const online = profile.relation !== 'blocked' && (client.isOnline(identity) || Boolean(profile.online));
+        const presenceKnown = (profile.online !== null && profile.online !== undefined) || Boolean(client.presence?.has(identity));
+        const online = profile.relation !== 'blocked' && isOnline(identity, profile.online);
         const org = publicCard?.org || {};
         const orgText = [...new Set([org.college, org.department, org.major, org.class_name].filter(Boolean))].join(' · ');
         const settings = current.settingsButton ||= lqButton({ label: '设置', variant: 'ghost', attrs: { 'data-dm-settings-open': '', 'aria-haspopup': 'dialog' }, onClick: event => current.settings.open(event.currentTarget) });
         const displayName = current.ctx.displayName || profile.name;
+        const headAvatar = el('span', { class: 'social-avatar', 'data-online': online ? 'true' : 'false' }, [
+            lqAvatar(profile.name, profile.avatar_url, 56),
+        ]);
+        const presenceText = el('small', { text: online ? '在线' : '离线', hidden: !(presenceKnown || online) });
+        current.headAvatar = headAvatar;
+        current.presenceText = presenceText;
         const head = el('div', { class: 'social-side__profile' }, [
-            el('span', { class: 'social-avatar', 'data-online': online ? 'true' : 'false' }, [
-                lqAvatar(profile.name, profile.avatar_url, 56), el('span', { class: 'social-avatar__dot', 'aria-hidden': 'true' }),
-            ]),
+            headAvatar,
             el('div', { class: 'social-side__who' }, [
                 el('strong', { text: displayName }),
                 el('small', { text: [displayName !== profile.name ? profile.name : '', profile.role_label, orgText].filter(Boolean).join(' · ') }),
-                presenceKnown || online ? el('small', { text: online ? '在线' : '离线' }) : null,
+                presenceText,
             ]),
         ]);
         const blocks = [dmCard('好友资料', [head,
@@ -134,9 +148,10 @@ export function createChatSidebar({ client, onChanged }) {
     }
 
     /* ------------------------------------------------------------ group */
-    function memberRow(member, detail, me) {
+    function memberRow(member, detail, me, memberNodes) {
         const myRole = detail.my_role;
         const isMe = member.identity === me;
+        const online = isOnline(member.identity, member.online);
         const actions = [];
         if (!isMe && myRole === 'owner') {
             actions.push({ id: 'admin', label: member.group_role === 'admin' ? '取消管理员' : '设为管理员', attrs: { 'data-member-act': 'admin', 'data-identity': member.identity, 'data-admin': member.group_role === 'admin' ? '0' : '1' } });
@@ -153,17 +168,21 @@ export function createChatSidebar({ client, onChanged }) {
             actionSlot = el('span', { class: 'social-member__actions' }, [trigger, menu]);
             menus.push(bindMenu(trigger, menu, { placement: 'bottom-end', onAction: (_id, button) => memberAction(button, detail, { key: detail.conversation_key || `group:${detail.id}` }) }));
         }
-        return el('li', { class: 'social-member', 'data-online': member.online ? 'true' : 'false' }, [
-            el('span', { class: 'social-avatar', 'data-online': member.online ? 'true' : 'false' }, [
-                lqAvatar(member.name, member.avatar_url, 32), el('span', { class: 'social-avatar__dot', 'aria-hidden': 'true' }),
-            ]),
+        const avatar = el('span', { class: 'social-avatar', 'data-online': online ? 'true' : 'false' }, [
+            lqAvatar(member.name, member.avatar_url, 32),
+        ]);
+        const status = el('small', { text: memberMeta(member, online) });
+        const row = el('li', { class: 'social-member', 'data-online': online ? 'true' : 'false' }, [
+            avatar,
             el('span', { class: 'social-member__copy' }, [
                 isMe ? el('strong', { text: `${member.nickname || member.name}（我）` })
                     : lqButton({ label: member.nickname || member.name, variant: 'link', attrs: { 'data-user-card': member.identity, 'aria-haspopup': 'dialog', 'data-social-member-name': '' } }),
-                el('small', { text: [ROLE_LABEL[member.group_role] || '', member.online ? '在线' : '离线', member.is_wanderer ? '散修' : ''].filter(Boolean).join(' · ') }),
+                status,
             ]),
             actionSlot,
         ]);
+        memberNodes?.set(member.identity, { row, avatar, status });
+        return row;
     }
 
     function groupCard(title, children, action = null, name = '') {
@@ -179,7 +198,7 @@ export function createChatSidebar({ client, onChanged }) {
         const id = Number(detail.id);
         if (group?.id !== id) {
             clearMenus(); clearGroup();
-            const current = { id, detail, key: ctx.key };
+            const current = { id, detail, key: ctx.key, memberNodes: new Map() };
             const changed = (reason, payload) => {
                 if (group !== current) return;
                 if (payload?.detail) showGroup(payload.detail, { key: current.key });
@@ -214,13 +233,21 @@ export function createChatSidebar({ client, onChanged }) {
         group.title.textContent = detail.display_name || detail.name;
         group.canonical.textContent = `群名：${detail.name}`;
         group.canonical.hidden = !detail.display_name || detail.display_name === detail.name;
-        group.counts.textContent = `${detail.member_count} 人 · ${detail.online_count} 人在线 · 我是${ROLE_LABEL[detail.my_role] || '成员'}`;
-        group.memberTitle.textContent = `${detail.member_count} 位成员 · ${detail.online_count} 人在线`;
+        paintGroupCounts();
         group.avatar.replaceChildren(lqAvatar(detail.name, detail.avatar_url, 56));
         clearMenus();
-        group.members.replaceChildren(...(detail.members || []).map(member => memberRow(member, detail, client.me)));
+        group.memberNodes = new Map();
+        group.members.replaceChildren(...(detail.members || []).map(member => memberRow(member, detail, client.me, group.memberNodes)));
         group.settings.update(detail);
         group.invite.update(detail);
+    }
+
+    function paintGroupCounts() {
+        if (!group?.detail) return;
+        const members = group.detail.members || [];
+        const onlineCount = members.filter(member => isOnline(member.identity, member.online)).length;
+        group.counts.textContent = `${group.detail.member_count} 人 · ${onlineCount} 人在线 · 我是${ROLE_LABEL[group.detail.my_role] || '成员'}`;
+        group.memberTitle.textContent = `${group.detail.member_count} 位成员 · ${onlineCount} 人在线`;
     }
 
     async function memberAction(button, detail, ctx) {
@@ -237,8 +264,37 @@ export function createChatSidebar({ client, onChanged }) {
         });
     }
 
+    /**
+     * Presence arrives already coalesced by social_client (`presence-settled`).
+     * Update the two side panels in place: rebuilding a 200-member roster on
+     * every status flip would be the expensive path.
+     */
+    function applyPresence() {
+        if (dm?.card) {
+            const online = dm.card.relation !== 'blocked' && isOnline(dm.identity, dm.card.online);
+            const known = (dm.card.online !== null && dm.card.online !== undefined) || Boolean(client.presence?.has(dm.identity));
+            setOnline(dm.headAvatar, online);
+            if (dm.presenceText) {
+                const text = online ? '在线' : '离线';
+                if (dm.presenceText.textContent !== text) dm.presenceText.textContent = text;
+                dm.presenceText.hidden = !(known || online);
+            }
+        }
+        if (!group?.detail) return;
+        for (const member of group.detail.members || []) {
+            const online = isOnline(member.identity, member.online);
+            const nodes = group.memberNodes.get(member.identity);
+            if (!nodes) continue;
+            setOnline(nodes.row, online);
+            setOnline(nodes.avatar, online);
+            const meta = memberMeta(member, online);
+            if (nodes.status.textContent !== meta) nodes.status.textContent = meta;
+        }
+        paintGroupCounts();
+    }
+
     return {
-        element, showDm, showGroup,
+        element, showDm, showGroup, applyPresence,
         /** A new attachment arrived in the open group: reload its file list. */
         refreshFiles(groupId) { if (group?.id === Number(groupId)) void group.files.refresh(); },
         updatePreferences(key, preferences) {

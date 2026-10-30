@@ -21,12 +21,16 @@
 
 /* ---------------------------------------------------------------- avatars */
 .social-avatar { position: relative; display: inline-flex; flex: none; }
-.social-avatar__dot {
-    position: absolute; inset-inline-end: -1px; inset-block-end: -1px;
-    width: 12px; height: 12px; border-radius: var(--ls-r-capsule);
-    background: hsl(var(--ls-ink-3)); box-shadow: 0 0 0 2px hsl(var(--ls-surface-1));
+/* Presence is the avatar's own ring. Nothing is drawn over the lower-right
+   edge, where the cultivation emblem sits. The glow is a static box-shadow:
+   hundreds of online rows must not each start an animation or a filter. */
+.social-avatar[data-online="true"] > .lq-avatar {
+    /* base (not fg) is the theme's readable green in both appearances; fg is
+       deliberately dark in light mode and would disappear on a teal avatar. */
+    box-shadow:
+        0 0 0 2px hsl(var(--ls-tone-success-base)),
+        0 0 10px 2px hsl(var(--ls-tone-success-base) / .62);
 }
-.social-avatar[data-online="true"] .social-avatar__dot { background: hsl(var(--ls-tone-success-fg)); }
 
 /* ---------------------------------------------------------------- friends */
 .social-friends { display: grid; gap: var(--ls-s-3); }
@@ -203,6 +207,7 @@
 .social-dm-card .social-side__profile { align-items: flex-start; }
 .social-dm-card .social-side__who > strong { overflow-wrap: anywhere; }
 .social-dm-card .social-side__who > small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.social-dm-card .social-side__who > small[hidden] { display: none; }
 .social-dm-card .social-side__mood { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .social-dm-card__interests { display: flex; flex-wrap: wrap; gap: var(--ls-s-1); min-width: 0; }
 .social-dm-card__interests .lq-chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -276,8 +281,7 @@
 :root:is([data-lq-glass="off"], [data-lq-contrast="more"]) .social-friend[data-online="true"] { box-shadow: 0 0 0 2px hsl(var(--ls-primary)); }
 @media (forced-colors: active) {
     .social-friend[data-online="true"] { box-shadow: none; outline: 2px solid Highlight; }
-    .social-avatar__dot { forced-color-adjust: none; background: CanvasText; }
-    .social-avatar[data-online="true"] .social-avatar__dot { background: Highlight; }
+    .social-avatar[data-online="true"] > .lq-avatar { box-shadow: none; outline: 2px solid Highlight; outline-offset: 1px; }
     .social-file, .social-quote { border-color: CanvasText; }
 }
 

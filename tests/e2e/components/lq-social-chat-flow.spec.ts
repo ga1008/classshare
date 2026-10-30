@@ -151,6 +151,40 @@ test('LQ warm reopen preserves selected conversation, message nodes, draft and s
     expect(await page.evaluate(() => (window as any).savedRow === document.querySelector('[data-conv="dm:student:1|student:3"]'))).toBe(true);
 });
 
+test('presence is an avatar ring, never a dot over the cultivation emblem', async ({ page }, testInfo) => {
+    await mount(page);
+    await open(page);
+    await expect(page.locator('.social-avatar__dot')).toHaveCount(0);
+    const avatar = page.locator(`[data-conv="${DM}"] .social-avatar`);
+    const face = avatar.locator('.lq-avatar');
+    await expect(avatar).toHaveAttribute('data-online', 'true');
+    expect(await face.evaluate(el => getComputedStyle(el).boxShadow)).toContain('rgb');
+    await page.screenshot({ path: testInfo.outputPath('presence-ring-online.png') });
+    await push(page, { type: 'presence', identity: 'student:2', online: false });
+    await expect(avatar).toHaveAttribute('data-online', 'false');
+    await expect.poll(() => face.evaluate(el => getComputedStyle(el).boxShadow)).toBe('none');
+});
+
+test('a 200-friend presence burst repaints the list once, not per frame event', async ({ page }) => {
+    await mount(page, { count: 200 });
+    await open(page);
+    await page.evaluate(() => {
+        const list = document.querySelector('.social-convs')!;
+        const state: any = (window as any).presenceBurst = { mutations: 0 };
+        const observer = new MutationObserver(records => { state.mutations += records.length; });
+        observer.observe(list, { subtree: true, attributes: true, childList: true, characterData: true });
+        for (let i = 2; i <= 201; i += 1) {
+            (window as any).client.onFrame(JSON.stringify({ type: 'presence', identity: `student:${i}`, online: false }));
+        }
+    });
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => setTimeout(resolve, 0))));
+    // One coalesced repaint touches one attribute per row (~200). Without
+    // coalescing the same burst is 200 full-list repaints (tens of thousands).
+    const mutations = await page.evaluate(() => (window as any).presenceBurst.mutations);
+    expect(mutations).toBeGreaterThan(0);
+    expect(mutations).toBeLessThan(2_000);
+});
+
 test('LQ duplicate opening coalesces requests and a late closed response never focuses or marks read', async ({ page }) => {
     const state = await mount(page);
     let release!: () => void;

@@ -5,7 +5,7 @@
  *   - a single /ws/social socket: 25 s ping, exponential reconnect with jitter,
  *     no reconnect after a 1008 auth refusal; REST keeps working while it is down;
  *   - an event bus (`on(type, fn)`) re-emitting every server frame plus
- *     'status' / 'counts' / 'presence-changed';
+ *     'status' / 'counts' / 'presence-changed' / 'presence-settled';
  *   - the unread badge on every `[data-social-entry]` (messages + incoming requests);
  *   - the presence cache seeded by `hello` and updated by `presence`;
  *   - title flashing while the tab is hidden and a message arrives.
@@ -36,6 +36,7 @@ class SocialClient {
         this.me = entry?.dataset.socialMe || '';
         this.listeners = new Map();
         this.presence = new Map();
+        this.presenceFrame = 0;     // coalesced presence repaint (one per frame)
         this.unreadMessages = 0;
         this.pendingIn = 0;
         this.mutedKeys = new Set();
@@ -122,6 +123,22 @@ class SocialClient {
         this.emit('status', status);
     }
 
+    /**
+     * A busy platform flips many friends at once. Consumers repaint whole
+     * lists, so presence bursts settle into at most one paint per frame; a
+     * hidden tab pays nothing until it is visible again.
+     */
+    queuePresencePaint() {
+        if (this.presenceFrame) return;
+        const paint = () => {
+            this.presenceFrame = 0;
+            this.emit('presence-settled', null);
+        };
+        this.presenceFrame = typeof window.requestAnimationFrame === 'function'
+            ? window.requestAnimationFrame(paint)
+            : window.setTimeout(paint, 16);
+    }
+
     /** @returns {boolean} whether the frame was handed to an open socket */
     send(frame) {
         if (this.ws?.readyState !== WebSocket.OPEN) return false;
@@ -141,15 +158,20 @@ class SocialClient {
         case 'pong': return;
         case 'hello':
             this.me = frame.me || this.me;
+            // hello is the authoritative friend snapshot for this connection;
+            // dropping stale entries is what clears rings after a reconnect.
+            this.presence.clear();
             for (const identity of frame.online_friends || []) this.presence.set(identity, { online: true, last_seen_at: null });
             this.unreadMessages = Number(frame.unread_total) || 0;
             this.paintBadge();
             this.refreshCounts();
             this.emit('presence-changed', null);
+            this.queuePresencePaint();
             break;
         case 'presence':
             this.presence.set(frame.identity, { online: Boolean(frame.online), last_seen_at: frame.last_seen_at || null });
             this.emit('presence-changed', frame.identity);
+            this.queuePresencePaint();
             break;
         case 'message': this.onMessage(frame.message); break;
         case 'conversation_preferences':

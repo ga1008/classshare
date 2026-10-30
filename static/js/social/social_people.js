@@ -10,9 +10,10 @@ import { normalizeCardIdentity } from './user_card_trigger.js';
 import { el, lqAvatar } from './social_dom.js';
 
 export function personLead(person, size = 40) {
-    return el('span', { class: 'social-avatar', 'data-online': person.online ? 'true' : 'false' }, [
+    // Unknown presence stays unmarked; known presence is the avatar ring.
+    const known = person.online !== undefined;
+    return el('span', { class: 'social-avatar', 'data-online': known ? (person.online ? 'true' : 'false') : null }, [
         lqAvatar(person.name, person.avatar_url, size),
-        person.online === undefined ? null : el('span', { class: 'social-avatar__dot', 'aria-hidden': 'true' }),
     ]);
 }
 

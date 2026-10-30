@@ -59,10 +59,11 @@ function headBlock(card) {
     const presence = card.online === null || card.online === undefined ? null : card.online === true;
     return el('div', { class: 'social-card__head' }, [
         // The explicit tier line below replaces the automatic avatar decoration.
-        el('span', { class: 'social-avatar social-card__avatar', 'data-online': presence ? 'true' : 'false', 'data-cultivation-emblem': 'off' }, [
-            lqAvatar(card.name, card.avatar_url, 56),
-            presence === null ? null : el('span', { class: 'social-avatar__dot', 'aria-hidden': 'true' }),
-        ]),
+        el('span', {
+            class: 'social-avatar social-card__avatar',
+            'data-online': presence === null ? null : String(presence),
+            'data-cultivation-emblem': 'off',
+        }, [lqAvatar(card.name, card.avatar_url, 56)]),
         el('div', { class: 'social-card__who' }, [
             el('div', { class: 'social-card__chips' }, [
                 chip(card.role_label || ROLE_LABEL[card.role] || '用户', card.role === 'teacher' ? 'primary' : 'neutral'),

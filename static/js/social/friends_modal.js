@@ -384,7 +384,8 @@ export function createFriendsModal(client, { openChat }) {
     }
 
     const offs = [
-        client.on('presence-changed', () => { if (dialog.isOpen() && currentKey() === 'friends') renderFriends(); }),
+        // A burst of presence frames settles into at most one paint per frame.
+        client.on('presence-settled', () => { if (dialog.isOpen() && currentKey() === 'friends') renderFriends(); }),
         client.on('friend_request', () => { if (dialog.isOpen()) void load(); }),
         client.on('friend_accepted', () => { if (dialog.isOpen()) void load(); }),
         client.on('friend_removed', () => { if (dialog.isOpen()) void load(); }),
