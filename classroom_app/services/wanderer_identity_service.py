@@ -21,6 +21,7 @@ from ..db.connection import execute_insert_returning_id
 from ..db.schema_wanderers import ensure_wanderer_schema
 from ..time_utils import local_iso, local_now, parse_datetime
 from .wanderer_life_core import (
+    active_speech_limit,
     clamp_tier,
     default_talents,
     knowledge_capacity_for as _knowledge_capacity_for,
@@ -434,8 +435,11 @@ def knowledge_capacity_for(wanderer: dict[str, Any]) -> int:
 
 
 def reply_char_limit(tier: Any) -> int:
-    """Upper bound on one reply's length; grows with tier (design §1.2 d)."""
-    return min(400, 80 + 30 * clamp_tier(tier))
+    """Active-speech cap: 100 chars at tier 0, +100 per tier (tier 10 = 1100).
+
+    Passive replies (a direct question or @-mention) bypass this cap.
+    """
+    return active_speech_limit(tier)
 
 
 def daily_budget_factor(tier: Any) -> float:

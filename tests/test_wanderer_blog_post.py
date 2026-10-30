@@ -24,6 +24,7 @@ def draft(action="reply", title="**晨跑**第五天", parts=None):
 
 class WandererBlogPostTest(WandererWorldTestCase):
     def ctx(self, slug, caller, **fields):
+        fields.setdefault("tier", 3)  # 400-char active cap keeps the long fixture intact
         wanderer = self.set_wanderer(slug, behaviors_json={**ONLY_BLOG, "blog_post": 1}, **fields)
         return ActionContext(conn_factory=self.connect, wanderer=wanderer, ai_caller=caller,
                              sleep=ZeroSleep(), rng=random.Random(3))
@@ -104,6 +105,13 @@ class WandererBlogPostTest(WandererWorldTestCase):
         self.assertEqual(len(title), 30)
         self.assertFalse(title.startswith("#"))
         self.assertTrue(body.startswith("记录"))
+
+    def test_tier_zero_post_body_is_capped_at_one_hundred_chars(self):
+        ctx = self.ctx("momo", StubCaller(draft(parts=["好" * 150])), tier=0)
+        self.run_action(ctx)
+        posts = self.posts(ctx.student_id)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(len(posts[0]["content_md"]), 100)
 
 
 if __name__ == "__main__":

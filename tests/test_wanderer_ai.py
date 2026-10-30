@@ -159,7 +159,7 @@ class WandererSettingsTest(WandererDbTestCase):
                 self.assertEqual(daily_cap(conn), 7)
             with patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("WANDERER_DAILY_AI_CALL_CAP", None)
-                self.assertEqual(daily_cap(conn), 400)
+                self.assertEqual(daily_cap(conn), 4096)
             wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "55")
             self.assertEqual(daily_cap(conn), 55)
             conn.rollback()

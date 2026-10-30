@@ -37,6 +37,14 @@ class LifeCoreTest(unittest.TestCase):
         self.assertEqual(len(core.BASE_LIFESPAN_WEEKS), 11)
         self.assertEqual(list(core.BASE_LIFESPAN_WEEKS), sorted(core.BASE_LIFESPAN_WEEKS))
 
+    def test_active_speech_limit_is_one_hundred_per_tier_step(self):
+        self.assertEqual([core.active_speech_limit(t) for t in (-1, 0, 1, 2, 5, 10)],
+                         [100, 100, 200, 300, 600, 1100])
+        perks = core.tier_perks(0, 10)
+        self.assertEqual((perks["active_speech_limit"], perks["reply_char_limit"]), (100, 100))
+        self.assertTrue(perks["passive_speech_unlimited"])
+        self.assertEqual(core.tier_perks(3, 10)["active_speech_limit"], 400)
+
     def test_vitality_scales_lifespan(self):
         self.assertEqual(core.lifespan_weeks_for(0, 1.0), 2.0)
         self.assertEqual(core.lifespan_weeks_for(0, 1.4), 2.8)

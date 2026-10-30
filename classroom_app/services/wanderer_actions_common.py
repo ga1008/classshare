@@ -136,11 +136,14 @@ async def run_turn(
     ctx: ActionContext, *, scene: dict[str, Any], thread_key: str, suffix: str, user_message: str = "",
     interactive: bool = False,
     strict: bool = False,
+    passive: bool = False,
 ) -> dict[str, Any]:
     """Assemble the prompt (short transaction), then make one AI call with no connection held.
 
-    ``user_message`` carries long reading material (knowledge study) that would not
-    fit the scene body; it must already be wrapped in the injection guard.
+    ``passive`` means someone directly asked/mentioned the wanderer: the reply
+    is not capped by the tier's active-speech length and the prompt says so.
+    ``user_message`` carries long reading material (knowledge study) that would
+    not fit the scene body; it must already be wrapped in the injection guard.
     """
     scene = dict(scene)
     from .wanderer_student_support import fallback_for_scene, prepare_student_support
@@ -161,7 +164,7 @@ async def run_turn(
         invalidate_thread_cache(ctx.wanderer_id, thread_key)
         prepare_student_support(conn, ctx.wanderer, thread_key, scene)
         prepare_learning_safely(conn, ctx.wanderer, thread_key, scene)
-        system_prompt = build_system_prompt(conn, ctx.wanderer, scene=scene, thread_key=thread_key)
+        system_prompt = build_system_prompt(conn, ctx.wanderer, scene=scene, thread_key=thread_key, passive=passive)
         conn.commit()  # persists the knowledge use_count bump
     message = "\n\n".join(part for part in (user_message, TURN_USER_MESSAGE) if part)
     result = await generate_turn(
@@ -187,17 +190,25 @@ async def run_turn(
     return result
 
 
-def clip_part(ctx: ActionContext, text: Any) -> str:
-    """Public text: AI formatting stripped (design §10.5), then clipped to the tier's reply length."""
+def clip_part(ctx: ActionContext, text: Any, *, limit: bool = True) -> str:
+    """Public text: AI formatting stripped, then (active speech only) clipped to the tier's limit.
+
+    Passive replies (a question/@-mention) pass ``limit=False``: they keep their
+    full length but still lose Markdown formatting and keep the persona voice.
+    """
     value = strip_ai_formatting(text)
-    limit = reply_char_limit(ctx.wanderer.get("tier"))
-    return value if len(value) <= limit else value[:limit]
+    if not limit:
+        return value
+    cap = reply_char_limit(ctx.wanderer.get("tier"))
+    return value if len(value) <= cap else value[:cap]
 
 
-def turn_parts(ctx: ActionContext, turn: dict[str, Any], *, public: bool = True) -> list[str]:
-    """Non-empty parts; ``public`` ones (posted for others) are clipped to the tier's reply length."""
+def turn_parts(ctx: ActionContext, turn: dict[str, Any], *, public: bool = True, limit: bool = True) -> list[str]:
+    """Non-empty parts; public active speech is clipped to the tier's limit, passive speech is not."""
     items = turn.get("parts") or []
-    cleaned = (clip_part(ctx, item) if public else str(item or "").strip() for item in items)
+    if not public:
+        return [str(item or "").strip() for item in items if str(item or "").strip()]
+    cleaned = (clip_part(ctx, item, limit=limit) for item in items)
     return [part for part in cleaned if part]
 
 

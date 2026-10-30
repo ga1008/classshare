@@ -15,7 +15,7 @@ from typing import Any, Optional
 from ..db.schema_wanderers import ensure_wanderer_schema
 from ..time_utils import local_iso, local_now
 
-DEFAULT_DAILY_AI_CALL_CAP = 400
+DEFAULT_DAILY_AI_CALL_CAP = 4096
 DAILY_AI_CALLS_PREFIX = "ai_calls:"
 SETTING_DAILY_AI_CALL_CAP = "daily_ai_call_cap"
 SETTING_ENABLED = "enabled"
@@ -83,7 +83,7 @@ def _env_int(name: str, default: int) -> int:
 
 
 def daily_cap(conn: Any) -> int:
-    """Runtime setting ``daily_ai_call_cap`` wins; else env; else 400."""
+    """Runtime setting ``daily_ai_call_cap`` wins; else env; else 4096."""
     raw = wanderer_runtime_setting_get(conn, SETTING_DAILY_AI_CALL_CAP)
     if raw not in (None, ""):
         try:

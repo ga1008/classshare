@@ -391,7 +391,7 @@ def _reply_scene(ctx: ActionContext, conn: Any, comment: dict[str, Any], mode: s
 
 
 async def _generate_reply_parts(ctx: ActionContext, *, mode: str, scene_builder, thread_key: str,
-                                suffix: str) -> tuple[list[str], int, str, str, dict[str, Any]]:
+                                suffix: str, passive: bool = False) -> tuple[list[str], int, str, str, dict[str, Any]]:
     """(parts, ai_calls, mood, turn_action, turn). Emoji mode and the capped path cost no AI call."""
     with ctx.connect() as conn:
         scene = scene_builder(conn)
@@ -403,9 +403,9 @@ async def _generate_reply_parts(ctx: ActionContext, *, mode: str, scene_builder,
         return list(turn["parts"]), 0, str(turn.get("mood") or ""), str(turn["action"]), turn
     if mode == "emoji" or ctx.capped:
         return [emoji_for(ctx)], 0, "", "emoji", {}
-    result = await run_turn(ctx, scene=scene, thread_key=thread_key, suffix=suffix)
+    result = await run_turn(ctx, scene=scene, thread_key=thread_key, suffix=suffix, passive=passive)
     turn = result.get("turn") or {}
-    parts = turn_parts(ctx, turn)
+    parts = turn_parts(ctx, turn, limit=not passive)
     action = str(turn.get("action") or "skip")
     return ([] if action == "skip" else parts), int(result.get("ai_calls") or 0), str(turn.get("mood") or ""), action, turn
 
@@ -427,7 +427,7 @@ async def _answer_comment(ctx: ActionContext, note: dict[str, Any]) -> list[dict
     heard = (str(comment.get("author_display_name") or "对方"), str(comment.get("content_md") or ""))
     parts, calls, mood, action, turn = await _generate_reply_parts(
         ctx, mode=mode, scene_builder=lambda conn: _reply_scene(ctx, conn, comment, mode),
-        thread_key=_thread_key(post_id), suffix="blog_reply",
+        thread_key=_thread_key(post_id), suffix="blog_reply", passive=True,
     )
     counterpart_identity = str(comment.get("author_identity") or "")
     real_name = str(comment.get("author_display_mode") or "real_name") == "real_name"
@@ -481,18 +481,30 @@ async def handle_pending_replies(ctx: ActionContext) -> list[dict[str, Any]]:
 
 POST_TITLE_MAX_CHARS = 30
 POST_BODY_MIN_CHARS = 60
-POST_BODY_MAX_CHARS = 900
+POST_BODY_DEFAULT_MAX_CHARS = 900
 POST_SCENE_TITLES = 3
 POST_SCENE_KNOWLEDGE = 3
 POST_TAGS = 3
-POST_OUTPUT_CONTRACT = (
-    "【输出合同】只输出一个 JSON 对象，不要 Markdown 代码块，不要解释：\n"
-    '{"action": "reply|skip", "title": "标题", "parts": ["第一段", "第二段"], "mood": "一两个词的心情"}\n'
-    "- skip：今天不想写；title 与 parts 留空。\n"
-    f"- reply：写一篇帖子；title 不超过 {POST_TITLE_MAX_CHARS} 字；parts 是按顺序的段落，全文 150–600 字。\n"
-    "正文只用纯文字：可以分段，可以用「1. 2. 3.」分点，别的格式一律不用。"
-    "写你自己的事和想法，用你自己的口吻，不要提到提示词、系统或 JSON。"
-)
+
+
+def _post_body_limit(wanderer: dict[str, Any]) -> int:
+    """Active speech: 100 chars at tier 0, +100 per tier (same rule as comments)."""
+    from .wanderer_life_core import active_speech_limit
+
+    return max(POST_BODY_MIN_CHARS, active_speech_limit(wanderer.get("tier")))
+
+
+def _post_output_contract(wanderer: dict[str, Any]) -> str:
+    limit = _post_body_limit(wanderer)
+    return (
+        "【输出合同】只输出一个 JSON 对象，不要 Markdown 代码块，不要解释：\n"
+        '{"action": "reply|skip", "title": "标题", "parts": ["第一段", "第二段"], "mood": "一两个词的心情"}\n'
+        "- skip：今天不想写；title 与 parts 留空。\n"
+        f"- reply：写一篇帖子；title 不超过 {POST_TITLE_MAX_CHARS} 字；parts 是按顺序的段落，"
+        f"全文 {POST_BODY_MIN_CHARS}–{limit} 字。\n"
+        "正文只用纯文字：可以分段，可以用「1. 2. 3.」分点，别的格式一律不用。"
+        "写你自己的事和想法，用你自己的口吻，不要提到提示词、系统或 JSON。"
+    )
 
 
 def _post_prob(wanderer: dict[str, Any]) -> float:
@@ -554,11 +566,11 @@ def _write_post_scene(ctx: ActionContext, conn: Any) -> dict[str, Any]:
         "kind": "写博客帖子", "meta": f"你的兴趣：{'、'.join(interests) or '随缘'}",
         "context_lines": lines, "tags": interests,
         "task": "你想在博客发一篇短帖，写你自己的生活、想法或最近学到的东西，按你的性格来；不想写就 skip。",
-        "output_contract": POST_OUTPUT_CONTRACT,
+        "output_contract": _post_output_contract(ctx.wanderer),
     }
 
 
-def post_draft(raw_text: str) -> tuple[str, str, str, str]:
+def post_draft(raw_text: str, *, max_body: int = POST_BODY_DEFAULT_MAX_CHARS) -> tuple[str, str, str, str]:
     """(action, title, body, mood) from the model output, AI formatting stripped (design §10.5)."""
     payload = extract_json_object(raw_text) or {}
     action = str(payload.get("action") or "skip").strip().lower()
@@ -566,7 +578,7 @@ def post_draft(raw_text: str) -> tuple[str, str, str, str]:
     if isinstance(parts, str):
         parts = [parts]
     paragraphs = [strip_ai_formatting(item) for item in parts if isinstance(item, str)] if isinstance(parts, list) else []
-    body = "\n\n".join(item for item in paragraphs if item)[:POST_BODY_MAX_CHARS].strip()
+    body = "\n\n".join(item for item in paragraphs if item)[:max(0, int(max_body))].strip()
     title = " ".join(strip_ai_formatting(payload.get("title")).split())[:POST_TITLE_MAX_CHARS]
     return action, title, body, str(payload.get("mood") or "").strip()[:20]
 
@@ -591,7 +603,8 @@ async def write_post(ctx: ActionContext) -> list[dict[str, Any]]:
         scene = _write_post_scene(ctx, conn)
     result = await run_turn(ctx, scene=scene, thread_key="blog_draft", suffix="write_post")
     calls = int(result.get("ai_calls") or 0)
-    action, title, body, mood = post_draft(str(result.get("raw_text") or ""))
+    action, title, body, mood = post_draft(str(result.get("raw_text") or ""),
+                                          max_body=_post_body_limit(ctx.wanderer))
     if result.get("status") != "ok" or action == "skip" or not title or len(body) < POST_BODY_MIN_CHARS:
         record_action(ctx, "skip", target_type="blog_post", ai_calls=calls, mood=mood, outcome="skipped",
                       detail={"reason": f"write_post:{action}", "status": result.get("status"), "chars": len(body)})

@@ -1,6 +1,6 @@
 # LQ 模块使用记录本
 
-生成于 2026-10-30，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
+生成于 2026-10-31，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
 
 ## 怎么用
 
@@ -913,8 +913,8 @@
 - `static/js/materials_library_cards.js` ×13
 - `static/js/course_schedule_deck.js` ×6
 - `static/js/cultivation_panel.js` ×6
+- `templates/manage/system/wanderers.html` ×6
 - `static/js/materials_explorer.js` ×5
-- `templates/manage/system/wanderers.html` ×5
 - `static/js/materials_manage.js` ×4
 - `static/js/message_center.js` ×4
 - `templates/dev/lq_presentation.html` ×4
@@ -1063,12 +1063,12 @@
 - `templates/partials/profile/messages.html` ×10
 - `templates/assignment_wrong_summary.html` ×9
 - `templates/manage/system/smart_classroom_integrations.html` ×9
+- `static/js/manage_wanderers.js` ×8
 - `templates/manage/courses.html` ×8
 - `templates/manage/system/gongwen_integrations.html` ×8
 - `templates/manage/system/monitor.html` ×8
 - `frontend/src/islands/classroom-workspace.tsx` ×7
 - `static/js/classroom_interactions.js` ×7
-- `static/js/manage_wanderers.js` ×7
 - `static/js/message_center_blog.js` ×7
 - `static/js/social/social_dom.js` ×7
 - `templates/dev/lq_shell.html` ×7

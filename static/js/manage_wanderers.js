@@ -387,11 +387,16 @@ function lifeSection(detail) {
         meta: req.max_tier ? '此后只剩自己决定怎么活' :
             `知识 ${req.knowledge ?? 0}/${req.knowledge_target ?? 0} 字 · 修为 ${req.cultivation ?? 0}/${req.cultivation_target ?? 0} · 七日互动 ${req.interactions ?? 0}/${req.interactions_needed ?? 0} · 冷却 ${req.cooldown_days_left ?? 0} 天`,
     });
+    const speech = createContent('card', {
+        title: '主动发言', variant: 'stat',
+        value: `${life.perks?.active_speech_limit ?? '—'} 字`,
+        meta: '每条上限，随境界放宽 · 被直接问起时不限长',
+    });
     const talents = createContent('list', {
         label: '天赋',
         items: (life.talents || []).map(item => ({ title: `${item.label} ${item.value}`, meta: item.effect })),
     });
-    return el('div', { class: 'wd-life' }, [el('div', { class: 'wd-stats' }, [meter, requirements]), talents]);
+    return el('div', { class: 'wd-life' }, [el('div', { class: 'wd-stats' }, [meter, requirements, speech]), talents]);
 }
 
 function actionRow(item) {

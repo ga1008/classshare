@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-30",
+ "generatedAt": "2026-10-31",
  "generator": "python tools/ui/lq_module_registry.py",
  "modules": {
   "materials": {
@@ -2138,11 +2138,11 @@
       "hits": 6
      },
      {
-      "path": "static/js/materials_explorer.js",
-      "hits": 5
+      "path": "templates/manage/system/wanderers.html",
+      "hits": 6
      },
      {
-      "path": "templates/manage/system/wanderers.html",
+      "path": "static/js/materials_explorer.js",
       "hits": 5
      },
      {
@@ -2548,6 +2548,10 @@
       "hits": 9
      },
      {
+      "path": "static/js/manage_wanderers.js",
+      "hits": 8
+     },
+     {
       "path": "templates/manage/courses.html",
       "hits": 8
      },
@@ -2565,10 +2569,6 @@
      },
      {
       "path": "static/js/classroom_interactions.js",
-      "hits": 7
-     },
-     {
-      "path": "static/js/manage_wanderers.js",
       "hits": 7
      },
      {

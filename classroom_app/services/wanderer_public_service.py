@@ -180,7 +180,7 @@ def public_reviews(conn: Any, wanderer_id: int) -> list[dict[str, Any]]:
 def build_wanderer_home(conn: Any, viewer: dict[str, Any], slug: str) -> Optional[dict[str, Any]]:
     """The homepage payload, or None when ``slug`` is not a wanderer."""
     from .wanderer_identity_service import current_life
-    from .wanderer_life_core import talent_effects
+    from .wanderer_life_core import talent_effects, tier_perks
     from .wanderer_life_service import promotion_requirements
     from .wanderer_relationship_service import public_summary
 
@@ -212,6 +212,7 @@ def build_wanderer_home(conn: Any, viewer: dict[str, Any], slug: str) -> Optiona
         "is_dead": status == STATUS_DEAD,
         "status_label": {"dead": "已陨落", "paused": "闭关中"}.get(status, "修行中"),
         "life": life,
+        "perks": tier_perks(tier, wanderer.get("daily_action_budget")),
         "talents": talent_effects(wanderer.get("talents")),
         "requirements": promotion_requirements(conn, wanderer),
         "relationships": public_summary(conn, int(wanderer["id"])),

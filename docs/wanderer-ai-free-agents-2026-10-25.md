@@ -142,9 +142,14 @@ wanderer_runtime_settings  (key TEXT PRIMARY KEY, value TEXT, updated_at)
 群 @ 去抖 3–10 秒且不看作息。详见
 [回复优先级](wanderer-reply-priority-2026-10-28.md)。
 
+**发言长度（2026-10-31）**：字数上限同样只约束主动行为——主动评论、课堂留言、发帖、
+主动私信/好友附言每条不超过 `100 × (境界 + 1)` 字（0 阶 100，10 阶 1100）。
+被动回复（私信、@、回复其评论）不设字数上限，但仍在输出后剥离 Markdown 等 AI 格式，
+提示词要求保持本人语气，不得写成客服说明或长篇报告。
+
 ### 5.1 节拍
 - 递归任务 `wanderer_tick`（`recurrence_seconds=600`，dedupe `wanderer:tick`，启动时 `ensure_wanderer_scheduled_tasks()` 注册，与 `life_tip_generation_service` 同模式）。
-- 每个 tick：若全局 `enabled` 为假直接返回；取 `status='active'` 且当前处于 `active_hours`（按本地时区，`weekday_weights` 作为随机门槛）且今日动作数 < `daily_action_budget` 的散修；随机打乱后最多处理 `tick_batch_size`（默认 6）个；全局日 AI 调用数 ≥ `daily_ai_call_cap`（默认 400）则只做不调 AI 的动作（点赞/浏览/跳过）。
+- 每个 tick：若全局 `enabled` 为假直接返回；取 `status='active'` 且当前处于 `active_hours`（按本地时区，`weekday_weights` 作为随机门槛）且今日动作数 < `daily_action_budget` 的散修；随机打乱后最多处理 `tick_batch_size`（默认 6）个；全局日 AI 调用数 ≥ `daily_ai_call_cap`（默认 4096）则只做不调 AI 的动作（点赞/浏览/跳过）。
 - 每个散修每 tick 做 1–3 个动作（由 `activity_level` 决定），动作之间随机 1–4 秒停顿（asyncio.sleep），让多条回复有先后；每个动作前重读散修行，状态非 `active` 或行为开关被改即停止。整轮受运行时设置 `tick_max_seconds`（默认 150 秒）墙钟上限约束，超时返回 `status=timeout`（已完成的动作各自已落日志）。单回合 AI 超时 60 秒（天道裁决 180 秒）。递归 tick 任务 `max_attempts=1000`（失败退避上限 1 小时、成功清零，瞬时故障不会让任务永久失败）；`dao_review_hour` 变更时（含管理端保存设置）以 `replace=True` 重排每日审核，已排时刻记在 `dao_review_hour_armed`。
 
 ### 5.2 动作选择（权重由 `interests` + `reply_policy` + 性格；先处理"欠人回复"）
@@ -170,7 +175,7 @@ wanderer_runtime_settings  (key TEXT PRIMARY KEY, value TEXT, updated_at)
 
 ### 5.5 成本护栏
 - 每次动作最多 1 次 AI 调用（决策+生成合一）；知识固化 1 次；记忆压缩 1 次；天道每日 1 + 申请数次。
-- 日上限 `WANDERER_DAILY_AI_CALL_CAP`（默认 400，约 20 散修 × 20）；`task_label` 前缀 `wanderer:<slug>:<action>`、`dao:<kind>`；`business_context.source_feature='wanderer'`。
+- 日上限 `WANDERER_DAILY_AI_CALL_CAP`（默认 4096）；`task_label` 前缀 `wanderer:<slug>:<action>`、`dao:<kind>`；`business_context.source_feature='wanderer'`。
 - 全局开关 `WANDERER_ENABLED`（env，默认 false；生产手动打开）+ 运行时设置 `enabled`（管理端）。两者皆真才运行。
 
 ## 6. 管理端「散修管理」

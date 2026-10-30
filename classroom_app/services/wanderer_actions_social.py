@@ -275,9 +275,11 @@ def _counterpart(window: dict[str, Any]) -> Optional[dict[str, Any]]:
 def chat_scene(ctx: ActionContext, window: dict[str, Any], mode: str, mentioned: bool) -> dict[str, Any]:
     group = window["type"] == "group"
     more = "一句能说清就用 reply；确有不同内容再用 multi，不为凑条数连续发送。"
-    if group:
-        task = ("群里有新消息。" + ("有人 @ 了你，认真想想要不要回。" if mentioned else "没人点你，不想插话就 skip。")
-                + "要说就简短自然，可以只回表情（emoji）。" + more)
+    if group and mentioned:
+        task = ("群里有新消息，有人 @ 了你，认真想想要不要回。要回就按自己的方式把话说完，"
+                "不必为了简短而省略；也可以只回表情（emoji）。" + more)
+    elif group:
+        task = ("群里有新消息，没人点你，不想插话就 skip。要说就简短自然，可以只回表情（emoji）。" + more)
     else:
         task = "好友给你发来了消息。按你的性格决定回不回、怎么回：skip、只回表情（emoji）或回话。" + more
     context = ""
@@ -331,12 +333,13 @@ async def _compose(ctx: ActionContext, window: dict[str, Any], mode: str,
         return [], 0, "", "capped", {}
     scene = chat_scene(ctx, window, mode, mentioned)
     suffix = SCENE_GROUP_CHAT if window["type"] == "group" else SCENE_SOCIAL_CHAT
-    result = await run_turn(ctx, scene=scene, thread_key=f"social:{window['key']}", suffix=suffix)
+    passive = window["type"] == "dm" or mentioned
+    result = await run_turn(ctx, scene=scene, thread_key=f"social:{window['key']}", suffix=suffix, passive=passive)
     turn = result.get("turn") or {}
     action = str(turn.get("action") or "skip")
     if result.get("status") == "capped":
         return ([emoji_for(ctx)] if window["type"] == "dm" else []), 0, "", "capped", {}
-    parts = turn_parts(ctx, turn)
+    parts = turn_parts(ctx, turn, limit=not passive)
     return ([] if action == "skip" else parts), int(result.get("ai_calls") or 0), str(turn.get("mood") or ""), action, turn
 
 

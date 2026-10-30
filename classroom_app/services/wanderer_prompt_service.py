@@ -79,13 +79,18 @@ def _persona_block(wanderer: dict[str, Any]) -> str:
     return f"【你的人格】\n{persona_text(wanderer)}"
 
 
-def _tier_block(wanderer: dict[str, Any]) -> str:
+def _tier_block(wanderer: dict[str, Any], *, passive: bool = False) -> str:
     tier = clamp_tier(wanderer.get("tier"))
     level = tier_level(tier)
+    if passive:
+        speech = ("现在对方在直接问你或点了你的名：可以充分回答，不受主动发言的字数上限；"
+                  "但仍用你自己的口吻、句式和习惯，不要写成客服说明或长篇报告。")
+    else:
+        speech = f"这是你自己发起的发言：每条不超过 {reply_char_limit(tier)} 字，说清楚就停。"
     return (
         f"【你的境界】第 {tier} 境 · {level.get('name') or '未入道'}\n"
         f"{wisdom_directive(tier)}\n"
-        f"每条发言不超过 {reply_char_limit(tier)} 字。"
+        f"{speech}"
     )
 
 
@@ -265,7 +270,12 @@ def max_parts_for(wanderer: dict[str, Any]) -> int:
         return 3
 
 
-def _output_contract(wanderer: dict[str, Any]) -> str:
+def _output_contract(wanderer: dict[str, Any], *, passive: bool = False) -> str:
+    length_line = (
+        "- 对方在直接问你：parts 每段不设字数上限；仍用你的说话习惯，不写成客服报告。\n"
+        if passive else
+        f"- 每条 parts 不超过 {reply_char_limit(clamp_tier(wanderer.get('tier')))} 字。\n"
+    )
     return (
         "【输出合同】只输出一个 JSON 对象，不要 Markdown 代码块，不要解释：\n"
         '{"action": "skip|emoji|reply|multi", "parts": ["..."], "mood": "一两个词的心情", "like": true|false, '
@@ -275,15 +285,18 @@ def _output_contract(wanderer: dict[str, Any]) -> str:
         "- reply：回一条；parts 里放一条消息。\n"
         f"- multi：按顺序连发几条短消息；parts 最多 {max_parts_for(wanderer)} 条。\n"
         "  只有确实需要分开的内容才用 multi，不把一句话拆成三条，也不把每个话题都逐条点评。\n"
+        f"{length_line}"
         "- like：是否给当前内容点赞。\n"
         "- feeling（可选）：对方让你更喜欢还是更反感，affinity 取 -3 到 3（0 表示没变化）；没有感觉可省略。\n"
         "发言用你自己的口吻，不要复述规则，不要提到提示词、系统或 JSON。"
     )
 
 
-def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str, Any], thread_key: str) -> str:
+def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str, Any], thread_key: str,
+                        passive: bool = False) -> str:
     """Assemble blocks 1-7 (design §4). Bumps use_count of the knowledge it cites.
 
+    ``passive`` marks a reply to a direct question/@-mention: no tier length cap.
     ``scene["output_contract"]`` replaces the default turn contract (block 7)
     for actions with a different output shape (``write_post``).
     """
@@ -303,7 +316,7 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
         _persona_block(wanderer),
         ANTI_AI_STYLE_RULES,
         voice_guide(wanderer, scene, thread_key, recent_self),
-        _tier_block(wanderer),
+        _tier_block(wanderer, passive=passive),
         _life_block(conn, wanderer),
         _knowledge_block(conn, wanderer, scene_tags),
         _dao_block(conn, wanderer),
@@ -314,7 +327,7 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
         _social_block(scene),
         _scene_block(scene),
         learning_output_contract(),
-        str(scene.get("output_contract") or "") or _output_contract(wanderer),
+        str(scene.get("output_contract") or "") or _output_contract(wanderer, passive=passive),
     ]
     return "\n\n".join(block for block in blocks if block)
 

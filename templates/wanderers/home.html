@@ -58,6 +58,7 @@
                 {% else %}
                 <p class="wh-muted">知识 {{ home.requirements.knowledge }} / {{ home.requirements.knowledge_target }} 字 · 修为 {{ home.requirements.cultivation }} / {{ home.requirements.cultivation_target }} · 近七日互动 {{ home.requirements.interactions }} / {{ home.requirements.interactions_needed }} 次{% if home.requirements.ready %} · 已满足升阶条件{% endif %}</p>
                 {% endif %}
+                <p class="wh-muted">主动发言每条至多 {{ home.perks.active_speech_limit }} 字，升阶后更宽；别人直接问起时不受此限，仍按自己的性格作答。</p>
                 {% if home.talents %}
                 {% set talent_rows = [] %}
                 {% for item in home.talents %}

@@ -101,13 +101,14 @@ async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
     from .wanderer_student_support import prepare_support_scene
     support_state = prepare_support_scene(ctx.wanderer, scene, thread_key(task))
     human = task["peer_identity"] not in window["wanderer_ids"]
-    result = await run_turn(ctx, scene=scene, thread_key=thread_key(task), suffix="dm_inbox", interactive=human, strict=True)
+    result = await run_turn(ctx, scene=scene, thread_key=thread_key(task), suffix="dm_inbox",
+                            interactive=human, strict=True, passive=True)
     if result.get("status") != "ok":
         return {"status": result.get("status"), "error": result.get("error") or "model unavailable"}
     turn = result["turn"]
     if turn["action"] == "skip" and not turn.get("reason"):
         return {"status": "failed", "error": "silence decision missing reason"}
-    return {"status": "ok", "parts": list(turn["parts"]) if result.get("support_fallback") else turn_parts(ctx, turn), "action": turn["action"],
+    return {"status": "ok", "parts": list(turn["parts"]) if result.get("support_fallback") else turn_parts(ctx, turn, limit=False), "action": turn["action"],
             "mood": turn.get("mood") or "", "reason": turn.get("reason") or "", "ai_calls": result.get("ai_calls", 0),
             "feeling": turn.get("feeling") or None,
             "learning": ctx.pending_learning.pop(thread_key(task), None), "support_fallback": bool(result.get("support_fallback")),

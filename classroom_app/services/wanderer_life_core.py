@@ -29,6 +29,11 @@ LIFE_EXTENSION_MIN_SCORE = 10.0
 URGENT_REMAINING_DAYS = 14
 CRITICAL_REMAINING_DAYS = 7
 
+# A self-initiated turn is short and grows by 100 chars per tier: 0→100, 10→1100.
+# Direct questions/@-mentions (passive) are not capped by this; the model's own
+# output limit is the only ceiling.
+ACTIVE_SPEECH_BASE_CHARS = 100
+
 # Knowledge ratio needed to apply for the next tier (design §4.2).
 PROMOTION_KNOWLEDGE_RATIO: tuple[float, ...] = (0.60, 0.60, 0.60, 0.55, 0.55, 0.50, 0.50, 0.45, 0.45, 0.40)
 PROMOTION_COOLDOWN_DAYS = 7
@@ -271,6 +276,11 @@ def interaction_gain(action_kind: Any, eloquence: Any = 1.0) -> float:
     return round(base * factor, 2)
 
 
+def active_speech_limit(tier: Any) -> int:
+    """0 阶 100 字，每升一阶 +100 字，10 阶 1100 字（只约束主动发言）。"""
+    return ACTIVE_SPEECH_BASE_CHARS * (clamp_tier(tier) + 1)
+
+
 def tier_perks(tier: Any, daily_action_budget: Any = 10) -> dict[str, Any]:
     level = clamp_tier(tier)
     try:
@@ -281,7 +291,9 @@ def tier_perks(tier: Any, daily_action_budget: Any = 10) -> dict[str, Any]:
         "tier": level,
         "budget_factor": round(1.0 + 0.10 * level, 2),
         "daily_budget": int(round(budget * (1.0 + 0.10 * level))),
-        "reply_char_limit": 80 + 30 * level,
+        "reply_char_limit": active_speech_limit(level),
+        "active_speech_limit": active_speech_limit(level),
+        "passive_speech_unlimited": True,
         "knowledge_capacity": base_knowledge_capacity(level),
         "appeal_unlocked": level >= APPEAL_MIN_TIER,
         "resurrect_unlocked": level >= RESURRECT_MIN_TIER,

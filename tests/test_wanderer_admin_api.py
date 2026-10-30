@@ -249,7 +249,7 @@ class WandererAdminApiTest(WandererDbTestCase):
             "enabled": 0, "daily_ai_call_cap": 120, "tick_batch_size": 3,
             "classroom_visits_enabled": 0, "dao_review_hour": "04:15",
         })
-        self.addCleanup(lambda: self.super_client().post(f"{API}/settings", json={"enabled": 1, "daily_ai_call_cap": 400}))
+        self.addCleanup(lambda: self.super_client().post(f"{API}/settings", json={"enabled": 1, "daily_ai_call_cap": 4096}))
         self.assertEqual(saved.status_code, 200, saved.text)
         settings = saved.json()["settings"]
         self.assertEqual((settings["enabled"], settings["daily_ai_call_cap"], settings["tick_batch_size"]), (False, 120, 3))

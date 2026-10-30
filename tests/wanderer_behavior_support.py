@@ -119,7 +119,7 @@ class WandererWorldTestCase(WandererDbTestCase):
             conn.execute("UPDATE wanderer_knowledge_entries SET status = 'active'")
             conn.execute("DELETE FROM wanderer_runtime_settings")
             wanderer_runtime_setting_set(conn, daily_ai_calls_key(), "0")
-            wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "400")
+            wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "4096")
             conn.execute("UPDATE wanderer_agents SET status = 'active', promotion_requested = 0, "
                          "promotion_requested_at = NULL, warnings_count = 0, last_warning_at = NULL, stats_json = '{}', "
                          "born_at = created_at, lifespan_weeks = 0, life_penalty_weeks = 0, life_extensions = 0, "
