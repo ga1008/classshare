@@ -212,6 +212,9 @@ private.*.key
 miniapp/dist/
 miniapp/preview-qr.png
 
+# 本地清理隔离区(待清理)：只放已确认无用的残留，永不入库、不进发布包
+/待清理/
+
 # 本地环境残留/含敏感信息的文件(服务器IP、默认口令、生产日志、IDE配置)
 config.json
 settings.zip
