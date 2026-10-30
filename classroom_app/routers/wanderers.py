@@ -253,6 +253,17 @@ async def api_set_wanderer_tier(wanderer_id: int, request: Request, user: dict =
     return _ok(**result)
 
 
+@router.post(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/life", response_class=JSONResponse)
+async def api_adjust_wanderer_life(wanderer_id: int, request: Request, user: dict = Depends(get_current_teacher)):
+    payload = await _json_body(request)
+    result = _run_admin(
+        user,
+        lambda conn: admin.adjust_life(conn, wanderer_id, payload.get("weeks"), payload.get("reason"), actor=user),
+        commit=True,
+    )
+    return _ok(**result)
+
+
 @router.post(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/reset-warnings", response_class=JSONResponse)
 async def api_reset_wanderer_warnings(wanderer_id: int, user: dict = Depends(get_current_teacher)):
     card = _run_admin(user, lambda conn: admin.reset_warnings(conn, wanderer_id, actor=user), commit=True)

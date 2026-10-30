@@ -10,21 +10,18 @@ least-used entries are *forgotten* (``status='forgotten'``, row kept) and a
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable
+import random
+from typing import Any, Callable, Iterable, Optional
 
 from ..db.connection import execute_insert_returning_id
 from ..db.schema_wanderers import ensure_wanderer_schema
 from ..time_utils import local_iso
-from .wanderer_identity_service import (
-    invalidate_wanderer_cache,
-    knowledge_capacity_chars,
-    log_wanderer_action,
-)
+from .wanderer_identity_service import invalidate_wanderer_cache, log_wanderer_action
+from .wanderer_life_core import SCORE_CHARS_PER_POINT, knowledge_capacity_for, knowledge_gain, talent_value
 
-SOURCE_KINDS = frozenset({"material_page", "material", "blog_post", "classroom", "seed", "reflection"})
+SOURCE_KINDS = frozenset({"material_page", "material", "blog_post", "classroom", "seed", "reflection", "legacy"})
 KNOWLEDGE_DIGEST_MAX_CHARS = 1200
 KNOWLEDGE_TITLE_MAX_CHARS = 120
-SCORE_CHARS_PER_POINT = 100.0
 _MAX_TAGS = 12
 
 
@@ -128,8 +125,9 @@ def add_knowledge(
     title: str,
     digest: str,
     tags: Iterable[Any] | None = None,
+    rng: Optional[Callable[[], float]] = None,
 ) -> dict[str, Any]:
-    """Upsert one entry, enforce capacity, bump cultivation. Caller commits."""
+    """Upsert one entry, enforce capacity, bump cultivation (悟性/气运). Caller commits."""
     ensure_wanderer_schema(conn)
     if source_kind not in SOURCE_KINDS:
         raise ValueError(f"unknown knowledge source_kind: {source_kind}")
@@ -151,9 +149,16 @@ def add_knowledge(
         if existing is not None and str(_row_value(existing, "status", 2)) == "active" else 0
     )
     entry_id = _upsert_entry(conn, wanderer_id, fields, existing)
-    capacity = knowledge_capacity_chars(wanderer.get("tier"))
+    capacity = knowledge_capacity_for(wanderer.get("tier"), talent_value(wanderer.get("talents"), "memory"))
     forgotten = _forget_until_within(conn, wanderer_id, capacity, entry_id)
-    score_delta = round(max(0, fields["chars"] - previous_active_chars) / SCORE_CHARS_PER_POINT, 2)
+    new_chars = max(0, fields["chars"] - previous_active_chars)
+    crit = False
+    score_delta = 0.0
+    if new_chars:
+        score_delta, crit = knowledge_gain(
+            new_chars, talent_value(wanderer.get("talents"), "insight"),
+            talent_value(wanderer.get("talents"), "luck"), rng or random.random,
+        )
     knowledge_chars = _active_chars(conn, wanderer_id)
     conn.execute(
         "UPDATE wanderer_agents SET knowledge_chars = ?, cultivation_score = cultivation_score + ?, "
@@ -167,6 +172,7 @@ def add_knowledge(
         "capacity": capacity,
         "forgotten": forgotten,
         "score_delta": score_delta,
+        "crit": crit,
     }
 
 
@@ -218,7 +224,7 @@ def knowledge_summary(conn: Any, wanderer: dict[str, Any]) -> dict[str, Any]:
     ).fetchone()
     count = int(_row_value(row, "n") or 0)
     chars = int(_row_value(row, "total", 1) or 0)
-    capacity = knowledge_capacity_chars(wanderer.get("tier"))
+    capacity = knowledge_capacity_for(wanderer.get("tier"), talent_value(wanderer.get("talents"), "memory"))
     return {
         "active_count": count,
         "chars": chars,

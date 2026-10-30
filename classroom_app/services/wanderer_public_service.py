@@ -28,8 +28,10 @@ PUBLIC_REVIEWS = {
     ("promotion", "approved"): "升阶获准", ("promotion", "rejected"): "升阶被驳回",
     ("discipline", "warning"): "天道警告", ("discipline", "demoted"): "天道降阶",
     ("death", "died"): "陨落", ("revive", "revived"): "复活", ("genesis", "created"): "天道造人",
+    ("appeal", "upheld"): "抗辩获准", ("appeal", "rejected_appeal"): "抗辩驳回",
+    ("penalty", "deducted"): "天道折寿", ("talent", "adjusted"): "天道改命",
 }
-ORIGIN_LABELS = {"seed": "种子散修", "dao": "天道所造"}
+ORIGIN_LABELS = {"seed": "种子散修", "dao": "天道所造", "reincarnated": "转世之身"}
 
 
 def public_interests(wanderer: dict[str, Any]) -> list[str]:
@@ -177,6 +179,11 @@ def public_reviews(conn: Any, wanderer_id: int) -> list[dict[str, Any]]:
 
 def build_wanderer_home(conn: Any, viewer: dict[str, Any], slug: str) -> Optional[dict[str, Any]]:
     """The homepage payload, or None when ``slug`` is not a wanderer."""
+    from .wanderer_identity_service import current_life
+    from .wanderer_life_core import talent_effects
+    from .wanderer_life_service import promotion_requirements
+    from .wanderer_relationship_service import public_summary
+
     clean = str(slug or "").strip()
     if not clean or len(clean) > 40:
         return None
@@ -186,6 +193,7 @@ def build_wanderer_home(conn: Any, viewer: dict[str, Any], slug: str) -> Optiona
     tier = clamp_tier(wanderer.get("tier"))
     origin = str(wanderer.get("origin") or "seed")
     status = str(wanderer.get("status") or "")
+    life = current_life(wanderer)
     return {
         "slug": clean,
         "student_id": int(wanderer["student_id"]),
@@ -203,6 +211,10 @@ def build_wanderer_home(conn: Any, viewer: dict[str, Any], slug: str) -> Optiona
         "born_on": _date(wanderer.get("created_at")),
         "is_dead": status == STATUS_DEAD,
         "status_label": {"dead": "已陨落", "paused": "闭关中"}.get(status, "修行中"),
+        "life": life,
+        "talents": talent_effects(wanderer.get("talents")),
+        "requirements": promotion_requirements(conn, wanderer),
+        "relationships": public_summary(conn, int(wanderer["id"])),
         "stats": _stats(conn, wanderer),
         "web_search_usage": web_search_usage(conn, wanderer),
         "actions": recent_public_actions(conn, int(wanderer["id"])),

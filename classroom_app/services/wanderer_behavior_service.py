@@ -44,18 +44,34 @@ from .wanderer_actions_blog import (
 )
 from .wanderer_actions_classroom import visit_classroom
 from .wanderer_actions_common import ActionContext, as_int, behavior_on, outcome, record_action, today_action_count
-from .wanderer_actions_knowledge import promotion_eligible, reflect_on_reviews, request_promotion, study_material
+from .wanderer_actions_knowledge import (
+    appeal_eligible,
+    maybe_extend_life,
+    promotion_eligible,
+    reflect_on_reviews,
+    request_appeal,
+    request_promotion,
+    study_material,
+    try_resurrect,
+)
 from .wanderer_ai_service import AiCaller
 from .wanderer_social_outreach import outreach_candidates, start_friend_conversation
 from .wanderer_identity_service import (
     STATUS_ACTIVE,
     clamp_tier,
+    current_life,
     daily_budget_factor,
-    evaluate_death,
-    knowledge_capacity_chars,
+    death_reason,
+    knowledge_capacity_for,
     list_wanderers,
     load_wanderer,
     mark_dead,
+)
+from .wanderer_life_core import INTERACTION_POINTS, can_extend_life
+from .wanderer_life_service import (
+    award_interaction_cultivation,
+    backfill_all,
+    can_resurrect,
 )
 from .wanderer_settings_service import (
     SETTING_DAO_REVIEW_HOUR_ARMED,
@@ -92,6 +108,7 @@ SleepFn = Callable[[float], Awaitable[Any]]
 _FAILURE_KIND = {
     "replies": "reply", "blog": "browse_post", "classroom": "classroom_visit",
     "knowledge": "knowledge_read", "promotion": "request_promotion", "reflect": "reflect", "post": "write_post",
+    "extend_life": "extend_life", "appeal": "appeal", "resurrect": "resurrect",
 }
 POST_WEIGHT = 4.0
 
@@ -291,7 +308,7 @@ def actions_per_tick(activity_level: Any, rng: random.Random) -> int:
 
 
 def _knowledge_weight(wanderer: dict[str, Any]) -> float:
-    capacity = knowledge_capacity_chars(clamp_tier(wanderer.get("tier"))) or 1
+    capacity = knowledge_capacity_for(wanderer) or 1
     fill = min(1.0, as_int(wanderer.get("knowledge_chars")) / capacity)
     return 1.0 + 3.0 * (1.0 - fill)
 
@@ -315,6 +332,12 @@ def choose_action(ctx: ActionContext, *, first: bool) -> str:
             options.append(("social_outreach", 2.0))
         if promotion_eligible(ctx, conn):
             options.append(("promotion", 3.0))
+        if can_extend_life(current_life(wanderer), wanderer.get("cultivation_score")):
+            options.append(("extend_life", 6.0))
+        if ctx.special and appeal_eligible(conn, wanderer, ctx.current_time()):
+            options.append(("appeal", 1.5))
+        if ctx.special and can_resurrect(conn, wanderer).get("ok"):
+            options.append(("resurrect", 0.8))
         can_post = post_eligible(ctx, conn)
     # The post_prob roll only happens when posting is possible at all (design §10.4).
     if can_post and wants_to_post(ctx):
@@ -339,8 +362,23 @@ ACTIONS: dict[str, ActionFn] = {
     "promotion": request_promotion,
     "post": write_post,
     "social_outreach": start_friend_conversation,
+    "extend_life": maybe_extend_life,
+    "appeal": request_appeal,
+    "resurrect": try_resurrect,
     "idle": _idle,
 }
+
+
+def _award_outcomes(ctx: ActionContext, items: list[dict[str, Any]]) -> None:
+    """互动修为 for successful public actions (daily cap inside the life service)."""
+    kinds = [str(item.get("kind") or "") for item in items or []
+             if item.get("outcome") == "ok" and str(item.get("kind") or "") in INTERACTION_POINTS]
+    if not kinds:
+        return
+    with ctx.connect() as conn:
+        award_interaction_cultivation(conn, ctx.wanderer, kinds)
+        conn.commit()
+    ctx.reload()
 
 
 async def _run_guarded(ctx: ActionContext, name: str, action: ActionFn) -> list[dict[str, Any]]:
@@ -365,9 +403,10 @@ def _check_death(ctx: ActionContext) -> bool:
         wanderer = load_wanderer(conn, ctx.wanderer_id)
         if wanderer is None or str(wanderer.get("status")) != STATUS_ACTIVE:
             return False
-        if not evaluate_death(conn, wanderer):
+        reason = death_reason(conn, wanderer, now=ctx.current_time())
+        if not reason:
             return False
-        mark_dead(conn, ctx.wanderer_id, "知识尽失、修为归零，判定陨落。")
+        mark_dead(conn, ctx.wanderer_id, reason)
         conn.commit()
     return True
 
@@ -391,6 +430,7 @@ async def run_wanderer_actions(
     """
     if reply_only:
         done = await _run_guarded(ctx, "replies", ACTIONS["replies"])
+        _award_outcomes(ctx, done)
         died = _check_death(ctx)
         return {
             "wanderer_id": ctx.wanderer_id, "slug": ctx.wanderer.get("slug"), "died": died,
@@ -408,7 +448,9 @@ async def run_wanderer_actions(
             stopped = True
             break
         name = choose_action(ctx, first=index == 0)
-        done.extend(await _run_guarded(ctx, name, ACTIONS[name]))
+        produced = await _run_guarded(ctx, name, ACTIONS[name])
+        _award_outcomes(ctx, produced)
+        done.extend(produced)
     died = _check_death(ctx)
     return {
         "wanderer_id": ctx.wanderer_id, "slug": ctx.wanderer.get("slug"), "died": died,
@@ -460,6 +502,8 @@ async def run_wanderer_tick_once(
     with _connection(conn_factory) as conn:
         if not force and not is_wanderer_runtime_enabled(conn):
             return {"status": "disabled", "processed": 0, "actions": 0, "ai_calls": 0, "failed": 0, "wanderers": []}
+        backfill_all(conn)  # born_at / lifespan / talents for rows that predate the lifecycle release
+        conn.commit()
         max_seconds = tick_max_seconds(conn)
     summaries: list[dict[str, Any]] = []
     state = {"capped": False}
@@ -517,7 +561,8 @@ async def _tick_body(
                    for item, run_reply_only in batch if not run_reply_only}
     for wanderer, run_reply_only in batch:
         ctx = ActionContext(conn_factory=conn_factory, wanderer=wanderer, ai_caller=ai_caller,
-                            sleep=sleep or asyncio.sleep, rng=rng, capped=state["capped"], now=now)
+                            sleep=sleep or asyncio.sleep, rng=rng, capped=state["capped"], now=now,
+                            special=wanderer_ids is None)
         summaries.append(await _run_one(ctx, budgets.get(int(wanderer["id"]), 0), reply_only=run_reply_only))
         state["capped"] = state["capped"] or ctx.capped
 

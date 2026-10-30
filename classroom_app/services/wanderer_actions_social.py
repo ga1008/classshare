@@ -319,25 +319,25 @@ async def _mark_read(ctx: ActionContext, window: dict[str, Any]) -> None:
 
 
 async def _compose(ctx: ActionContext, window: dict[str, Any], mode: str,
-                   mentioned: bool) -> tuple[list[str], int, str, str]:
-    """(parts, ai_calls, mood, action). Emoji mode costs no AI call; when capped DMs get an emoji."""
+                   mentioned: bool) -> tuple[list[str], int, str, str, dict[str, Any]]:
+    """(parts, ai_calls, mood, action, turn). Emoji mode costs no AI call; when capped DMs get an emoji."""
     if window.get("_support_fallback"):
         turn = window["_support_fallback"]["turn"]
         ctx.support_threads.add(f"social:{window['key']}")
-        return list(turn["parts"]), 0, str(turn.get("mood") or ""), str(turn["action"])
+        return list(turn["parts"]), 0, str(turn.get("mood") or ""), str(turn["action"]), turn
     if mode == "emoji" or (ctx.capped and window["type"] == "dm"):
-        return [emoji_for(ctx)], 0, "", "emoji"
+        return [emoji_for(ctx)], 0, "", "emoji", {}
     if ctx.capped:
-        return [], 0, "", "capped"
+        return [], 0, "", "capped", {}
     scene = chat_scene(ctx, window, mode, mentioned)
     suffix = SCENE_GROUP_CHAT if window["type"] == "group" else SCENE_SOCIAL_CHAT
     result = await run_turn(ctx, scene=scene, thread_key=f"social:{window['key']}", suffix=suffix)
     turn = result.get("turn") or {}
     action = str(turn.get("action") or "skip")
     if result.get("status") == "capped":
-        return ([emoji_for(ctx)] if window["type"] == "dm" else []), 0, "", "capped"
+        return ([emoji_for(ctx)] if window["type"] == "dm" else []), 0, "", "capped", {}
     parts = turn_parts(ctx, turn)
-    return ([] if action == "skip" else parts), int(result.get("ai_calls") or 0), str(turn.get("mood") or ""), action
+    return ([] if action == "skip" else parts), int(result.get("ai_calls") or 0), str(turn.get("mood") or ""), action, turn
 
 
 async def post_parts(ctx: ActionContext, window: dict[str, Any], parts: list[str], *,
@@ -465,7 +465,7 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
     await _mark_read(ctx, window)
     if mode in {"", "ignore"}:
         return await _skip(ctx, window, "wanderer_pause" if not mode else "ignore_policy")
-    parts, calls, mood, action = await _compose(ctx, window, mode, mentioned)
+    parts, calls, mood, action, turn = await _compose(ctx, window, mode, mentioned)
     parts = parts[:quota]
     if not parts:
         return await _skip(ctx, window, f"turn:{action}", ai_calls=calls, mood=mood)
@@ -475,6 +475,17 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
     record_action(ctx, "social_message", **_target(window), content_preview=" / ".join(parts[:sent] or parts),
                   ai_calls=calls, mood=mood, outcome=status,
                   detail={"parts": sent, "mode": mode, "turn": action, "nudged": nudged, "error": error})
+    if window.get("new"):
+        from .wanderer_life_service import award_interaction_cultivation
+        from .wanderer_relationship_service import apply_turn_feeling
+
+        peer = str(window["new"][-1]["sender_identity"])
+        scene = "social_group" if window["type"] == "group" else "social_dm"
+        with ctx.connect() as conn:
+            apply_turn_feeling(conn, ctx.wanderer, peer, turn, scene=scene)
+            if sent:
+                award_interaction_cultivation(conn, ctx.wanderer, ["social_message"])
+            conn.commit()
     await _remember_exchange(ctx, window, said=parts[:sent])
     return [outcome("social_message", status, ai_calls=calls, parts=sent)]
 

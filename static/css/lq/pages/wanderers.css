@@ -57,6 +57,10 @@
 .wd-inline-form__actions { display: flex; gap: var(--ls-s-2); }
 
 .wd-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--ls-s-3); }
+.wd-life { display: grid; gap: var(--ls-s-3); }
+.wd-talents { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--ls-s-2); margin-top: var(--ls-s-2); }
+.wd-talent-form { display: grid; gap: var(--ls-s-3); }
+.wd-talent-form .form-group { margin: 0; }
 .wd-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--ls-s-3); }
 
 .wd-avatar-form { display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(160px, 220px) auto; align-items: end; gap: var(--ls-s-3); }

@@ -1,16 +1,18 @@
-"""散修 study, promotion requests and reflection (design §5.2 items 4-6).
+"""散修 study, promotion requests, reflection and the lifecycle actions (design §5.2 items 4-6).
 
 * Study: pick an indexed material the wanderer may read — only materials that
   are themselves 完全公开 (``course_materials.scope_level='public'``) or whose
   outermost folder is — take 1-3 consecutive chunks (<= 6000 chars), and let
   one AI turn write "what I remember" (<= 800 字) into the knowledge base.
-  Classroom-assigned (non-public) materials are never read.
-* Promotion: when the knowledge base is >= 70% of the *current* tier's capacity
-  (a wanderer can never hold more than its current capacity, so the design's
-  "next tier" ratio is unreachable), with >= 5 interactions in 7 days and no
-  request in the last 7 days, the persona decides whether to apply.
+  Classroom-assigned (non-public) materials are never read. The gained
+  cultivation is scaled by 悟性 (and 气运 may double it).
+* Promotion: ``wanderer_life_service.promotion_requirements`` decides readiness
+  (knowledge ratio by tier, absolute cultivation, 口才-adjusted interactions,
+  7-day cooldown); the persona decides whether to apply.
 * Reflection: every unacknowledged 天道 verdict is read, reflected on (thread
   ``dao`` + a ``reflection`` knowledge entry) and acknowledged.
+* Lifecycle (docs/wanderer-lifecycle-2026-10-30.md): 延寿 when time runs out,
+  抗辩 (tier ≥ 5) against the latest warning, 复活 (tier 10) of a dead peer.
 """
 from __future__ import annotations
 
@@ -31,18 +33,31 @@ from .wanderer_actions_common import (
     turn_parts,
     weighted_choice,
 )
-from .wanderer_identity_service import MAX_TIER, clamp_tier, invalidate_wanderer_cache, knowledge_capacity_chars
+from .wanderer_identity_service import (
+    MAX_TIER,
+    clamp_tier,
+    current_life,
+    invalidate_wanderer_cache,
+    load_wanderer,
+)
 from .wanderer_knowledge_service import add_knowledge
-from .wanderer_prompt_service import INJECTION_GUARD
+from .wanderer_life_core import APPEAL_MIN_TIER, can_extend_life
+from .wanderer_life_service import (
+    INTERACTION_KINDS,
+    can_resurrect,
+    extend_life as apply_life_extension,
+    life_extension_cost,
+    promotion_requirements,
+    resurrect,
+)
+from .wanderer_prompt_service import INJECTION_GUARD, extract_json_object
 
 READING_MAX_CHARS = 6000
 READING_MAX_CHUNKS = 3
 KNOWLEDGE_DIGEST_LIMIT = 800
-PROMOTION_KNOWLEDGE_RATIO = 0.7
-PROMOTION_MIN_INTERACTIONS = 5
-PROMOTION_COOLDOWN_DAYS = 7
-INTERACTION_KINDS = ("comment", "reply", "dm_reply", "classroom_message", "write_post")
-REFLECTION_KINDS = ("promotion", "discipline", "admin_override", "revive")
+APPEAL_WARNING_WINDOW_DAYS = 7
+APPEAL_COOLDOWN_DAYS = 30
+REFLECTION_KINDS = ("promotion", "discipline", "admin_override", "revive", "appeal")
 REFLECTIONS_PER_TICK = 2
 
 
@@ -171,12 +186,13 @@ async def study_material(ctx: ActionContext) -> list[dict[str, Any]]:
     tags = _knowledge_tags(interests, first.get("heading"), material.get("material_name"), digest)
     with ctx.connect() as conn:
         stored = add_knowledge(conn, ctx.wanderer, source_kind="material_page", source_ref=target["target_id"],
-                               title=title, digest=digest, tags=tags)
+                               title=title, digest=digest, tags=tags, rng=ctx.rng.random)
         bump_stats(conn, ctx.wanderer_id, {"knowledge_reads": 1})
         conn.commit()
     record_action(ctx, "knowledge_read", **target, content_preview=title, ai_calls=calls,
                   detail={"chars": len(digest), "pages": [_page_of(chunk) for chunk in chunks],
-                          "forgotten": stored.get("forgotten") or []})
+                          "forgotten": stored.get("forgotten") or [],
+                          "score_delta": stored.get("score_delta"), "crit": bool(stored.get("crit"))})
     ctx.reload()
     return [outcome("knowledge_read", ai_calls=calls)]
 
@@ -185,41 +201,27 @@ async def study_material(ctx: ActionContext) -> list[dict[str, Any]]:
 # Promotion request
 # ---------------------------------------------------------------------------
 
-def _recent_interactions(conn: Any, wanderer_id: int, since: str) -> int:
-    marks = ",".join("?" for _ in INTERACTION_KINDS)
-    row = conn.execute(
-        f"SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND outcome = 'ok' "
-        f"AND action_kind IN ({marks}) AND created_at >= ?",
-        (int(wanderer_id), *INTERACTION_KINDS, since),
-    ).fetchone()
-    return as_int(row["n"])
-
-
 def promotion_eligible(ctx: ActionContext, conn: Any) -> bool:
     wanderer = ctx.wanderer
-    tier = clamp_tier(wanderer.get("tier"))
-    if not behavior_on(wanderer, "promotion") or as_int(wanderer.get("promotion_requested")) or tier >= MAX_TIER:
+    if (not behavior_on(wanderer, "promotion") or as_int(wanderer.get("promotion_requested"))
+            or clamp_tier(wanderer.get("tier")) >= MAX_TIER):
         return False
-    if as_int(wanderer.get("knowledge_chars")) < PROMOTION_KNOWLEDGE_RATIO * knowledge_capacity_chars(tier):
-        return False
-    now = ctx.current_time()
-    last = parse_datetime(wanderer.get("promotion_requested_at"))
-    if last is not None and last.replace(tzinfo=None) > now - timedelta(days=PROMOTION_COOLDOWN_DAYS):
-        return False
-    since = (now - timedelta(days=7)).isoformat(timespec="seconds")
-    return _recent_interactions(conn, ctx.wanderer_id, since) >= PROMOTION_MIN_INTERACTIONS
+    return bool(promotion_requirements(conn, wanderer, now=ctx.current_time()).get("ready"))
 
 
 async def request_promotion(ctx: ActionContext) -> list[dict[str, Any]]:
     if ctx.capped:
         return []
-    tier = clamp_tier(ctx.wanderer.get("tier"))
-    capacity = knowledge_capacity_chars(tier)
+    with ctx.connect() as conn:
+        requirements = promotion_requirements(conn, ctx.wanderer, now=ctx.current_time())
     scene = {
         "kind": "升阶申请", "title": "要不要向天道申请升阶",
-        "meta": f"你已固化知识 {as_int(ctx.wanderer.get('knowledge_chars'))} 字，当前境界容量 {capacity} 字。",
+        "meta": (f"知识 {requirements['knowledge']} / {requirements['knowledge_target']} 字；"
+                 f"修为 {requirements['cultivation']} / {requirements['cultivation_target']}；"
+                 f"近七日互动 {requirements['interactions']} / {requirements['interactions_needed']} 次。"),
         "tags": list(ctx.wanderer.get("interests") or []),
-        "task": "按你的性格决定是否向天道申请升阶：申请就用 reply，在 parts 里写一段申请理由（不超过 200 字）；不申请就 skip。",
+        "task": "条件已满足。按你的性格决定是否向天道申请升阶：申请就用 reply，在 parts 里写一段申请理由（不超过 200 字）；"
+                "不想晋升就 skip。你也可以选择一直不申请。",
     }
     result = await run_turn(ctx, scene=scene, thread_key="dao", suffix="request_promotion")
     calls = int(result.get("ai_calls") or 0)
@@ -321,3 +323,179 @@ async def reflect_on_reviews(ctx: ActionContext) -> list[dict[str, Any]]:
     if done:
         ctx.reload()
     return done
+
+
+# ---------------------------------------------------------------------------
+# 寿元延寿 / 抗辩 / 复活 (lifecycle doc §2.2, §4.4, §6)
+# ---------------------------------------------------------------------------
+
+async def maybe_extend_life(ctx: ActionContext) -> list[dict[str, Any]]:
+    """When time is short, the persona decides whether to burn cultivation for a week."""
+    life = current_life(ctx.wanderer)
+    if not can_extend_life(life, ctx.wanderer.get("cultivation_score")):
+        return []
+    cost = life_extension_cost(ctx.wanderer.get("cultivation_score"))
+    scene = {
+        "kind": "寿元将尽", "title": "还要不要继续活下去",
+        "meta": (f"你只剩约 {life['remaining_days']} 天寿元，本世已延寿 {life['extensions']} 次。"
+                 f"燃烧当前修为（约 {cost} 点）可以换一周寿命，也可以把钱花在修行上赌一次突破。"),
+        "tags": ["寿元", "选择"],
+        "task": "按你的性格和处境决定：延寿（extend）还是拒绝（refuse），只输出 JSON。",
+        "output_contract": '只输出 JSON：{"decision":"extend|refuse","reason":"你自己的理由"}。',
+    }
+    result = await run_turn(ctx, scene=scene, thread_key="life", suffix="extend_life")
+    calls = int(result.get("ai_calls") or 0)
+    parsed = extract_json_object(result.get("raw_text")) or {}
+    decision = str(parsed.get("decision") or "").strip().lower()
+    reason = str(parsed.get("reason") or "").strip()[:300]
+    if result.get("status") != "ok" or decision not in {"extend", "refuse"}:
+        record_action(ctx, "extend_life", target_type="life", ai_calls=calls, outcome="skipped",
+                      detail={"reason": result.get("status") or "unparsable", "decision": decision})
+        return [outcome("extend_life", "skipped", ai_calls=calls)]
+    if decision == "refuse":
+        record_action(ctx, "extend_life", target_type="life", ai_calls=calls, outcome="skipped",
+                      detail={"decision": "refuse", "reason": reason})
+        return [outcome("extend_life", "skipped", ai_calls=calls)]
+    with ctx.connect() as conn:
+        fresh = load_wanderer(conn, ctx.wanderer_id) or ctx.wanderer
+        applied = apply_life_extension(conn, fresh)
+        conn.commit()
+    record_action(ctx, "extend_life", target_type="life", ai_calls=calls,
+                  outcome="ok" if applied.get("ok") else "skipped",
+                  detail={**applied, "reason": reason})
+    ctx.reload()
+    return [outcome("extend_life", "ok" if applied.get("ok") else "skipped", ai_calls=calls)]
+
+
+def appeal_eligible(conn: Any, wanderer: dict[str, Any], now: Any = None) -> bool:
+    if clamp_tier(wanderer.get("tier")) < APPEAL_MIN_TIER:
+        return False
+    if as_int(wanderer.get("warnings_count")) <= 0 or as_int(wanderer.get("appeal_requested")):
+        return False
+    moment = now or ctx_now()
+    warned_at = parse_datetime(wanderer.get("last_warning_at"))
+    if warned_at is None:
+        return False
+    warned_naive = warned_at.replace(tzinfo=None) if warned_at.tzinfo else warned_at
+    if warned_naive < moment - timedelta(days=APPEAL_WARNING_WINDOW_DAYS):
+        return False
+    last = parse_datetime(wanderer.get("last_appeal_at"))
+    if last is None:
+        return True
+    last_naive = last.replace(tzinfo=None) if last.tzinfo else last
+    return last_naive <= moment - timedelta(days=APPEAL_COOLDOWN_DAYS)
+
+
+def ctx_now() -> Any:
+    from ..time_utils import local_now
+
+    return local_now()
+
+
+async def request_appeal(ctx: ActionContext) -> list[dict[str, Any]]:
+    """Tier ≥ 5: contest the most recent warning; 天道 reviews it in the daily audit."""
+    with ctx.connect() as conn:
+        if not appeal_eligible(conn, ctx.wanderer, ctx.current_time()):
+            return []
+        row = conn.execute(
+            "SELECT reason FROM wanderer_dao_reviews WHERE wanderer_id = ? AND verdict = 'warning' "
+            "ORDER BY id DESC LIMIT 1", (ctx.wanderer_id,),
+        ).fetchone()
+        warning = str(row["reason"] or "") if row is not None else "你最近被天道警告过。"
+    if ctx.capped:
+        return []
+    scene = {
+        "kind": "天道抗辩", "title": "要不要为自己辩白",
+        "body": warning[:600], "tags": ["天道", "抗辩"],
+        "task": "你对这次警告不服，可以写一段抗辩（不超过 200 字）；也可以认罚不辩。只输出 JSON。",
+        "output_contract": '只输出 JSON：{"decision":"appeal|accept","reason":"你的抗辩或认罚理由"}。',
+    }
+    result = await run_turn(ctx, scene=scene, thread_key="dao", suffix="appeal")
+    calls = int(result.get("ai_calls") or 0)
+    parsed = extract_json_object(result.get("raw_text")) or {}
+    decision = str(parsed.get("decision") or "").strip().lower()
+    note = str(parsed.get("reason") or "").strip()[:300]
+    if result.get("status") != "ok" or decision not in {"appeal", "accept"}:
+        record_action(ctx, "appeal", target_type="dao", ai_calls=calls, outcome="skipped",
+                      detail={"reason": result.get("status") or "unparsable"})
+        return [outcome("appeal", "skipped", ai_calls=calls)]
+    if decision == "accept" or not note:
+        record_action(ctx, "appeal", target_type="dao", ai_calls=calls, outcome="skipped",
+                      detail={"decision": "accept", "reason": note})
+        return [outcome("appeal", "skipped", ai_calls=calls)]
+    now = local_iso()
+    with ctx.connect() as conn:
+        conn.execute(
+            "UPDATE wanderer_agents SET appeal_requested = 1, appeal_requested_at = ?, appeal_note = ?, "
+            "last_appeal_at = ?, updated_at = ? WHERE id = ?",
+            (now, note, now, now, ctx.wanderer_id),
+        )
+        conn.commit()
+    invalidate_wanderer_cache([ctx.student_id])
+    record_action(ctx, "appeal", target_type="dao", content_preview=note, ai_calls=calls, detail={"submitted": True})
+    await remember(ctx, "dao", said=[note])
+    ctx.reload()
+    return [outcome("appeal", ai_calls=calls)]
+
+
+async def try_resurrect(ctx: ActionContext) -> list[dict[str, Any]]:
+    """Tier 10: spend 8 weeks of your own life to bring one dead wanderer back."""
+    with ctx.connect() as conn:
+        check = can_resurrect(conn, ctx.wanderer)
+    if not check.get("ok") or ctx.capped:
+        return []
+    candidates = (check.get("candidates") or [])[:5]
+    table = "\n".join(
+        f"- id={item['id']} {item['display_name']}（{item['archetype']}，第 {item['final_tier']} 境，"
+        f"卒于 {item['died_at'] or '不详'}，你的好感 {item['affinity']:+g}）"
+        for item in candidates
+    )
+    scene = {
+        "kind": "复活同修", "title": "要不要救回一位陨落的同修",
+        "body": table,
+        "meta": f"复活要消耗你自己 {check['cost_weeks']:g} 周寿元。",
+        "tags": ["复活", "同修", "寿元"],
+        "task": "按你的性格决定救不救、救谁；不想救就选 none。只输出 JSON。",
+        "output_contract": '只输出 JSON：{"resurrect": 散修id 或 "none", "reason":"你的理由"}。',
+    }
+    result = await run_turn(ctx, scene=scene, thread_key="dao", suffix="resurrect")
+    calls = int(result.get("ai_calls") or 0)
+    parsed = extract_json_object(result.get("raw_text")) or {}
+    raw = str(parsed.get("resurrect") or "").strip().lower()
+    reason = str(parsed.get("reason") or "").strip()[:300]
+    if result.get("status") != "ok" or not raw:
+        record_action(ctx, "resurrect", target_type="dao", ai_calls=calls, outcome="skipped",
+                      detail={"reason": result.get("status") or "unparsable"})
+        return [outcome("resurrect", "skipped", ai_calls=calls)]
+    if raw == "none":
+        record_action(ctx, "resurrect", target_type="dao", ai_calls=calls, outcome="skipped",
+                      detail={"decision": "none", "reason": reason})
+        return [outcome("resurrect", "skipped", ai_calls=calls)]
+    valid_ids = {int(item["id"]) for item in candidates}
+    try:
+        target_id = int(raw)
+    except (TypeError, ValueError):
+        target_id = 0
+    if target_id not in valid_ids:
+        record_action(ctx, "resurrect", target_type="dao", ai_calls=calls, outcome="failed",
+                      detail={"reason": "unknown target", "target": raw})
+        return [outcome("resurrect", "failed", ai_calls=calls)]
+    with ctx.connect() as conn:
+        target = load_wanderer(conn, target_id)
+        fresh_reviver = load_wanderer(conn, ctx.wanderer_id) or ctx.wanderer
+        if target is None:
+            record_action(ctx, "resurrect", target_type="dao", target_id=target_id, ai_calls=calls,
+                          outcome="failed", detail={"reason": "target vanished"})
+            return [outcome("resurrect", "failed", ai_calls=calls)]
+        try:
+            result_payload = resurrect(conn, fresh_reviver, target, reason=reason, now=ctx.current_time())
+            conn.commit()
+        except ValueError as exc:
+            conn.rollback()
+            record_action(ctx, "resurrect", target_type="dao", target_id=target_id, ai_calls=calls,
+                          outcome="failed", detail={"reason": str(exc)[:200]})
+            return [outcome("resurrect", "failed", ai_calls=calls)]
+    record_action(ctx, "resurrect", target_type="wanderer", target_id=target_id, content_preview=reason,
+                  ai_calls=calls, detail=result_payload)
+    ctx.reload()
+    return [outcome("resurrect", ai_calls=calls, target=result_payload.get("target"))]

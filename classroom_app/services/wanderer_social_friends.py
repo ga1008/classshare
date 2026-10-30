@@ -52,8 +52,10 @@ from .wanderer_social_triggers import (
 
 PROACTIVE_PROB = 0.04
 PROACTIVE_WEEKLY_LIMIT = 2
+PROACTIVE_WANDERER_WEEKLY_LIMIT = 1
 PROACTIVE_LOOKBACK_DAYS = 30
 PROACTIVE_CANDIDATES = 50
+WANDERER_AFFINITY_THRESHOLD = 40.0
 REQUEST_NOTE_MAX = 40
 SETTING_PRESENCE_STATE = "social_presence_state"
 TARGET_REQUEST_IN = "friend_request"
@@ -228,22 +230,59 @@ def engaged_students(conn: Any, identity: str, now: datetime) -> list[str]:
     return list(dict.fromkeys(item for item in found if item and item != identity))[:PROACTIVE_CANDIDATES]
 
 
-def befriend_candidates(conn: Any, identity: str, now: datetime) -> list[dict[str, Any]]:
+def _wanderer_peer_candidates(conn: Any, wanderer: dict[str, Any], identity: str, now: datetime) -> list[str]:
+    """Other 散修 this wanderer likes *and* who likes it back (lifecycle doc §5)."""
+    from .wanderer_relationship_service import mutual_affinity
+
+    week = (now - timedelta(days=7)).isoformat(timespec="seconds")
+    outgoing = conn.execute(
+        "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND action_kind = 'social_friend' "
+        "AND target_type = ? AND target_id LIKE 'student:%' AND outcome = 'ok' AND created_at >= ?",
+        (int(wanderer["id"]), TARGET_REQUEST_OUT, week),
+    ).fetchone()
+    if as_int(outgoing["n"]) >= PROACTIVE_WANDERER_WEEKLY_LIMIT:
+        return []
+    rows = conn.execute(
+        "SELECT peer_identity FROM wanderer_relationships WHERE wanderer_id = ? AND affinity >= ? "
+        "ORDER BY affinity DESC LIMIT ?",
+        (int(wanderer["id"]), WANDERER_AFFINITY_THRESHOLD, PROACTIVE_CANDIDATES),
+    ).fetchall()
+    peers = []
+    for row in rows:
+        peer = str(row["peer_identity"] or "")
+        if not peer.startswith("student:") or peer == identity:
+            continue
+        if get_friendship(conn, identity, peer) is not None or blocked_either(conn, identity, peer):
+            continue
+        if mutual_affinity(conn, wanderer, peer, minimum=WANDERER_AFFINITY_THRESHOLD):
+            peers.append(peer)
+    return peers
+
+
+def befriend_candidates(conn: Any, identity: str, now: datetime,
+                        wanderer: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
     ensure_schema(conn)
     wanted = engaged_students(conn, identity, now)
+    if wanderer is not None:
+        wanted = [*wanted, *_wanderer_peer_candidates(conn, wanderer, identity, now)]
     people = load_people(conn, wanted)
     return [
         people[item] for item in wanted
-        if item in people and people[item]["active"] and not people[item]["is_wanderer"]
+        if item in people and people[item]["active"]
+        and (wanderer is not None or not people[item]["is_wanderer"])
         and get_friendship(conn, identity, item) is None and not blocked_either(conn, identity, item)
     ]
 
 
 async def _request_note(ctx: ActionContext, person: dict[str, Any]) -> tuple[str, int]:
+    is_wanderer = bool(person.get("is_wanderer"))
     scene = {
         "kind": "加好友", "title": f"想加 {person['name']} 为好友",
-        "meta": "对方在你的帖子或评论下和你互动过，或者给你发过私信",
-        "counterpart": {"name": person["name"], "is_wanderer": False, "role_label": "真实学生"},
+        "meta": ("你们互相有好感，聊过几次" if is_wanderer
+                 else "对方在你的帖子或评论下和你互动过，或者给你发过私信"),
+        "counterpart": {"name": person["name"], "is_wanderer": is_wanderer,
+                        "tier_name": str((person.get("tier_badge") or {}).get("name") or "")} if is_wanderer
+        else {"name": person["name"], "is_wanderer": False, "role_label": "真实学生"},
         "task": f"写一句很短的好友申请附言（不超过 {REQUEST_NOTE_MAX // 2} 字），像你平时说话；用 reply 输出一条。",
     }
     result = await run_turn(ctx, scene=scene, thread_key=f"social:friend:{person['identity']}", suffix="friend_note")
@@ -261,7 +300,7 @@ async def maybe_befriend(ctx: ActionContext, *, chance: float = PROACTIVE_PROB) 
     with ctx.connect() as conn:
         if week_requests(conn, ctx.wanderer_id, now) >= PROACTIVE_WEEKLY_LIMIT:
             return []
-        candidates = befriend_candidates(conn, ctx.identity, now)
+        candidates = befriend_candidates(conn, ctx.identity, now, ctx.wanderer)
     if not candidates:
         return []
     person = ctx.rng.choice(candidates)

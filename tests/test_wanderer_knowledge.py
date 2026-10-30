@@ -16,6 +16,15 @@ from classroom_app.services.wanderer_knowledge_service import (
 from tests.wanderer_test_support import WandererDbTestCase
 
 
+NEUTRAL_TALENTS = '{"insight":1.0,"memory":1.0,"vitality":1.0,"eloquence":1.0,"charm":1.0,"luck":1.0}'
+
+
+def _neutral(conn, wanderer):
+    """Talent-neutral copy: capacity/gain tests assert the base formula, not a persona's gifts."""
+    conn.execute("UPDATE wanderer_agents SET talents_json = ? WHERE id = ?", (NEUTRAL_TALENTS, wanderer["id"]))
+    return load_wanderer(conn, wanderer["id"])
+
+
 def _statuses(conn, wanderer_id):
     rows = conn.execute(
         "SELECT source_ref, status FROM wanderer_knowledge_entries WHERE wanderer_id = ? AND source_kind = 'material'",
@@ -41,7 +50,7 @@ class TierHelpersTest(unittest.TestCase):
 class WandererKnowledgeTest(WandererDbTestCase):
     def test_capacity_forgets_oldest_least_used(self):
         with self.connect() as conn:
-            wanderer = self.wanderer(conn, "xiaoman")  # tier 0 -> 4000 chars
+            wanderer = _neutral(conn, self.wanderer(conn, "xiaoman"))  # tier 0 -> 4000 chars
             conn.execute("UPDATE wanderer_knowledge_entries SET use_count = 5 WHERE wanderer_id = ?", (wanderer["id"],))
             for ref in ("k1", "k2", "k3", "k4"):
                 result = add_knowledge(conn, wanderer, source_kind="material", source_ref=ref, title=ref,
@@ -67,12 +76,13 @@ class WandererKnowledgeTest(WandererDbTestCase):
 
     def test_upsert_does_not_duplicate_or_double_count(self):
         with self.connect() as conn:
-            wanderer = self.wanderer(conn, "chenmo")
+            wanderer = _neutral(conn, self.wanderer(conn, "chenmo"))
             before = load_wanderer(conn, wanderer["id"])["cultivation_score"]
+            no_crit = lambda: 1.0  # noqa: E731 - deterministic 顿悟 roll
             first = add_knowledge(conn, wanderer, source_kind="material_page", source_ref="12:3", title="页",
-                                  digest="a" * 200, tags=["编程"])
+                                  digest="a" * 200, tags=["编程"], rng=no_crit)
             second = add_knowledge(conn, wanderer, source_kind="material_page", source_ref="12:3", title="页",
-                                   digest="a" * 250, tags=["编程"])
+                                   digest="a" * 250, tags=["编程"], rng=no_crit)
             rows = conn.execute(
                 "SELECT COUNT(*) FROM wanderer_knowledge_entries WHERE wanderer_id = ? AND source_ref = '12:3'",
                 (wanderer["id"],),

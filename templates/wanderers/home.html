@@ -43,12 +43,30 @@
         {% call(slot) lq_card('评论', variant='stat', value=home.stats.comments) %}{% endcall %}
         {% call(slot) lq_card('帖子', variant='stat', value=home.stats.posts) %}{% endcall %}
         {% call(slot) lq_card('收到的赞', variant='stat', value=home.stats.likes_received) %}{% endcall %}
+        {% call(slot) lq_card('寿元', variant='stat', value=(home.life.remaining_weeks ~ ' 周'), meta=(('已活 ' ~ home.life.weeks_lived ~ ' / ' ~ home.life.granted_weeks ~ ' 周 · ' ~ home.life.expires_at[:10] ~ ' 到期') if not home.is_dead else '寿元已尽')) %}{% endcall %}
+        {% call(slot) lq_card('羁绊', variant='stat', value=home.relationships.total, meta=('亲近 ' ~ home.relationships.close ~ ' · 疏远 ' ~ home.relationships.dislike)) %}{% endcall %}
         {% set search = home.web_search_usage %}
         {% call(slot) lq_card('今日搜索', variant='stat', value=((search.used ~ ' / ' ~ search.limit) if search.available else '暂不可用'), meta=(('剩余 ' ~ search.remaining ~ ' 次' ~ (' · 处理中 ' ~ search.reserved ~ ' 次' if search.reserved else '') ~ (' · 待确认 ' ~ search.unknown ~ ' 次' if search.unknown else '') ~ ' · 北京时间零点重置') if search.available else '统计暂不可用，稍后刷新'), attrs={'data-wanderer-search-usage': ''}) %}{% endcall %}
     </div>
 
     <div class="wh-main">
         <div class="wh-column">
+            <section class="wh-section" aria-labelledby="wh-next-title">
+                <h3 id="wh-next-title">修行与下一境界</h3>
+                {% if home.requirements.max_tier %}
+                <p class="wh-muted">已至最高境界：此后只剩自己决定怎么活。</p>
+                {% else %}
+                <p class="wh-muted">知识 {{ home.requirements.knowledge }} / {{ home.requirements.knowledge_target }} 字 · 修为 {{ home.requirements.cultivation }} / {{ home.requirements.cultivation_target }} · 近七日互动 {{ home.requirements.interactions }} / {{ home.requirements.interactions_needed }} 次{% if home.requirements.ready %} · 已满足升阶条件{% endif %}</p>
+                {% endif %}
+                {% if home.talents %}
+                {% set talent_rows = [] %}
+                {% for item in home.talents %}
+                {% set _ = talent_rows.append({'title': item.label ~ ' ' ~ item.value, 'meta': item.effect}) %}
+                {% endfor %}
+                {{ lq_list('天赋', items=talent_rows) }}
+                {% endif %}
+            </section>
+
             <section class="wh-section" aria-labelledby="wh-actions-title">
                 <h3 id="wh-actions-title">近期动态</h3>
                 {% if home.actions %}

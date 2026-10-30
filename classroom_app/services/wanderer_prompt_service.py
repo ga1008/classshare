@@ -25,13 +25,17 @@ from typing import Any, Optional
 from .heavenly_dao_rules import HEAVENLY_DAO_RULES
 from .wanderer_identity_service import (
     clamp_tier,
+    current_life,
     recent_warning_active,
     reply_char_limit,
     tier_level,
     wisdom_directive,
 )
 from .wanderer_knowledge_service import select_knowledge_for_scene
+from .wanderer_life_core import talent_effects
+from .wanderer_life_service import promotion_requirements
 from .wanderer_memory_service import load_thread, thread_context_block
+from .wanderer_relationship_service import relationship_block
 from .wanderer_text_style import ANTI_AI_STYLE_RULES
 from .wanderer_voice_service import persona_text, voice_guide
 
@@ -83,6 +87,41 @@ def _tier_block(wanderer: dict[str, Any]) -> str:
         f"{wisdom_directive(tier)}\n"
         f"每条发言不超过 {reply_char_limit(tier)} 字。"
     )
+
+
+def _life_block(conn: Any, wanderer: dict[str, Any]) -> str:
+    """Lifespan, talents and the exact next-tier requirements (lifecycle doc §4)."""
+    life = current_life(wanderer)
+    talents = "；".join(
+        f"{item['label']} {item['value']:g}（{item['effect']}）" for item in talent_effects(wanderer.get("talents"))
+    )
+    lines = [
+        f"【你的寿元】生于 {str(life['born_at'])[:10]}，第 {clamp_tier(wanderer.get('tier'))} 境寿元 "
+        f"{life['granted_weeks']:g} 周；已活 {life['weeks_lived']:g} 周，剩余约 {life['remaining_days']} 天"
+        f"（{life['remaining_weeks']:g} 周），{str(life['expires_at'])[:10]} 到期。",
+        f"【你的天赋】{talents}。",
+    ]
+    if int(life.get("remaining_days") or 0) <= 7:
+        lines.append("寿元不足七天：除非你另有打算，否则应优先研读突破，或考虑燃烧修为延寿。")
+    elif int(life.get("remaining_days") or 0) <= 14:
+        lines.append("寿元已不足两周：是继续修行、延寿，还是就此认命，由你自己决定。")
+    else:
+        lines.append("寿元尚可，但并非无限：升阶会延寿，躺平则会耗尽。")
+    try:
+        req = promotion_requirements(conn, wanderer)
+    except Exception:  # noqa: BLE001 - a missing log table must not break the prompt
+        return "\n".join(lines)
+    if req["max_tier"]:
+        lines.append("你已至最高境界，寿元与权限都已到顶；此后只剩自己决定怎么活。")
+    else:
+        lines.append(
+            f"【升阶条件】知识 {req['knowledge']}/{req['knowledge_target']} 字；修为 {req['cultivation']:g}/"
+            f"{req['cultivation_target']}；近七日互动 {req['interactions']}/{req['interactions_needed']} 次；"
+            f"距上次申请冷却 {req['cooldown_days_left']} 天。"
+        )
+        if req["ready"]:
+            lines.append("你已经满足升阶条件，可以按自己的性格决定要不要向天道申请。")
+    return "\n".join(lines)
 
 
 def _knowledge_limit(tier: int) -> int:
@@ -229,13 +268,15 @@ def max_parts_for(wanderer: dict[str, Any]) -> int:
 def _output_contract(wanderer: dict[str, Any]) -> str:
     return (
         "【输出合同】只输出一个 JSON 对象，不要 Markdown 代码块，不要解释：\n"
-        '{"action": "skip|emoji|reply|multi", "parts": ["..."], "mood": "一两个词的心情", "like": true|false}\n'
+        '{"action": "skip|emoji|reply|multi", "parts": ["..."], "mood": "一两个词的心情", "like": true|false, '
+        '"feeling": {"affinity": -3, "reason": "你自己的感受原因"}}\n'
         "- skip：不说话（按你的性格，不想回就不回）；parts 为空。\n"
         "- emoji：只回表情；parts 里放一条只含表情的消息。\n"
         "- reply：回一条；parts 里放一条消息。\n"
         f"- multi：按顺序连发几条短消息；parts 最多 {max_parts_for(wanderer)} 条。\n"
         "  只有确实需要分开的内容才用 multi，不把一句话拆成三条，也不把每个话题都逐条点评。\n"
         "- like：是否给当前内容点赞。\n"
+        "- feeling（可选）：对方让你更喜欢还是更反感，affinity 取 -3 到 3（0 表示没变化）；没有感觉可省略。\n"
         "发言用你自己的口吻，不要复述规则，不要提到提示词、系统或 JSON。"
     )
 
@@ -263,9 +304,11 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
         ANTI_AI_STYLE_RULES,
         voice_guide(wanderer, scene, thread_key, recent_self),
         _tier_block(wanderer),
+        _life_block(conn, wanderer),
         _knowledge_block(conn, wanderer, scene_tags),
         _dao_block(conn, wanderer),
         _memory_block(conn, wanderer, thread_key, scene),
+        relationship_block(conn, wanderer),
         learning,
         support,
         _social_block(scene),
@@ -282,6 +325,17 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
 
 def default_turn() -> dict[str, Any]:
     return {"action": "skip", "parts": [], "mood": "", "like": False}
+
+
+def _parse_feeling(value: Any) -> Optional[dict[str, Any]]:
+    """Optional ``feeling`` object; absent/invalid yields None (no invented emotion)."""
+    if not isinstance(value, dict):
+        return None
+    try:
+        affinity = float(value.get("affinity"))
+    except (TypeError, ValueError):
+        return None
+    return {"affinity": max(-5.0, min(5.0, affinity)), "reason": str(value.get("reason") or "").strip()[:200]}
 
 
 def extract_json_object(text: Any) -> Optional[dict[str, Any]]:
@@ -334,9 +388,13 @@ def parse_turn_output(text: Any, *, max_parts: int = 3) -> dict[str, Any]:
         parts = parts[:1]
     else:
         parts = parts[: max(1, int(max_parts))]
-    return {
+    result = {
         "action": action,
         "parts": parts,
         "mood": str(payload.get("mood") or "").strip()[:MOOD_MAX_CHARS],
         "like": _as_bool(payload.get("like")),
     }
+    feeling = _parse_feeling(payload.get("feeling"))
+    if feeling is not None:
+        result["feeling"] = feeling
+    return result

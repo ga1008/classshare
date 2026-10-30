@@ -62,6 +62,9 @@ class ActionContext:
     capped: bool = False
     now: Optional[datetime] = None
     ai_calls: int = 0
+    # Admin "run now" turns off rare self-directed moves (resurrect/appeal) so a
+    # manual run stays predictable; regular ticks keep them on (lifecycle §11).
+    special: bool = True
     pending_learning: dict[str, dict[str, Any]] = field(default_factory=dict)
     support_threads: set[str] = field(default_factory=set)
 

@@ -5145,6 +5145,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/life",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_adjust_wanderer_life",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/system/wanderers/{wanderer_id:int}/reset-warnings",
     "methods": [
       "POST"

@@ -9,6 +9,12 @@ from tests.wanderer_test_support import WandererDbTestCase
 WANDERER_TABLES = {
     "wanderer_agents", "wanderer_knowledge_entries", "wanderer_memory_threads",
     "wanderer_action_log", "wanderer_dao_reviews", "wanderer_runtime_settings",
+    "wanderer_relationships", "wanderer_legacies",
+}
+LIFECYCLE_COLUMNS = {
+    "born_at", "lifespan_weeks", "life_penalty_weeks", "life_extensions", "talents_json",
+    "last_extend_at", "last_appeal_at", "last_resurrect_at", "appeal_requested",
+    "appeal_requested_at", "appeal_note", "legacy_id",
 }
 
 
@@ -41,8 +47,14 @@ class WandererSchemaSqliteTest(WandererDbTestCase):
         with self.connect() as conn:
             indexes = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
         for name in ("idx_wanderer_action_log_wanderer", "idx_wanderer_action_log_created",
-                     "idx_wanderer_dao_reviews_wanderer"):
+                     "idx_wanderer_dao_reviews_wanderer", "idx_wanderer_relationships_affinity",
+                     "idx_wanderer_legacies_status"):
             self.assertIn(name, indexes)
+
+    def test_lifecycle_columns_exist(self):
+        with self.connect() as conn:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(wanderer_agents)")}
+        self.assertTrue(LIFECYCLE_COLUMNS <= columns, LIFECYCLE_COLUMNS - columns)
 
 
 class WandererSchemaDialectTest(unittest.TestCase):

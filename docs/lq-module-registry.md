@@ -328,8 +328,8 @@
 - `templates/assignment_detail_teacher.html` ×23
 - `templates/manage/system/blog_crawler.html` ×22
 - `templates/assignment_detail_student.html` ×15
+- `templates/manage/system/wanderers.html` ×15
 - `static/js/attendance_reports.js` ×13
-- `templates/manage/system/wanderers.html` ×13
 - `templates/submission_detail.html` ×12
 - `static/js/collaboration.js` ×11
 - `templates/exam_editor.html` ×11
@@ -685,6 +685,7 @@
 - `static/js/academic_final_materials.js` ×32
 - `static/js/classroom_page.js` ×32
 - `templates/lesson_plan_editor.html` ×32
+- `templates/manage/system/wanderers.html` ×32
 - `templates/partials/lq_navbar_topbar.html` ×31
 - `templates/manage/system/organizations.html` ×29
 - `templates/partials/profile/email.html` ×29
@@ -692,7 +693,6 @@
 - `static/js/dashboard.js` ×28
 - `static/js/dashboard_agenda_widget.js` ×28
 - `templates/assessment_plan_editor.html` ×28
-- `templates/manage/system/wanderers.html` ×28
 - `templates/partials/learning_material_selector.html` ×28
 - `templates/teacher_evaluation_editor.html` ×28
 - `static/js/ai_chat_component.js` ×27
@@ -1046,13 +1046,13 @@
 - `templates/assignment_detail_teacher.html` ×23
 - `templates/manage/system/blog_crawler.html` ×22
 - `templates/dev/lq_content.html` ×20
+- `templates/wanderers/home.html` ×18
 - `templates/assignment_detail_student.html` ×15
 - `templates/dashboard.html` ×15
-- `templates/wanderers/home.html` ×15
+- `templates/manage/system/wanderers.html` ×14
 - `static/js/attendance_reports.js` ×13
 - `templates/macros/manage_page.html` ×13
 - `templates/manage/system/password_resets.html` ×13
-- `templates/manage/system/wanderers.html` ×12
 - `templates/submission_detail.html` ×12
 - `static/js/collaboration.js` ×11
 - `templates/dashboard_teacher.html` ×11
@@ -1068,6 +1068,7 @@
 - `templates/manage/system/monitor.html` ×8
 - `frontend/src/islands/classroom-workspace.tsx` ×7
 - `static/js/classroom_interactions.js` ×7
+- `static/js/manage_wanderers.js` ×7
 - `static/js/message_center_blog.js` ×7
 - `static/js/social/social_dom.js` ×7
 - `templates/dev/lq_shell.html` ×7
@@ -1091,7 +1092,6 @@
 - `templates/partials/materials/modals_generate.html` ×6
 - `templates/partials/materials/modals_library.html` ×6
 - `templates/partials/profile/portfolio.html` ×6
-- `static/js/manage_wanderers.js` ×5
 - `static/js/profile_signatures.js` ×5
 - `templates/blog.html` ×5
 - `templates/manage/attendance_reports.html` ×5
@@ -1333,6 +1333,7 @@
 - `templates/partials/profile/email.html` ×88
 - `templates/exam_editor.html` ×84
 - `templates/assignment_detail_teacher.html` ×68
+- `templates/manage/system/wanderers.html` ×62
 - `templates/partials/profile/settings.html` ×62
 - `static/js/collaboration.js` ×60
 - `templates/manage/system/blog_crawler.html` ×58
@@ -1340,7 +1341,6 @@
 - `templates/manage/signatures.html` ×52
 - `templates/partials/materials/modals_generate.html` ×50
 - `templates/manage/classes.html` ×46
-- `templates/manage/system/wanderers.html` ×42
 - `templates/manage/attendance_reports.html` ×38
 - `templates/blog.html` ×37
 - `templates/student_login_v4.html` ×36
@@ -1562,7 +1562,7 @@
 
 <details><summary>消费者清单（按命中次数）</summary>
 
-- `static/js/manage_wanderers.js` ×5
+- `static/js/manage_wanderers.js` ×6
 - `static/js/message_center_blog.js` ×3
 - `static/js/blog_studio.js` ×2
 - `templates/dev/lq_insights.html` ×1

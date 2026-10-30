@@ -201,6 +201,42 @@ class WandererAdminApiTest(WandererDbTestCase):
         self.assertEqual(kinds[:2], ["revive", "death"])
         self.assertEqual(client.post(f"{API}/{wid}/revive").status_code, 400)
 
+    def test_life_and_talent_detail_and_updates(self):
+        client = self.super_client()
+        wid = self.wanderer_ids[0]
+        detail = client.get(f"{API}/{wid}").json()["detail"]
+        self.assertIn("life", detail)
+        self.assertIn("requirements", detail)
+        self.assertIn("relationships", detail)
+        self.assertIn("legacies", detail)
+        self.assertEqual(set(detail["profile"]["talents"]), {"insight", "memory", "vitality", "eloquence", "charm", "luck"})
+        self.assertIn("life_weeks", client.get(API).json()["wanderers"][0])
+
+        bad = client.patch(f"{API}/{wid}", json={"talents_json": {"insight": 1.2}})
+        self.assertEqual(bad.status_code, 400)
+        talents = {**detail["profile"]["talents"], "insight": 1.3}
+        saved = client.patch(f"{API}/{wid}", json={"talents_json": talents, "talent_reason": "合成测试"})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["detail"]["profile"]["talents"]["insight"], 1.3)
+        kinds = [item["review_kind"] for item in client.get(f"{API}/{wid}/reviews").json()["items"]]
+        self.assertIn("admin_override", kinds)
+
+        before = saved.json()["detail"]["life"]["remaining_days"]
+        extended = client.post(f"{API}/{wid}/life", json={"weeks": 1, "reason": "合成延寿"})
+        self.assertEqual(extended.status_code, 200, extended.text)
+        self.assertGreater(extended.json()["detail"]["life"]["remaining_days"], before)
+        self.assertEqual(client.post(f"{API}/{wid}/life", json={"weeks": 1}).status_code, 400)
+        self.assertEqual(client.post(f"{API}/{wid}/life", json={"weeks": 99, "reason": "太大"}).status_code, 400)
+
+    def test_lifecycle_settings_switch(self):
+        client = self.super_client()
+        settings = client.get(f"{API}/settings").json()["settings"]
+        self.assertTrue(settings["lifecycle_enabled"])
+        off = client.post(f"{API}/settings", json={"lifecycle_enabled": 0})
+        self.assertEqual(off.status_code, 200, off.text)
+        self.assertFalse(off.json()["settings"]["lifecycle_enabled"])
+        client.post(f"{API}/settings", json={"lifecycle_enabled": 1})
+
     def test_settings_get_and_update(self):
         client = self.super_client()
         current = client.get(f"{API}/settings")

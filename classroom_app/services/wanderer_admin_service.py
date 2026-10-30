@@ -51,10 +51,12 @@ from .wanderer_settings_service import (
     SETTING_LAST_MANUAL_GENESIS_SUMMARY,
     SETTING_LAST_MANUAL_REVIEW_SUMMARY,
     SETTING_LAST_MANUAL_TICK_SUMMARY,
+    SETTING_LIFECYCLE_ENABLED,
     daily_ai_calls,
     daily_cap,
     genesis_settings,
     is_wanderer_runtime_enabled,
+    lifecycle_enabled,
     wanderer_runtime_setting_get,
     wanderer_runtime_setting_set,
 )
@@ -67,16 +69,19 @@ ACTION_LABELS = {
     "reflect": "反思", "skip": "跳过", "write_post": "发帖",
     "social_friend": "好友往来", "social_message": "聊天发言",
     "experience_learn": "交流学习",
+    "extend_life": "延寿", "appeal": "天道抗辩", "resurrect": "复活同修",
 }
 REVIEW_KIND_LABELS = {
     "promotion": "升阶", "discipline": "纪律", "daily_audit": "日审", "mention_reply": "@天道",
     "admin_override": "管理员调整", "revive": "复活", "death": "陨落", "genesis": "天道造人",
+    "penalty": "折寿", "talent": "天赋调整", "appeal": "抗辩", "life": "寿元",
 }
 VERDICT_LABELS = {
     "approved": "批准", "rejected": "驳回", "warning": "警告", "demoted": "降阶",
     "noted": "记录", "died": "陨落", "revived": "复活", "created": "造人",
+    "adjusted": "调整", "deducted": "扣寿", "upheld": "成立", "rejected_appeal": "驳回",
 }
-ORIGIN_LABELS = {"seed": "种子", "dao": "天道所造"}
+ORIGIN_LABELS = {"seed": "种子", "dao": "天道所造", "reincarnated": "转世"}
 
 SETTING_TICK_BATCH_SIZE = "tick_batch_size"
 SETTING_CLASSROOM_VISITS = "classroom_visits_enabled"
@@ -114,7 +119,7 @@ _PATCH_FIELDS = frozenset({"persona_prompt", "activity_level", "daily_action_bud
 AVATAR_FILE_OPT_OUT = "-"
 _SETTING_FIELDS = frozenset({
     SETTING_ENABLED, SETTING_DAILY_AI_CALL_CAP, SETTING_TICK_BATCH_SIZE, SETTING_CLASSROOM_VISITS,
-    SETTING_DAO_REVIEW_HOUR, SETTING_GENESIS_ENABLED, *GENESIS_INT_SETTINGS,
+    SETTING_DAO_REVIEW_HOUR, SETTING_GENESIS_ENABLED, SETTING_LIFECYCLE_ENABLED, *GENESIS_INT_SETTINGS,
 })
 
 
@@ -335,6 +340,10 @@ def build_wanderer_overview(conn: Any) -> dict[str, Any]:
         "SELECT COUNT(*) AS n FROM wanderer_dao_reviews WHERE verdict = ? AND created_at >= ?",
         ("warning", _today_start()),
     )
+    from .wanderer_identity_service import current_life
+
+    life_urgent = sum(1 for item in list_wanderers(conn, statuses=[STATUS_ACTIVE])
+                      if current_life(item).get("urgent"))
     return {
         "env_enabled": _env_enabled(),
         "runtime_enabled": _runtime_enabled_flag(conn),
@@ -345,6 +354,7 @@ def build_wanderer_overview(conn: Any) -> dict[str, Any]:
         "latest_activity": _latest_activity(conn),
         "promotion_requested": promotion,
         "warnings_today": warnings_today,
+        "life_urgent": life_urgent,
         "last_tick_at": wanderer_runtime_setting_get(conn, SETTING_LAST_TICK_AT, "") or "",
         "last_dao_review_at": wanderer_runtime_setting_get(conn, SETTING_LAST_DAO_REVIEW_AT, "") or "",
         "last_manual_tick": _loads(wanderer_runtime_setting_get(conn, SETTING_LAST_MANUAL_TICK_SUMMARY), dict),
@@ -374,9 +384,12 @@ def _latest_actions(conn: Any) -> dict[int, dict[str, Any]]:
 
 
 def _card(wanderer: dict[str, Any], today_count: int, last_action: Optional[dict[str, Any]]) -> dict[str, Any]:
+    from .wanderer_identity_service import current_life
+
     status = str(wanderer.get("status") or STATUS_ACTIVE)
     action = last_action or {}
     origin = str(wanderer.get("origin") or "seed")
+    life = current_life(wanderer)
     return {
         "id": int(wanderer["id"]),
         "student_id": int(wanderer["student_id"]),
@@ -391,6 +404,12 @@ def _card(wanderer: dict[str, Any], today_count: int, last_action: Optional[dict
         "daily_action_budget": int(wanderer.get("daily_action_budget") or 0),
         "warnings_count": int(wanderer.get("warnings_count") or 0),
         "promotion_requested": bool(wanderer.get("promotion_requested")),
+        "appeal_requested": bool(wanderer.get("appeal_requested")),
+        "life_weeks": life["remaining_weeks"],
+        "life_days": life["remaining_days"],
+        "life_granted_weeks": life["granted_weeks"],
+        "life_urgent": bool(life["urgent"] and status == STATUS_ACTIVE),
+        "talents": dict(wanderer.get("talents") or {}),
         "last_active_at": wanderer.get("last_active_at") or "",
         "last_action_preview": action.get("content_preview") or action.get("action_label") or "",
         "last_action_at": action.get("created_at", ""),
@@ -467,6 +486,8 @@ def _profile_payload(wanderer: dict[str, Any]) -> dict[str, Any]:
         "behaviors": dict(wanderer.get("behaviors") or {}),
         "interests": list(wanderer.get("interests") or []),
         "promotion_note": str(wanderer.get("promotion_note") or ""),
+        "talents": dict(wanderer.get("talents") or {}),
+        "appeal_note": str(wanderer.get("appeal_note") or ""),
     }
 
 
@@ -502,9 +523,21 @@ def _social_counts(conn: Any, wanderer: dict[str, Any]) -> dict[str, int]:
     return counts
 
 
+def _legacy_rows(conn: Any, wanderer_id: int, limit: int = 5) -> list[dict[str, Any]]:
+    from .wanderer_legacy_service import legacy_payload
+
+    rows = conn.execute(
+        "SELECT * FROM wanderer_legacies WHERE wanderer_id = ? ORDER BY id DESC LIMIT ?",
+        (int(wanderer_id), int(limit)),
+    ).fetchall()
+    return [legacy_payload({key: row[key] for key in row.keys()}, detail=True) for row in rows]
+
+
 def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
     from .wanderer_learning_service import admin_learning_summary
+    from .wanderer_life_service import life_payload, promotion_requirements
     from .wanderer_public_service import web_search_usage
+    from .wanderer_relationship_service import list_relationships
     wanderer = require_wanderer(conn, wanderer_id)
     number = int(wanderer["id"])
     totals = _action_totals(conn, number)
@@ -519,6 +552,10 @@ def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
             "social": _social_counts(conn, wanderer),
         },
         "knowledge": knowledge_summary(conn, wanderer),
+        "life": life_payload(wanderer),
+        "requirements": promotion_requirements(conn, wanderer),
+        "relationships": list_relationships(conn, number, limit=12),
+        "legacies": _legacy_rows(conn, number),
         "learning": admin_learning_summary(conn, number),
         "web_search_usage": web_search_usage(conn, wanderer),
         "profile": _profile_payload(wanderer),
@@ -646,12 +683,91 @@ def _update_columns(conn: Any, wanderer_id: int, columns: dict[str, Any]) -> Non
 
 def update_wanderer(conn: Any, wanderer_id: Any, patch: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
     wanderer = require_wanderer(conn, wanderer_id)
-    columns = _validate_patch(patch)
-    if _AVATAR_PATCH_FIELD in patch:
-        columns.update(_avatar_columns(wanderer, patch[_AVATAR_PATCH_FIELD]))
-    _update_columns(conn, int(wanderer["id"]), columns)
+    body = dict(patch) if isinstance(patch, dict) else patch
+    talent_raw = None
+    talent_reason = ""
+    if isinstance(body, dict):
+        body = dict(body)
+        talent_raw = body.pop("talents_json", None)
+        talent_reason = str(body.pop("talent_reason", "") or "").strip()
+    columns = _validate_patch(body) if body else {}
+    if talent_raw is not None:
+        update_talents(conn, wanderer, talent_raw, talent_reason, actor=actor)
+        wanderer = require_wanderer(conn, wanderer_id)
+    has_avatar = isinstance(body, dict) and _AVATAR_PATCH_FIELD in body
+    if has_avatar:
+        columns.update(_avatar_columns(wanderer, body[_AVATAR_PATCH_FIELD]))
+    if not columns and talent_raw is None and not has_avatar:
+        raise ValueError("没有可保存的字段")
+    if columns:
+        _update_columns(conn, int(wanderer["id"]), columns)
     _invalidate(wanderer)
     return build_wanderer_detail(conn, wanderer["id"])
+
+
+def update_talents(conn: Any, wanderer: dict[str, Any], raw: Any, reason: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
+    """Admin talent edit: validated, clamped, one review row with the old/new vector."""
+    from .wanderer_life_core import normalize_talents
+    from .wanderer_life_service import promote_life
+
+    note = str(reason or "").strip()
+    if not note:
+        raise ValueError("修改天赋需要填写理由")
+    if len(note) > TIER_REASON_MAX_CHARS:
+        raise ValueError(f"理由不能超过 {TIER_REASON_MAX_CHARS} 字")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError as exc:
+            raise ValueError("talents_json 不是合法 JSON") from exc
+    if not isinstance(raw, dict):
+        raise ValueError("talents_json 须为对象")
+    before = normalize_talents(wanderer.get("talents"), slug=wanderer.get("slug"))
+    after = normalize_talents({**before, **{key: raw[key] for key in raw if key in before}}, slug=wanderer.get("slug"))
+    changed = {key: [before[key], after[key]] for key in before if abs(before[key] - after[key]) > 1e-9}
+    if not changed:
+        raise ValueError("天赋没有变化")
+    conn.execute(
+        "UPDATE wanderer_agents SET talents_json = ?, updated_at = ? WHERE id = ?",
+        (json.dumps(after, ensure_ascii=False, sort_keys=True), local_iso(), int(wanderer["id"])),
+    )
+    if "vitality" in changed:
+        promote_life(conn, wanderer, wanderer.get("tier"))
+        from .wanderer_identity_service import death_reason, mark_dead
+
+        fresh = require_wanderer(conn, wanderer["id"])
+        reason = death_reason(conn, fresh)
+        if reason:
+            mark_dead(conn, int(wanderer["id"]), reason)
+    review_id = insert_dao_review(
+        conn, wanderer_id=int(wanderer["id"]), review_kind="admin_override", verdict="noted",
+        from_tier=clamp_tier(wanderer.get("tier")), to_tier=clamp_tier(wanderer.get("tier")),
+        reason=f"调整天赋：{note}", created_by=_actor_label(actor),
+        evidence={"talent_from": before, "talent_to": after, "changed": changed},
+    )
+    _update_columns(conn, int(wanderer["id"]), {"last_review_id": review_id, "last_review_at": local_iso()})
+    _invalidate(wanderer)
+    return {"changed": changed, "talents": after, "review_id": review_id}
+
+
+def adjust_life(conn: Any, wanderer_id: Any, weeks: Any, reason: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
+    """Admin life adjustment: positive grants weeks (≤52), negative deducts; both need a reason."""
+    from .wanderer_life_service import set_life_penalty
+
+    wanderer = require_wanderer(conn, wanderer_id)
+    if wanderer.get("is_dead"):
+        raise ValueError("散修已陨落，请使用「复活」")
+    note = _tier_reason(reason)
+    result = set_life_penalty(conn, wanderer, weeks, reason=note)
+    insert_dao_review(
+        conn, wanderer_id=int(wanderer["id"]), review_kind="admin_override", verdict="noted",
+        from_tier=clamp_tier(wanderer.get("tier")), to_tier=clamp_tier(wanderer.get("tier")),
+        reason=f"调整寿元：{note}", created_by=_actor_label(actor),
+        evidence={"weeks_delta": float(weeks), **result},
+    )
+    _invalidate(wanderer)
+    return {"result": result, "card": _card_for(conn, int(wanderer["id"])),
+            "detail": build_wanderer_detail(conn, wanderer["id"])}
 
 
 def set_status(conn: Any, wanderer_id: Any, status: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
@@ -677,6 +793,14 @@ def set_tier(conn: Any, wanderer_id: Any, tier: Any, reason: Any, *, actor: dict
         from_tier=clamp_tier(wanderer.get("tier")), to_tier=target, reason=note, created_by=_actor_label(actor),
     )
     _update_columns(conn, int(wanderer["id"]), {"tier": target, "last_review_id": review_id, "last_review_at": local_iso()})
+    from .wanderer_identity_service import death_reason, mark_dead
+    from .wanderer_life_service import promote_life
+
+    promote_life(conn, wanderer, target)
+    fresh = require_wanderer(conn, wanderer["id"])
+    reason_text = death_reason(conn, fresh)
+    if reason_text:
+        mark_dead(conn, int(wanderer["id"]), reason_text)
     _invalidate(wanderer)
     return {"review_id": review_id, "card": _card_for(conn, int(wanderer["id"]))}
 
@@ -700,20 +824,38 @@ def wipe(conn: Any, wanderer_id: Any, *, actor: dict[str, Any]) -> dict[str, Any
 
 
 def revive(conn: Any, wanderer_id: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
-    from .wanderer_persona_seeds import get_seed, seed_initial_knowledge
+    from .wanderer_legacy_service import load_legacy, legacy_payload, void_legacy_for
+    from .wanderer_life_core import lifespan_weeks_for, normalize_talents
+    from .wanderer_life_service import seed_after_revival
 
     wanderer = require_wanderer(conn, wanderer_id)
     if not wanderer.get("is_dead"):
         raise ValueError("只有已陨落的散修可以复活")
+    now = local_iso()
+    talents = normalize_talents(wanderer.get("talents"), slug=wanderer.get("slug"))
+    conn.execute(
+        "UPDATE wanderer_knowledge_entries SET status = 'forgotten', updated_at = ? "
+        "WHERE wanderer_id = ? AND status = 'active'", (now, int(wanderer["id"])),
+    )
     _update_columns(conn, int(wanderer["id"]), {
         "status": STATUS_ACTIVE, "tier": 0, "warnings_count": 0, "promotion_requested": 0,
+        "appeal_requested": 0, "knowledge_chars": 0, "cultivation_score": 0,
+        "born_at": now, "lifespan_weeks": lifespan_weeks_for(0, talents["vitality"]),
+        "life_penalty_weeks": 0, "life_extensions": 0, "last_extend_at": None, "last_resurrect_at": None,
     })
-    seed = get_seed(str(wanderer.get("slug") or ""))
-    seeded = seed_initial_knowledge(conn, require_wanderer(conn, wanderer["id"]), seed) if seed else 0
+    legacy_row = conn.execute(
+        "SELECT * FROM wanderer_legacies WHERE wanderer_id = ? ORDER BY id DESC LIMIT 1", (int(wanderer["id"]),)
+    ).fetchone()
+    legacy = legacy_payload({key: legacy_row[key] for key in legacy_row.keys()}) if legacy_row is not None else None
+    void_legacy_for(conn, int(wanderer["id"]), reason="被管理员复活")
+    seeded = seed_after_revival(conn, require_wanderer(conn, wanderer["id"]), legacy)
+    conn.execute("UPDATE wanderer_agents SET cultivation_score = 0, updated_at = ? WHERE id = ?",
+                 (now, int(wanderer["id"])))
     insert_dao_review(
         conn, wanderer_id=int(wanderer["id"]), review_kind="revive", verdict="revived",
-        from_tier=clamp_tier(wanderer.get("tier")), to_tier=0, reason="管理员复活，恢复初始人格知识。",
-        created_by=_actor_label(actor), evidence={"seed_knowledge": seeded},
+        from_tier=clamp_tier(wanderer.get("tier")), to_tier=0,
+        reason="管理员复活，寿元重置，恢复初始人格知识。",
+        created_by=_actor_label(actor), evidence={"seed_knowledge": seeded, "life_reset": True},
     )
     _invalidate(wanderer)
     return {"seeded_knowledge": seeded, "card": _card_for(conn, int(wanderer["id"]))}
@@ -741,6 +883,7 @@ def get_settings(conn: Any) -> dict[str, Any]:
         "tick_batch_size": max(low, min(high, batch)),
         "classroom_visits_enabled": _flag(wanderer_runtime_setting_get(conn, SETTING_CLASSROOM_VISITS), True),
         "dao_review_hour": hour if _HOUR_RE.match(hour) else DEFAULT_DAO_REVIEW_HOUR,
+        "lifecycle_enabled": lifecycle_enabled(conn),
         **genesis_settings(conn),
     }
 
@@ -785,6 +928,7 @@ def _validate_settings(patch: Any) -> dict[str, str]:
         SETTING_TICK_BATCH_SIZE: lambda v: str(_bounded_int(v, TICK_BATCH_SIZE_RANGE, "每轮散修数")),
         SETTING_DAO_REVIEW_HOUR: _hour_setting,
         SETTING_GENESIS_ENABLED: lambda v: _bool_setting(v, "天道造人开关"),
+        SETTING_LIFECYCLE_ENABLED: lambda v: _bool_setting(v, "寿元生死开关"),
         **{key: _genesis_int_validator(key) for key in GENESIS_INT_SETTINGS},
     }
     return {key: validators[key](value) for key, value in patch.items()}

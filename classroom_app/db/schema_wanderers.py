@@ -9,6 +9,8 @@ docs/wanderer-ai-free-agents-2026-10-25.md §3. Six runtime-owned tables:
 * ``wanderer_action_log``        every action a wanderer took (or skipped).
 * ``wanderer_dao_reviews``       天道 verdicts (promotion, discipline, death, ...).
 * ``wanderer_runtime_settings``  key/value switches and daily counters.
+* ``wanderer_relationships``     how one wanderer feels about each peer (lifecycle doc §5).
+* ``wanderer_legacies``          a dead wanderer's life trajectory and reincarnation seed (§7).
 
 Engine-aware and idempotent (``CREATE TABLE IF NOT EXISTS`` on SQLite and
 PostgreSQL), ensured lazily at runtime like ``schema_polls`` — deliberately not
@@ -67,6 +69,47 @@ def _table_statements(id_column: str) -> list[str]:
             avatar_silhouette TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
+        )
+        """,
+        f"""
+        CREATE TABLE IF NOT EXISTS wanderer_relationships (
+            {id_column},
+            wanderer_id INTEGER NOT NULL,
+            peer_identity TEXT NOT NULL,
+            peer_kind TEXT NOT NULL DEFAULT 'student',
+            affinity REAL NOT NULL DEFAULT 0,
+            interactions INTEGER NOT NULL DEFAULT 0,
+            last_delta REAL NOT NULL DEFAULT 0,
+            last_mood TEXT NOT NULL DEFAULT '',
+            last_reason TEXT NOT NULL DEFAULT '',
+            feelings_json TEXT NOT NULL DEFAULT '[]',
+            first_met_at TEXT,
+            last_interaction_at TEXT,
+            updated_at TEXT,
+            UNIQUE (wanderer_id, peer_identity)
+        )
+        """,
+        f"""
+        CREATE TABLE IF NOT EXISTS wanderer_legacies (
+            {id_column},
+            wanderer_id INTEGER,
+            slug TEXT NOT NULL DEFAULT '',
+            display_name TEXT NOT NULL DEFAULT '',
+            archetype TEXT NOT NULL DEFAULT '',
+            born_at TEXT,
+            died_at TEXT,
+            weeks_lived REAL NOT NULL DEFAULT 0,
+            death_reason TEXT NOT NULL DEFAULT '',
+            final_tier INTEGER NOT NULL DEFAULT 0,
+            cultivation REAL NOT NULL DEFAULT 0,
+            lifespan_weeks REAL NOT NULL DEFAULT 0,
+            trajectory_json TEXT NOT NULL DEFAULT '{{}}',
+            lineage_json TEXT NOT NULL DEFAULT '{{}}',
+            summary TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            claimed_by_wanderer_id INTEGER,
+            claimed_at TEXT,
+            created_at TEXT NOT NULL
         )
         """,
         f"""
@@ -208,6 +251,9 @@ _INDEX_STATEMENTS = (
     "CREATE INDEX IF NOT EXISTS idx_wanderer_action_log_created ON wanderer_action_log (created_at)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_dao_reviews_wanderer "
     "ON wanderer_dao_reviews (wanderer_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_relationships_affinity "
+    "ON wanderer_relationships (wanderer_id, affinity)",
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_legacies_status ON wanderer_legacies (status, id)",
 )
 
 
@@ -222,6 +268,19 @@ ADDED_COLUMNS = (
     # Avatar chain (design §11): illustrated file under static/img/wanderers/, then a silhouette key.
     ("wanderer_agents", "avatar_file", "TEXT NOT NULL DEFAULT ''"),
     ("wanderer_agents", "avatar_silhouette", "TEXT NOT NULL DEFAULT ''"),
+    # Lifespan / talents / autonomy (lifecycle doc §2–§6, 2026-10-30).
+    ("wanderer_agents", "born_at", "TEXT"),
+    ("wanderer_agents", "lifespan_weeks", "REAL NOT NULL DEFAULT 0"),
+    ("wanderer_agents", "life_penalty_weeks", "REAL NOT NULL DEFAULT 0"),
+    ("wanderer_agents", "life_extensions", "INTEGER NOT NULL DEFAULT 0"),
+    ("wanderer_agents", "talents_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("wanderer_agents", "last_extend_at", "TEXT"),
+    ("wanderer_agents", "last_appeal_at", "TEXT"),
+    ("wanderer_agents", "last_resurrect_at", "TEXT"),
+    ("wanderer_agents", "appeal_requested", "INTEGER NOT NULL DEFAULT 0"),
+    ("wanderer_agents", "appeal_requested_at", "TEXT"),
+    ("wanderer_agents", "appeal_note", "TEXT NOT NULL DEFAULT ''"),
+    ("wanderer_agents", "legacy_id", "INTEGER"),
 )
 
 

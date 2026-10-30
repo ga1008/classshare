@@ -232,12 +232,19 @@ async def _apply_post_turn(ctx: ActionContext, post: dict[str, Any], result: dic
             done.append(liked)
     parts = turn_parts(ctx, turn)
     can_comment = behavior_on(ctx.wanderer, "blog_comment") and as_int(post.get("allow_comments")) == 1
+    author_identity = str(post.get("author_identity") or "")
+    if author_identity and str(post.get("author_display_mode") or "real_name") == "real_name":
+        from .wanderer_relationship_service import apply_turn_feeling
+
+        with ctx.connect() as conn:
+            apply_turn_feeling(conn, ctx.wanderer, author_identity, turn, scene="blog_post")
+            conn.commit()
     if turn.get("action") != "skip" and parts and can_comment:
         heard = _heard_post(ctx, post)
         done.extend(await _post_comments(ctx, post_id, parts, parent_comment_id=None, action_kind="comment",
                                          ai_calls=calls, mood=str(turn.get("mood") or "")))
         await remember(ctx, _thread_key(post_id), said=[item["remembered_text"] for item in done if item.get("remembered_text")], heard=heard,
-                       counterpart_identity=str(post.get("author_identity") or ""))
+                       counterpart_identity=author_identity)
         return done
     record_action(ctx, "skip", target_type="blog_post", target_id=post_id, ai_calls=calls,
                   mood=str(turn.get("mood") or ""), outcome="skipped",
@@ -384,8 +391,8 @@ def _reply_scene(ctx: ActionContext, conn: Any, comment: dict[str, Any], mode: s
 
 
 async def _generate_reply_parts(ctx: ActionContext, *, mode: str, scene_builder, thread_key: str,
-                                suffix: str) -> tuple[list[str], int, str, str]:
-    """(parts, ai_calls, mood, turn_action). Emoji mode and the capped path cost no AI call."""
+                                suffix: str) -> tuple[list[str], int, str, str, dict[str, Any]]:
+    """(parts, ai_calls, mood, turn_action, turn). Emoji mode and the capped path cost no AI call."""
     with ctx.connect() as conn:
         scene = scene_builder(conn)
     from .wanderer_student_support import fallback_for_scene
@@ -393,14 +400,14 @@ async def _generate_reply_parts(ctx: ActionContext, *, mode: str, scene_builder,
     if fallback:
         ctx.support_threads.add(thread_key)
         turn = fallback["turn"]
-        return list(turn["parts"]), 0, str(turn.get("mood") or ""), str(turn["action"])
+        return list(turn["parts"]), 0, str(turn.get("mood") or ""), str(turn["action"]), turn
     if mode == "emoji" or ctx.capped:
-        return [emoji_for(ctx)], 0, "", "emoji"
+        return [emoji_for(ctx)], 0, "", "emoji", {}
     result = await run_turn(ctx, scene=scene, thread_key=thread_key, suffix=suffix)
     turn = result.get("turn") or {}
     parts = turn_parts(ctx, turn)
     action = str(turn.get("action") or "skip")
-    return ([] if action == "skip" else parts), int(result.get("ai_calls") or 0), str(turn.get("mood") or ""), action
+    return ([] if action == "skip" else parts), int(result.get("ai_calls") or 0), str(turn.get("mood") or ""), action, turn
 
 
 async def _answer_comment(ctx: ActionContext, note: dict[str, Any]) -> list[dict[str, Any]]:
@@ -418,11 +425,12 @@ async def _answer_comment(ctx: ActionContext, note: dict[str, Any]) -> list[dict
         return [outcome("skip", "skipped")]
     post_id = int(comment["post_id"])
     heard = (str(comment.get("author_display_name") or "对方"), str(comment.get("content_md") or ""))
-    parts, calls, mood, action = await _generate_reply_parts(
+    parts, calls, mood, action, turn = await _generate_reply_parts(
         ctx, mode=mode, scene_builder=lambda conn: _reply_scene(ctx, conn, comment, mode),
         thread_key=_thread_key(post_id), suffix="blog_reply",
     )
     counterpart_identity = str(comment.get("author_identity") or "")
+    real_name = str(comment.get("author_display_mode") or "real_name") == "real_name"
     if not parts:
         record_action(ctx, "skip", **target, ai_calls=calls, mood=mood, outcome="skipped",
                       detail={"reason": f"turn:{action}"})
@@ -430,6 +438,12 @@ async def _answer_comment(ctx: ActionContext, note: dict[str, Any]) -> list[dict
         return [outcome("skip", "skipped", ai_calls=calls)]
     done = await _post_comments(ctx, post_id, parts, parent_comment_id=int(comment["id"]), action_kind="reply",
                                 ai_calls=calls, mood=mood)
+    if counterpart_identity and real_name:
+        from .wanderer_relationship_service import apply_turn_feeling
+
+        with ctx.connect() as conn:
+            apply_turn_feeling(conn, ctx.wanderer, counterpart_identity, turn, scene="blog_reply")
+            conn.commit()
     await remember(ctx, _thread_key(post_id), said=[item["remembered_text"] for item in done if item.get("remembered_text")],
                    heard=heard, counterpart_identity=counterpart_identity)
     return done

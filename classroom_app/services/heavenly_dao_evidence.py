@@ -23,8 +23,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from ..time_utils import parse_datetime
-from .wanderer_identity_service import clamp_tier, tier_level
+from .wanderer_identity_service import clamp_tier, current_life, tier_level
 from .wanderer_knowledge_service import knowledge_summary
+from .wanderer_life_core import normalize_talents
+from .wanderer_life_service import promotion_requirements
 
 SPAM_WINDOW_SECONDS = 600
 SPAM_THRESHOLD = 5
@@ -214,10 +216,29 @@ def recent_comment_previews(conn: Any, identity: str) -> list[str]:
     return [str(row["content_md"] or "")[:80] for row in rows]
 
 
+def _relationship_evidence(conn: Any, wanderer_id: int) -> dict[str, Any]:
+    """Labels and affinity only — never the other person's name or identity."""
+    try:
+        rows = conn.execute(
+            "SELECT affinity, interactions FROM wanderer_relationships WHERE wanderer_id = ? "
+            "ORDER BY affinity DESC LIMIT 60", (int(wanderer_id),),
+        ).fetchall()
+    except Exception:  # noqa: BLE001 - table absent on an old runtime
+        return {"total": 0, "close": [], "disliked": []}
+    from .wanderer_relationship_service import affinity_label
+
+    items = [{"affinity": round(float(row["affinity"] or 0), 1), "interactions": int(row["interactions"] or 0),
+              "label": affinity_label(row["affinity"])} for row in rows]
+    close = [item for item in items if item["affinity"] >= 20][:3]
+    disliked = [item for item in reversed(items) if item["affinity"] <= -20][:3]
+    return {"total": len(items), "close": close, "disliked": disliked}
+
+
 def collect_evidence(conn: Any, wanderer: dict[str, Any], now: datetime) -> dict[str, Any]:
     identity = f"student:{int(wanderer['student_id'])}"
     tier = clamp_tier(wanderer.get("tier"))
     day_ago, week_ago = _iso(now - timedelta(days=1)), _iso(now - timedelta(days=7))
+    life = current_life(wanderer, now)
     return {
         "wanderer_id": int(wanderer["id"]),
         "name": str(wanderer.get("display_name") or ""),
@@ -235,4 +256,10 @@ def collect_evidence(conn: Any, wanderer: dict[str, Any], now: datetime) -> dict
         "recent_comments": recent_comment_previews(conn, identity),
         "social_24h": social_activity(conn, identity, now),
         "recent_chat": recent_chat_previews(conn, identity),
+        "life": {key: life[key] for key in ("weeks_lived", "granted_weeks", "remaining_weeks", "remaining_days",
+                                            "extensions", "penalty_weeks", "expired")},
+        "talents": normalize_talents(wanderer.get("talents"), slug=wanderer.get("slug")),
+        "promotion_requirements": promotion_requirements(conn, wanderer, now=now),
+        "relationships": _relationship_evidence(conn, int(wanderer["id"])),
+        "appeal_requested": bool(wanderer.get("appeal_requested")),
     }

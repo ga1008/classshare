@@ -57,6 +57,10 @@
             <strong data-wd-stat="promotion">{{ overview.promotion_requested }} · {{ overview.warnings_today }}</strong>
         </div>
         <div data-lq-component="surface" class="lq-surface wd-stat">
+            <span>寿元告急</span>
+            <strong data-wd-stat="life">{{ overview.life_urgent }}</strong>
+        </div>
+        <div data-lq-component="surface" class="lq-surface wd-stat">
             <span>上次节拍</span>
             <strong data-wd-stat="tick">{{ overview.last_tick_at or '暂无' }}</strong>
         </div>
@@ -93,9 +97,10 @@
                         {{ lq_chip(card.tier_name, tone='info', size='sm') }}
                         {% if card.promotion_requested %}{{ lq_chip('申请升阶', tone='primary', size='sm') }}{% endif %}
                         {% if card.warnings_count %}{{ lq_chip('警告 ' ~ card.warnings_count, tone='danger', size='sm') }}{% endif %}
-                        {% if card.origin == 'dao' %}{{ lq_chip(card.origin_label, tone='warning', size='sm') }}{% endif %}
+                        {% if card.origin == 'dao' or card.origin == 'reincarnated' %}{{ lq_chip(card.origin_label, tone='warning', size='sm') }}{% endif %}
+                        {% if card.life_urgent %}{{ lq_chip('寿元 ' ~ card.life_weeks ~ ' 周', tone='danger', size='sm') }}{% endif %}
                     </span>
-                    <span class="wd-card__meta wd-muted">今日动作 {{ card.today_actions }} / {{ card.daily_action_budget }}</span>
+                    <span class="wd-card__meta wd-muted">今日动作 {{ card.today_actions }} / {{ card.daily_action_budget }} · 寿元 {{ card.life_weeks }} 周</span>
                     <span class="wd-card__preview">{{ card.last_action_preview or '尚无动作' }}</span>
                 </button>
                 {% endfor %}
@@ -122,6 +127,10 @@
                     <label data-lq-component="surface" class="lq-surface wd-switch">
                         <span>允许旁听课堂</span>
                         <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="classroom_visits_enabled" {% if settings.classroom_visits_enabled %}checked{% endif %}>
+                    </label>
+                    <label data-lq-component="surface" class="lq-surface wd-switch">
+                        <span>寿元生死（关闭后只暂停寿元判死）</span>
+                        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="lifecycle_enabled" {% if settings.lifecycle_enabled %}checked{% endif %}>
                     </label>
                     <fieldset class="wd-settings wd-genesis">
                         <legend class="form-label">天道造人（平台冷清时自动新增散修）</legend>
@@ -171,6 +180,7 @@
             <div data-lq-component="toolbar" class="lq-domain-toolbar wd-detail__actions" role="toolbar" aria-label="散修操作">
                 {{ lq_btn('暂停', variant='glass', size='sm', attrs={'data-wd-act': 'status'}) }}
                 {{ lq_btn('调整境界', variant='glass', size='sm', attrs={'data-wd-act': 'tier'}) }}
+                {{ lq_btn('调整寿元', variant='glass', size='sm', attrs={'data-wd-act': 'life'}) }}
                 {{ lq_btn('清零警告', variant='glass', size='sm', attrs={'data-wd-act': 'reset-warnings'}) }}
                 {{ lq_btn('立即审核', variant='glass', size='sm', attrs={'data-wd-act': 'review'}) }}
                 {{ lq_btn('立即跑一轮', variant='glass', size='sm', attrs={'data-wd-act': 'tick'}) }}
@@ -189,6 +199,20 @@
                 <div class="wd-inline-form__actions">
                     {{ lq_btn('确认调整', variant='prominent', size='sm', type='submit') }}
                     {{ lq_btn('取消', variant='ghost', size='sm', attrs={'data-wd-cancel': 'tier'}) }}
+                </div>
+            </form>
+            <form class="wd-inline-form" data-wd-life-form hidden>
+                <label class="form-group">
+                    <span class="form-label">寿元调整（周，负数扣除）</span>
+                    <input data-lq-component="input" class="lq-input form-control" type="number" name="weeks" min="-52" max="52" step="0.5" required>
+                </label>
+                <label class="form-group wd-inline-form__wide">
+                    <span class="form-label">理由（写入天道裁决）</span>
+                    <input data-lq-component="input" class="lq-input form-control" type="text" name="reason" maxlength="300" required>
+                </label>
+                <div class="wd-inline-form__actions">
+                    {{ lq_btn('确认调整', variant='prominent', size='sm', type='submit') }}
+                    {{ lq_btn('取消', variant='ghost', size='sm', attrs={'data-wd-cancel': 'life'}) }}
                 </div>
             </form>
             <div class="wd-inline-form" data-wd-wipe-confirm hidden role="alert">
@@ -232,6 +256,31 @@
                             </div>
                         </form>
                         <div class="wd-knowledge" data-wd-knowledge></div>
+                        <form class="wd-talent-form" data-wd-talent-form>
+                            <fieldset class="wd-behaviors">
+                                <legend class="form-label">天赋（只有天道与管理员可改）</legend>
+                                <div class="wd-talents">
+                                    <label class="form-group"><span class="form-label">悟性（0.60–1.80）</span>
+                                        <input data-lq-component="input" class="lq-input form-control" type="number" name="talent_insight" min="0.6" max="1.8" step="0.01" required></label>
+                                    <label class="form-group"><span class="form-label">记性（0.60–1.80）</span>
+                                        <input data-lq-component="input" class="lq-input form-control" type="number" name="talent_memory" min="0.6" max="1.8" step="0.01" required></label>
+                                    <label class="form-group"><span class="form-label">根骨（0.70–1.40）</span>
+                                        <input data-lq-component="input" class="lq-input form-control" type="number" name="talent_vitality" min="0.7" max="1.4" step="0.01" required></label>
+                                    <label class="form-group"><span class="form-label">口才（0.60–1.80）</span>
+                                        <input data-lq-component="input" class="lq-input form-control" type="number" name="talent_eloquence" min="0.6" max="1.8" step="0.01" required></label>
+                                    <label class="form-group"><span class="form-label">亲和（0.60–1.80）</span>
+                                        <input data-lq-component="input" class="lq-input form-control" type="number" name="talent_charm" min="0.6" max="1.8" step="0.01" required></label>
+                                    <label class="form-group"><span class="form-label">气运（0.60–1.60）</span>
+                                        <input data-lq-component="input" class="lq-input form-control" type="number" name="talent_luck" min="0.6" max="1.6" step="0.01" required></label>
+                                </div>
+                            </fieldset>
+                            <label class="form-group">
+                                <span class="form-label">修改理由（写入天道裁决）</span>
+                                <input data-lq-component="input" class="lq-input form-control" type="text" name="talent_reason" maxlength="300" required>
+                            </label>
+                            <p class="wd-form-error" data-wd-talent-error role="alert" hidden></p>
+                            {{ lq_btn('保存天赋', variant='prominent', size='sm', type='submit') }}
+                        </form>
                         <form class="wd-persona-form" data-wd-persona-form>
                             <label class="form-group">
                                 <span class="form-label">人格提示词</span>

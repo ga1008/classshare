@@ -40,6 +40,7 @@ from .wanderer_ai_service import DAO_KIND_GENESIS, AiCaller, dao_judge
 from .wanderer_avatar_service import pick_silhouette
 from .wanderer_identity_service import (
     ORIGIN_DAO,
+    ORIGIN_REINCARNATED,
     WANDERER_ENROLLMENT_STATUS,
     ensure_wanderer_students_detailed,
     insert_dao_review,
@@ -47,6 +48,7 @@ from .wanderer_identity_service import (
     load_wanderer_by_slug,
     wanderer_student_number,
 )
+from .wanderer_legacy_service import apply_reincarnation, fallback_seed, pending_legacies
 from .wanderer_persona_seeds import SeedValidationError, render_persona_prompt, seed_initial_knowledge, validate_seed
 from .wanderer_settings_service import (
     SETTING_GENESIS_MAX_PER_DAY,
@@ -212,8 +214,23 @@ def _existing_wanderers(conn: Any) -> list[dict[str, str]]:
     return [{"slug": str(row[0]), "name": str(row[1]), "archetype": str(row[2])} for row in rows]
 
 
-def genesis_message(existing: list[dict[str, str]], planned: int, activity: dict[str, Any]) -> str:
+def _legacy_brief(legacy: dict[str, Any]) -> dict[str, Any]:
+    return {"legacy_id": int(legacy.get("id") or 0), "name": legacy.get("display_name") or "",
+            "archetype": legacy.get("archetype") or "", "died_at": legacy.get("died_at") or "",
+            "final_tier": legacy.get("final_tier") or 0, "summary": str(legacy.get("summary") or "")[:600]}
+
+
+def genesis_message(existing: list[dict[str, str]], planned: int, activity: dict[str, Any],
+                    legacies: Optional[list[dict[str, Any]]] = None) -> str:
     from .wanderer_voice_service import genesis_voice_catalog
+    legacy_block = ""
+    if legacies:
+        legacy_block = (
+            "\n6. 下列亡者留有转世种子：优先以此至多 "
+            f"{len(legacies)} 位为蓝本创造；新人格的名字与 slug 必须全新，性格可以继承、扭曲或完全反转，"
+            "但不要把亡者的修为、境界或关系带过来。返回的种子里加上对应的 legacy_id。\n"
+            f"转世种子：{json.dumps([_legacy_brief(item) for item in legacies], ensure_ascii=False)}\n"
+        )
     return (
         f"本次不是裁决，而是「天道造人」：平台近来冷清，请创造 {planned} 位新的散修（AI 电子学生）。\n"
         "要求：\n"
@@ -224,7 +241,8 @@ def genesis_message(existing: list[dict[str, str]], planned: int, activity: dict
         "4. 字段与示例完全一致，数值在示例给出的范围内；文字自然、口语，不用 Markdown。\n"
         "5. speech_style.voice_profile 选择最符合个人气质的一项，出生即绑定对应讲话指南和情境案例。"
         "catchphrases 可以为空，最多四条低频偏好，不用固定口头禅或表情替代完整性格。"
-        "同一种声线也要有不同关注点、背景和关系距离。\n"
+        "同一种声线也要有不同关注点、背景和关系距离。"
+        f"{legacy_block}\n"
         f"可用声线：{genesis_voice_catalog()}\n"
         f"已有散修（slug / 名字 / 原型）：{json.dumps(existing, ensure_ascii=False)}\n"
         f"平台活跃度：{json.dumps(activity, ensure_ascii=False, sort_keys=True)}\n"
@@ -246,7 +264,8 @@ def _clash_sets(conn: Any) -> tuple[set[str], set[str]]:
     return slugs, names
 
 
-def select_valid_seeds(conn: Any, raw_seeds: Any, planned: int) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+def select_valid_seeds(conn: Any, raw_seeds: Any, planned: int, *,
+                       legacy_ids: Optional[set[int]] = None) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """(valid normalized seeds, at most ``planned``; rejections with reasons)."""
     slugs, names = _clash_sets(conn)
     valid: list[dict[str, Any]] = []
@@ -264,6 +283,10 @@ def select_valid_seeds(conn: Any, raw_seeds: Any, planned: int) -> tuple[list[di
         if len(valid) >= planned:
             rejected.append({"seed": label, "reason": "超出本次计划数量"})
             continue
+        if isinstance(raw, dict) and str(raw.get("legacy_id") or "").strip().isdigit():
+            legacy_id = int(raw["legacy_id"])
+            if legacy_ids is None or legacy_id in legacy_ids:
+                seed = {**seed, "legacy_id": legacy_id, "origin": ORIGIN_REINCARNATED}
         slugs.add(seed["slug"])
         names.add(seed["display_name"])
         valid.append(seed)
@@ -278,19 +301,30 @@ def _seed_summary(seed: dict[str, Any]) -> dict[str, Any]:
 
 
 def persist_genesis_seed(conn: Any, seed: dict[str, Any], *, rationale: str, activity: dict[str, Any],
-                         created_by: str = "dao") -> Optional[int]:
-    """Create the wanderer (tier 0, cultivation 0, origin 'dao'). Returns its id, or None if it already existed."""
-    payload = {**seed, "initial_tier": 0, "origin": ORIGIN_DAO, "persona_prompt": render_persona_prompt(seed)}
+                         created_by: str = "dao", legacy: Optional[dict[str, Any]] = None) -> Optional[int]:
+    """Create the wanderer (tier 0, cultivation 0). Returns its id, or None if it already existed.
+
+    With ``legacy`` the new persona is a reincarnation: origin ``reincarnated``,
+    one 「前世残念」 entry, and the seed is claimed.
+    """
+    origin = ORIGIN_REINCARNATED if legacy is not None else ORIGIN_DAO
+    payload = {**seed, "initial_tier": 0, "origin": origin, "persona_prompt": render_persona_prompt(seed)}
+    if legacy is not None:
+        payload["legacy_id"] = int(legacy["id"])
     detail = ensure_wanderer_students_detailed(conn, [payload])
     wanderer = load_wanderer_by_slug(conn, seed["slug"])
     if seed["slug"] not in detail["created"] or wanderer is None:
         return None
     seed_initial_knowledge(conn, wanderer, seed)
+    if legacy is not None:
+        apply_reincarnation(conn, wanderer, legacy)
+        wanderer = load_wanderer_by_slug(conn, seed["slug"]) or wanderer
     silhouette = pick_silhouette(seed)
     review_id = insert_dao_review(
         conn, wanderer_id=int(wanderer["id"]), review_kind=GENESIS_REVIEW_KIND, verdict=GENESIS_VERDICT,
         from_tier=0, to_tier=0, reason=rationale or "平台冷清，天道造人。",
-        evidence={"activity": activity, "seed_summary": _seed_summary(seed), "avatar_silhouette": silhouette},
+        evidence={"activity": activity, "seed_summary": _seed_summary(seed), "avatar_silhouette": silhouette,
+                  **({"legacy_of": _legacy_brief(legacy)} if legacy is not None else {})},
         created_by=created_by,
     )
     now = local_iso()
@@ -305,6 +339,28 @@ def persist_genesis_seed(conn: Any, seed: dict[str, Any], *, rationale: str, act
     return int(wanderer["id"])
 
 
+def _fallback_reincarnations(conn: Any, legacies: list[dict[str, Any]], room: int, activity: dict[str, Any],
+                             created_by: str) -> list[int]:
+    """No model (or no usable seeds): continue the closed loop from the dead, deterministically."""
+    created: list[int] = []
+    for legacy in legacies:
+        if len(created) >= max(0, room):
+            break
+        seed = fallback_seed(legacy)
+        if not seed:
+            continue
+        valid, _rejected = select_valid_seeds(conn, [seed], 1)
+        if not valid:
+            continue
+        wanderer_id = persist_genesis_seed(
+            conn, valid[0], rationale="转世：天道暂未回应，按亡者的人生轨迹续写。", activity=activity,
+            created_by=created_by, legacy=legacy,
+        )
+        if wanderer_id is not None:
+            created.append(wanderer_id)
+    return created
+
+
 async def run_genesis(conn_factory: ConnFactory = None, *, activity: Optional[dict[str, Any]] = None,
                       ai_caller: Optional[AiCaller] = None, manual: bool = False,
                       now: Optional[datetime] = None) -> dict[str, Any]:
@@ -313,22 +369,35 @@ async def run_genesis(conn_factory: ConnFactory = None, *, activity: Optional[di
         measured = activity if activity is not None else measure_platform_activity(conn, now)
         plan = plan_genesis(conn, measured, now, manual=manual)
         existing = _existing_wanderers(conn)
+        legacies = pending_legacies(conn, 3) if plan["planned"] > 0 else []
     summary: dict[str, Any] = {"status": "skipped", "activity": measured, "plan": plan, "created": 0,
-                               "created_ids": [], "rejected": []}
+                               "created_ids": [], "rejected": [], "reincarnated": 0}
     if plan["planned"] <= 0:
         return summary
     result = await dao_judge(conn_factory, system_prompt=HEAVENLY_DAO_SYSTEM_PROMPT,
-                             user_message=genesis_message(existing, plan["planned"], measured),
+                             user_message=genesis_message(existing, plan["planned"], measured, legacies),
                              kind=DAO_KIND_GENESIS, ai_caller=ai_caller)
     payload = result.get("result") if isinstance(result.get("result"), dict) else {}
     rationale = str(payload.get("rationale") or "").strip()[:RATIONALE_MAX_CHARS]
+    creator = "admin" if manual else "dao"
+    reincarnated = 0
     with _connection(conn_factory) as conn:
-        seeds, rejected = select_valid_seeds(conn, payload.get("seeds"), plan["planned"])
-        created_ids = [wanderer_id for wanderer_id in (
-            persist_genesis_seed(conn, seed, rationale=rationale, activity=measured,
-                                 created_by="admin" if manual else "dao") for seed in seeds
-        ) if wanderer_id is not None]
+        legacy_ids = {int(item["id"]) for item in legacies}
+        seeds, rejected = select_valid_seeds(conn, payload.get("seeds"), plan["planned"], legacy_ids=legacy_ids)
+        created_ids = []
+        for seed in seeds:
+            legacy = next((item for item in legacies if int(item["id"]) == int(seed.get("legacy_id") or 0)), None)
+            wanderer_id = persist_genesis_seed(conn, seed, rationale=rationale, activity=measured,
+                                               created_by=creator, legacy=legacy)
+            if wanderer_id is not None:
+                created_ids.append(wanderer_id)
+                reincarnated += int(legacy is not None)
+        if not created_ids and legacies:
+            fallback_ids = _fallback_reincarnations(conn, legacies, plan["planned"], measured, creator)
+            created_ids.extend(fallback_ids)
+            reincarnated += len(fallback_ids)
         conn.commit()
-    return {**summary, "status": "ok" if result.get("status") == "ok" else "failed", "created": len(created_ids),
+    status = "ok" if (result.get("status") == "ok" or created_ids) else "failed"
+    return {**summary, "status": status, "created": len(created_ids), "reincarnated": reincarnated,
             "created_ids": created_ids, "rejected": rejected, "rationale": rationale,
             "error": str(result.get("error") or "")[:200]}

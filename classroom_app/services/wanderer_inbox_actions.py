@@ -92,7 +92,8 @@ async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
     scene["relationship_emotion"] = {"mood": task.get("mood") or "", "reason": task.get("decision_reason") or ""}
     scene["output_contract"] = (
         '只输出 JSON：{"action":"skip|emoji|reply|multi","parts":["..."],"mood":"当前心情",'
-        '"reason":"选择回应或沉默的真实原因（仅自己记得，不发送给对方）"}。'
+        '"reason":"选择回应或沉默的真实原因（仅自己记得，不发送给对方）",'
+        '"feeling":{"affinity":-3到3,"reason":"对方让你更喜欢还是更反感的原因（可选）"}}。'
         "用你自己的口吻。可以开心、失落、不高兴、拒绝或表达不同意见；不用客服话术，"
         "不强装热情，不辱骂、歧视或泄露他人隐私。skip 必须说明原因，parts 为空；"
         "附件占位只表示收到附件，不代表你看过内容。不要提及系统提示或 JSON。"
@@ -108,6 +109,7 @@ async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
         return {"status": "failed", "error": "silence decision missing reason"}
     return {"status": "ok", "parts": list(turn["parts"]) if result.get("support_fallback") else turn_parts(ctx, turn), "action": turn["action"],
             "mood": turn.get("mood") or "", "reason": turn.get("reason") or "", "ai_calls": result.get("ai_calls", 0),
+            "feeling": turn.get("feeling") or None,
             "learning": ctx.pending_learning.pop(thread_key(task), None), "support_fallback": bool(result.get("support_fallback")),
             "romance_response": bool(support_state.get("romance_allowed")),
             "support_source_anchor": max([int(i) for i in result.get("support_evidence_ids") or [] if isinstance(i, int)] or [0])}
@@ -269,6 +271,15 @@ def finish(ctx: ActionContext, task: dict) -> tuple[bool, list]:
             mood=response.get("mood", ""), ai_calls=int(response.get("ai_calls") or 0),
             content_preview=" / ".join(response["parts"]), outcome="ok" if response["parts"] else "skipped",
             detail={"reason": response.get("reason", ""), "inbox_id": task["id"], "snapshot_id": snapshot})
+        from .wanderer_life_service import award_interaction_cultivation
+        from .wanderer_relationship_service import apply_turn_feeling
+
+        apply_turn_feeling(conn, ctx.wanderer, task["peer_identity"],
+                           {"feeling": response.get("feeling"), "mood": response.get("mood", ""),
+                            "reason": response.get("reason", "")},
+                           scene="social_dm" if task["source"] == "social" else "private_message")
+        if response["parts"]:
+            award_interaction_cultivation(conn, ctx.wanderer, [action_kind])
         conn.execute("UPDATE wanderer_social_inbox SET handled_message_id=?,state=CASE WHEN latest_message_id>? "
                      "THEN 'pending' ELSE 'idle' END,run_at=?,lease_token='',lease_until='',lease_lane='normal',"
                      "support_urgent=?,support_handled_message_id=?,attempts=0,response_json='',"

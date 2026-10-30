@@ -30,6 +30,7 @@ const ACTIVITY_LABELS = {
     real_chat_messages_24h: '课堂留言', real_logins_24h: '登录', wanderer_actions_24h: '散修动作',
 };
 const REPLY_POLICY_FIELDS = ['ignore_prob', 'emoji_only_prob', 'multi_part_prob', 'max_parts'];
+const TALENT_FIELDS = ['insight', 'memory', 'vitality', 'eloquence', 'charm', 'luck'];
 // Manual runs are started in the background (202); the overview is re-read after this delay.
 const MANUAL_RUN_REFRESH_MS = 8000;
 const TICK_SUMMARY_KEYS = { status: '状态', processed: '散修', actions: '动作', ai_calls: 'AI', failed: '失败' };
@@ -65,6 +66,7 @@ const detailEls = {
     close: $('[data-wd-detail-close]', els.detailRoot),
     surface: $('.lq-dialog__surface', els.detailRoot),
     tierForm: $('[data-wd-tier-form]', els.detailRoot),
+    lifeForm: $('[data-wd-life-form]', els.detailRoot),
     wipeConfirm: $('[data-wd-wipe-confirm]', els.detailRoot),
     panels: {
         overview: $('[data-wd-panel="overview"]', els.detailRoot),
@@ -74,6 +76,8 @@ const detailEls = {
     knowledge: $('[data-wd-knowledge]', els.detailRoot),
     personaForm: $('[data-wd-persona-form]', els.detailRoot),
     personaError: $('[data-wd-persona-error]', els.detailRoot),
+    talentForm: $('[data-wd-talent-form]', els.detailRoot),
+    talentError: $('[data-wd-talent-error]', els.detailRoot),
     behaviors: $('[data-wd-behaviors]', els.detailRoot),
     avatarForm: $('[data-wd-avatar-form]', els.detailRoot),
     avatarPreview: $('[data-wd-avatar-preview]', els.detailRoot),
@@ -136,6 +140,7 @@ function renderOverview(overview) {
         counts: `${counts.active ?? 0} / ${counts.paused ?? 0} / ${counts.dead ?? 0}`,
         origin: `${counts.total ?? 0} · ${counts.dao_created ?? 0}`,
         promotion: `${overview.promotion_requested ?? 0} · ${overview.warnings_today ?? 0}`,
+        life: `${overview.life_urgent ?? 0}`,
         tick: formatTime(overview.last_tick_at) || '暂无',
         dao: formatTime(overview.last_dao_review_at) || '暂无',
     };
@@ -190,7 +195,8 @@ function cardChips(card) {
     const chips = [chip(card.status_label, STATUS_TONES[card.status] || 'neutral'), chip(card.tier_name, 'info')];
     if (card.promotion_requested) chips.push(chip('申请升阶', 'primary'));
     if (card.warnings_count) chips.push(chip(`警告 ${card.warnings_count}`, 'danger'));
-    if (card.origin === 'dao') chips.push(chip(card.origin_label || '天道所造', 'warning'));
+    if (card.origin === 'dao' || card.origin === 'reincarnated') chips.push(chip(card.origin_label, 'warning'));
+    if (card.life_urgent) chips.push(chip(`寿元 ${card.life_weeks} 周`, 'danger'));
     return el('span', { class: 'wd-card__chips' }, chips);
 }
 
@@ -205,7 +211,8 @@ function renderCard(card) {
             el('span', { class: 'wd-card__title' }, [el('strong', { text: card.display_name }), el('span', { class: 'wd-muted', text: card.archetype })]),
         ]),
         cardChips(card),
-        el('span', { class: 'wd-card__meta wd-muted', text: `今日动作 ${card.today_actions} / ${card.daily_action_budget}` }),
+        el('span', { class: 'wd-card__meta wd-muted',
+            text: `今日动作 ${card.today_actions} / ${card.daily_action_budget} · 寿元 ${card.life_weeks} 周` }),
         el('span', { class: 'wd-card__preview', text: card.last_action_preview || '尚无动作' }),
     ]);
 }
@@ -278,6 +285,7 @@ function settingsPayload(form) {
         tick_batch_size: Number(data.get('tick_batch_size')),
         dao_review_hour: String(data.get('dao_review_hour') || ''),
         classroom_visits_enabled: form.elements.classroom_visits_enabled.checked ? 1 : 0,
+        lifecycle_enabled: form.elements.lifecycle_enabled.checked ? 1 : 0,
         genesis_enabled: form.elements.genesis_enabled.checked ? 1 : 0,
         ...Object.fromEntries(GENESIS_NUMBER_FIELDS.map(name => [name, Number(data.get(name))])),
     };
@@ -364,6 +372,28 @@ function listOrEmpty(label, rows) {
     return rows.length ? createContent('list', { label, items: rows }) : emptyState(`暂无${label}`);
 }
 
+function lifeSection(detail) {
+    const life = detail.life || {};
+    const req = detail.requirements || {};
+    const totalDays = Math.max(1, Math.round((life.granted_weeks || 0) * 7));
+    const percent = Math.min(100, Math.round(((life.remaining_days || 0) / totalDays) * 100));
+    const meter = createInsight('insight_meter', {
+        title: '寿元', value: life.remaining_days || 0, percent, unit: ' 天', zero: 'value',
+        caption: `已活 ${life.weeks_lived ?? 0} / ${life.granted_weeks ?? 0} 周 · ${formatTime(life.expires_at)} 到期${life.urgent ? ' · 告急' : ''}`,
+    });
+    const requirements = createContent('card', {
+        title: '下一境界', variant: 'stat',
+        value: req.max_tier ? '已至最高' : (req.ready ? '条件已满足' : '条件未满足'),
+        meta: req.max_tier ? '此后只剩自己决定怎么活' :
+            `知识 ${req.knowledge ?? 0}/${req.knowledge_target ?? 0} 字 · 修为 ${req.cultivation ?? 0}/${req.cultivation_target ?? 0} · 七日互动 ${req.interactions ?? 0}/${req.interactions_needed ?? 0} · 冷却 ${req.cooldown_days_left ?? 0} 天`,
+    });
+    const talents = createContent('list', {
+        label: '天赋',
+        items: (life.talents || []).map(item => ({ title: `${item.label} ${item.value}`, meta: item.effect })),
+    });
+    return el('div', { class: 'wd-life' }, [el('div', { class: 'wd-stats' }, [meter, requirements]), talents]);
+}
+
 function actionRow(item) {
     const title = `${item.action_label}${item.content_preview ? ` · ${item.content_preview}` : ''}`;
     const detail = item.detail && typeof item.detail === 'object' ? item.detail : {};
@@ -404,7 +434,7 @@ function renderOverviewTab(detail) {
     ]);
     const intro = detail.profile.public_intro ? el('p', { class: 'wd-detail__intro', text: detail.profile.public_intro }) : null;
     detailEls.panels.overview.replaceChildren(...[
-        facts, intro, statsSection(detail),
+        facts, intro, lifeSection(detail), statsSection(detail),
         el('h3', { class: 'wd-detail__section', text: '最近天道裁决' }), listOrEmpty('天道裁决', detail.reviews.map(reviewRow)),
         el('h3', { class: 'wd-detail__section', text: '最近动作' }), listOrEmpty('动作记录', detail.actions.map(actionRow)),
     ].filter(Boolean));
@@ -478,7 +508,45 @@ function fillPersonaForm(profile) {
     for (const field of REPLY_POLICY_FIELDS) form.elements[field].value = profile.reply_policy?.[field] ?? '';
     form.elements.active_hours.value = JSON.stringify(profile.schedule?.active_hours || []);
     detailEls.behaviors.replaceChildren(...behaviorSwitches(profile.behaviors || {}));
+    fillTalentForm(profile.talents || {});
     showPersonaError('');
+}
+
+function fillTalentForm(talents) {
+    const form = detailEls.talentForm;
+    for (const key of TALENT_FIELDS) form.elements[`talent_${key}`].value = talents[key] ?? 1;
+    form.elements.talent_reason.value = '';
+    showTalentError('');
+}
+
+function showTalentError(message) {
+    detailEls.talentError.textContent = message;
+    detailEls.talentError.hidden = !message;
+}
+
+async function submitTalent(event) {
+    event.preventDefault();
+    const form = detailEls.talentForm;
+    if (!form.reportValidity()) return;
+    const reason = String(form.elements.talent_reason.value || '').trim();
+    if (!reason) {
+        showTalentError('修改天赋需要填写理由');
+        return;
+    }
+    const talents = Object.fromEntries(TALENT_FIELDS.map(key => [key, Number(form.elements[`talent_${key}`].value)]));
+    showTalentError('');
+    await withBusy(form.querySelector('[type="submit"]'), async () => {
+        try {
+            const data = await apiFetch(`${API_ROOT}/${state.detailId}`, {
+                method: 'PATCH', body: { talents_json: talents, talent_reason: reason }, silent: true,
+            });
+            applyDetail(data.detail);
+            await refreshQuietly();
+            showToast('天赋已调整', 'success');
+        } catch (error) {
+            showTalentError(errorMessage(error, '保存失败，输入已保留'));
+        }
+    });
 }
 
 function parseActiveHours(raw) {
@@ -598,7 +666,7 @@ function syncActionButtons(card) {
     const label = card.status === 'paused' ? '恢复' : '暂停';
     status.querySelector('.lq-btn__label').textContent = label;
     status.setAttribute('aria-label', label);
-    for (const name of ['status', 'tier', 'reset-warnings', 'review', 'tick', 'wipe']) actionButton(name).hidden = dead;
+    for (const name of ['status', 'tier', 'life', 'reset-warnings', 'review', 'tick', 'wipe']) actionButton(name).hidden = dead;
     actionButton('revive').hidden = !dead;
 }
 
@@ -665,6 +733,11 @@ const DETAIL_ACTIONS = {
         detailEls.tierForm.elements.reason.value = '';
         toggleInline(detailEls.tierForm, true);
     },
+    life: () => {
+        detailEls.lifeForm.elements.weeks.value = 1;
+        detailEls.lifeForm.elements.reason.value = '';
+        toggleInline(detailEls.lifeForm, true);
+    },
     'reset-warnings': (control) => postAction('/reset-warnings', {}, control, '警告已清零'),
     review: (control) => runEngineForDetail(control, `/${state.detailId}/review-now`, {}, '天道审核'),
     tick: (control) => runEngineForDetail(control, '/tick-now', { wanderer_id: state.detailId }, '跑一轮'),
@@ -686,7 +759,8 @@ function onDetailClick(event) {
     }
     const cancel = event.target.closest('[data-wd-cancel]');
     if (cancel) {
-        toggleInline(cancel.dataset.wdCancel === 'tier' ? detailEls.tierForm : detailEls.wipeConfirm, false);
+        const target = { tier: detailEls.tierForm, life: detailEls.lifeForm }[cancel.dataset.wdCancel];
+        toggleInline(target || detailEls.wipeConfirm, false);
         return;
     }
     const confirm = event.target.closest('[data-wd-confirm="wipe"]');
@@ -702,10 +776,21 @@ async function onTierSubmit(event) {
     if (result) toggleInline(form, false);
 }
 
+async function onLifeSubmit(event) {
+    event.preventDefault();
+    const form = detailEls.lifeForm;
+    if (!form.reportValidity()) return;
+    const body = { weeks: Number(form.elements.weeks.value), reason: form.elements.reason.value };
+    const result = await postAction('/life', body, form.querySelector('[type="submit"]'), '寿元已调整');
+    if (result) toggleInline(form, false);
+}
+
 function bindDetail() {
     els.detailRoot.addEventListener('click', onDetailClick);
     detailEls.tierForm.addEventListener('submit', onTierSubmit);
+    detailEls.lifeForm.addEventListener('submit', onLifeSubmit);
     detailEls.personaForm.addEventListener('submit', submitPersona);
+    detailEls.talentForm.addEventListener('submit', submitTalent);
     detailEls.avatarForm.addEventListener('submit', submitAvatar);
     detailEls.avatarForm.addEventListener('click', onAvatarReset);
     detailEls.close?.addEventListener('click', () => modal?.close('button'));
@@ -722,6 +807,7 @@ function resetDetailPanels() {
     state.detail = null;
     state.pages = { actions: 1, reviews: 1, knowledge: 1 };
     detailEls.tierForm.hidden = true;
+    detailEls.lifeForm.hidden = true;
     detailEls.wipeConfirm.hidden = true;
     for (const panel of [...Object.values(detailEls.panels), detailEls.knowledge]) {
         panel.replaceChildren(el('p', { class: 'wd-muted', text: '正在读取…' }));

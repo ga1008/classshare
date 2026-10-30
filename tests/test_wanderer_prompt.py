@@ -146,6 +146,29 @@ class ParseTurnOutputTest(unittest.TestCase):
     def test_extract_json_object_skips_leading_brace_noise(self):
         self.assertEqual(extract_json_object('{oops} {"a": 1}'), {"a": 1})
 
+    def test_optional_feeling_is_kept_and_clamped(self):
+        turn = parse_turn_output('{"action":"reply","parts":["嗯"],"feeling":{"affinity":9,"reason":"很真诚"}}')
+        self.assertEqual(turn["feeling"], {"affinity": 5.0, "reason": "很真诚"})
+        self.assertNotIn("feeling", parse_turn_output('{"action":"reply","parts":["嗯"]}'))
+        self.assertNotIn("feeling", parse_turn_output('{"action":"reply","parts":["嗯"],"feeling":{"affinity":"x"}}'))
+
+
+class LifecyclePromptTest(WandererDbTestCase):
+    def test_prompt_shows_life_talents_and_next_tier(self):
+        with self.connect() as conn:
+            wanderer = self.wanderer(conn, "suqinghe")
+            prompt = build_system_prompt(
+                conn, wanderer,
+                scene={"kind": "博客帖子", "title": "复习", "body": "怎么复习", "task": "决定是否回复"},
+                thread_key="blog_post:life",
+            )
+        self.assertIn("【你的寿元】", prompt)
+        self.assertIn("剩余约", prompt)
+        self.assertIn("【你的天赋】", prompt)
+        self.assertIn("悟性", prompt)
+        self.assertIn("【升阶条件】", prompt)
+        self.assertIn("修为", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -29,6 +29,7 @@ DAO_MENTION_CALLS_PREFIX = "dao_mention_calls:"
 DEFAULT_DAO_MENTION_DAILY_CAP = 60
 SETTING_TICK_MAX_SECONDS = "tick_max_seconds"
 DEFAULT_TICK_MAX_SECONDS = 150
+SETTING_LIFECYCLE_ENABLED = "lifecycle_enabled"
 SETTING_LAST_MANUAL_TICK_SUMMARY = "last_manual_tick_summary"
 SETTING_LAST_MANUAL_REVIEW_SUMMARY = "last_manual_review_summary"
 SETTING_DAO_REVIEW_HOUR_ARMED = "dao_review_hour_armed"
@@ -168,6 +169,11 @@ def tick_batch_size(conn: Any) -> int:
 
 def classroom_visits_enabled(conn: Any) -> bool:
     return str(wanderer_runtime_setting_get(conn, SETTING_CLASSROOM_VISITS_ENABLED, "1")).strip() in {"1", "true"}
+
+
+def lifecycle_enabled(conn: Any) -> bool:
+    """Emergency stop for lifespan deaths only (lifecycle doc §11, default on)."""
+    return str(wanderer_runtime_setting_get(conn, SETTING_LIFECYCLE_ENABLED, "1")).strip().lower() in {"1", "true"}
 
 
 def parse_review_hour(raw: Any) -> tuple[int, int]:

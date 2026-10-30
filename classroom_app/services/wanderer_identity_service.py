@@ -20,6 +20,15 @@ from typing import Any, Iterable, Optional
 from ..db.connection import execute_insert_returning_id
 from ..db.schema_wanderers import ensure_wanderer_schema
 from ..time_utils import local_iso, local_now, parse_datetime
+from .wanderer_life_core import (
+    clamp_tier,
+    default_talents,
+    knowledge_capacity_for as _knowledge_capacity_for,
+    life_state,
+    lifespan_weeks_for,
+    normalize_talents,
+    talent_value,
+)
 
 WANDERER_ENROLLMENT_STATUS = "wanderer"
 WANDERER_CLASS_NAME = "散修·无宗门"
@@ -43,10 +52,13 @@ ACTION_KINDS = frozenset({
     "request_promotion", "reflect", "skip", "write_post", "experience_learn",
     # 好友/群聊 (social doc §10): friend decisions + proactive requests, chat messages sent.
     "social_friend", "social_message",
+    # Lifecycle (lifecycle doc §2/§4.4/§6): life extension, appeal, resurrection.
+    "extend_life", "appeal", "resurrect",
 })
 ORIGIN_SEED = "seed"
 ORIGIN_DAO = "dao"
-WANDERER_ORIGINS = (ORIGIN_SEED, ORIGIN_DAO)
+ORIGIN_REINCARNATED = "reincarnated"
+WANDERER_ORIGINS = (ORIGIN_SEED, ORIGIN_DAO, ORIGIN_REINCARNATED)
 
 CACHE_TTL_SECONDS = 60.0
 _CACHE_MAX_ENTRIES = 5000
@@ -60,10 +72,12 @@ _JSON_FIELDS = {
     "reply_policy_json": ("reply_policy", dict),
     "behaviors_json": ("behaviors", dict),
     "stats_json": ("stats", dict),
+    "talents_json": ("talents", dict),
 }
 _INT_FIELDS = (
     "id", "student_id", "tier", "activity_level", "daily_action_budget",
     "warnings_count", "knowledge_chars", "promotion_requested",
+    "life_extensions", "appeal_requested",
 )
 
 _SELECT_WANDERER = """
@@ -111,19 +125,36 @@ def _as_int(value: Any) -> int:
         return 0
 
 
+def _as_float(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _hydrate(row: Any) -> dict[str, Any]:
     data = _row_to_dict(row)
     parsed = {name: _loads(data.get(column), kind) for column, (name, kind) in _JSON_FIELDS.items()}
     ints = {key: _as_int(data.get(key)) for key in _INT_FIELDS}
-    try:
-        score = float(data.get("cultivation_score") or 0)
-    except (TypeError, ValueError):
-        score = 0.0
+    talents = normalize_talents(parsed["talents"], slug=data.get("slug"))
+    life = life_state(
+        born_at=data.get("born_at") or data.get("created_at"),
+        tier=ints["tier"],
+        lifespan_weeks=_as_float(data.get("lifespan_weeks")),
+        extensions=ints["life_extensions"],
+        penalty_weeks=_as_float(data.get("life_penalty_weeks")),
+        vitality=talents["vitality"],
+    )
     return {
         **data,
         **parsed,
         **ints,
-        "cultivation_score": score,
+        "talents": talents,
+        "life": life,
+        "born_at": life["born_at"],
+        "lifespan_weeks": life["lifespan_weeks"],
+        "life_penalty_weeks": life["penalty_weeks"],
+        "cultivation_score": _as_float(data.get("cultivation_score")),
         "behaviors": {**DEFAULT_BEHAVIORS, **parsed["behaviors"]},
         "is_dead": str(data.get("status") or "") == STATUS_DEAD,
     }
@@ -218,13 +249,17 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
         "weekday_weights": frequency.get("weekday_weights") or {},
     }
     now = local_iso()
+    tier = clamp_tier(seed.get("initial_tier"))
+    talents = normalize_talents(seed.get("talents"), slug=seed["slug"])
+    lifespan = lifespan_weeks_for(tier, talents["vitality"])
     conn.execute(
         """
         INSERT INTO wanderer_agents (
             student_id, slug, display_name, archetype, persona_prompt, speech_style_json,
             interests_json, schedule_json, activity_level, daily_action_budget, reply_policy_json,
-            tier, cultivation_score, status, behaviors_json, stats_json, origin, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)
+            tier, cultivation_score, status, behaviors_json, stats_json, origin, created_at, updated_at,
+            born_at, lifespan_weeks, talents_json, legacy_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(slug) DO NOTHING
         """,
         (
@@ -232,9 +267,10 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
             _dumps(normalized_speech_style(seed)), _dumps(list(seed.get("interests") or [])),
             _dumps(schedule), int(frequency.get("activity_level") or 3),
             int(seed.get("daily_action_budget") or 10), _dumps(seed.get("reply_policy") or {}),
-            clamp_tier(seed.get("initial_tier")), STATUS_ACTIVE,
+            tier, STATUS_ACTIVE,
             _dumps({**DEFAULT_BEHAVIORS, **(seed.get("behaviors") or {})}), "{}",
             seed.get("origin") if seed.get("origin") in WANDERER_ORIGINS else ORIGIN_SEED, now, now,
+            now, lifespan, _dumps(talents), _as_int(seed.get("legacy_id")) or None,
         ),
     )
     return True
@@ -387,19 +423,14 @@ def build_wanderer_user_dict(wanderer: dict[str, Any]) -> dict[str, Any]:
 # Tier helpers
 # ---------------------------------------------------------------------------
 
-def clamp_tier(tier: Any) -> int:
-    try:
-        return max(0, min(MAX_TIER, int(tier or 0)))
-    except (TypeError, ValueError):
-        return 0
-
-
 def knowledge_capacity_chars(tier: Any) -> int:
     """tier0 4k, tier1 8k, x1.6 per tier above, capped at 200k (design §1.2)."""
-    level = clamp_tier(tier)
-    if level == 0:
-        return 4000
-    return int(min(200_000, round(8000 * (1.6 ** (level - 1)))))
+    return _knowledge_capacity_for(tier, 1.0)
+
+
+def knowledge_capacity_for(wanderer: dict[str, Any]) -> int:
+    """Effective capacity: base tier capacity × the wanderer's 记性 talent."""
+    return _knowledge_capacity_for(wanderer.get("tier"), talent_value(wanderer.get("talents"), "memory"))
 
 
 def reply_char_limit(tier: Any) -> int:
@@ -408,8 +439,8 @@ def reply_char_limit(tier: Any) -> int:
 
 
 def daily_budget_factor(tier: Any) -> float:
-    """Multiplier on ``daily_action_budget`` (design §1.2 c)."""
-    return round(1.0 + 0.05 * clamp_tier(tier), 2)
+    """Multiplier on ``daily_action_budget`` (lifecycle doc §4.3: +10% per tier)."""
+    return round(1.0 + 0.10 * clamp_tier(tier), 2)
 
 
 _WISDOM_DIRECTIVES = (
@@ -502,27 +533,56 @@ def active_knowledge_count(conn: Any, wanderer_id: int) -> int:
     return int(_row_value(row, "n") or 0)
 
 
-def evaluate_death(conn: Any, wanderer: dict[str, Any]) -> bool:
-    """Design §1.3: no active knowledge, tier 0 and no cultivation left.
+def current_life(wanderer: dict[str, Any], now: Any = None) -> dict[str, Any]:
+    """Recompute the life state (cached hydrations can be up to 60 s old)."""
+    stored = wanderer.get("life") or {}
+    return life_state(
+        born_at=wanderer.get("born_at") or wanderer.get("created_at"),
+        tier=wanderer.get("tier"),
+        lifespan_weeks=wanderer.get("lifespan_weeks") or stored.get("lifespan_weeks"),
+        extensions=wanderer.get("life_extensions") or stored.get("extensions"),
+        penalty_weeks=wanderer.get("life_penalty_weeks") if "life_penalty_weeks" in wanderer else stored.get("penalty_weeks"),
+        vitality=talent_value(wanderer.get("talents"), "vitality"),
+        now=now,
+    )
 
-    An admin wipe (``forget_all``) forgets every entry and zeroes the score, so
-    a wiped wanderer at tier 0 meets the same condition.
+
+def death_reason(conn: Any, wanderer: dict[str, Any], *, now: Any = None) -> str:
+    """'' when alive; otherwise the reason written into the death verdict.
+
+    Expiry is ignored while the ``lifecycle_enabled`` runtime switch is off
+    (emergency stop), but the original zero-knowledge rule always applies.
     """
     if str(wanderer.get("status") or "") == STATUS_DEAD:
-        return True
+        return "已陨落"
+    life = current_life(wanderer, now)
+    if life.get("expired"):
+        from .wanderer_settings_service import lifecycle_enabled
+
+        if lifecycle_enabled(conn):
+            tier = clamp_tier(wanderer.get("tier"))
+            return (f"寿元耗尽（第 {tier} 境，寿元 {life['granted_weeks']:g} 周，"
+                    f"{str(life['expires_at'])[:10]} 到期）。")
     if clamp_tier(wanderer.get("tier")) != 0:
-        return False
+        return ""
     try:
         score = float(wanderer.get("cultivation_score") or 0)
     except (TypeError, ValueError):
         score = 0.0
     if score > 0:
-        return False
-    return active_knowledge_count(conn, int(wanderer["id"])) == 0
+        return ""
+    if active_knowledge_count(conn, int(wanderer["id"])) > 0:
+        return ""
+    return "知识尽失、修为归零，判定陨落。"
+
+
+def evaluate_death(conn: Any, wanderer: dict[str, Any]) -> bool:
+    """Whether this wanderer must die now (kept for existing callers)."""
+    return bool(death_reason(conn, wanderer))
 
 
 def mark_dead(conn: Any, wanderer_id: int, reason: str) -> int:
-    """Set status=dead and record the death verdict. Returns the review id."""
+    """Set status=dead, record the verdict and keep the life trajectory. Returns the review id."""
     wanderer = load_wanderer(conn, wanderer_id)
     if wanderer is None:
         raise ValueError("散修不存在")
@@ -533,13 +593,30 @@ def mark_dead(conn: Any, wanderer_id: int, reason: str) -> int:
     )
     now = local_iso()
     conn.execute(
-        "UPDATE wanderer_agents SET status = ?, promotion_requested = 0, last_review_id = ?, "
-        "last_review_at = ?, updated_at = ? WHERE id = ?",
+        "UPDATE wanderer_agents SET status = ?, promotion_requested = 0, appeal_requested = 0, "
+        "last_review_id = ?, last_review_at = ?, updated_at = ? WHERE id = ?",
         (STATUS_DEAD, review_id, now, now, int(wanderer_id)),
     )
     invalidate_wanderer_cache([wanderer["student_id"]])
     _invalidate_emblem([wanderer["student_id"]])
+    _after_death(conn, wanderer, reason)
     return review_id
+
+
+def _after_death(conn: Any, wanderer: dict[str, Any], reason: str) -> None:
+    """Life trajectory, reincarnation seed and grief of close friends; never breaks the death path."""
+    try:
+        from .wanderer_legacy_service import record_legacy
+
+        record_legacy(conn, wanderer, reason)
+    except Exception as exc:  # noqa: BLE001 - a legacy failure must not resurrect a dead row
+        print(f"[WANDERER] legacy for {wanderer.get('slug')} failed: {type(exc).__name__}: {exc}")
+    try:
+        from .wanderer_relationship_service import grieve_death
+
+        grieve_death(conn, wanderer)
+    except Exception as exc:  # noqa: BLE001 - emotions are best-effort
+        print(f"[WANDERER] grief for {wanderer.get('slug')} failed: {type(exc).__name__}: {exc}")
 
 
 def _invalidate_emblem(student_ids: list[int]) -> None:

@@ -39,13 +39,15 @@ from .wanderer_identity_service import (
     MAX_TIER,
     STATUS_ACTIVE,
     clamp_tier,
-    evaluate_death,
+    death_reason,
     insert_dao_review,
     invalidate_wanderer_cache,
     list_wanderers,
     load_wanderer,
     mark_dead,
 )
+from .wanderer_life_core import DAO_TALENT_CHANGES_PER_REVIEW, DAO_TALENT_DELTA_LIMIT, TALENTS, talent_bounds
+from .wanderer_life_service import apply_life_penalty, apply_talent_change, promote_life
 from .wanderer_settings_service import SETTING_LAST_DAO_REVIEW_AT, is_wanderer_runtime_enabled, wanderer_runtime_setting_set
 
 NOTIFICATION_CATEGORY = "wanderer_dao"
@@ -56,7 +58,11 @@ DUPLICATE_WARNING_REASON = "已在 20 小时内警告过，本次不重复计数
 WARN_WARNED, WARN_DEMOTED, WARN_DUPLICATE = "warned", "demoted", "duplicate"
 _VERDICT_TITLES = {
     "warning": "天道警告", "demoted": "天道降阶", "approved": "升阶获准", "rejected": "升阶被驳回", "died": "陨落",
+    "adjusted": "天道改命", "deducted": "天道折寿", "upheld": "抗辩获准", "rejected_appeal": "抗辩驳回",
 }
+PENALTY_MIN_WEEKS, PENALTY_MAX_WEEKS = 0.5, 4.0
+APPEAL_VERDICTS = {"upheld", "rejected"}
+APPEAL_REFUND_WINDOW_DAYS = 30
 
 ConnFactory = Optional[Callable[[], Any]]
 
@@ -109,14 +115,28 @@ def _invalidate(wanderer: dict[str, Any]) -> None:
     invalidate_emblem_cache([wanderer["student_id"]])
 
 
+def _refresh_life_after_tier(conn: Any, wanderer_id: int) -> Optional[str]:
+    """After a tier change the lifespan shrinks/grows; a demotion may end a life at once."""
+    fresh = load_wanderer(conn, wanderer_id)
+    if fresh is None or str(fresh.get("status") or "") != STATUS_ACTIVE:
+        return None
+    reason = death_reason(conn, fresh)
+    if reason:
+        mark_dead(conn, wanderer_id, reason)
+        return reason
+    return None
+
+
 def demote(conn: Any, wanderer: dict[str, Any], reason: str, evidence: Optional[dict[str, Any]] = None) -> int:
     tier = clamp_tier(wanderer.get("tier"))
     to_tier = max(0, tier - 1)
     conn.execute("UPDATE wanderer_agents SET tier = ?, warnings_count = 0, updated_at = ? WHERE id = ?",
                  (to_tier, local_iso(), int(wanderer["id"])))
+    promote_life(conn, wanderer, to_tier)
     review_id = _record(conn, wanderer, kind="discipline", verdict="demoted", from_tier=tier, to_tier=to_tier,
                         reason=reason, evidence=evidence)
     _invalidate(wanderer)
+    _refresh_life_after_tier(conn, int(wanderer["id"]))
     return review_id
 
 
@@ -189,14 +209,57 @@ def _clean_entries(value: Any, valid_ids: set[int]) -> list[dict[str, Any]]:
     return entries
 
 
+def _clean_penalties(value: Any, valid_ids: set[int]) -> list[dict[str, Any]]:
+    entries = []
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            wanderer_id = int(item.get("wanderer_id"))
+            weeks = float(item.get("weeks"))
+        except (TypeError, ValueError):
+            continue
+        reason = str(item.get("reason") or "").strip()[:300]
+        if wanderer_id not in valid_ids or not reason:
+            continue
+        entries.append({"wanderer_id": wanderer_id, "weeks": max(PENALTY_MIN_WEEKS, min(PENALTY_MAX_WEEKS, weeks)),
+                        "reason": reason})
+    return entries
+
+
+def _clean_talent_changes(value: Any, valid_ids: set[int]) -> list[dict[str, Any]]:
+    entries = []
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            wanderer_id = int(item.get("wanderer_id"))
+            delta = float(item.get("delta"))
+        except (TypeError, ValueError):
+            continue
+        talent = str(item.get("talent") or "").strip()
+        reason = str(item.get("reason") or "").strip()[:300]
+        if wanderer_id not in valid_ids or talent not in TALENTS or not reason or abs(delta) < 1e-9:
+            continue
+        entries.append({"wanderer_id": wanderer_id, "talent": talent,
+                        "delta": max(-DAO_TALENT_DELTA_LIMIT, min(DAO_TALENT_DELTA_LIMIT, delta)),
+                        "reason": reason})
+        if len(entries) >= DAO_TALENT_CHANGES_PER_REVIEW:
+            break
+    return entries
+
+
 def parse_discipline(result: Any, valid_ids: set[int]) -> Optional[dict[str, list[dict[str, Any]]]]:
-    """None when the verdict is unusable (not an object, or neither list present)."""
+    """None when the verdict is unusable (not an object, or no recognised list present)."""
     if not isinstance(result, dict):
         return None
-    if not isinstance(result.get("warnings"), list) and not isinstance(result.get("demotions"), list):
+    keys = ("warnings", "demotions", "penalties", "talent_changes")
+    if not any(isinstance(result.get(key), list) for key in keys):
         return None
     return {"warnings": _clean_entries(result.get("warnings"), valid_ids),
-            "demotions": _clean_entries(result.get("demotions"), valid_ids)}
+            "demotions": _clean_entries(result.get("demotions"), valid_ids),
+            "penalties": _clean_penalties(result.get("penalties"), valid_ids),
+            "talent_changes": _clean_talent_changes(result.get("talent_changes"), valid_ids)}
 
 
 def _apply_one(conn_factory: ConnFactory, wanderer_id: int, action: Callable[[Any, dict[str, Any]], Any]) -> Any:
@@ -209,9 +272,46 @@ def _apply_one(conn_factory: ConnFactory, wanderer_id: int, action: Callable[[An
     return result
 
 
+def _apply_penalty_row(conn: Any, wanderer: dict[str, Any], entry: dict[str, Any],
+                       evidence: Optional[dict[str, Any]]) -> dict[str, Any]:
+    tier = clamp_tier(wanderer.get("tier"))
+    _record(conn, wanderer, kind="penalty", verdict="deducted", from_tier=tier, to_tier=tier,
+            reason=entry["reason"], evidence={**(evidence or {}), "requested_weeks": entry["weeks"]})
+    result = apply_life_penalty(conn, wanderer, entry["weeks"], reason=entry["reason"])
+    _record_life_aftermath(conn, wanderer, "寿命被天罚削减", result)
+    return result
+
+
+def _apply_talent_row(conn: Any, wanderer: dict[str, Any], entry: dict[str, Any],
+                      evidence: Optional[dict[str, Any]]) -> dict[str, Any]:
+    tier = clamp_tier(wanderer.get("tier"))
+    result = apply_talent_change(conn, wanderer, entry["talent"], entry["delta"], reason=entry["reason"],
+                                 created_by="dao")
+    _record(conn, wanderer, kind="talent", verdict="adjusted", from_tier=tier, to_tier=tier,
+            reason=f"{TALENTS[entry['talent']]['label']} {result['from']:g}→{result['to']:g}：{entry['reason']}",
+            evidence={**(evidence or {}), **result})
+    if entry["talent"] == "vitality":
+        _refresh_life_after_tier(conn, int(wanderer["id"]))  # a 根骨 drop can end a life
+    return result
+
+
+def _record_life_aftermath(conn: Any, wanderer: dict[str, Any], note: str, result: dict[str, Any]) -> None:
+    """A deducted life is important enough to appear in the verdict feed."""
+    tier = clamp_tier(wanderer.get("tier"))
+    insert_dao_review(
+        conn, wanderer_id=int(wanderer["id"]), review_kind="life", verdict="noted",
+        from_tier=tier, to_tier=tier,
+        reason=f"{note} {result.get('weeks', 0):g} 周，剩余约 {result.get('remaining_days', 0)} 天"
+               + ("，已陨落。" if result.get("died") else "。"),
+        evidence={"weeks": result.get("weeks"), "remaining_days": result.get("remaining_days"),
+                  "died": result.get("died")},
+    )
+
+
 def apply_discipline(conn_factory: ConnFactory, verdicts: dict[str, list[dict[str, Any]]],
                      evidence_by_id: dict[int, dict[str, Any]]) -> dict[str, int]:
-    counts = {"warnings": 0, "demotions": 0, "duplicate_warnings": 0}
+    counts = {"warnings": 0, "demotions": 0, "duplicate_warnings": 0, "penalties": 0, "penalty_deaths": 0,
+              "talent_changes": 0}
     demoted: set[int] = set()
     for entry in verdicts["warnings"]:
         wanderer_id, reason = entry["wanderer_id"], entry["reason"]
@@ -234,6 +334,20 @@ def apply_discipline(conn_factory: ConnFactory, verdicts: dict[str, list[dict[st
                       lambda conn, w: demote(conn, w, reason, evidence_by_id.get(wanderer_id))) is not None:
             demoted.add(wanderer_id)
             counts["demotions"] += 1
+    for entry in verdicts.get("penalties") or []:
+        wanderer_id = entry["wanderer_id"]
+        result = _apply_one(conn_factory, wanderer_id,
+                            lambda conn, w: _apply_penalty_row(conn, w, entry, evidence_by_id.get(wanderer_id)))
+        if result is None:
+            continue
+        counts["penalties"] += 1
+        if result.get("died"):
+            counts["penalty_deaths"] += 1
+    for entry in verdicts.get("talent_changes") or []:
+        wanderer_id = entry["wanderer_id"]
+        if _apply_one(conn_factory, wanderer_id,
+                      lambda conn, w: _apply_talent_row(conn, w, entry, evidence_by_id.get(wanderer_id))) is not None:
+            counts["talent_changes"] += 1
     return counts
 
 
@@ -257,6 +371,8 @@ def _apply_promotion(conn: Any, wanderer: dict[str, Any], verdict: str, reason: 
     to_tier = min(MAX_TIER, tier + 1) if verdict == "approved" else tier
     conn.execute("UPDATE wanderer_agents SET tier = ?, promotion_requested = 0, updated_at = ? WHERE id = ?",
                  (to_tier, local_iso(), int(wanderer["id"])))
+    if verdict == "approved" and to_tier != tier:
+        promote_life(conn, wanderer, to_tier)
     _record(conn, wanderer, kind="promotion", verdict=verdict, from_tier=tier, to_tier=to_tier,
             reason=reason or ("准予升阶。" if verdict == "approved" else "暂不准升阶。"), advice=advice,
             evidence={**evidence, "promotion_note": str(wanderer.get("promotion_note") or "")[:500]})
@@ -284,16 +400,110 @@ async def review_promotion(conn_factory: ConnFactory, wanderer: dict[str, Any], 
 
 
 # ---------------------------------------------------------------------------
+# Appeals (lifecycle doc §4.4 / §8.2)
+# ---------------------------------------------------------------------------
+
+def _latest_verdict(conn: Any, wanderer_id: int, *, verdict: str, days: Optional[int] = None) -> Optional[dict[str, Any]]:
+    sql = ("SELECT id, reason, evidence_json, created_at FROM wanderer_dao_reviews WHERE wanderer_id = ? "
+           f"AND verdict = ?")
+    params: list[Any] = [int(wanderer_id), verdict]
+    if days is not None:
+        sql += " AND created_at >= ?"
+        params.append((local_now() - timedelta(days=int(days))).isoformat(timespec="seconds"))
+    sql += " ORDER BY id DESC LIMIT 1"
+    row = conn.execute(sql, tuple(params)).fetchone()
+    return None if row is None else {key: row[key] for key in row.keys()}
+
+
+def _appeal_message(wanderer: dict[str, Any], warning: dict[str, Any], evidence: dict[str, Any]) -> str:
+    return (
+        f"散修「{wanderer.get('display_name')}」对下面这次警告提出抗辩，请你复核原警告的证据是否成立。\n"
+        "只输出抗辩裁决 JSON：证据成立则 rejected，证据不足或误判则 upheld（并撤销该次警告）。\n"
+        f"<<<原警告>>>\n{str(warning.get('reason') or '')[:600]}\n<<<原警告结束>>>\n"
+        f"<<<抗辩理由>>>\n{str(wanderer.get('appeal_note') or '（未写理由）')[:500]}\n<<<抗辩理由结束>>>\n"
+        f"<<<证据开始>>>\n{_dumps(evidence)}\n<<<证据结束>>>"
+    )
+
+
+def _refund_penalty(conn: Any, wanderer: dict[str, Any]) -> float:
+    """Undo the most recent 天罚折寿 within 30 days when an appeal is upheld."""
+    penalty = _latest_verdict(conn, int(wanderer["id"]), verdict="deducted", days=APPEAL_REFUND_WINDOW_DAYS)
+    if penalty is None:
+        return 0.0
+    try:
+        evidence = json.loads(penalty.get("evidence_json") or "{}")
+    except (TypeError, ValueError):
+        evidence = {}
+    try:
+        weeks = float((evidence or {}).get("weeks") or 0)
+    except (TypeError, ValueError):
+        weeks = 0.0
+    if weeks <= 0:
+        return 0.0
+    conn.execute(
+        "UPDATE wanderer_agents SET life_penalty_weeks = MAX(0, life_penalty_weeks - ?), updated_at = ? WHERE id = ?",
+        (weeks, local_iso(), int(wanderer["id"])),
+    )
+    return weeks
+
+
+def _apply_appeal(conn: Any, wanderer: dict[str, Any], verdict: str, reason: str) -> None:
+    tier = clamp_tier(wanderer.get("tier"))
+    stored = "upheld" if verdict == "upheld" else "rejected_appeal"
+    refunded = 0.0
+    if verdict == "upheld":
+        conn.execute(
+            "UPDATE wanderer_agents SET warnings_count = MAX(0, warnings_count - 1), updated_at = ? WHERE id = ?",
+            (local_iso(), int(wanderer["id"])),
+        )
+        refunded = _refund_penalty(conn, wanderer)
+    else:
+        apply_life_penalty(conn, wanderer, 0.5, reason=f"抗辩被驳回：{reason[:160]}")
+    conn.execute(
+        "UPDATE wanderer_agents SET appeal_requested = 0, updated_at = ? WHERE id = ?",
+        (local_iso(), int(wanderer["id"])),
+    )
+    _record(conn, wanderer, kind="appeal", verdict=stored, from_tier=tier, to_tier=tier,
+            reason=reason or ("原警告撤销。" if verdict == "upheld" else "原警告维持。"),
+            evidence={"refunded_weeks": refunded, "appeal_note": str(wanderer.get("appeal_note") or "")[:500]})
+    invalidate_wanderer_cache([wanderer["student_id"]])
+
+
+async def review_appeal(conn_factory: ConnFactory, wanderer: dict[str, Any], evidence: dict[str, Any], *,
+                        ai_caller: Optional[AiCaller]) -> str:
+    """'upheld' | 'rejected' | 'failed'."""
+    with _connection(conn_factory) as conn:
+        warning = _latest_verdict(conn, int(wanderer["id"]), verdict="warning", days=7) or {
+            "reason": "最近一次的警告（记录缺失）"}
+    result = await dao_judge(conn_factory, system_prompt=HEAVENLY_DAO_SYSTEM_PROMPT,
+                             user_message=_appeal_message(wanderer, warning, evidence), kind="appeal",
+                             ai_caller=ai_caller, subject_student_id=int(wanderer["student_id"]))
+    payload = result.get("result") if isinstance(result.get("result"), dict) else {}
+    verdict = str(payload.get("verdict") or "").strip().lower()
+    if verdict not in APPEAL_VERDICTS:
+        return "failed"
+    with _connection(conn_factory) as conn:
+        fresh = load_wanderer(conn, int(wanderer["id"]))
+        if fresh is None or fresh.get("status") != STATUS_ACTIVE or not int(fresh.get("appeal_requested") or 0):
+            return "failed"
+        _apply_appeal(conn, fresh, verdict, str(payload.get("reason") or "")[:300])
+        conn.commit()
+    return verdict
+
+
+# ---------------------------------------------------------------------------
 # Death + audit + entry point
 # ---------------------------------------------------------------------------
 
 def _death_sweep(conn_factory: ConnFactory, wanderer_ids: Iterable[int]) -> int:
     died = 0
-    reason = "知识尽失、修为归零，判定陨落。"
     for wanderer_id in wanderer_ids:
         with _connection(conn_factory) as conn:
             wanderer = load_wanderer(conn, wanderer_id)
-            if wanderer is None or wanderer.get("status") != STATUS_ACTIVE or not evaluate_death(conn, wanderer):
+            if wanderer is None or wanderer.get("status") != STATUS_ACTIVE:
+                continue
+            reason = death_reason(conn, wanderer)
+            if not reason:
                 continue
             review_id = mark_dead(conn, wanderer_id, reason)
             notify_wanderer(conn, wanderer, review_id, "died", reason)
@@ -314,8 +524,10 @@ def _audit(conn_factory: ConnFactory, *, reason: str, counts: dict[str, Any], sc
 
 def _summary_reason(counts: dict[str, Any]) -> str:
     return (f"今日审核 {counts['reviewed']} 位散修：警告 {counts['warnings']}，降阶 {counts['demotions']}，"
-            f"升阶批准 {counts['approved']}，驳回 {counts['rejected']}，陨落 {counts['died']}，"
-            f"造人 {counts.get('created', 0)}。")
+            f"扣寿 {counts.get('penalties', 0)}，改天赋 {counts.get('talent_changes', 0)}，"
+            f"升阶批准 {counts['approved']}，驳回 {counts['rejected']}，"
+            f"抗辩成立 {counts.get('appeals_upheld', 0)}，抗辩驳回 {counts.get('appeals_rejected', 0)}，"
+            f"陨落 {counts['died']}，造人 {counts.get('created', 0)}。")
 
 
 def _load_scope(conn_factory: ConnFactory, wanderer_ids: Optional[Iterable[Any]]) -> list[dict[str, Any]]:
@@ -347,6 +559,17 @@ async def _review_promotions(conn_factory: ConnFactory, scope: list[dict[str, An
         counts[verdict if verdict in {"approved", "rejected"} else "promotion_failed"] += 1
 
 
+async def _review_appeals(conn_factory: ConnFactory, scope: list[dict[str, Any]], counts: dict[str, Any],
+                          ai_caller: Optional[AiCaller]) -> None:
+    for item in scope:
+        with _connection(conn_factory) as conn:
+            fresh = load_wanderer(conn, int(item["wanderer"]["id"]))
+        if fresh is None or fresh.get("status") != STATUS_ACTIVE or not int(fresh.get("appeal_requested") or 0):
+            continue
+        verdict = await review_appeal(conn_factory, fresh, item["evidence"], ai_caller=ai_caller)
+        counts[{"upheld": "appeals_upheld", "rejected": "appeals_rejected"}.get(verdict, "appeal_failed")] += 1
+
+
 async def run_dao_review_once(
     conn_factory: ConnFactory = None,
     *,
@@ -361,7 +584,9 @@ async def run_dao_review_once(
     scope = _load_scope(conn_factory, wanderer_ids)
     ids = [int(item["wanderer"]["id"]) for item in scope]
     counts: dict[str, Any] = {"reviewed": len(scope), "warnings": 0, "demotions": 0, "approved": 0,
-                              "rejected": 0, "promotion_failed": 0, "died": 0, "created": 0}
+                              "rejected": 0, "promotion_failed": 0, "died": 0, "created": 0,
+                              "penalties": 0, "penalty_deaths": 0, "talent_changes": 0,
+                              "appeals_upheld": 0, "appeals_rejected": 0, "appeal_failed": 0}
     if scope:
         verdicts, error = await _judge_discipline(conn_factory, scope, ai_caller)
         if verdicts is None:
@@ -371,6 +596,7 @@ async def run_dao_review_once(
         evidence_by_id = {int(item["wanderer"]["id"]): item["evidence"] for item in scope}
         counts.update(apply_discipline(conn_factory, verdicts, evidence_by_id))
         await _review_promotions(conn_factory, scope, counts, ai_caller)
+        await _review_appeals(conn_factory, scope, counts, ai_caller)
     counts["died"] = _death_sweep(conn_factory, ids)
     extra: dict[str, Any] = {}
     if wanderer_ids is None:

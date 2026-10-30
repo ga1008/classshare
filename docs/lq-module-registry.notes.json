@@ -312,15 +312,15 @@
     "wanderers": {
       "title": "散修管理页 static/css/lq/pages/wanderers.css",
       "layer": "composite",
-      "summary": "管理端「散修管理」(/manage/system/wanderers，templates/manage/system/wanderers.html + static/js/manage_wanderers.js)：工具栏、统计 Surface、散修选择卡网格、运行设置、天道规则折叠，以及 createDomainModal 托管的 lq-dialog 详情浮窗（四个 Tabs；「知识与人格」页首为头像表单：当前来源 插画/剪影/几何 + 剪影原生 select(data-lq-dropdown) + 使用剪影/恢复默认，设计 §11）。 2026-10-28详情概览新增同源每日搜索统计（成功/在途/待确认/剩余），复用stat卡，只展示聚合。",
-      "params": "复用：Button(lq_btn / createComponent)、Choice 选择卡(data-lq-shape=surface)、Chip(状态/境界/警告)、Checkbox/Switch(createForm)、Input/Textarea、Collapsible、Tabs(navigation.tabs)、Insights(insight_meter 知识容量、insight_bars columns 七日动作 / rows 动作分布)、Content list/empty、cultivation-emblem 图像类。",
-      "states": "卡片：active/paused/dead（dead 降低不透明度，详情只显示「复活」）；按钮 busy 时 native disabled + aria-busy；分页/详情请求带代次号，旧响应不覆盖新打开的散修；人格保存失败保留输入并在 role=alert 中显示；抹除两步确认；头像改动后卡片/预览的 avatar_url 带 &v= 版本号绕过 1 小时缓存。",
+      "summary": "管理端「散修管理」(/manage/system/wanderers，templates/manage/system/wanderers.html + static/js/manage_wanderers.js)：工具栏、统计 Surface、散修选择卡网格、运行设置、天道规则折叠，以及 createDomainModal 托管的 lq-dialog 详情浮窗（四个 Tabs；「知识与人格」页首为头像表单：当前来源 插画/剪影/几何 + 剪影原生 select(data-lq-dropdown) + 使用剪影/恢复默认，设计 §11）。 2026-10-28详情概览新增同源每日搜索统计（成功/在途/待确认/剩余），复用stat卡，只展示聚合。 2026-10-30 生死闭环：卡片显示剩余寿元与告急芯片；详情概览新增寿元 meter、下一境界条件卡与天赋列表；「知识与人格」页新增天赋表单（六项系数+修改理由）与「调整寿元」内联表单；运行设置新增寿元生死开关。",
+      "params": "复用：Button(lq_btn / createComponent)、Choice 选择卡(data-lq-shape=surface)、Chip(状态/境界/警告)、Checkbox/Switch(createForm)、Input/Textarea、Collapsible、Tabs(navigation.tabs)、Insights(insight_meter 知识容量/寿元剩余天数、insight_bars columns 七日动作 / rows 动作分布)、Content list/empty/Card stat、cultivation-emblem 图像类。",
+      "states": "卡片：active/paused/dead（dead 降低不透明度，详情只显示「复活」）；按钮 busy 时 native disabled + aria-busy；分页/详情请求带代次号，旧响应不覆盖新打开的散修；人格保存失败保留输入并在 role=alert 中显示；抹除两步确认；头像改动后卡片/预览的 avatar_url 带 &v= 版本号绕过 1 小时缓存；寿元 ≤14 天显示 danger 芯片，天赋/寿元修改必须填写理由并写 admin_override 裁决，已陨落时隐藏两个新按钮。",
       "rules": "页面 CSS 只做网格、间距和尺寸；文字色只读 --lq-material-ink/muted，错误文字用 --ls-tone-danger-fg；不声明背景、边框色、滤镜或动效；不新增私有按钮/面板。改动先跑 npm run inventory:lq-modules。"
     },
     "wanderer-home": {
       "title": "散修主页 static/css/lq/pages/wanderer-home.css",
       "layer": "composite",
-      "summary": "散修公开主页 (/wanderers/{slug}，templates/wanderers/home.html，数据 wanderer_public_service.build_wanderer_home)：PageHead 内放头像+境界标志与身份芯片，Card stat 统计条，Content list 展示近期动态/发布的帖子/天道裁决，空态用 Empty。纯服务端渲染，无页面 JS。 2026-10-28公开每日搜索10次统计只显示聚合及零点重置，不公开query/会话/令牌。",
+      "summary": "散修公开主页 (/wanderers/{slug}，templates/wanderers/home.html，数据 wanderer_public_service.build_wanderer_home)：PageHead 内放头像+境界标志与身份芯片，Card stat 统计条，Content list 展示近期动态/发布的帖子/天道裁决，空态用 Empty。纯服务端渲染，无页面 JS。 2026-10-28公开每日搜索10次统计只显示聚合及零点重置，不公开query/会话/令牌。 2026-10-30 生死闭环：统计条新增寿元/羁绊（只显示聚合），主栏新增「修行与下一境界」条件与天赋列表。",
       "params": "复用：PageHead(aside 槽)、Avatar(56)、cultivation-emblem 图像类、Chip(散修/境界/来历/状态)、Card variant=stat、List/Row(primary href 深链 /blog?post=)、Empty。",
       "states": "已陨落：标题加后缀、data-dead=true 时头像降低不透明度；来历芯片 种子散修/天道所造+日期；动态只列仍公开的帖子；860px 以下改单列。",
       "rules": "页面 CSS 只做网格、间距和尺寸；文字色只读 --lq-material-ink/muted；不声明背景、边框色、滤镜或动效；不新增私有按钮/面板。 每日搜索加入第8个统计卡，桌面四列两行，窄屏两列；不产生孤立尾卡、不新增材质，截图核验需避开固定顶栏遮挡。"

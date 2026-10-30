@@ -28,6 +28,7 @@ ONLY_CLASSROOM = {**{key: 0 for key in ONLY_BLOG}, "classroom_visit": 1, "classr
 _RESET_TABLES = (
     "wanderer_experience_notes",
     "wanderer_social_inbox",
+    "wanderer_relationships", "wanderer_legacies",
     "wanderer_action_log", "wanderer_memory_threads", "wanderer_dao_reviews", "message_center_notifications",
     "private_messages", "chat_logs", "blog_likes", "blog_comments", "blog_posts", "scheduled_tasks",
     "material_search_chunks", "material_search_documents", "course_material_assignments", "course_materials",
@@ -121,6 +122,10 @@ class WandererWorldTestCase(WandererDbTestCase):
             wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "400")
             conn.execute("UPDATE wanderer_agents SET status = 'active', promotion_requested = 0, "
                          "promotion_requested_at = NULL, warnings_count = 0, last_warning_at = NULL, stats_json = '{}', "
+                         "born_at = created_at, lifespan_weeks = 0, life_penalty_weeks = 0, life_extensions = 0, "
+                         "talents_json = '{}', legacy_id = NULL, last_extend_at = NULL, last_appeal_at = NULL, "
+                         "last_resurrect_at = NULL, appeal_requested = 0, appeal_requested_at = NULL, appeal_note = '', "
+                         "origin = CASE WHEN origin = 'reincarnated' THEN 'seed' ELSE origin END, "
                          "knowledge_chars = (SELECT COALESCE(SUM(k.chars), 0) FROM wanderer_knowledge_entries k "
                          "WHERE k.wanderer_id = wanderer_agents.id AND k.status = 'active')")
             conn.commit()
