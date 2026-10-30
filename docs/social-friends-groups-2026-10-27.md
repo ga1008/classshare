@@ -172,7 +172,7 @@ server -> {type:'pong'} | {type:'hello', me, online_friends:[identity], unread_t
 - 顶栏两套模板都加「好友」按钮 + 未读徽标；所有已登录页面加载 `static/js/social/social_client.js`（全局 ws、在线、推送、徽标、桌面标题闪烁提示）。
 - 好友浮窗（`createDomainModal`）：选项卡「好友 / 新朋友 / 群组 / 添加」；好友卡片网格，在线：亮起、上浮、背光（`--lq-material-accent` 光晕、`translateY(-2px)`、阴影）；离线：去饱和、下沉；尊重 `prefers-reduced-motion`；卡片显示头像+境界标志、备注/姓名、心情、未读；在线优先排序。「黑名单」按钮打开独立黑名单浮窗。
 - 聊天浮窗：左侧会话列表（可折叠）、中间消息区（`lq-bubble`、Markdown、图片灯箱 `data-ls-lightbox`、视频/音频播放器、文件卡片、过期占位、局域网直传徽标、引用回复、撤回、已读、输入中、拍一拍动画）、底部 `lq_composer`（表情 `createEmojiPicker`、粘贴图片、附件、录音、Markdown 工具条、@成员、Enter 发送/Shift+Enter 换行、上传进度、配额提示）；右侧栏（好友：头像、在线、心情、修为摘要、最新动态、备注、拍一拍、删除、拉黑、课堂私信入口、散修主页；群：公告、成员在线优先、群文件、群设置）。
-- 在线标识（2026-10-30）：头像右下角不再叠加绿点（会压住境界标志），改为头像自身的绿色发光外环（`.social-avatar[data-online="true"] > .lq-avatar`，静态 box-shadow，无逐头像动画/filter）；会话列表、好友卡片、群成员、资料卡共用同一状态钩子。`/ws/social` 的 presence 突发由 `social_client` 合并为每帧一次 `presence-settled`，列表与侧栏整表重绘最多 1 次/帧；`hello` 重建在线缓存以清掉重连前的陈旧在线。
+- 在线标识（2026-10-30）：头像右下角不再叠加绿点（会压住境界标志），改为头像自身的绿色发光外环（`.social-avatar[data-online="true"] > .lq-avatar`，静态 box-shadow，无逐头像动画/filter）；会话列表、好友卡片、群成员、资料卡共用同一状态钩子；离线/未知不显示外环，会话列表与群成员头像同样去饱和变暗（群聊会话无 `data-online`，不受影响）。`/ws/social` 的 presence 突发由 `social_client` 合并为每帧一次 `presence-settled`，列表与侧栏整表重绘最多 1 次/帧；`hello` 重建在线缓存以清掉重连前的陈旧在线。
 - 发文件：算 SHA-256 → precheck → 不存在再分块上传；超限给出清晰提示。
 - 局域网直传：对方在线且文件 ≥ 5 MB 时先试 WebRTC DataChannel（`iceServers: []` 只用本地候选，8 s 未连通退回服务器上传）；成功后发送方后台 ≤ 512 KB/s 补传服务器并调 backfill，其他设备在补传前看到「源设备补传中」。
 - 只用 LQ 组件/令牌，玻璃上文字遵守场景墨色；改完 `npm run inventory:lq-modules` 并维护 notes；在生产同款 LQ 开关（`main-dev-lq` 启动配置）下验证。

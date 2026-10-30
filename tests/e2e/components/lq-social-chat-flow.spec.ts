@@ -163,6 +163,9 @@ test('presence is an avatar ring, never a dot over the cultivation emblem', asyn
     await push(page, { type: 'presence', identity: 'student:2', online: false });
     await expect(avatar).toHaveAttribute('data-online', 'false');
     await expect.poll(() => face.evaluate(el => getComputedStyle(el).boxShadow)).toBe('none');
+    // Offline conversations match the group roster: desaturated and dimmed.
+    await expect.poll(() => face.evaluate(el => getComputedStyle(el).filter)).toContain('grayscale');
+    await page.screenshot({ path: testInfo.outputPath('presence-ring-offline.png') });
 });
 
 test('a 200-friend presence burst repaints the list once, not per frame event', async ({ page }) => {

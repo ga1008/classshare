@@ -31,6 +31,9 @@
         0 0 0 2px hsl(var(--ls-tone-success-base)),
         0 0 10px 2px hsl(var(--ls-tone-success-base) / .62);
 }
+/* Conversation rows use the same offline treatment as group members. Group
+   conversations have no data-online attribute, so their avatars stay intact. */
+.social-conv .social-avatar[data-online="false"] > .lq-avatar { filter: grayscale(.85); opacity: .72; }
 
 /* ---------------------------------------------------------------- friends */
 .social-friends { display: grid; gap: var(--ls-s-3); }
