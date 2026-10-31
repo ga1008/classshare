@@ -189,14 +189,14 @@ class WandererLifeDbTest(WandererDbTestCase):
                                     stats_json="{}")
             granted = sum(award_interaction_cultivation(conn, wanderer, ["social_message"]) for _ in range(30))
             conn.commit()
-            self.assertAlmostEqual(granted, 6.0, places=2)
+            self.assertAlmostEqual(granted, 9.0, places=2)
             conn.execute("UPDATE wanderer_agents SET stats_json = ? WHERE id = ?",
                          ('{"cult_day":"2000-01-01","cult_today":0}', wanderer["id"]))
             conn.commit()
             next_day = award_interaction_cultivation(conn, load_wanderer_by_slug(conn, "xiaoman"), ["social_message"])
             score = load_wanderer_by_slug(conn, "xiaoman")["cultivation_score"]
         self.assertAlmostEqual(next_day, 0.3, places=2)
-        self.assertAlmostEqual(score, 6.3, places=2)
+        self.assertAlmostEqual(score, 9.3, places=2)
 
     def test_penalty_can_end_a_life_and_keeps_a_legacy(self):
         with self.connect() as conn:

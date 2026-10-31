@@ -150,11 +150,21 @@ def backfill_all(conn: Any) -> int:
 # ---------------------------------------------------------------------------
 
 def award_interaction_cultivation(conn: Any, wanderer: dict[str, Any], kinds: Iterable[Any]) -> float:
-    """Add 互动修为 for successful actions, capped per local day. Caller commits."""
+    """Add 互动修为 for successful actions, capped per local day. Caller commits.
+
+    Entries may be plain action kinds or dicts with ``kind``, ``real_user``,
+    ``target_tier`` and ``chars``; a real user's reply is the richest channel.
+    """
     points = 0.0
     eloquence = talent_value(wanderer.get("talents"), "eloquence")
-    for kind in kinds or []:
-        points += interaction_gain(kind, eloquence)
+    for item in kinds or []:
+        if isinstance(item, dict):
+            points += interaction_gain(item.get("kind"), eloquence,
+                                       real_user=bool(item.get("real_user")),
+                                       target_tier=item.get("target_tier"),
+                                       chars=item.get("chars"))
+        else:
+            points += interaction_gain(item, eloquence)
     if points <= 0:
         return 0.0
     wanderer_id = int(wanderer["id"])
@@ -371,11 +381,25 @@ def life_payload(wanderer: dict[str, Any], *, now: Any = None) -> dict[str, Any]
 
     life = current_life(wanderer, now)
     score = _as_float(wanderer.get("cultivation_score"))
+    perks = tier_perks(wanderer.get("tier"), wanderer.get("daily_action_budget"))
+    penalty = max(0, int(wanderer.get("interaction_limit_penalty") or 0))
+    until = str(wanderer.get("interaction_penalty_until") or "")
+    active_penalty = 0
+    if penalty and until:
+        try:
+            if parse_datetime(until) and parse_datetime(until) >= (now or local_now()):
+                active_penalty = min(penalty, perks["daily_budget"] - 1)
+        except (TypeError, ValueError):
+            active_penalty = 0
+    if active_penalty:
+        perks = {**perks, "daily_budget": max(1, perks["daily_budget"] - active_penalty),
+                 "interaction_limit_penalty": active_penalty}
     return {
         **life,
         "tier": clamp_tier(wanderer.get("tier")),
         "talents": talent_effects(wanderer.get("talents")),
-        "perks": tier_perks(wanderer.get("tier"), wanderer.get("daily_action_budget")),
+        "perks": perks,
+        "interaction_penalty_until": until,
         "extension_available": can_extend_life(life, score),
         "extension_cost": life_extension_cost(score),
         "extension_max": MAX_LIFE_EXTENSIONS,

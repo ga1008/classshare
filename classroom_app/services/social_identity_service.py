@@ -55,7 +55,7 @@ def _student_people(conn: Any, ids: list[int]) -> dict[str, dict[str, Any]]:
 
     marks, params = in_clause(ids)
     rows = conn.execute(
-        f"SELECT s.id, s.name, s.today_mood, s.enrollment_status, s.college, c.name AS class_name "
+        f"SELECT s.id, s.name, s.gender, s.today_mood, s.enrollment_status, s.college, c.name AS class_name "
         f"FROM students s LEFT JOIN classes c ON c.id = s.class_id WHERE s.id IN ({marks})",
         params,
     ).fetchall()
@@ -71,10 +71,13 @@ def _student_people(conn: Any, ids: list[int]) -> dict[str, dict[str, Any]]:
             "identity": identity,
             "role": "student",
             "name": str(wanderer.get("display_name") or row["name"] or ""),
+            "gender": str(row["gender"] or ""),
             "role_label": "散修" if wanderer else "学生",
             "org_label": "散修·无宗门" if wanderer else str(row["class_name"] or row["college"] or ""),
             "is_wanderer": bool(wanderer),
             "wanderer_slug": str(wanderer.get("slug") or ""),
+            "cultivation_score": float(wanderer.get("cultivation_score") or 0),
+            "wanderer_tier": int(wanderer.get("tier") or 0),
             "mood": str(row["today_mood"] or ""),
             "active": status in ACTIVE_STUDENT_STATUSES and wanderer.get("status") != "dead",
             "tier_badge": _tier_badge(emblems.get(student_id)),
@@ -143,6 +146,7 @@ def public_user(person: dict[str, Any], relation: str) -> dict[str, Any]:
     return {
         "identity": person["identity"],
         "name": person["name"],
+        "gender": person.get("gender") or "",
         "role_label": person["role_label"],
         "org_label": person["org_label"],
         "avatar_url": avatar_url(person["identity"]),

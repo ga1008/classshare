@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-10-31",
+ "generatedAt": "2026-11-01",
  "generator": "python tools/ui/lq_module_registry.py",
  "modules": {
   "materials": {
@@ -2480,12 +2480,12 @@
       "hits": 20
      },
      {
-      "path": "templates/wanderers/home.html",
+      "path": "static/js/manage_wanderers.js",
       "hits": 18
      },
      {
-      "path": "static/js/manage_wanderers.js",
-      "hits": 17
+      "path": "templates/wanderers/home.html",
+      "hits": 18
      },
      {
       "path": "templates/assignment_detail_student.html",

@@ -48,7 +48,7 @@ class AwakeSelectionTest(WandererWorldTestCase):
                                      schedule_json={"active_hours": [[0, 24]], "weekday_weights": {}})
         self.assertIn("linwanzhou", self._awake_slugs(datetime.now()))
         with self.connect() as conn:
-            for _ in range(3):
+            for _ in range(31):
                 log_wanderer_action(conn, wanderer["id"], "browse_post", target_id=1)
             conn.commit()
         self.assertNotIn("linwanzhou", self._awake_slugs(datetime.now()))

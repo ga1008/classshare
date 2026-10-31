@@ -134,7 +134,7 @@ class SocialFriendApiTest(SocialDbTestCase):
         self.assertEqual(client.get("/api/social/friends/requests").json()["outgoing"][0]["user"]["identity"], self.b)
         search = client.get("/api/social/users/search", params={"q": "乙"}).json()["items"]
         self.assertEqual(search[0]["relation"], "pending_out")
-        self.assertEqual(set(search[0]), {"identity", "name", "role_label", "org_label", "avatar_url",
+        self.assertEqual(set(search[0]), {"identity", "name", "gender", "role_label", "org_label", "avatar_url",
                                           "is_wanderer", "tier_badge", "relation", "can_add",
                                           "add_blocked_reason"})  # §12.6 adds can_add / add_blocked_reason
         self.assertFalse(search[0]["can_add"])  # already requested

@@ -400,11 +400,19 @@ function lifeSection(detail) {
         value: `${life.perks?.active_speech_limit ?? '—'} 字`,
         meta: '每条上限，随境界放宽 · 被直接问起时不限长',
     });
+    const penalty = life.perks?.interaction_limit_penalty
+        ? ` · 天道限制 -${life.perks.interaction_limit_penalty} 次至 ${formatTime(life.interaction_penalty_until)}`
+        : '';
+    const limits = createContent('card', {
+        title: '每日额度', variant: 'stat',
+        value: `${life.perks?.daily_budget ?? '—'} 次互动`,
+        meta: `网络搜索 ${life.perks?.web_search_limit ?? '—'} 次／天${penalty}`,
+    });
     const talents = createContent('list', {
         label: '天赋',
         items: (life.talents || []).map(item => ({ title: `${item.label} ${item.value}`, meta: item.effect })),
     });
-    return el('div', { class: 'wd-life' }, [el('div', { class: 'wd-stats' }, [meter, requirements, speech]), talents]);
+    return el('div', { class: 'wd-life' }, [el('div', { class: 'wd-stats' }, [meter, requirements, speech, limits]), talents]);
 }
 
 function actionRow(item) {

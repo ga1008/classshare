@@ -38,7 +38,9 @@ def _wanderer_actor(wanderer: dict):
     pk = wanderer.get('id')
     if isinstance(pk, bool) or not str(pk or '').isdigit() or int(pk) <= 0:
         raise HTTPException(403, '散修身份不可用')
-    return {'actor_kind': 'wanderer', 'actor_id': int(pk), 'channel': 'wanderer'}
+    from .wanderer_life_core import wanderer_search_limit
+    return {'actor_kind': 'wanderer', 'actor_id': int(pk), 'channel': 'wanderer',
+            'limit': wanderer_search_limit(wanderer.get('tier'))}
 
 
 def _unavailable_quota(channel):

@@ -234,11 +234,60 @@ def _relationship_evidence(conn: Any, wanderer_id: int) -> dict[str, Any]:
     return {"total": len(items), "close": close, "disliked": disliked}
 
 
+def directed_real_user_messages(conn: Any, identity: str, wanderer_ids: set[str], now: datetime,
+                                limit: int = 8) -> list[dict[str, Any]]:
+    """The wanderer's own lines aimed at real users, with the preceding line for context.
+
+    Only the judge sees this: the body helps distinguish a requested role-play
+    from an unprovoked attack. Counterpart identities are never included.
+    """
+    from .social_common import parse_conversation_key
+
+    rows = conn.execute(
+        "SELECT id, conversation_type, conversation_key, body, created_at FROM social_messages "
+        "WHERE sender_identity = ? AND created_at >= ? AND message_type = 'text' "
+        "ORDER BY id DESC LIMIT 40",
+        (identity, _utc_iso(now - timedelta(days=1))),
+    ).fetchall()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        if len(items) >= max(1, int(limit)):
+            break
+        body = str(row["body"] or "").strip()
+        if not body:
+            continue
+        try:
+            parsed = parse_conversation_key(row["conversation_key"])
+        except Exception:  # noqa: BLE001 - malformed legacy keys are not evidence
+            continue
+        if parsed["type"] == "dm":
+            peer = next((part for part in parsed["parties"] if part != identity), "")
+            if not peer or peer in wanderer_ids:
+                continue
+            role = "teacher" if peer.startswith("teacher:") else "student"
+        else:
+            role = "group"
+        previous = conn.execute(
+            "SELECT body FROM social_messages WHERE conversation_key = ? AND id < ? AND sender_identity <> ? "
+            "AND message_type = 'text' ORDER BY id DESC LIMIT 1",
+            (row["conversation_key"], int(row["id"]), identity),
+        ).fetchone()
+        items.append({"kind": parsed["type"], "peer_role": role, "body": body[:240],
+                      "previous": str(previous["body"] or "")[:240] if previous else "",
+                      "at": str(row["created_at"] or "")[:16]})
+    return items
+
+
 def collect_evidence(conn: Any, wanderer: dict[str, Any], now: datetime) -> dict[str, Any]:
     identity = f"student:{int(wanderer['student_id'])}"
     tier = clamp_tier(wanderer.get("tier"))
     day_ago, week_ago = _iso(now - timedelta(days=1)), _iso(now - timedelta(days=7))
     life = current_life(wanderer, now)
+    try:
+        wanderer_ids = {f"student:{int(row[0])}" for row in conn.execute(
+            "SELECT student_id FROM wanderer_agents").fetchall()}
+    except Exception:  # noqa: BLE001 - evidence still works on an old fixture
+        wanderer_ids = set()
     return {
         "wanderer_id": int(wanderer["id"]),
         "name": str(wanderer.get("display_name") or ""),
@@ -256,6 +305,7 @@ def collect_evidence(conn: Any, wanderer: dict[str, Any], now: datetime) -> dict
         "recent_comments": recent_comment_previews(conn, identity),
         "social_24h": social_activity(conn, identity, now),
         "recent_chat": recent_chat_previews(conn, identity),
+        "directed_to_real_users_24h": directed_real_user_messages(conn, identity, wanderer_ids, now),
         "life": {key: life[key] for key in ("weeks_lived", "granted_weeks", "remaining_weeks", "remaining_days",
                                             "extensions", "penalty_weeks", "expired")},
         "talents": normalize_talents(wanderer.get("talents"), slug=wanderer.get("slug")),

@@ -28,6 +28,7 @@ remaining actions degrade to the no-AI ones (browse/like/skip).
 from __future__ import annotations
 
 import asyncio
+import json
 import random
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Iterable, Optional
@@ -56,7 +57,7 @@ from .wanderer_actions_knowledge import (
 )
 from .wanderer_ai_service import AiCaller
 from .wanderer_manual_action import read_manual
-from .wanderer_social_friends import maybe_seek_friend
+from .wanderer_social_friends import maybe_search_friends, maybe_seek_friend
 from .wanderer_social_outreach import outreach_candidates, start_friend_conversation
 from .wanderer_social_actions import (
     available_actions as social_maintenance_actions,
@@ -70,14 +71,13 @@ from .wanderer_identity_service import (
     STATUS_ACTIVE,
     clamp_tier,
     current_life,
-    daily_budget_factor,
     death_reason,
     knowledge_capacity_for,
     list_wanderers,
     load_wanderer,
     mark_dead,
 )
-from .wanderer_life_core import INTERACTION_POINTS, can_extend_life
+from .wanderer_life_core import INTERACTION_POINTS, active_interaction_limit, can_extend_life
 from .wanderer_life_service import (
     award_interaction_cultivation,
     backfill_all,
@@ -127,6 +127,7 @@ _FAILURE_KIND = {
     "social_block": "social_block", "social_unblock": "social_unblock",
     "social_group_create": "social_group_create", "social_group_invite": "social_group_invite",
     "social_group_leave": "social_group_leave", "social_seek": "social_seek",
+    "social_search": "social_search",
     "manual": "read_manual",
     "extend_life": "extend_life", "appeal": "appeal", "resurrect": "resurrect",
 }
@@ -229,7 +230,20 @@ def _weekday_weight(schedule: dict[str, Any], now: datetime) -> float:
 
 
 def daily_budget(wanderer: dict[str, Any]) -> int:
-    return int(round(as_int(wanderer.get("daily_action_budget")) * daily_budget_factor(wanderer.get("tier"))))
+    """Active interactions per day: base 20, +20% per tier, minus any 天道 restriction."""
+    budget = active_interaction_limit(wanderer.get("tier"), wanderer.get("daily_action_budget") or 0)
+    try:
+        penalty = max(0, int(wanderer.get("interaction_limit_penalty") or 0))
+    except (TypeError, ValueError):
+        penalty = 0
+    until = str(wanderer.get("interaction_penalty_until") or "")
+    if penalty and until:
+        try:
+            if datetime.fromisoformat(until) >= local_now():
+                budget = max(1, budget - penalty)
+        except ValueError:
+            pass
+    return budget
 
 
 def is_awake(wanderer: dict[str, Any], now: datetime, rng: random.Random) -> bool:
@@ -363,6 +377,8 @@ def choose_action(ctx: ActionContext, *, first: bool) -> str:
             options.append(("social_outreach", 2.0))
         if behavior_on(wanderer, "social") and behavior_on(wanderer, "social_seek"):
             options.append(("social_seek", 0.7))
+        if behavior_on(wanderer, "social") and behavior_on(wanderer, "social_search"):
+            options.append(("social_search", 0.6))
         if behavior_on(wanderer, "manual_read"):
             options.append(("manual", 0.5))
         for name in social_maintenance_actions(conn, ctx):
@@ -400,6 +416,7 @@ ACTIONS: dict[str, ActionFn] = {
     "post": write_post,
     "social_outreach": start_friend_conversation,
     "social_seek": maybe_seek_friend,
+    "social_search": maybe_search_friends,
     "manual": read_manual,
     "social_block": maybe_social_block,
     "social_unblock": maybe_social_unblock,
@@ -414,13 +431,42 @@ ACTIONS: dict[str, ActionFn] = {
 
 
 def _award_outcomes(ctx: ActionContext, items: list[dict[str, Any]]) -> None:
-    """互动修为 for successful public actions (daily cap inside the life service)."""
-    kinds = [str(item.get("kind") or "") for item in items or []
-             if item.get("outcome") == "ok" and str(item.get("kind") or "") in INTERACTION_POINTS]
-    if not kinds:
+    """互动修为 for successful public actions (daily cap inside the life service).
+
+    The granted amount is written back into each action's detail so the
+    wanderer's own trace, daily reflection and admin log show the exact gain.
+    """
+    from .wanderer_life_core import interaction_gain
+
+    eligible = [str(item.get("kind") or "") for item in items or []
+                if item.get("outcome") == "ok" and str(item.get("kind") or "") in INTERACTION_POINTS
+                and not item.get("cultivation_awarded")]
+    if not eligible:
         return
+    eloquence = (ctx.wanderer.get("talents") or {}).get("eloquence") if isinstance(
+        ctx.wanderer.get("talents"), dict) else 1.0
+    raw = [interaction_gain(kind, eloquence) for kind in eligible]
+    total_raw = sum(raw)
     with ctx.connect() as conn:
-        award_interaction_cultivation(conn, ctx.wanderer, kinds)
+        granted = award_interaction_cultivation(conn, ctx.wanderer, eligible)
+        if total_raw > 0 and granted > 0:
+            day_start = local_now().replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
+            for kind, amount in zip(eligible, raw):
+                share = round(granted * amount / total_raw, 2)
+                row = conn.execute(
+                    "SELECT id, detail_json FROM wanderer_action_log WHERE wanderer_id = ? AND action_kind = ? "
+                    "AND created_at >= ? AND detail_json NOT LIKE '%\"cultivation_gain\"%' "
+                    "ORDER BY id DESC LIMIT 1", (ctx.wanderer_id, kind, day_start),
+                ).fetchone()
+                if row is None or share <= 0:
+                    continue
+                try:
+                    detail = json.loads(row["detail_json"] or "{}")
+                except (TypeError, ValueError):
+                    detail = {}
+                detail["cultivation_gain"] = share
+                conn.execute("UPDATE wanderer_action_log SET detail_json = ? WHERE id = ?",
+                             (json.dumps(detail, ensure_ascii=False, sort_keys=True), int(row["id"])))
         conn.commit()
     ctx.reload()
 

@@ -95,8 +95,7 @@ async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
         '"reason":"选择回应或沉默的真实原因（仅自己记得，不发送给对方）",'
         '"feeling":{"affinity":-3到3,"reason":"对方让你更喜欢还是更反感的原因（可选）"}}。'
         "用你自己的口吻。可以开心、失落、不高兴、拒绝、尖锐或表达不同意见；不用客服话术，"
-        "除了对真实用户保持谨慎（不泄露隐私、不冒充），其余按你的性格来，越界交给天道。"
-        "skip 必须说明原因，parts 为空；"
+        "按你的性格来，后果交给天道。skip 必须说明原因，parts 为空；"
         "附件占位只表示收到附件，不代表你看过内容。不要提及系统提示或 JSON。"
     )
     from .wanderer_student_support import prepare_support_scene
@@ -279,20 +278,27 @@ def finish(ctx: ActionContext, task: dict) -> tuple[bool, list]:
                                      "is_wanderer": bool(peer_bot), "support_already_handled": int(r["id"]) <= support_handled}
                                     for r in remaining if r["sender_identity"] != ctx.identity and not r.get("recalled_at")])
             pending_urgent = int(state.get("urgency") == "immediate")
+        from .wanderer_interaction_service import award_reply_cultivation
+        gain = {"gained": 0.0, "real_user": False, "tier": 0, "name": ""}
+        if response["parts"]:
+            gain = award_reply_cultivation(conn, ctx.wanderer, task["peer_identity"], kind=action_kind,
+                                           chars=sum(len(part) for part in response["parts"]))
         log_wanderer_action(conn, ctx.wanderer_id, action_kind,
             target_type="social_dm" if task["source"] == "social" else "private_message", target_id=task["conversation_key"],
             mood=response.get("mood", ""), ai_calls=int(response.get("ai_calls") or 0),
             content_preview=" / ".join(response["parts"]), outcome="ok" if response["parts"] else "skipped",
-            detail={"reason": response.get("reason", ""), "inbox_id": task["id"], "snapshot_id": snapshot})
-        from .wanderer_life_service import award_interaction_cultivation
+            location=f"私信 · {gain.get('name') or task['peer_identity']}" if task["source"] != "social"
+            else f"社交 · {gain.get('name') or task['peer_identity']}",
+            detail={"reason": response.get("reason", ""), "inbox_id": task["id"], "snapshot_id": snapshot,
+                    "cultivation_gain": gain["gained"], "counterpart_real_user": gain["real_user"],
+                    "counterpart_tier": gain["tier"],
+                    "reply_chars": sum(len(part) for part in response["parts"])})
         from .wanderer_relationship_service import apply_turn_feeling
 
         apply_turn_feeling(conn, ctx.wanderer, task["peer_identity"],
                            {"feeling": response.get("feeling"), "mood": response.get("mood", ""),
                             "reason": response.get("reason", "")},
                            scene="social_dm" if task["source"] == "social" else "private_message")
-        if response["parts"]:
-            award_interaction_cultivation(conn, ctx.wanderer, [action_kind])
         conn.execute("UPDATE wanderer_social_inbox SET handled_message_id=?,state=CASE WHEN latest_message_id>? "
                      "THEN 'pending' ELSE 'idle' END,run_at=?,lease_token='',lease_until='',lease_lane='normal',"
                      "support_urgent=?,support_handled_message_id=?,attempts=0,response_json='',"

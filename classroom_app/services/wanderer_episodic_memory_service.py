@@ -340,6 +340,15 @@ def today_trace(conn: Any, wanderer: dict[str, Any], *, now: Optional[datetime] 
         piece = f"{stamp} " + (f"{where}·" if where else "") + labels.get(kind, kind)
         if preview:
             piece += f"：{preview}"
+        gain = detail.get("cultivation_gain")
+        if gain is None:
+            gain = detail.get("score_delta")
+        try:
+            gain_value = float(gain or 0)
+        except (TypeError, ValueError):
+            gain_value = 0.0
+        if gain_value > 0:
+            piece += f"（修为 +{gain_value:g}）"
         if outcome and outcome != "ok":
             piece += f"（{outcome}{'：' + reason if reason else ''}）"
         lines.append(piece)

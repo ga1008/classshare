@@ -38,7 +38,7 @@ class AntiAiRulesInPromptTest(WandererDbTestCase):
         self.assertIn(ANTI_AI_STYLE_RULES, prompt)
         self.assertLess(prompt.index("【你的人格】"), prompt.index(ANTI_AI_STYLE_RULES))
         self.assertLess(prompt.index(ANTI_AI_STYLE_RULES), prompt.index("【你的境界】"))
-        for phrase in ("不用任何 Markdown", "表达自由", "对真实用户的谨慎", "交给天道"):
+        for phrase in ("不用任何 Markdown", "表达自由", "没有额外的系统禁令", "后果由天道裁定"):
             self.assertIn(phrase, ANTI_AI_STYLE_RULES)
 
     def test_scene_can_replace_the_output_contract(self):

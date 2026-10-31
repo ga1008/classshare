@@ -96,7 +96,25 @@ def _expire(conn, key, stamp):
             raise RuntimeError('Search reservation accounting is inconsistent')
 
 
-def snapshot(conn, *, actor_kind, actor_id, channel, now=None, budget_date=None):
+def _limit_for(conn, actor_kind, actor_id):
+    """Real users keep ten; a wanderer's allowance grows with its tier (base 12, +20%/tier)."""
+    if actor_kind != 'wanderer':
+        return DAILY_LIMIT
+    try:
+        row = conn.execute('SELECT tier FROM wanderer_agents WHERE id=?', (int(actor_id),)).fetchone()
+    except Exception:  # noqa: BLE001 - an old fixture without the table keeps the safe default
+        return DAILY_LIMIT
+    if row is None:
+        return DAILY_LIMIT
+    try:
+        tier = max(0, min(10, int(row['tier'] if not isinstance(row, tuple) else row[0] or 0)))
+    except (TypeError, ValueError, KeyError, IndexError):
+        tier = 0
+    from .wanderer_life_core import wanderer_search_limit
+    return max(DAILY_LIMIT, wanderer_search_limit(tier))
+
+
+def snapshot(conn, *, actor_kind, actor_id, channel, now=None, budget_date=None, limit=None):
     """Read-only quota, projecting expired reservations without request-time writes."""
     actor = _actor(actor_kind, actor_id, channel)
     clock = _clock(now)
@@ -114,8 +132,9 @@ def snapshot(conn, *, actor_kind, actor_id, channel, now=None, budget_date=None)
     reserved = max(0, int(counts.get('reserved_count', 0)) - sum(expired.values()))
     occupied = used + unknown + reserved
     reset = datetime.strptime(day, '%Y-%m-%d').replace(tzinfo=APP_TIMEZONE) + timedelta(days=1)
-    return {'limit': DAILY_LIMIT, 'used': used, 'reserved': reserved, 'unknown': unknown,
-        'remaining': max(0, DAILY_LIMIT - occupied), 'occupied': occupied,
+    limit = max(1, int(limit)) if limit is not None else _limit_for(conn, actor_kind, actor_id)
+    return {'limit': limit, 'used': used, 'reserved': reserved, 'unknown': unknown,
+        'remaining': max(0, limit - occupied), 'occupied': occupied,
         'empty': int(counts.get('empty_count', 0)), 'failed': int(counts.get('failed_count', 0)),
         'released': int(counts.get('released_count', 0)) + expired.get('reserved', 0),
         'date': day, 'reset_at': reset.isoformat(), 'timezone': app_timezone_name(), 'channel': channel}
@@ -148,7 +167,7 @@ def _receipt(conn, row, clock, *, replay=True, include_token=False):
 
 
 def reserve(conn, *, actor_kind, actor_id, channel, logical_call_id, fingerprint,
-            now=None, lease_seconds=DEFAULT_LEASE_SECONDS):
+            now=None, lease_seconds=DEFAULT_LEASE_SECONDS, limit=None):
     actor = _actor(actor_kind, actor_id, channel)
     if not isinstance(logical_call_id, str) or not 1 <= len(logical_call_id) <= 200 or not logical_call_id.isascii() or any(ord(c) < 33 for c in logical_call_id):
         raise HTTPException(422, '搜索请求编号不正确')
@@ -165,11 +184,12 @@ def reserve(conn, *, actor_kind, actor_id, channel, logical_call_id, fingerprint
         if not hmac.compare_digest(previous['fingerprint'], fingerprint):
             raise HTTPException(409, '同一搜索请求编号不能更改搜索内容')
         return _receipt(conn, previous, clock)
-    quota = snapshot(conn, actor_kind=actor_kind, actor_id=actor_id, channel=channel, now=clock)
+    quota = snapshot(conn, actor_kind=actor_kind, actor_id=actor_id, channel=channel, now=clock, limit=limit)
     if quota['remaining'] <= 0:
         reset = datetime.fromisoformat(quota['reset_at'])
         wait = max(1, math.ceil((reset-clock).total_seconds()))
-        raise HTTPException(429, '今天的联网搜索额度已用完（每天10次，次日零点重置）', headers={'Retry-After': str(wait)})
+        raise HTTPException(429, f"今天的联网搜索额度已用完（每天{quota['limit']}次，次日零点重置）",
+                            headers={'Retry-After': str(wait)})
     call_id, token = uuid.uuid4().hex, uuid.uuid4().hex
     lease = _stamp(clock + timedelta(seconds=max(5, min(300, int(lease_seconds)))))
     inserted = conn.execute('INSERT INTO ai_web_search_calls(call_id,actor_kind,actor_id,channel,logical_call_id,'
@@ -185,7 +205,7 @@ def reserve(conn, *, actor_kind, actor_id, channel, logical_call_id, fingerprint
         return _receipt(conn, previous, clock)
     changed = conn.execute('UPDATE ai_web_search_daily SET reserved_count=reserved_count+1,updated_at=? '
         'WHERE budget_date=? AND actor_kind=? AND actor_id=? AND channel=? '
-        'AND used_count+reserved_count+unknown_count<?', (stamp, *key, DAILY_LIMIT)).rowcount
+        'AND used_count+reserved_count+unknown_count<?', (stamp, *key, quota['limit'])).rowcount
     if changed != 1:
         raise RuntimeError('Search quota changed while holding its bucket')
     return _receipt(conn, get_call(conn, call_id), clock, replay=False, include_token=True)

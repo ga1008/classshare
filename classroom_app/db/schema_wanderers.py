@@ -63,6 +63,8 @@ def _table_statements(id_column: str) -> list[str]:
             last_review_at TEXT,
             warnings_count INTEGER NOT NULL DEFAULT 0,
             last_warning_at TEXT,
+            interaction_limit_penalty INTEGER NOT NULL DEFAULT 0,
+            interaction_penalty_until TEXT,
             knowledge_chars INTEGER NOT NULL DEFAULT 0,
             stats_json TEXT NOT NULL DEFAULT '{{}}',
             last_active_at TEXT,
@@ -373,6 +375,9 @@ ADDED_COLUMNS = (
     # Autonomy (2026-10-31 round 2): where an action happened, for the trace and admin view.
     ("wanderer_action_log", "location", "TEXT NOT NULL DEFAULT ''"),
     ("wanderer_episodic_memories", "location", "TEXT NOT NULL DEFAULT ''"),
+    # 2026-11-01: 天道 may restrict daily active interactions for a few days.
+    ("wanderer_agents", "interaction_limit_penalty", "INTEGER NOT NULL DEFAULT 0"),
+    ("wanderer_agents", "interaction_penalty_until", "TEXT"),
 )
 
 

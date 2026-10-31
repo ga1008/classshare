@@ -22,7 +22,8 @@ import json
 import re
 from typing import Any, Optional
 
-from .heavenly_dao_rules import HEAVENLY_DAO_RULES
+DAO_EXISTENCE_NOTE = ("【天道】你知道天道存在：它会在必要时裁决你的行为，并在惩罚时给你一句简短解释。"
+                      "具体规则不会提前告诉你，只能从自己的经历和同修的交流里慢慢体会。")
 from .wanderer_identity_service import (
     clamp_tier,
     current_life,
@@ -179,7 +180,7 @@ def _status_lines(conn: Any, wanderer: dict[str, Any]) -> list[str]:
 
 
 def _dao_block(conn: Any, wanderer: dict[str, Any]) -> str:
-    return f"{HEAVENLY_DAO_RULES}\n\n【你的当前状态】\n" + "\n".join(_status_lines(conn, wanderer))
+    return f"{DAO_EXISTENCE_NOTE}\n\n【你的当前状态】\n" + "\n".join(_status_lines(conn, wanderer))
 
 
 def _counterpart_line(counterpart: Optional[dict[str, Any]]) -> str:
@@ -188,10 +189,12 @@ def _counterpart_line(counterpart: Optional[dict[str, Any]]) -> str:
     name = str(counterpart.get("name") or "对方")
     if counterpart.get("is_wanderer"):
         tier_name = str(counterpart.get("tier_name") or "")
+        cultivation = counterpart.get("cultivation")
         suffix = f"，境界：{tier_name}" if tier_name else ""
+        suffix += f"，修为：{float(cultivation):g}" if cultivation is not None else ""
         return f"【对方】{name}（散修{suffix}）——对方也是散修，可以调侃。"
     role = str(counterpart.get("role_label") or "真实学生")
-    return f"【对方】{name}（{role}）——对方是真实的人，说话要有分寸。"
+    return f"【对方】{name}（{role}，真实用户）。"
 
 
 def _memory_block(conn: Any, wanderer: dict[str, Any], thread_key: str, scene: dict[str, Any]) -> str:
@@ -227,10 +230,12 @@ def _roster_line(person: dict[str, Any]) -> str:
         return f"- {name}（你自己）"
     if person.get("is_wanderer"):
         tier_name = str(person.get("tier_name") or "")
-        return f"- {name}（散修{'，境界：' + tier_name if tier_name else ''}）——可以调侃"
+        cultivation = person.get("cultivation")
+        extra = "，修为：" + f"{float(cultivation):g}" if cultivation is not None else ""
+        return f"- {name}（散修{'，境界：' + tier_name if tier_name else ''}{extra}）——可以调侃"
     if str(person.get("role") or "") == "teacher":
-        return f"- {name}（老师）——尊重对方身份，可以诚实表达不同意见，不必迎合"
-    return f"- {name}（真实学生）——是真实的人，说话要有分寸"
+        return f"- {name}（老师，真实用户）"
+    return f"- {name}（真实学生）"
 
 
 def _social_block(scene: dict[str, Any]) -> str:

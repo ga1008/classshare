@@ -8,7 +8,7 @@ from classroom_app.services import social_friend_service as friends
 from classroom_app.services.cultivation_display_service import invalidate_emblem_cache, set_cultivation_hidden
 from tests.social_test_support import SocialDbTestCase
 
-CARD_KEYS = {"identity", "name", "role", "role_label", "avatar_url", "is_wanderer", "tier_badge", "archetype",
+CARD_KEYS = {"identity", "name", "gender", "role", "role_label", "avatar_url", "is_wanderer", "tier_badge", "archetype",
              "homepage_url", "interests", "org", "student_no_tail", "mood", "courses", "radar", "cultivation_hidden",
              "relation", "can_add", "add_blocked_reason", "online", "friend_extras"}
 SECRETS = ("13800000000", "qq-secret-778899", "wx-secret-id", "card-b@example.test", "2026001234")

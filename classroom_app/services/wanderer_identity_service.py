@@ -45,7 +45,8 @@ MAX_TIER = 10
 DEFAULT_BEHAVIORS = {
     "blog_browse": 1, "blog_like": 1, "blog_comment": 1, "reply": 1, "dm_reply": 1,
     "classroom_visit": 1, "classroom_message": 1, "knowledge_read": 1, "promotion": 1, "blog_post": 1,
-    "social": 1, "social_block": 1, "social_group": 1, "social_seek": 1, "manual_read": 1,
+    "social": 1, "social_block": 1, "social_group": 1, "social_seek": 1, "social_search": 1,
+    "manual_read": 1,
 }
 ACTION_KINDS = frozenset({
     "browse_post", "like_post", "like_comment", "comment", "reply", "dm_reply",
@@ -58,7 +59,7 @@ ACTION_KINDS = frozenset({
     # Lifecycle (lifecycle doc §2/§4.4/§6): life extension, appeal, resurrection.
     "extend_life", "appeal", "resurrect",
     # Autonomy (2026-10-31 round 2): deliberately reading the manual and finding a friend.
-    "read_manual", "social_seek",
+    "read_manual", "social_seek", "social_search",
     # 天道 verdicts are logged into the same trace so the wanderer sees its own punishment.
     "dao_verdict",
     # Budget-exempt daily self-reflection.
@@ -69,6 +70,7 @@ _DEFAULT_LOCATIONS = {
     "write_post": "博客", "classroom_visit": "课堂", "classroom_message": "课堂",
     "knowledge_read": "知识库", "knowledge_forget": "知识库", "experience_learn": "知识库",
     "dm_reply": "私信", "social_friend": "好友", "social_message": "社交", "social_seek": "寻友",
+    "social_search": "好友搜索",
     "social_block": "社交", "social_unblock": "社交", "social_group_create": "群聊",
     "social_group_invite": "群聊", "social_group_leave": "群聊",
     "request_promotion": "天道台", "reflect": "天道台", "dao_verdict": "天道台",
@@ -100,7 +102,7 @@ _JSON_FIELDS = {
 _INT_FIELDS = (
     "id", "student_id", "tier", "activity_level", "daily_action_budget",
     "warnings_count", "knowledge_chars", "promotion_requested",
-    "life_extensions", "appeal_requested", "persona_version",
+    "life_extensions", "appeal_requested", "persona_version", "interaction_limit_penalty",
 )
 
 _SELECT_WANDERER = """
@@ -470,8 +472,8 @@ def reply_char_limit(tier: Any) -> int:
 
 
 def daily_budget_factor(tier: Any) -> float:
-    """Multiplier on ``daily_action_budget`` (lifecycle doc §4.3: +10% per tier)."""
-    return round(1.0 + 0.10 * clamp_tier(tier), 2)
+    """Multiplier on ``daily_action_budget`` (2026-11-01: +20% per tier)."""
+    return round(1.0 + 0.20 * clamp_tier(tier), 2)
 
 
 _WISDOM_DIRECTIVES = (

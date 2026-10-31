@@ -1,6 +1,6 @@
 # LQ 模块使用记录本
 
-生成于 2026-10-31，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
+生成于 2026-11-01，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
 
 ## 怎么用
 
@@ -1046,8 +1046,8 @@
 - `templates/assignment_detail_teacher.html` ×23
 - `templates/manage/system/blog_crawler.html` ×22
 - `templates/dev/lq_content.html` ×20
+- `static/js/manage_wanderers.js` ×18
 - `templates/wanderers/home.html` ×18
-- `static/js/manage_wanderers.js` ×17
 - `templates/assignment_detail_student.html` ×15
 - `templates/dashboard.html` ×15
 - `templates/manage/system/wanderers.html` ×15

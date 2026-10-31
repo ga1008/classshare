@@ -307,7 +307,7 @@ async def handle_wanderer_friend_request(task: dict[str, Any], *, ai_caller: Any
 def week_requests(conn: Any, wanderer_id: int, now: datetime) -> int:
     row = conn.execute(
         "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? "
-        "AND action_kind IN ('social_friend', 'social_seek') "
+        "AND action_kind IN ('social_friend', 'social_seek', 'social_search') "
         "AND target_type = ? AND outcome = 'ok' AND created_at >= ?",
         (int(wanderer_id), TARGET_REQUEST_OUT, (now - timedelta(days=7)).isoformat(timespec="seconds")),
     ).fetchone()
@@ -627,6 +627,125 @@ def recover_pending_requests(conn_factory: ConnFactory = None, *, now: Optional[
 # ---------------------------------------------------------------------------
 # Admin stats
 # ---------------------------------------------------------------------------
+
+REAL_USER_SEARCH_LIMIT = 12
+SEARCH_TARGET_TYPE = "social_search"
+
+
+def real_user_candidates(conn: Any, ctx: ActionContext, query: str = "", *, limit: int = REAL_USER_SEARCH_LIMIT) -> list[dict[str, Any]]:
+    """Real students at or below this wanderer's tier, with the public card fields they may see.
+
+    This is deliberately global (not the normal class/college social scope): a
+    wanderer may look for anyone in the platform, but never above its own tier.
+    """
+    from .social_card_service import user_card
+    from .social_scope_service import student_global_tier
+    from .wanderer_life_core import clamp_tier
+
+    my_tier = clamp_tier(ctx.wanderer.get("tier"))
+    needle = str(query or "").strip()[:40]
+    params: list[Any] = []
+    sql = ("SELECT s.id FROM students s WHERE COALESCE(s.enrollment_status, 'active') = 'active' "
+           "AND s.enrollment_status <> 'wanderer'")
+    if needle:
+        sql += " AND s.name LIKE ?"
+        params.append(f"%{needle}%")
+    sql += " ORDER BY s.id LIMIT 160"
+    rows = conn.execute(sql, tuple(params)).fetchall()
+    user = build_wanderer_user_dict(ctx.wanderer)
+    found: list[dict[str, Any]] = []
+    for row in rows:
+        student_id = as_int(row["id"] if not isinstance(row, tuple) else row[0])
+        if student_id <= 0 or student_global_tier(conn, student_id) > my_tier:
+            continue
+        identity = f"student:{student_id}"
+        if identity == ctx.identity or get_friendship(conn, ctx.identity, identity) is not None \
+                or blocked_either(conn, ctx.identity, identity):
+            continue
+        card = user_card(conn, user, identity)
+        if not card.get("can_add"):
+            continue
+        radar = card.get("radar") or {}
+        cultivation = radar.get("overall") if isinstance(radar, dict) else None
+        found.append({
+            "identity": identity,
+            "name": str(card.get("name") or identity)[:40],
+            "gender": str(card.get("gender") or ""),
+            "tier": student_global_tier(conn, student_id),
+            "tier_name": str((card.get("tier_badge") or {}).get("name") or ""),
+            "cultivation": cultivation,
+            "cultivation_hidden": bool(card.get("cultivation_hidden")),
+            "courses": card.get("courses") or [],
+            "radar": radar if isinstance(radar, dict) else None,
+        })
+        if len(found) >= max(1, int(limit)):
+            break
+    return found
+
+
+async def maybe_search_friends(ctx: ActionContext) -> list[dict[str, Any]]:
+    """Search the platform for real users and decide whether to send one request."""
+    if (not behavior_on(ctx.wanderer, SOCIAL_BEHAVIOR) or not behavior_on(ctx.wanderer, "social_search")
+            or not is_awake_now(ctx.wanderer, ctx.current_time())):
+        return []
+    with ctx.connect() as conn:
+        if week_requests(conn, ctx.wanderer_id, ctx.current_time()) >= PROACTIVE_WEEKLY_LIMIT:
+            return []
+        candidates = real_user_candidates(conn, ctx)
+    if not candidates:
+        record_action(ctx, "social_search", target_type=SEARCH_TARGET_TYPE, outcome="skipped",
+                      location="好友搜索", detail={"reason": "没有符合条件的真实用户"})
+        return [outcome("social_search", "skipped")]
+    scene = {
+        "kind": "好友搜索", "title": "在平台上找同境界或更低境界的真实用户",
+        "meta": ("搜索范围：全平台真实学生中，境界不高于你的那些人。下面是公开资料；"
+                 "你可以挑一个发好友申请，也可以 skip。"),
+        "body": json.dumps(candidates, ensure_ascii=False),
+        "task": ("依据你的人格、兴趣和对方资料，挑一个真的想认识的人，写一句不超过 20 字的附言；"
+                 "没有想认识的就 skip。真实用户也是现实里的人，按你自己的方式表达。"),
+        "output_contract": ('只输出 JSON：{"action":"request|skip","target":"候选人里的 identity",'
+                            '"note":"附言","reason":"你自己的理由"}。'),
+    }
+    result = await run_turn(ctx, scene=scene, thread_key="social:search", suffix="search_friends")
+    parsed = extract_json_object(result.get("raw_text")) or {}
+    calls = int(result.get("ai_calls") or 0)
+    action = str(parsed.get("action") or "skip").strip().lower()
+    target = str(parsed.get("target") or "").strip()
+    note = str(parsed.get("note") or "").strip()[:REQUEST_NOTE_MAX]
+    reason = str(parsed.get("reason") or "").strip()[:300]
+    chosen = next((item for item in candidates if item["identity"] == target), None)
+    if result.get("status") != "ok" or action != "request" or chosen is None:
+        record_action(ctx, "social_search", target_type=SEARCH_TARGET_TYPE, outcome="skipped", ai_calls=calls,
+                      location="好友搜索", detail={"reason": reason or "没有想认识的人"})
+        return [outcome("social_search", "skipped", ai_calls=calls)]
+    events: list = []
+    try:
+        with ctx.connect() as conn:
+            sent = send_request(conn, build_wanderer_user_dict(ctx.wanderer), target, note, events)
+            conn.commit()
+    except SocialError as exc:
+        record_action(ctx, "social_search", target_type=TARGET_REQUEST_OUT, target_id=target,
+                      outcome="failed", ai_calls=calls, location=f"好友搜索 · {chosen['name']}",
+                      detail={"error": str(exc.detail)[:200], "reason": reason})
+        return [outcome("social_search", "failed", ai_calls=calls)]
+    await social_push_service.push_events(events)
+    record_action(ctx, "social_search", target_type=TARGET_REQUEST_OUT, target_id=target,
+                  content_preview=note, outcome="ok", ai_calls=calls,
+                  location=f"好友搜索 · {chosen['name']}",
+                  detail={"decision": "request", "reason": reason, "status": sent.get("status"),
+                          "target_tier": chosen["tier"], "cultivation": chosen["cultivation"]})
+    from .wanderer_episodic_memory_service import record_memory
+    with ctx.connect() as conn:
+        record_memory(conn, ctx.wanderer, kind="relationship", title="搜索并结识一位真实用户",
+                      content=(f"我在好友搜索里看到 {chosen['name']}（第 {chosen['tier']} 境，"
+                               f"修为 {chosen['cultivation'] if chosen['cultivation'] is not None else '未公开'}），"
+                               f"发出好友申请：{note or '无附言'}。原因：{reason}"),
+                      importance=0.65, people=[target], source_kind="friend_search",
+                      source_ref=f"search:{target}:{ctx.current_time().isoformat(timespec='seconds')}",
+                      counterpart_identity=target, location=f"好友搜索 · {chosen['name']}")
+        conn.commit()
+    return [outcome("social_search", ai_calls=calls)]
+
 
 def social_counts(conn: Any, student_id: int) -> dict[str, int]:
     """Friends, live groups, messages sent today (UTC day), pending incoming requests."""

@@ -199,7 +199,8 @@ def _empty_card(person: dict[str, Any], relation: str) -> dict[str, Any]:
     from .social_identity_service import avatar_url
 
     return {
-        "identity": person["identity"], "name": person["name"], "role": person["role"],
+        "identity": person["identity"], "name": person["name"], "gender": person.get("gender") or "",
+        "role": person["role"],
         "role_label": person["role_label"], "avatar_url": avatar_url(person["identity"]),
         "is_wanderer": bool(person["is_wanderer"]), "tier_badge": None, "archetype": None, "homepage_url": None,
         "interests": [],

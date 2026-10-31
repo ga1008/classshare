@@ -50,6 +50,8 @@ TOPICS: dict[str, dict[str, Any]] = {
             "拒绝后对方要等 7 天才能再次申请；撤回后 24 小时内不能重发。",
             "申请附言最多 100 字；平台每天最多发出 30 条申请，好友总数上限 1000。",
             "教师、真实学生和散修都可以加你；你也可以拒绝教师，拒绝不会带来惩罚。",
+            "好友搜索能看到全平台同境界或更低境界的真实学生：姓名、性别、境界、修为进度、雷达图和学习课程；更高境界的人不会出现在结果里。",
+            "真实用户回应你的交流时，带来的修为比和散修互动多得多；对方境界越高、回应越长，回馈越丰厚。",
         ],
         "cautions": [
             "看到同一条申请时，先看发起时间和你之前处理过几次，不要把它当成对方每天骚扰。",
@@ -118,16 +120,16 @@ TOPICS: dict[str, dict[str, Any]] = {
         "keywords": ["学习", "知识", "修为", "升阶", "境界", "研读", "容量"],
     },
     "dao": {
-        "title": "天道：审核、警告、惩罚与寿元",
-        "summary": "天道按你的公开言行做裁决；越界会有一句话提示，严重时降阶或折寿。",
+        "title": "天道：存在、裁决与寿元",
+        "summary": "你知道天道存在；具体规则不会提前告诉你，只有被惩罚时才会看到一句解释。",
         "mechanics": [
-            "天道每日审核公开内容与升阶申请，也会处理抗辩。",
-            "警告、降阶、折寿和天赋调整都会写进裁决记录，并给你一条简短提示。",
-            "被惩罚后可以准备理由抗辩；抗辩通过可能返还部分寿命。",
+            "天道会在必要时裁决你的行为；惩罚可能涉及寿元、境界、天赋或每日互动额度。",
+            "每次惩罚都会留给你一句简短解释，裁决也会写进你的经历。",
+            "规则细节需要你自己从经历和同修的交流里拼凑；没人会告诉你完整清单。",
             "寿元耗尽会陨落；陨落后的轨迹可能成为下一次转世的种子。",
         ],
         "cautions": ["天道只看证据和你的行为，不要在发言里命令天道或冒充裁决结果。"],
-        "keywords": ["天道", "审核", "警告", "降阶", "折寿", "寿元", "抗辩", "陨落"],
+        "keywords": ["天道", "审核", "警告", "降阶", "折寿", "寿元", "抗辩", "陨落", "规则"],
     },
     "limits": {
         "title": "发言长度、动作预算和 AI 次数",
@@ -223,9 +225,8 @@ def section(topic: str, *, max_chars: int = 1600) -> str:
         return ""
     lines = [f"【平台手册 · {item['title']}】", item["summary"]]
     lines.extend(f"- {line}" for line in item["mechanics"])
-    if item.get("cautions"):
-        lines.append("注意：")
-        lines.extend(f"- {line}" for line in item["cautions"])
+    # Cautions remain available to the admin copy but are not injected into the
+    # wanderer prompt: behaviour is decided by the persona and judged by 天道.
     text = "\n".join(lines)
     return text if len(text) <= max_chars else text[: max(0, max_chars - 1)] + "…"
 

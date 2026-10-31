@@ -20,6 +20,7 @@ LIFECYCLE_COLUMNS = {
 HUMANITY_COLUMNS = {
     "persona_version", "persona_source_hash", "persona_source_json", "persona_updated_at",
     "mood_json", "self_tuning_json", "last_reflection_at",
+    "interaction_limit_penalty", "interaction_penalty_until",
 }
 
 

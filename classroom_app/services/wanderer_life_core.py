@@ -41,11 +41,25 @@ PROMOTION_MIN_INTERACTIONS = 5
 SCORE_CHARS_PER_POINT = 100.0
 KNOWLEDGE_CAPACITY_MAX = 360_000
 
-INTERACTION_DAILY_CULTIVATION_CAP = 6.0
+# Real users are the richest source: a reply can reach several times a normal
+# interaction, so the daily cap must leave room to actually accumulate it.
+INTERACTION_DAILY_CULTIVATION_CAP = 60.0
 INTERACTION_POINTS: dict[str, float] = {
     "comment": 0.8, "reply": 0.8, "dm_reply": 0.8, "classroom_message": 0.5,
     "social_message": 0.3, "write_post": 1.2,
 }
+# A real user's reply is worth at least 2× and at most 5× the same action aimed
+# at a wanderer; their tier and the reply length move it inside that band.
+REAL_USER_INTERACTION_MULTIPLIER = 2.0
+REAL_USER_INTERACTION_MAX = 5.0
+REAL_USER_TIER_BONUS = 0.20
+REAL_USER_LENGTH_CHARS = 200.0
+# Base daily active-interaction allowance and per-tier growth (2026-11-01).
+ACTIVE_INTERACTION_BASE = 20
+ACTIVE_INTERACTION_TIER_BONUS = 0.20
+# Base daily web-search allowance and per-tier growth.
+WANDERER_SEARCH_BASE = 12
+WANDERER_SEARCH_TIER_BONUS = 0.20
 
 APPEAL_MIN_TIER = 5
 APPEAL_COOLDOWN_DAYS = 30
@@ -267,12 +281,29 @@ def knowledge_gain(chars: Any, insight: Any, luck: Any, rng: Optional[Callable[[
     return round(points, 2), crit
 
 
-def interaction_gain(action_kind: Any, eloquence: Any = 1.0) -> float:
+def interaction_gain(action_kind: Any, eloquence: Any = 1.0, *, real_user: bool = False,
+                     target_tier: Any = 0, chars: Any = 0) -> float:
+    """Cultivation for one interaction; a real user's reply is the richest channel.
+
+    ``real_user`` applies the tier bonus (each real-user tier +20%) and a length
+    bonus (longer replies are worth more), capped at 5× the normal base.
+    """
     base = INTERACTION_POINTS.get(str(action_kind or ""), 0.0)
+    if base <= 0:
+        return 0.0
     try:
         factor = max(0.2, float(eloquence or 1.0))
     except (TypeError, ValueError):
         factor = 1.0
+    if real_user:
+        try:
+            length = max(0.0, float(chars or 0))
+        except (TypeError, ValueError):
+            length = 0.0
+        tier_factor = 1.0 + REAL_USER_TIER_BONUS * clamp_tier(target_tier)
+        length_factor = 1.0 + min(1.0, length / REAL_USER_LENGTH_CHARS)
+        factor *= min(REAL_USER_INTERACTION_MAX,
+                      REAL_USER_INTERACTION_MULTIPLIER * tier_factor * length_factor)
     return round(base * factor, 2)
 
 
@@ -281,16 +312,35 @@ def active_speech_limit(tier: Any) -> int:
     return ACTIVE_SPEECH_BASE_CHARS * (clamp_tier(tier) + 1)
 
 
+def active_interaction_limit(tier: Any, configured: Any = 0) -> int:
+    """Base 20 active interactions per day, +20% per tier; never below the configured floor."""
+    level = clamp_tier(tier)
+    base = int(round(ACTIVE_INTERACTION_BASE * (1.0 + ACTIVE_INTERACTION_TIER_BONUS * level)))
+    try:
+        configured_value = max(0, int(configured or 0))
+    except (TypeError, ValueError):
+        configured_value = 0
+    return max(base, configured_value)
+
+
+def wanderer_search_limit(tier: Any) -> int:
+    """Base 12 web searches per day, +20% per tier."""
+    return int(round(WANDERER_SEARCH_BASE * (1.0 + WANDERER_SEARCH_TIER_BONUS * clamp_tier(tier))))
+
+
 def tier_perks(tier: Any, daily_action_budget: Any = 10) -> dict[str, Any]:
     level = clamp_tier(tier)
     try:
         budget = max(0, int(daily_action_budget or 0))
     except (TypeError, ValueError):
         budget = 10
+    effective_budget = active_interaction_limit(level, budget)
     return {
         "tier": level,
-        "budget_factor": round(1.0 + 0.10 * level, 2),
-        "daily_budget": int(round(budget * (1.0 + 0.10 * level))),
+        "budget_factor": round(1.0 + ACTIVE_INTERACTION_TIER_BONUS * level, 2),
+        "daily_budget": effective_budget,
+        "active_interaction_limit": effective_budget,
+        "web_search_limit": wanderer_search_limit(level),
         "reply_char_limit": active_speech_limit(level),
         "active_speech_limit": active_speech_limit(level),
         "passive_speech_unlimited": True,

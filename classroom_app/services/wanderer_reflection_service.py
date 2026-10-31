@@ -156,6 +156,16 @@ def _input_text(conn: Any, wanderer: dict[str, Any], now: Any) -> str:
         intentions = (applied.get("self_tuning") or {}).get("intentions") or []
         previous_text = f"上次反省：{summary}\n上次给自己的计划：{'；'.join(str(item) for item in intentions)[:500]}"
     requirements = _requirements_text(conn, wanderer)
+    since = (now - timedelta(days=7)).isoformat(timespec="seconds")
+    verdicts = conn.execute(
+        "SELECT verdict, reason, advice, created_at FROM wanderer_dao_reviews WHERE wanderer_id = ? "
+        "AND created_at >= ? ORDER BY id DESC LIMIT 5", (int(wanderer["id"]), since),
+    ).fetchall()
+    dao_lines = [f"[{str(_row_value(row, 'created_at', 3) or '')[:16].replace('T', ' ')}] "
+                 f"{_row_value(row, 'verdict', 0)}：{str(_row_value(row, 'reason', 1) or '')[:200]}"
+                 + (f"（建议：{str(_row_value(row, 'advice', 2) or '')[:120]}）" if _row_value(row, "advice", 2) else "")
+                 for row in verdicts]
+    dao_block = "【最近的天道裁决】\n" + "\n".join(dao_lines) if dao_lines else ""
     blocks = [
         f"【你现在的状态】{_life_line(wanderer)}",
         f"【升阶条件】{requirements}" if requirements else "",
@@ -164,6 +174,7 @@ def _input_text(conn: Any, wanderer: dict[str, Any], now: Any) -> str:
         relationship_block(conn, wanderer),
         memory_block(conn, wanderer, budget_chars=12_000),
         today_trace(conn, wanderer, now=now, limit=40),
+        dao_block,
         previous_text,
     ]
     return "\n\n".join(block for block in blocks if block)[:REFLECTION_INPUT_CHARS]

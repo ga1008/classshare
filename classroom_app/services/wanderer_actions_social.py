@@ -236,7 +236,12 @@ def _speaker(people: dict[str, Any], identity: str, me: str) -> str:
     name = str(person.get("name") or "某人")
     if person.get("role") == "teacher":
         return f"{name}（老师）"
-    return f"{name}（散修）" if person.get("is_wanderer") else name
+    if person.get("is_wanderer"):
+        cultivation = person.get("cultivation_score")
+        tier = _tier_name(person)
+        extra = "，".join(part for part in (tier, f"修为{cultivation:g}" if isinstance(cultivation, (int, float)) else "") if part)
+        return f"{name}（散修{'，' + extra if extra else ''}）"
+    return name
 
 
 def _message_text(row: dict[str, Any]) -> str:
@@ -256,7 +261,8 @@ def _roster(window: dict[str, Any], me: str) -> list[dict[str, Any]]:
         if person is None:
             continue
         roster.append({"name": person.get("name") or "", "is_self": identity == me, "role": person.get("role"),
-                       "is_wanderer": bool(person.get("is_wanderer")), "tier_name": _tier_name(person)})
+                       "is_wanderer": bool(person.get("is_wanderer")), "tier_name": _tier_name(person),
+                       "cultivation": person.get("cultivation_score") if person.get("is_wanderer") else None})
         if len(roster) >= ROSTER_LIMIT:
             break
     return roster
@@ -267,7 +273,8 @@ def _counterpart(window: dict[str, Any]) -> Optional[dict[str, Any]]:
         return None
     person = window["people"].get(window["parsed"]["peer"]) or {}
     if person.get("is_wanderer"):
-        return {"name": person.get("name") or "对方", "is_wanderer": True, "tier_name": _tier_name(person)}
+        return {"name": person.get("name") or "对方", "is_wanderer": True, "tier_name": _tier_name(person),
+                "cultivation": person.get("cultivation_score")}
     label = "老师" if person.get("role") == "teacher" else "真实学生"
     return {"name": person.get("name") or "对方", "is_wanderer": False, "role_label": label}
 
@@ -475,22 +482,30 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
     sent, error = await post_parts(ctx, window, parts, direct=direct)
     nudged = await _maybe_nudge(ctx, window) if sent else False
     status = "ok" if sent == len(parts) else "failed"
+    peer = str(window["new"][-1]["sender_identity"]) if window.get("new") else ""
+    gain = {"gained": 0.0, "real_user": False, "tier": 0, "name": ""}
+    if sent and peer:
+        from .wanderer_interaction_service import award_reply_cultivation
+        with ctx.connect() as conn:
+            gain = award_reply_cultivation(conn, ctx.wanderer, peer, kind="social_message",
+                                           chars=sum(len(part) for part in parts[:sent]))
+            conn.commit()
+    location = f"{'群聊' if window['type'] == 'group' else '社交'} · {gain.get('name') or window.get('title') or peer}"
     record_action(ctx, "social_message", **_target(window), content_preview=" / ".join(parts[:sent] or parts),
-                  ai_calls=calls, mood=mood, outcome=status,
-                  detail={"parts": sent, "mode": mode, "turn": action, "nudged": nudged, "error": error})
+                  ai_calls=calls, mood=mood, outcome=status, location=location,
+                  detail={"parts": sent, "mode": mode, "turn": action, "nudged": nudged, "error": error,
+                          "cultivation_gain": gain["gained"], "counterpart_real_user": gain["real_user"],
+                          "counterpart_tier": gain["tier"],
+                          "reply_chars": sum(len(part) for part in parts[:sent])})
     if window.get("new"):
-        from .wanderer_life_service import award_interaction_cultivation
         from .wanderer_relationship_service import apply_turn_feeling
 
-        peer = str(window["new"][-1]["sender_identity"])
         scene = "social_group" if window["type"] == "group" else "social_dm"
         with ctx.connect() as conn:
             apply_turn_feeling(conn, ctx.wanderer, peer, turn, scene=scene)
-            if sent:
-                award_interaction_cultivation(conn, ctx.wanderer, ["social_message"])
             conn.commit()
     await _remember_exchange(ctx, window, said=parts[:sent])
-    return [outcome("social_message", status, ai_calls=calls, parts=sent)]
+    return [outcome("social_message", status, ai_calls=calls, parts=sent, cultivation_awarded=True)]
 
 
 # ---------------------------------------------------------------------------
