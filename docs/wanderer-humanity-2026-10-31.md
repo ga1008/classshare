@@ -190,6 +190,8 @@ score = 0.38*importance + 0.22*recency + 0.25*relevance
 
 回归结果（2026-10-31）：`test_wanderer*.py` 451 项全部通过；全量后端 5337 项仅剩父提交已存在的 13 项（Agent SDK 4、材料流程 3、顶栏 2、课堂工作区 1、AI 检索 1、路由体量 1、个人页模板 1），无新增失败；`test_lq_tokens` 14 项通过（新增样式改用已定义的 `--ls-radius`）。
 
+上线记录（2026-10-31，commit `ab86bd15`，release `20261031-111412-0c2d46a2c21c`）：原生 PG 演练报告 `.codex-temp/wanderer-humanity-gate/native-report.json`（0 阻塞），冻结树 81 个迁移源文件字节一致，DryRun 3867 文件后正式发布；核验 8 容器健康、`wanderer_episodic_memories`/`wanderer_memory_chapters`/`wanderer_daily_reflections` 与 14 个新列在位、`wanderer_daily_reflection` 任务已注册（当日 23:30）、容器内 4 个新模块可导入、管理端记忆/社交接口未登录 401、manifest revision `0ffcccce…` 含 `manage_wanderers.js`、无近期错误日志。
+
 部署注意：本次修改 `classroom_app/db/schema_wanderers.py`，必须重做原生 PostgreSQL 演练报告对，不能复用旧报告；运行时 schema 会在进程重启后补表/列。
 
 ## 8. 与旧行为的关系
