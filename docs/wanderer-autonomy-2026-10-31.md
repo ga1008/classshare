@@ -82,3 +82,10 @@
 - 全量散修套件与 `test_heavenly_dao*`、`test_db_postgres_schema` 回归。
 
 部署注意：改了 `classroom_app/db/schema_wanderers.py`，必须重做原生 PostgreSQL 演练报告对，不能复用旧报告。
+
+## 9. 上线记录
+
+- 提交：`e781c6b7`；release：`20261031-125748-4b604486ebe7`。
+- 原生 PG 演练：`.codex-temp/wanderer-autonomy-gate/native-report.json`（增量/全启动均 ok，0 阻塞，集群已停）；冻结树 81 个迁移源文件字节一致，DryRun 3872 文件后正式发布。
+- 核验：8 容器健康；`wanderer_action_log.location` 与 `wanderer_episodic_memories.location` 存在；手册 14 个主题、`friend_requests` 含“同一条”、`read_manual`/`social_seek` 已注册、`IGNORE_DAYS=7`；天道一句话返回首句；管理端散修/记忆接口未登录 401；manifest revision `e4d835b5…` 含 `manage_wanderers.js`；近 10 分钟无错误日志。
+- Git：`d442cc9b..e781c6b7 dev -> dev` 已推送。
