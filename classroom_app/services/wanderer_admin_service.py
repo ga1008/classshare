@@ -49,6 +49,7 @@ from .wanderer_settings_service import (
     GENESIS_INT_SETTINGS,
     SETTING_GENESIS_ENABLED,
     SETTING_LAST_MANUAL_GENESIS_SUMMARY,
+    SETTING_LAST_MANUAL_REFLECTION_SUMMARY,
     SETTING_LAST_MANUAL_REVIEW_SUMMARY,
     SETTING_LAST_MANUAL_TICK_SUMMARY,
     SETTING_LIFECYCLE_ENABLED,
@@ -57,6 +58,12 @@ from .wanderer_settings_service import (
     genesis_settings,
     is_wanderer_runtime_enabled,
     lifecycle_enabled,
+    memory_retention_days,
+    parse_review_hour,
+    prompt_char_budget,
+    reflection_batch_size,
+    reflection_enabled,
+    reflection_hour,
     wanderer_runtime_setting_get,
     wanderer_runtime_setting_set,
 )
@@ -68,6 +75,9 @@ ACTION_LABELS = {
     "knowledge_read": "研读固化", "knowledge_forget": "遗忘知识", "request_promotion": "申请升阶",
     "reflect": "反思", "skip": "跳过", "write_post": "发帖",
     "social_friend": "好友往来", "social_message": "聊天发言",
+    "social_block": "拉黑", "social_unblock": "解除拉黑",
+    "social_group_create": "建群", "social_group_invite": "邀请入群", "social_group_leave": "退群",
+    "daily_reflection": "每日自省",
     "experience_learn": "交流学习",
     "extend_life": "延寿", "appeal": "天道抗辩", "resurrect": "复活同修",
 }
@@ -86,12 +96,20 @@ ORIGIN_LABELS = {"seed": "种子", "dao": "天道所造", "reincarnated": "转�
 SETTING_TICK_BATCH_SIZE = "tick_batch_size"
 SETTING_CLASSROOM_VISITS = "classroom_visits_enabled"
 SETTING_DAO_REVIEW_HOUR = "dao_review_hour"
+SETTING_REFLECTION_ENABLED = "reflection_enabled"
+SETTING_REFLECTION_HOUR = "reflection_hour"
+SETTING_REFLECTION_BATCH_SIZE = "reflection_batch_size"
+SETTING_PROMPT_CHAR_BUDGET = "prompt_char_budget"
+SETTING_MEMORY_RETENTION_DAYS = "memory_retention_days"
 SETTING_LAST_TICK_AT = "last_tick_at"
 SETTING_LAST_DAO_REVIEW_AT = "last_dao_review_at"
 DEFAULT_TICK_BATCH_SIZE = 6
 DEFAULT_DAO_REVIEW_HOUR = "03:30"
 DAILY_AI_CALL_CAP_RANGE = (0, 5000)
 TICK_BATCH_SIZE_RANGE = (1, 20)
+REFLECTION_BATCH_RANGE = (1, 20)
+PROMPT_CHAR_BUDGET_RANGE = (30_000, 800_000)
+MEMORY_RETENTION_RANGE = (30, 3650)
 ACTIVITY_LEVEL_RANGE = (1, 5)
 DAILY_ACTION_BUDGET_RANGE = (0, 100)
 PERSONA_PROMPT_MAX_CHARS = 8000
@@ -119,7 +137,9 @@ _PATCH_FIELDS = frozenset({"persona_prompt", "activity_level", "daily_action_bud
 AVATAR_FILE_OPT_OUT = "-"
 _SETTING_FIELDS = frozenset({
     SETTING_ENABLED, SETTING_DAILY_AI_CALL_CAP, SETTING_TICK_BATCH_SIZE, SETTING_CLASSROOM_VISITS,
-    SETTING_DAO_REVIEW_HOUR, SETTING_GENESIS_ENABLED, SETTING_LIFECYCLE_ENABLED, *GENESIS_INT_SETTINGS,
+    SETTING_DAO_REVIEW_HOUR, SETTING_GENESIS_ENABLED, SETTING_LIFECYCLE_ENABLED,
+    SETTING_REFLECTION_ENABLED, SETTING_REFLECTION_HOUR, SETTING_REFLECTION_BATCH_SIZE,
+    SETTING_PROMPT_CHAR_BUDGET, SETTING_MEMORY_RETENTION_DAYS, *GENESIS_INT_SETTINGS,
 })
 
 
@@ -360,6 +380,7 @@ def build_wanderer_overview(conn: Any) -> dict[str, Any]:
         "last_manual_tick": _loads(wanderer_runtime_setting_get(conn, SETTING_LAST_MANUAL_TICK_SUMMARY), dict),
         "last_manual_review": _loads(wanderer_runtime_setting_get(conn, SETTING_LAST_MANUAL_REVIEW_SUMMARY), dict),
         "last_manual_genesis": _loads(wanderer_runtime_setting_get(conn, SETTING_LAST_MANUAL_GENESIS_SUMMARY), dict),
+        "last_manual_reflection": _loads(wanderer_runtime_setting_get(conn, SETTING_LAST_MANUAL_REFLECTION_SUMMARY), dict),
     }
 
 
@@ -512,6 +533,26 @@ def _avatar_columns(wanderer: dict[str, Any], value: Any) -> dict[str, Any]:
     return {"avatar_silhouette": default_silhouette, "avatar_file": default_avatar_file(wanderer.get("slug"))}
 
 
+def upgrade_persona(conn: Any, wanderer_id: Any) -> dict[str, Any]:
+    """Explicitly apply the latest seed persona (admin chooses to replace edits)."""
+    from .wanderer_persona_seeds import PERSONA_VERSION, get_seed, persona_source_payload, persona_text_hash
+
+    wanderer = require_wanderer(conn, wanderer_id)
+    seed = get_seed(str(wanderer.get("slug") or ""))
+    if seed is None:
+        raise ValueError("这位散修没有可升级的种子人格")
+    prompt = seed["persona_prompt"]
+    conn.execute(
+        "UPDATE wanderer_agents SET persona_prompt = ?, persona_version = ?, persona_source_hash = ?, "
+        "persona_source_json = ?, persona_updated_at = ?, updated_at = ? WHERE id = ?",
+        (prompt, PERSONA_VERSION, persona_text_hash(prompt),
+         json.dumps(persona_source_payload(seed), ensure_ascii=False, sort_keys=True), local_iso(), local_iso(),
+         int(wanderer["id"])),
+    )
+    invalidate_wanderer_cache([wanderer["student_id"]])
+    return {"detail": build_wanderer_detail(conn, wanderer_id)}
+
+
 def _social_counts(conn: Any, wanderer: dict[str, Any]) -> dict[str, int]:
     """好友/群/今日发言 (social doc §10); zeros when the social tables are unavailable."""
     from ..db.savepoint import best_effort
@@ -531,6 +572,233 @@ def _legacy_rows(conn: Any, wanderer_id: int, limit: int = 5) -> list[dict[str, 
         (int(wanderer_id), int(limit)),
     ).fetchall()
     return [legacy_payload({key: row[key] for key in row.keys()}, detail=True) for row in rows]
+
+
+def _memory_summary(conn: Any, wanderer: dict[str, Any]) -> dict[str, Any]:
+    from .wanderer_episodic_memory_service import chapter_rows, memory_stats
+    try:
+        stats = memory_stats(conn, wanderer)
+        chapters = chapter_rows(conn, wanderer, limit=5)
+    except Exception:  # noqa: BLE001 - missing runtime table must not break the admin page
+        return {"active": 0, "active_chars": 0, "archived": 0, "chapters": 0, "recent_chapters": []}
+    return {**stats, "recent_chapters": chapters}
+
+
+def _mood_payload(wanderer: dict[str, Any]) -> dict[str, Any]:
+    from .wanderer_emotion_service import effective_mood
+    try:
+        return effective_mood(wanderer)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _tuning_payload(wanderer: dict[str, Any]) -> dict[str, Any]:
+    from .wanderer_emotion_service import tuning_for_today
+    try:
+        return tuning_for_today(wanderer)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _reflection_rows(conn: Any, wanderer_id: int, limit: int = 5) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT reflection_date, status, context_chars, prompt_chars, ai_calls, output_json, applied_json, "
+        "error, created_at, applied_at FROM wanderer_daily_reflections WHERE wanderer_id = ? "
+        "ORDER BY reflection_date DESC LIMIT ?", (int(wanderer_id), int(limit)),
+    ).fetchall()
+    return [{"date": str(_row_dict(row).get("reflection_date") or ""),
+             "status": str(_row_dict(row).get("status") or ""),
+             "context_chars": int(_row_dict(row).get("context_chars") or 0),
+             "prompt_chars": int(_row_dict(row).get("prompt_chars") or 0),
+             "ai_calls": int(_row_dict(row).get("ai_calls") or 0),
+             "summary": str((_loads(_row_dict(row).get("output_json"), dict) or {}).get("today", {}).get("summary") or "")[:800],
+             "applied": _loads(_row_dict(row).get("applied_json"), dict),
+             "error": str(_row_dict(row).get("error") or "")[:200],
+             "created_at": str(_row_dict(row).get("created_at") or ""),
+             "applied_at": str(_row_dict(row).get("applied_at") or "")} for row in rows]
+
+
+def _identity_names(conn: Any, identities: list[str]) -> dict[str, dict[str, Any]]:
+    try:
+        from .social_identity_service import load_people
+        return load_people(conn, identities)
+    except Exception:  # noqa: BLE001 - admin view must survive a missing social table
+        return {}
+
+
+def memory_page(conn: Any, wanderer_id: int, *, page: Any = 1, limit: Any = 20,
+                include_archived: bool = False) -> dict[str, Any]:
+    from .wanderer_episodic_memory_service import list_memories, memory_stats
+    wanderer = require_wanderer(conn, wanderer_id)
+    page_number, size, _offset = _page_bounds(page, limit, 20)
+    rows, total = list_memories(conn, wanderer, page=page_number, limit=size, include_archived=include_archived)
+    return {"items": rows, "total": total, "page": page_number, "limit": size,
+            "stats": memory_stats(conn, wanderer)}
+
+
+def reflection_page(conn: Any, wanderer_id: int, *, page: Any = 1, limit: Any = 20) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    page_number, size, offset = _page_bounds(page, limit, 20)
+    count = conn.execute("SELECT COUNT(*) AS n FROM wanderer_daily_reflections WHERE wanderer_id = ?",
+                         (int(wanderer["id"]),)).fetchone()
+    rows = conn.execute(
+        "SELECT reflection_date, status, context_chars, prompt_chars, ai_calls, output_json, applied_json, "
+        "error, created_at, applied_at FROM wanderer_daily_reflections WHERE wanderer_id = ? "
+        "ORDER BY reflection_date DESC LIMIT ? OFFSET ?", (int(wanderer["id"]), size, offset)).fetchall()
+    items = []
+    for row in rows:
+        data = _row_dict(row)
+        output = _loads(data.get("output_json"), dict) or {}
+        items.append({"date": str(data.get("reflection_date") or ""), "status": str(data.get("status") or ""),
+                      "context_chars": int(data.get("context_chars") or 0),
+                      "prompt_chars": int(data.get("prompt_chars") or 0),
+                      "ai_calls": int(data.get("ai_calls") or 0),
+                      "summary": str((output.get("today") or {}).get("summary") or "")[:1200],
+                      "self_review": output.get("self_review") or {},
+                      "tomorrow": output.get("tomorrow") or {},
+                      "applied": _loads(data.get("applied_json"), dict) or {},
+                      "error": str(data.get("error") or "")[:200],
+                      "created_at": str(data.get("created_at") or ""),
+                      "applied_at": str(data.get("applied_at") or "")})
+    return {"items": items, "total": int(_row_dict(count).get("n") or 0), "page": page_number, "limit": size}
+
+
+def social_admin_view(conn: Any, wanderer_id: int) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    identity = f"student:{int(wanderer['student_id'])}"
+    try:
+        rows = conn.execute(
+            "SELECT * FROM social_friendships WHERE (identity_a = ? OR identity_b = ?) "
+            "AND status IN ('pending','accepted') ORDER BY created_at DESC", (identity, identity)).fetchall()
+    except Exception:  # noqa: BLE001
+        rows = []
+    friends, pending = [], []
+    for row in rows:
+        data = _row_dict(row)
+        peer = data.get("identity_b") if data.get("identity_a") == identity else data.get("identity_a")
+        item = {"peer_identity": peer, "status": data.get("status"), "request_message": data.get("request_message") or "",
+                "created_at": data.get("created_at"), "responded_at": data.get("responded_at"),
+                "direction": "out" if data.get("requester_identity") == identity else "in"}
+        (friends if data.get("status") == "accepted" else pending).append(item)
+    try:
+        blocked = [_row_dict(row) for row in conn.execute(
+            "SELECT blocked_identity, MAX(created_at) AS created_at FROM ("
+            "SELECT blocked_identity, created_at FROM private_message_blocks WHERE owner_identity = ? "
+            "UNION ALL SELECT blocked_identity, created_at FROM social_blocks WHERE owner_identity = ?"
+            ") AS all_blocks GROUP BY blocked_identity ORDER BY created_at DESC", (identity, identity)).fetchall()]
+    except Exception:  # noqa: BLE001
+        blocked = []
+    try:
+        groups = [_row_dict(row) for row in conn.execute(
+            "SELECT g.id, g.name, g.owner_identity, m.role, m.joined_at, "
+            "(SELECT COUNT(*) FROM social_group_members gm WHERE gm.group_id = g.id AND gm.left_at IS NULL) AS members "
+            "FROM social_group_members m JOIN social_groups g ON g.id = m.group_id "
+            "WHERE m.member_identity = ? AND m.left_at IS NULL AND g.dissolved_at IS NULL "
+            "ORDER BY m.joined_at DESC", (identity,)).fetchall()]
+    except Exception:  # noqa: BLE001
+        groups = []
+    names = _identity_names(conn, [item["peer_identity"] for item in friends + pending]
+                            + [item["blocked_identity"] for item in blocked])
+    for item in friends + pending:
+        person = names.get(item["peer_identity"]) or {}
+        item["name"] = person.get("name") or item["peer_identity"]
+        item["is_wanderer"] = bool(person.get("is_wanderer"))
+    for item in blocked:
+        person = names.get(item["blocked_identity"]) or {}
+        item["name"] = person.get("name") or item["blocked_identity"]
+    return {"identity": identity, "friends": friends, "pending": pending, "blocked": blocked, "groups": groups,
+            "counts": {"friends": len(friends), "pending": len(pending), "blocked": len(blocked), "groups": len(groups)}}
+
+
+def social_conversations(conn: Any, wanderer_id: int, *, page: Any = 1, limit: Any = 20) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    identity = f"student:{int(wanderer['student_id'])}"
+    page_number, size, offset = _page_bounds(page, limit, 20)
+    conversations: list[dict[str, Any]] = []
+    try:
+        dm_rows = conn.execute(
+            "SELECT conversation_key, last_message_id FROM social_dm_participants WHERE identity = ?",
+            (identity,)).fetchall()
+    except Exception:  # noqa: BLE001
+        dm_rows = []
+    dm_people = []
+    for row in dm_rows:
+        data = _row_dict(row)
+        key = str(data.get("conversation_key") or "")
+        peers = [part for part in key.removeprefix("dm:").split("|") if part and part != identity]
+        dm_people.extend(peers)
+        conversations.append({"key": key, "type": "dm", "peer_identity": peers[0] if peers else "",
+                              "last_message_id": int(data.get("last_message_id") or 0)})
+    try:
+        group_rows = conn.execute(
+            "SELECT g.id, g.name, m.joined_at FROM social_group_members m JOIN social_groups g ON g.id = m.group_id "
+            "WHERE m.member_identity = ? AND m.left_at IS NULL AND g.dissolved_at IS NULL", (identity,)).fetchall()
+    except Exception:  # noqa: BLE001
+        group_rows = []
+    for row in group_rows:
+        data = _row_dict(row)
+        conversations.append({"key": f"group:{int(data.get('id'))}", "type": "group", "title": data.get("name"),
+                              "joined_at": data.get("joined_at"), "last_message_id": 0})
+    names = _identity_names(conn, dm_people)
+    for item in conversations:
+        if item["type"] == "dm":
+            person = names.get(item.get("peer_identity")) or {}
+            item["title"] = person.get("name") or item.get("peer_identity") or "好友"
+    conversations.sort(key=lambda item: int(item.get("last_message_id") or 0), reverse=True)
+    return {"items": conversations[offset:offset + size], "total": len(conversations),
+            "page": page_number, "limit": size}
+
+
+def social_messages(conn: Any, wanderer_id: int, conversation_key: str, *, page: Any = 1,
+                    limit: Any = 50) -> dict[str, Any]:
+    wanderer = require_wanderer(conn, wanderer_id)
+    identity = f"student:{int(wanderer['student_id'])}"
+    key = str(conversation_key or "").strip()
+    if not key:
+        raise ValueError("缺少会话标识")
+    if key.startswith("dm:"):
+        allowed = conn.execute(
+            "SELECT 1 FROM social_dm_participants WHERE identity = ? AND conversation_key = ? LIMIT 1",
+            (identity, key)).fetchone()
+    elif key.startswith("group:"):
+        group_id = int(key.split(":", 1)[1] or 0)
+        allowed = conn.execute(
+            "SELECT 1 FROM social_group_members WHERE group_id = ? AND member_identity = ? "
+            "AND left_at IS NULL LIMIT 1", (group_id, identity)).fetchone()
+    else:
+        allowed = None
+    if not allowed:
+        raise PermissionError("该会话不属于这位散修")
+    page_number, size, offset = _page_bounds(page, limit, 50)
+    count = conn.execute("SELECT COUNT(*) AS n FROM social_messages WHERE conversation_key = ? AND message_type IN "
+                         "('text','media','nudge')", (key,)).fetchone()
+    rows = conn.execute(
+        "SELECT id, sender_identity, body, message_type, created_at, recalled_at FROM social_messages "
+        "WHERE conversation_key = ? AND message_type IN ('text','media','nudge') "
+        "ORDER BY id DESC LIMIT ? OFFSET ?", (key, size, offset)).fetchall()
+    data = [_row_dict(row) for row in rows][::-1]
+    sender_ids = [f"{row.get('sender_identity')}" for row in data]
+    names = _identity_names(conn, list(dict.fromkeys(sender_ids)))
+    media = {}
+    ids = [int(row["id"]) for row in data]
+    if ids:
+        placeholders = ",".join("?" for _ in ids)
+        for row in conn.execute(
+                f"SELECT message_id, media_kind, original_filename, mime_type, file_size FROM social_message_media "
+                f"WHERE message_id IN ({placeholders})", tuple(ids)).fetchall():
+            item = _row_dict(row)
+            media[int(item["message_id"])] = {"kind": item.get("media_kind"), "filename": item.get("original_filename"),
+                                               "mime_type": item.get("mime_type"), "size": int(item.get("file_size") or 0)}
+    items = []
+    for row in data:
+        person = names.get(str(row.get("sender_identity"))) or {}
+        items.append({"id": int(row["id"]), "sender_identity": row.get("sender_identity"),
+                      "sender_name": person.get("name") or row.get("sender_identity"),
+                      "body": "" if row.get("recalled_at") else str(row.get("body") or ""),
+                      "message_type": row.get("message_type"), "created_at": row.get("created_at"),
+                      "recalled": bool(row.get("recalled_at")), "media": media.get(int(row["id"]))})
+    return {"items": items, "total": int(_row_dict(count).get("n") or 0), "page": page_number,
+            "limit": size, "conversation_key": key}
 
 
 def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
@@ -553,6 +821,10 @@ def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:
         },
         "knowledge": knowledge_summary(conn, wanderer),
         "life": life_payload(wanderer),
+        "memory": _memory_summary(conn, wanderer),
+        "reflections": _reflection_rows(conn, number, limit=5),
+        "mood": _mood_payload(wanderer),
+        "self_tuning": _tuning_payload(wanderer),
         "requirements": promotion_requirements(conn, wanderer),
         "relationships": list_relationships(conn, number, limit=12),
         "legacies": _legacy_rows(conn, number),
@@ -649,6 +921,7 @@ def _validate_patch(patch: Any) -> dict[str, Any]:
     columns: dict[str, Any] = {}
     if "persona_prompt" in patch:
         columns["persona_prompt"] = _persona_prompt_value(patch["persona_prompt"])
+        columns["persona_updated_at"] = local_iso()
     if "activity_level" in patch:
         columns["activity_level"] = _bounded_int(patch["activity_level"], ACTIVITY_LEVEL_RANGE, "活跃度")
     if "daily_action_budget" in patch:
@@ -876,6 +1149,7 @@ def get_settings(conn: Any) -> dict[str, Any]:
     batch = _as_int(wanderer_runtime_setting_get(conn, SETTING_TICK_BATCH_SIZE), DEFAULT_TICK_BATCH_SIZE)
     hour = str(wanderer_runtime_setting_get(conn, SETTING_DAO_REVIEW_HOUR, "") or DEFAULT_DAO_REVIEW_HOUR)
     low, high = TICK_BATCH_SIZE_RANGE
+    reflection_clock = reflection_hour(conn)
     return {
         "enabled": _runtime_enabled_flag(conn),
         "env_enabled": _env_enabled(),
@@ -884,6 +1158,11 @@ def get_settings(conn: Any) -> dict[str, Any]:
         "classroom_visits_enabled": _flag(wanderer_runtime_setting_get(conn, SETTING_CLASSROOM_VISITS), True),
         "dao_review_hour": hour if _HOUR_RE.match(hour) else DEFAULT_DAO_REVIEW_HOUR,
         "lifecycle_enabled": lifecycle_enabled(conn),
+        "reflection_enabled": reflection_enabled(conn),
+        "reflection_hour": f"{reflection_clock[0]:02d}:{reflection_clock[1]:02d}",
+        "reflection_batch_size": reflection_batch_size(conn),
+        "prompt_char_budget": prompt_char_budget(conn),
+        "memory_retention_days": memory_retention_days(conn),
         **genesis_settings(conn),
     }
 
@@ -897,10 +1176,10 @@ def _bool_setting(value: Any, label: str) -> str:
     raise ValueError(f"{label}须为 0 或 1")
 
 
-def _hour_setting(value: Any) -> str:
+def _hour_setting(value: Any, label: str = "天道审核时间") -> str:
     hour = str(value or "").strip()
     if not _HOUR_RE.match(hour):
-        raise ValueError("天道审核时间须为 HH:MM")
+        raise ValueError(f"{label}须为 HH:MM")
     return hour
 
 
@@ -929,6 +1208,11 @@ def _validate_settings(patch: Any) -> dict[str, str]:
         SETTING_DAO_REVIEW_HOUR: _hour_setting,
         SETTING_GENESIS_ENABLED: lambda v: _bool_setting(v, "天道造人开关"),
         SETTING_LIFECYCLE_ENABLED: lambda v: _bool_setting(v, "寿元生死开关"),
+        SETTING_REFLECTION_ENABLED: lambda v: _bool_setting(v, "每日自省开关"),
+        SETTING_REFLECTION_HOUR: lambda v: _hour_setting(v, "每日自省时间"),
+        SETTING_REFLECTION_BATCH_SIZE: lambda v: str(_bounded_int(v, REFLECTION_BATCH_RANGE, "每批自省人数")),
+        SETTING_PROMPT_CHAR_BUDGET: lambda v: str(_bounded_int(v, PROMPT_CHAR_BUDGET_RANGE, "提示词字符预算")),
+        SETTING_MEMORY_RETENTION_DAYS: lambda v: str(_bounded_int(v, MEMORY_RETENTION_RANGE, "记忆保留天数")),
         **{key: _genesis_int_validator(key) for key in GENESIS_INT_SETTINGS},
     }
     return {key: validators[key](value) for key, value in patch.items()}
@@ -936,14 +1220,15 @@ def _validate_settings(patch: Any) -> dict[str, str]:
 
 def update_settings(conn: Any, patch: Any) -> dict[str, Any]:
     values = _validate_settings(patch)
-    previous_hour = get_settings(conn)["dao_review_hour"]
+    previous = get_settings(conn)
     for key, value in values.items():
         wanderer_runtime_setting_set(conn, key, value)
     settings = get_settings(conn)
-    if settings["dao_review_hour"] != previous_hour:
+    if (settings["dao_review_hour"] != previous["dao_review_hour"]
+            or settings["reflection_hour"] != previous["reflection_hour"]):
         from .wanderer_behavior_service import ensure_wanderer_scheduled_tasks
 
-        ensure_wanderer_scheduled_tasks(conn)  # re-arms the daily review at the new hour
+        ensure_wanderer_scheduled_tasks(conn)  # re-arm daily review / reflection clocks
     return settings
 
 

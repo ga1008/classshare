@@ -15,7 +15,7 @@ docs/wanderer-ai-free-agents-2026-10-25.md §3 / §4 item 5. Thread keys look li
   afterwards so the next read refreshes it.
 
 Compaction is triggered when ``total_chars`` exceeds
-``WANDERER_THREAD_COMPACT_CHARS`` (default 600k). The summarizer is injected so
+``WANDERER_THREAD_COMPACT_CHARS`` (default 120k). The summarizer is injected so
 tests never reach a model; Phase B passes an AI-backed one.
 """
 from __future__ import annotations
@@ -36,7 +36,7 @@ HISTORY_DB_LIMIT = 40
 HISTORY_AFTER_COMPACTION = 20
 SUMMARY_MAX_CHARS = 3000
 TURN_MAX_CHARS = 4000
-DEFAULT_COMPACT_CHARS = 600_000
+DEFAULT_COMPACT_CHARS = 120_000
 LRU_MAX_THREADS = 200
 _SAFE_KEY = re.compile(r"[^A-Za-z0-9_.-]+")
 
@@ -275,14 +275,23 @@ def compact_thread(
     return _copy_thread(updated)
 
 
-def thread_context_block(thread: dict[str, Any], limit_turns: int = 20) -> str:
-    """Memory block for the system prompt (design §4 item 5)."""
+def thread_context_block(thread: dict[str, Any], limit_turns: int = 20, *, max_chars: int = 30_000) -> str:
+    """Memory block for the system prompt, bounded by a character budget.
+
+    Oldest turns are dropped first; the last three turns are always kept so the
+    immediate reply still has context.
+    """
     lines = []
-    if thread.get("summary"):
-        lines.append(f"【你对这段交流的长期记忆】\n{thread['summary']}")
+    summary = str(thread.get("summary") or "")
+    if summary:
+        lines.append(f"【你对这段交流的长期记忆】\n{summary[:SUMMARY_MAX_CHARS]}")
     recent = (thread.get("history") or [])[-max(0, int(limit_turns)):] if limit_turns else []
-    if recent:
-        lines.append("【最近的对话】\n" + "\n".join(_format_turn(turn) for turn in recent))
+    rendered = [_format_turn(turn) for turn in recent]
+    budget = max(1_000, int(max_chars)) - len(summary)
+    while len(rendered) > 3 and sum(len(item) + 1 for item in rendered) > budget:
+        rendered.pop(0)
+    if rendered:
+        lines.append("【最近的对话】\n" + "\n".join(rendered))
     if not lines:
         return "【记忆】这是你们第一次在这里交流。"
     return "\n\n".join(lines)

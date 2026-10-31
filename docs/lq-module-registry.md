@@ -327,8 +327,8 @@
 - `templates/classroom_main_v4.html` ×41
 - `templates/assignment_detail_teacher.html` ×23
 - `templates/manage/system/blog_crawler.html` ×22
+- `templates/manage/system/wanderers.html` ×16
 - `templates/assignment_detail_student.html` ×15
-- `templates/manage/system/wanderers.html` ×15
 - `static/js/attendance_reports.js` ×13
 - `templates/submission_detail.html` ×12
 - `static/js/collaboration.js` ×11
@@ -682,10 +682,10 @@
 - `static/js/semester_calendar.js` ×34
 - `templates/manage/system/academic_integrations.html` ×34
 - `templates/manage/system/smart_classroom_integrations.html` ×34
+- `templates/manage/system/wanderers.html` ×33
 - `static/js/academic_final_materials.js` ×32
 - `static/js/classroom_page.js` ×32
 - `templates/lesson_plan_editor.html` ×32
-- `templates/manage/system/wanderers.html` ×32
 - `templates/partials/lq_navbar_topbar.html` ×31
 - `templates/manage/system/organizations.html` ×29
 - `templates/partials/profile/email.html` ×29
@@ -1047,9 +1047,10 @@
 - `templates/manage/system/blog_crawler.html` ×22
 - `templates/dev/lq_content.html` ×20
 - `templates/wanderers/home.html` ×18
+- `static/js/manage_wanderers.js` ×17
 - `templates/assignment_detail_student.html` ×15
 - `templates/dashboard.html` ×15
-- `templates/manage/system/wanderers.html` ×14
+- `templates/manage/system/wanderers.html` ×15
 - `static/js/attendance_reports.js` ×13
 - `templates/macros/manage_page.html` ×13
 - `templates/manage/system/password_resets.html` ×13
@@ -1063,7 +1064,6 @@
 - `templates/partials/profile/messages.html` ×10
 - `templates/assignment_wrong_summary.html` ×9
 - `templates/manage/system/smart_classroom_integrations.html` ×9
-- `static/js/manage_wanderers.js` ×8
 - `templates/manage/courses.html` ×8
 - `templates/manage/system/gongwen_integrations.html` ×8
 - `templates/manage/system/monitor.html` ×8
@@ -1332,8 +1332,8 @@
 - `templates/classroom_main_v4.html` ×115
 - `templates/partials/profile/email.html` ×88
 - `templates/exam_editor.html` ×84
+- `templates/manage/system/wanderers.html` ×72
 - `templates/assignment_detail_teacher.html` ×68
-- `templates/manage/system/wanderers.html` ×62
 - `templates/partials/profile/settings.html` ×62
 - `static/js/collaboration.js` ×60
 - `templates/manage/system/blog_crawler.html` ×58
@@ -1687,7 +1687,7 @@
 
 <details><summary>消费者清单（按命中次数）</summary>
 
-- `templates/manage/system/wanderers.html` ×18
+- `templates/manage/system/wanderers.html` ×24
 - `static/js/collaboration.js` ×6
 - `static/js/classroom_interactions.js` ×4
 - `templates/assignment_wrong_summary.html` ×4

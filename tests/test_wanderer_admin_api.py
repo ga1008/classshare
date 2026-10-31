@@ -89,6 +89,35 @@ class WandererAdminApiTest(WandererDbTestCase):
 
     # -- reads -----------------------------------------------------------
 
+    def test_social_view_and_transcript_are_super_admin_only(self):
+        wid = self.wanderer_ids[0]
+        with self.connect() as conn:
+            student_id = int(conn.execute("SELECT student_id FROM wanderer_agents WHERE id = ?", (wid,)).fetchone()[0])
+            me = f"student:{student_id}"
+            peer = f"student:{self.real_student_id}"
+            key = f"dm:{me}|{peer}"
+            conn.execute("INSERT INTO social_friendships (identity_a, identity_b, status, requester_identity, created_at) "
+                         "VALUES (?, ?, 'accepted', ?, '2026-10-30T10:00:00')", (me, peer, me))
+            conn.execute("INSERT INTO social_dm_participants (identity, conversation_key, last_message_id) VALUES (?, ?, 1)",
+                         (me, key))
+            conn.execute("INSERT INTO social_messages (conversation_type, conversation_key, sender_identity, body, "
+                         "body_format, message_type, mentions_json, client_nonce, created_at) "
+                         "VALUES ('dm', ?, ?, ?, 'text', 'text', '[]', 'admin-test-1', '2026-10-30T10:01:00')",
+                         (key, peer, "管理端应能看到这条交流内容"))
+            conn.commit()
+        client = self.super_client()
+        social = client.get(f"{API}/{wid}/social")
+        self.assertEqual(social.status_code, 200, social.text)
+        self.assertEqual(social.json()["counts"]["friends"], 1)
+        chats = client.get(f"{API}/{wid}/conversations")
+        self.assertEqual(chats.status_code, 200, chats.text)
+        self.assertEqual(chats.json()["items"][0]["key"], key)
+        messages = client.get(f"{API}/{wid}/conversations/{key}/messages")
+        self.assertEqual(messages.status_code, 200, messages.text)
+        self.assertIn("管理端应能看到这条交流内容", messages.json()["items"][0]["body"])
+        denied = self.plain_client().get(f"{API}/{wid}/social")
+        self.assertIn(denied.status_code, {401, 403})
+
     def test_list_detail_and_paged_lists(self):
         client = self.super_client()
         listing = client.get(API)
@@ -110,7 +139,20 @@ class WandererAdminApiTest(WandererDbTestCase):
         self.assertEqual(body["knowledge"]["active_count"], 3)
         self.assertTrue(body["profile"]["persona_prompt"])
         self.assertIn("behaviors", body["profile"])
+        self.assertIn("active", body["memory"])
+        self.assertIsInstance(body["reflections"], list)
+        self.assertIn("valence", body["mood"])
+        self.assertIn("proactive_multiplier", body["self_tuning"])
 
+        for kind in ("actions", "reviews", "knowledge", "memory", "reflections"):
+            response = client.get(f"{API}/{card['id']}/{kind}?page=1")
+            self.assertEqual(response.status_code, 200, f"{kind}: {response.text}")
+        social = client.get(f"{API}/{card['id']}/social")
+        self.assertEqual(social.status_code, 200, social.text)
+        self.assertIn("friends", social.json())
+        self.assertIn("groups", social.json())
+        conversations = client.get(f"{API}/{card['id']}/conversations?page=1")
+        self.assertEqual(conversations.status_code, 200, conversations.text)
         for kind in ("actions", "reviews", "knowledge"):
             response = client.get(f"{API}/{card['id']}/{kind}?page=1")
             self.assertEqual(response.status_code, 200, kind)
@@ -243,17 +285,27 @@ class WandererAdminApiTest(WandererDbTestCase):
         self.assertEqual(current.status_code, 200)
         self.assertEqual(current.json()["settings"]["dao_review_hour"], "03:30")
         for bad in ({"daily_ai_call_cap": 9000}, {"tick_batch_size": 0}, {"dao_review_hour": "25:00"},
+                    {"reflection_hour": "25:00"}, {"prompt_char_budget": 10},
                     {"enabled": "maybe"}, {"unknown": 1}, {}):
             self.assertEqual(client.post(f"{API}/settings", json=bad).status_code, 400, bad)
         saved = client.post(f"{API}/settings", json={
             "enabled": 0, "daily_ai_call_cap": 120, "tick_batch_size": 3,
             "classroom_visits_enabled": 0, "dao_review_hour": "04:15",
+            "reflection_enabled": 1, "reflection_hour": "22:45", "reflection_batch_size": 4,
+            "prompt_char_budget": 90_000, "memory_retention_days": 200,
         })
-        self.addCleanup(lambda: self.super_client().post(f"{API}/settings", json={"enabled": 1, "daily_ai_call_cap": 4096}))
+        self.addCleanup(lambda: self.super_client().post(f"{API}/settings", json={
+            "enabled": 1, "daily_ai_call_cap": 4096, "reflection_enabled": 1,
+            "reflection_hour": "23:30", "reflection_batch_size": 10,
+            "prompt_char_budget": 120_000, "memory_retention_days": 180,
+        }))
         self.assertEqual(saved.status_code, 200, saved.text)
         settings = saved.json()["settings"]
         self.assertEqual((settings["enabled"], settings["daily_ai_call_cap"], settings["tick_batch_size"]), (False, 120, 3))
         self.assertEqual((settings["classroom_visits_enabled"], settings["dao_review_hour"]), (False, "04:15"))
+        self.assertEqual((settings["reflection_enabled"], settings["reflection_hour"],
+                          settings["reflection_batch_size"]), (True, "22:45", 4))
+        self.assertEqual((settings["prompt_char_budget"], settings["memory_retention_days"]), (90_000, 200))
         self.assertEqual(client.get(API).json()["overview"]["daily_ai_call_cap"], 120)
         self.addCleanup(lambda: self.super_client().post(f"{API}/settings", json={"dao_review_hour": "03:30"}))
         with self.connect() as conn:
@@ -388,6 +440,10 @@ class WandererAdminApiTest(WandererDbTestCase):
         self.assertIn(denied.status_code, {303, 401, 403})
         self.assertIn("wd-genesis-btn", response.text)
         self.assertIn('name="genesis_max_total"', response.text)
+        self.assertIn('name="reflection_hour"', response.text)
+        self.assertIn('name="prompt_char_budget"', response.text)
+        self.assertIn('data-lq-tab="memory"', response.text)
+        self.assertIn('data-lq-tab="social"', response.text)
 
     # -- round 2: genesis (design §10.2 / §10.6) ------------------------------
 

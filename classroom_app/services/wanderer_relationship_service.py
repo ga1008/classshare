@@ -157,6 +157,43 @@ def note_interaction(conn: Any, wanderer: dict[str, Any], peer_identity: Any, *,
     record_feeling(conn, wanderer, peer_identity, delta=0, reason="", scene=scene)
 
 
+def adjust_relationship(conn: Any, wanderer: dict[str, Any], peer_identity: Any, *,
+                        affinity_delta: Any = 0, trust_delta: Any = 0, note: Any = "",
+                        scene: Any = "reflection") -> Optional[dict[str, Any]]:
+    """A reflection's small, bounded adjustment to an existing relationship."""
+    peer = _valid_peer(wanderer, peer_identity)
+    if not peer:
+        return None
+    existing = _existing(conn, int(wanderer["id"]), peer)
+    if existing is None:
+        return None
+    try:
+        delta = max(-2.0, min(2.0, float(affinity_delta)))
+    except (TypeError, ValueError):
+        delta = 0.0
+    try:
+        trust_delta = max(-0.2, min(0.2, float(trust_delta)))
+    except (TypeError, ValueError):
+        trust_delta = 0.0
+    affinity = max(AFFINITY_MIN, min(AFFINITY_MAX,
+                                     round(_as_float(_row_value(existing, "affinity")) + scale_delta(wanderer, delta), 1)))
+    trust = max(-1.0, min(1.0, round(_as_float(_row_value(existing, "trust")) + trust_delta, 3)))
+    familiarity = max(0.0, min(1.0, round(_as_float(_row_value(existing, "familiarity")) + 0.02, 3)))
+    feelings = _loads(_row_value(existing, "feelings_json"), list)
+    now = local_iso()
+    event = {"at": now, "delta": delta, "mood": "", "reason": str(note or "")[:FEELING_MAX_REASON],
+             "scene": str(scene or "")[:FEELING_MAX_SCENE]}
+    conn.execute(
+        "UPDATE wanderer_relationships SET affinity = ?, trust = ?, familiarity = ?, last_delta = ?, "
+        "last_reason = ?, feelings_json = ?, last_interaction_at = ?, updated_at = ? "
+        "WHERE wanderer_id = ? AND peer_identity = ?",
+        (affinity, trust, familiarity, delta, event["reason"],
+         json.dumps(_append_event(feelings, event), ensure_ascii=False), now, now,
+         int(wanderer["id"]), peer),
+    )
+    return {"peer_identity": peer, "affinity": affinity, "trust": trust, "delta": delta}
+
+
 def apply_turn_feeling(conn: Any, wanderer: dict[str, Any], peer_identity: Any, turn: Any, *,
                        scene: Any = "") -> Optional[dict[str, Any]]:
     """The optional ``feeling`` object of one turn (already parsed) → one event."""
@@ -206,12 +243,14 @@ def list_relationships(conn: Any, wanderer_id: int, *, limit: int = 20, by_abs: 
             "peer_kind": str(_row_value(row, "peer_kind", 2) or "student"),
             "affinity": affinity,
             "label": affinity_label(affinity),
-            "interactions": int(_row_value(row, "interactions", 4) or 0),
-            "last_delta": round(_as_float(_row_value(row, "last_delta", 5)), 1),
-            "last_mood": str(_row_value(row, "last_mood", 6) or ""),
-            "last_reason": str(_row_value(row, "last_reason", 7) or ""),
+            "interactions": int(_row_value(row, "interactions", 5) or 0),
+            "last_delta": round(_as_float(_row_value(row, "last_delta", 6)), 1),
+            "last_mood": str(_row_value(row, "last_mood", 7) or ""),
+            "last_reason": str(_row_value(row, "last_reason", 8) or ""),
             "last_interaction_at": str(_row_value(row, "last_interaction_at", 11) or ""),
-            "feelings": _loads(_row_value(row, "feelings_json", 8), list),
+            "trust": round(_as_float(_row_value(row, "trust", 13)), 2),
+            "familiarity": round(_as_float(_row_value(row, "familiarity", 14)), 2),
+            "feelings": _loads(_row_value(row, "feelings_json", 9), list),
         })
     names = _peer_names(conn, [item["peer_identity"] for item in items])
     for item in items:
@@ -234,7 +273,8 @@ def relationship_block(conn: Any, wanderer: dict[str, Any]) -> str:
         kind = {"wanderer": "散修", "teacher": "老师"}.get(item["peer_kind"], "真实学生")
         reason = item["last_reason"] or item["last_mood"]
         suffix = f"——上次：{str(reason)[:PROMPT_REASON_MAX]}" if reason else ""
-        lines.append(f"- {item['name']}（{kind}）：{item['label']}（好感 {item['affinity']:+g}）{suffix}")
+        lines.append(f"- {item['name']}（{kind}）：{item['label']}（好感 {item['affinity']:+g}，"
+                     f"信任 {item['trust']:+.2f}，熟悉 {item['familiarity']:.2f}）{suffix}")
     return ("【你与他人的关系】这只是你自己的感受，会随交流变化，不是对方的标签；回答时可以参考，但不必说出来。\n"
             + "\n".join(lines))
 

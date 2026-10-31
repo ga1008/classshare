@@ -76,6 +76,13 @@
 .wd-form-error { margin: 0; color: hsl(var(--ls-tone-danger-fg)); font-size: var(--ls-t-sub); }
 .wd-form-error[hidden] { display: none; }
 
+.wd-memory, .wd-social { display: grid; gap: var(--ls-s-3); }
+.wd-social__layout { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: var(--ls-s-3); align-items: start; }
+.wd-social__chats, .wd-social__transcript { display: flex; flex-direction: column; gap: var(--ls-s-2); max-height: 420px; overflow: auto; min-width: 0; }
+.wd-social__bubble { display: grid; gap: 2px; max-width: 85%; padding: var(--ls-s-2); border-radius: var(--ls-radius); }
+.wd-social__bubble--mine { margin-left: auto; text-align: right; }
+.wd-social__bubble p { margin: 0; white-space: pre-wrap; word-break: break-word; }
+
 @media (max-width: 960px) {
     .wd-main { grid-template-columns: minmax(0, 1fr); }
 }

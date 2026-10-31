@@ -335,3 +335,5 @@ wanderer_legacies
 - `node --check static/js/manage_wanderers.js` 通过；管理页与散修主页渲染由 TestClient 覆盖。
 
 未完成/待办：原生 PostgreSQL 门禁报告对（schema 变更）、生产部署与部署后核验、管理页/主页浏览器截图（P03）。
+
+> 2026-10-31 起的人格/情绪/记忆/自省/社交闭环见 [散修人格、记忆、自省与社交闭环](wanderer-humanity-2026-10-31.md)；寿元与天赋仍是本文的先天约束。

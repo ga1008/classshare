@@ -30,6 +30,7 @@ from ..services.heavenly_dao_rules import HEAVENLY_DAO_RULES
 from ..services.resource_access_service import is_super_admin_teacher
 from ..services.wanderer_settings_service import (
     SETTING_LAST_MANUAL_GENESIS_SUMMARY,
+    SETTING_LAST_MANUAL_REFLECTION_SUMMARY,
     SETTING_LAST_MANUAL_REVIEW_SUMMARY,
     SETTING_LAST_MANUAL_TICK_SUMMARY,
     wanderer_runtime_setting_set,
@@ -43,13 +44,16 @@ ENGINE_NOT_READY = "行为引擎尚未就绪"
 RUN_KIND_TICK = "tick"
 RUN_KIND_REVIEW = "review"
 RUN_KIND_GENESIS = "genesis"
+RUN_KIND_REFLECTION = "reflection"
 _SUMMARY_SETTING = {
     RUN_KIND_TICK: SETTING_LAST_MANUAL_TICK_SUMMARY,
     RUN_KIND_REVIEW: SETTING_LAST_MANUAL_REVIEW_SUMMARY,
     RUN_KIND_GENESIS: SETTING_LAST_MANUAL_GENESIS_SUMMARY,
+    RUN_KIND_REFLECTION: SETTING_LAST_MANUAL_REFLECTION_SUMMARY,
 }
 # In-process "one manual run per kind" flags; the event loop is single-threaded.
-_RUNNING: dict[str, bool] = {RUN_KIND_TICK: False, RUN_KIND_REVIEW: False, RUN_KIND_GENESIS: False}
+_RUNNING: dict[str, bool] = {RUN_KIND_TICK: False, RUN_KIND_REVIEW: False, RUN_KIND_GENESIS: False,
+                             RUN_KIND_REFLECTION: False}
 _BACKGROUND_TASKS: set[Any] = set()
 
 
@@ -264,6 +268,12 @@ async def api_adjust_wanderer_life(wanderer_id: int, request: Request, user: dic
     return _ok(**result)
 
 
+@router.post(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/persona-upgrade", response_class=JSONResponse)
+async def api_upgrade_wanderer_persona(wanderer_id: int, user: dict = Depends(get_current_teacher)):
+    result = _run_admin(user, lambda conn: admin.upgrade_persona(conn, wanderer_id), commit=True)
+    return _ok(**result)
+
+
 @router.post(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/reset-warnings", response_class=JSONResponse)
 async def api_reset_wanderer_warnings(wanderer_id: int, user: dict = Depends(get_current_teacher)):
     card = _run_admin(user, lambda conn: admin.reset_warnings(conn, wanderer_id, actor=user), commit=True)
@@ -308,6 +318,46 @@ async def api_list_wanderer_reviews(wanderer_id: int, page: int = 1, limit: int 
 async def api_list_wanderer_knowledge(wanderer_id: int, page: int = 1, limit: int = 50,
                                       user: dict = Depends(get_current_teacher)):
     return _ok(**_run_admin(user, lambda conn: admin.list_knowledge(conn, wanderer_id, page=page, limit=limit)))
+
+
+@router.get(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/memory", response_class=JSONResponse)
+async def api_list_wanderer_memory(wanderer_id: int, page: int = 1, limit: int = 20, include_archived: bool = False,
+                                   user: dict = Depends(get_current_teacher)):
+    return _ok(**_run_admin(user, lambda conn: admin.memory_page(
+        conn, wanderer_id, page=page, limit=limit, include_archived=include_archived)))
+
+
+@router.get(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/reflections", response_class=JSONResponse)
+async def api_list_wanderer_reflections(wanderer_id: int, page: int = 1, limit: int = 20,
+                                        user: dict = Depends(get_current_teacher)):
+    return _ok(**_run_admin(user, lambda conn: admin.reflection_page(conn, wanderer_id, page=page, limit=limit)))
+
+
+@router.post(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/reflect-now", response_class=JSONResponse)
+async def api_wanderer_reflect_now(wanderer_id: int, user: dict = Depends(get_current_teacher)):
+    _check_target(user, wanderer_id)
+    function = _engine_function("wanderer_reflection_service", "run_reflection_now")
+    return _start_background(RUN_KIND_REFLECTION, function, wanderer_id=wanderer_id, force=True)
+
+
+@router.get(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/social", response_class=JSONResponse)
+async def api_wanderer_social(wanderer_id: int, user: dict = Depends(get_current_teacher)):
+    return _ok(**_run_admin(user, lambda conn: admin.social_admin_view(conn, wanderer_id)))
+
+
+@router.get(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/conversations", response_class=JSONResponse)
+async def api_wanderer_conversations(wanderer_id: int, page: int = 1, limit: int = 20,
+                                     user: dict = Depends(get_current_teacher)):
+    return _ok(**_run_admin(user, lambda conn: admin.social_conversations(
+        conn, wanderer_id, page=page, limit=limit)))
+
+
+@router.get(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/conversations/{{conversation_key}}/messages",
+            response_class=JSONResponse)
+async def api_wanderer_conversation_messages(wanderer_id: int, conversation_key: str, page: int = 1, limit: int = 50,
+                                             user: dict = Depends(get_current_teacher)):
+    return _ok(**_run_admin(user, lambda conn: admin.social_messages(
+        conn, wanderer_id, conversation_key, page=page, limit=limit)))
 
 
 # ---------------------------------------------------------------------------

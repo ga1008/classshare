@@ -72,6 +72,8 @@ const detailEls = {
         overview: $('[data-wd-panel="overview"]', els.detailRoot),
         actions: $('[data-wd-panel="actions"]', els.detailRoot),
         reviews: $('[data-wd-panel="reviews"]', els.detailRoot),
+        memory: $('[data-wd-panel="memory"]', els.detailRoot),
+        social: $('[data-wd-panel="social"]', els.detailRoot),
     },
     knowledge: $('[data-wd-knowledge]', els.detailRoot),
     personaForm: $('[data-wd-persona-form]', els.detailRoot),
@@ -173,6 +175,7 @@ function renderManualSummary(overview) {
         manualRunText(overview.last_manual_tick, '上次手动节拍', TICK_SUMMARY_KEYS),
         manualRunText(overview.last_manual_review, '上次手动天道审核', null),
         manualRunText(overview.last_manual_genesis, '上次手动造人', GENESIS_SUMMARY_KEYS),
+        manualRunText(overview.last_manual_reflection, '上次手动自省', null),
     ].filter(Boolean);
     node.textContent = lines.join('；');
     node.hidden = lines.length === 0;
@@ -286,6 +289,11 @@ function settingsPayload(form) {
         dao_review_hour: String(data.get('dao_review_hour') || ''),
         classroom_visits_enabled: form.elements.classroom_visits_enabled.checked ? 1 : 0,
         lifecycle_enabled: form.elements.lifecycle_enabled.checked ? 1 : 0,
+        reflection_enabled: form.elements.reflection_enabled.checked ? 1 : 0,
+        reflection_hour: String(data.get('reflection_hour') || ''),
+        reflection_batch_size: Number(data.get('reflection_batch_size')),
+        prompt_char_budget: Number(data.get('prompt_char_budget')),
+        memory_retention_days: Number(data.get('memory_retention_days')),
         genesis_enabled: form.elements.genesis_enabled.checked ? 1 : 0,
         ...Object.fromEntries(GENESIS_NUMBER_FIELDS.map(name => [name, Number(data.get(name))])),
     };
@@ -443,6 +451,117 @@ function renderOverviewTab(detail) {
         el('h3', { class: 'wd-detail__section', text: '最近天道裁决' }), listOrEmpty('天道裁决', detail.reviews.map(reviewRow)),
         el('h3', { class: 'wd-detail__section', text: '最近动作' }), listOrEmpty('动作记录', detail.actions.map(actionRow)),
     ].filter(Boolean));
+}
+
+/* ---------------------------------------------------------------- memory / social tabs */
+
+function memoryRow(item) {
+    const importance = Math.round((Number(item.importance) || 0) * 100);
+    return { title: `${item.title || item.kind} · ${importance}`, meta: `${formatTime(item.occurred_at)} · ${item.kind} · ${item.status}`,
+        description: (item.content || '').slice(0, 220) };
+}
+
+function renderMemoryTab(detail) {
+    const panel = detailEls.panels.memory;
+    const memory = detail.memory || {};
+    const mood = detail.mood || {};
+    const tuning = detail.self_tuning || {};
+    const stats = createContent('card', {
+        title: '记忆总量', variant: 'stat', value: `${memory.active ?? 0} 条`,
+        meta: `活跃 ${memory.active_chars ?? 0} 字 · 归档 ${memory.archived ?? 0} · 人生片段 ${memory.chapters ?? 0}`,
+    });
+    const moodCard = createContent('card', {
+        title: '此刻心情', variant: 'stat', value: mood.emotion || '平静',
+        meta: mood.cause ? `起因：${mood.cause}` : '没有明显情绪',
+    });
+    const tuningCard = createContent('card', {
+        title: '明日自调', variant: 'stat', value: tuning.effective_date || '未安排',
+        meta: (tuning.intentions || []).join('；') || tuning.note || '还没有给明天定计划',
+    });
+    const reflect = button('立即自省', { 'data-wd-reflect-now': '' });
+    reflect.addEventListener('click', () => postAction('/reflect-now', {}, reflect, '已开始自省'));
+    const reflectionItems = (detail.reflections || []).map(item => ({
+        title: `${item.date} · ${item.status}`,
+        meta: item.summary || item.error || '暂无摘要',
+    }));
+    const host = el('div', { class: 'wd-memory__list' }, [el('p', { class: 'wd-muted', text: '正在读取记忆…' })]);
+    panel.replaceChildren(...[
+        el('div', { class: 'wd-stats' }, [stats, moodCard, tuningCard]),
+        el('div', { class: 'wd-inline-form__actions' }, [reflect]),
+        reflectionItems.length ? createContent('list', { label: '最近自省', items: reflectionItems })
+            : emptyState('还没有自省记录'),
+        host,
+    ]);
+    const serial = state.serial;
+    apiFetch(`${API_ROOT}/${state.detailId}/memory?limit=20&include_archived=true`, { silent: true }).then((data) => {
+        if (serial !== state.serial) return;
+        const items = (data.items || []).map(memoryRow);
+        host.replaceChildren(items.length ? createContent('list', { label: '最近记忆', items }) : emptyState('还没有记忆'));
+    }).catch((error) => {
+        if (serial === state.serial) host.replaceChildren(el('p', { class: 'wd-muted', text: errorMessage(error, '记忆读取失败') }));
+    });
+}
+
+function personRow(item) {
+    const direction = item.direction === 'out' ? '我发出' : item.direction === 'in' ? '对方发来' : item.status;
+    return { title: `${item.name || item.peer_identity}${item.is_wanderer ? '（散修）' : ''}`,
+        meta: `${direction} · ${formatTime(item.created_at)}${item.request_message ? ' · ' + item.request_message : ''}` };
+}
+
+function renderSocialTab(detail) {
+    const panel = detailEls.panels.social;
+    const host = el('div', { class: 'wd-social__body' }, [el('p', { class: 'wd-muted', text: '正在读取社交资料…' })]);
+    panel.replaceChildren(host);
+    const serial = state.serial;
+    apiFetch(`${API_ROOT}/${state.detailId}/social`, { silent: true }).then((data) => {
+        if (serial !== state.serial) return;
+        const groups = (data.groups || []).map(item => ({ title: item.name, meta: `${item.role} · ${item.members} 人 · ${formatTime(item.joined_at)}` }));
+        const blocked = (data.blocked || []).map(item => ({ title: item.name || item.blocked_identity, meta: formatTime(item.created_at) }));
+        const chats = el('div', { class: 'wd-social__chats' }, [el('p', { class: 'wd-muted', text: '正在读取会话…' })]);
+        const transcript = el('div', { class: 'wd-social__transcript', 'aria-live': 'polite' }, [
+            el('p', { class: 'wd-muted', text: '选择左侧会话查看交流内容。' }),
+        ]);
+        host.replaceChildren(...[
+            el('div', { class: 'wd-stats' }, [
+                createContent('card', { title: '好友', variant: 'stat', value: data.counts?.friends ?? 0 }),
+                createContent('card', { title: '待处理', variant: 'stat', value: data.counts?.pending ?? 0 }),
+                createContent('card', { title: '群组', variant: 'stat', value: data.counts?.groups ?? 0 }),
+                createContent('card', { title: '黑名单', variant: 'stat', value: data.counts?.blocked ?? 0 }),
+            ]),
+            listOrEmpty('好友', (data.friends || []).map(personRow)),
+            listOrEmpty('待处理申请', (data.pending || []).map(personRow)),
+            listOrEmpty('群组', groups),
+            listOrEmpty('黑名单', blocked),
+            el('div', { class: 'wd-social__layout' }, [chats, transcript]),
+        ]);
+        const loadMessages = async (key) => {
+            transcript.replaceChildren(el('p', { class: 'wd-muted', text: '正在读取对话…' }));
+            const result = await apiFetch(`${API_ROOT}/${state.detailId}/conversations/${encodeURIComponent(key)}/messages?limit=50`, { silent: true });
+            if (serial !== state.serial) return;
+            const rows = (result.items || []).map(item => el('div', {
+                class: `wd-social__bubble${item.sender_identity === data.identity ? ' wd-social__bubble--mine' : ''}`,
+            }, [
+                el('strong', { text: item.sender_name || item.sender_identity }),
+                el('span', { class: 'wd-muted', text: ` · ${formatTime(item.created_at)}` }),
+                el('p', { text: item.recalled ? '（已撤回）' : item.body }),
+                item.media ? el('span', { class: 'wd-muted', text: `附件：${item.media.filename || item.media.kind}` }) : null,
+            ]));
+            transcript.replaceChildren(...(rows.length ? rows : [el('p', { class: 'wd-muted', text: '暂无可见消息。' })]));
+        };
+        const loadChats = async () => {
+            const result = await apiFetch(`${API_ROOT}/${state.detailId}/conversations?limit=50`, { silent: true });
+            if (serial !== state.serial) return;
+            const list = (result.items || []).map(item => {
+                const node = button(`${item.type === 'group' ? '群' : '私聊'} · ${item.title || item.key}`, { 'data-wd-conversation': item.key });
+                node.addEventListener('click', () => loadMessages(item.key));
+                return node;
+            });
+            chats.replaceChildren(...(list.length ? list : [el('p', { class: 'wd-muted', text: '还没有会话。' })]));
+        };
+        loadChats().catch((error) => chats.replaceChildren(el('p', { class: 'wd-muted', text: errorMessage(error, '会话读取失败') })));
+    }).catch((error) => {
+        if (serial === state.serial) host.replaceChildren(el('p', { class: 'wd-muted', text: errorMessage(error, '社交资料读取失败') }));
+    });
 }
 
 /* ---------------------------------------------------------------- detail: paged tabs */
@@ -795,6 +914,10 @@ function bindDetail() {
     detailEls.tierForm.addEventListener('submit', onTierSubmit);
     detailEls.lifeForm.addEventListener('submit', onLifeSubmit);
     detailEls.personaForm.addEventListener('submit', submitPersona);
+    detailEls.personaForm.addEventListener('click', (event) => {
+        const control = event.target.closest('[data-wd-persona-upgrade]');
+        if (control) postAction('/persona-upgrade', {}, control, '人格已升级');
+    });
     detailEls.talentForm.addEventListener('submit', submitTalent);
     detailEls.avatarForm.addEventListener('submit', submitAvatar);
     detailEls.avatarForm.addEventListener('click', onAvatarReset);
@@ -806,6 +929,8 @@ function bindDetail() {
 function onTabChange({ key }) {
     if (key === 'actions' || key === 'reviews') showPaged(key);
     if (key === 'persona') showPaged('knowledge');
+    if (key === 'memory' && state.detail) renderMemoryTab(state.detail);
+    if (key === 'social' && state.detail) renderSocialTab(state.detail);
 }
 
 function resetDetailPanels() {

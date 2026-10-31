@@ -716,17 +716,20 @@ from .heavenly_dao_mention import (  # noqa: E402
 )
 from .wanderer_behavior_service import (  # noqa: E402
     TASK_KIND_WANDERER_DAO_DAILY,
+    TASK_KIND_WANDERER_REFLECTION,
     TASK_KIND_WANDERER_REPLY_TICK,
     TASK_KIND_WANDERER_TICK,
     handle_wanderer_dao_daily_review,
     handle_wanderer_reply_tick,
     handle_wanderer_tick,
 )
+from .wanderer_reflection_service import handle_wanderer_daily_reflection  # noqa: E402
 
 # 散修 tick (10 min) + 即时回复 (被问/被@) + 天道 daily review + @天道 replies; all no-op while disabled.
 register_task_handler(TASK_KIND_WANDERER_TICK, handle_wanderer_tick)
 register_task_handler(TASK_KIND_WANDERER_REPLY_TICK, handle_wanderer_reply_tick)
 register_task_handler(TASK_KIND_WANDERER_DAO_DAILY, handle_wanderer_dao_daily_review)
+register_task_handler(TASK_KIND_WANDERER_REFLECTION, handle_wanderer_daily_reflection)
 register_task_handler(TASK_KIND_DAO_MENTION_REPLY, handle_dao_mention_reply)
 
 from .wanderer_actions_social import (  # noqa: E402

@@ -119,6 +119,13 @@ def _decision_memory(conn: Any, ctx: ActionContext, row: dict[str, Any], decisio
     append_turn(conn, ctx.wanderer, f"social:friend:{peer}", who=ctx.display_name,
                 text=f"收到好友申请，附言：{row.get('request_message') or '无'}。我的决定：{decision}。原因：{reason}",
                 counterpart_identity=peer)
+    if decision != "defer":
+        from .wanderer_episodic_memory_service import record_memory
+        record_memory(conn, ctx.wanderer, kind="relationship", title="一次好友申请的决定",
+                      content=f"{peer} 想加我为好友，附言：{row.get('request_message') or '无'}。"
+                              f"我的决定：{decision}。原因：{reason}",
+                      importance=0.72, people=[peer], source_kind="friend_request",
+                      source_ref=f"request:{row['id']}", counterpart_identity=peer)
 
 
 async def decide_friend_request(ctx: ActionContext, request_id: int, *, deferred: bool = False,

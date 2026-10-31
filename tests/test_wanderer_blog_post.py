@@ -44,7 +44,7 @@ class WandererBlogPostTest(WandererWorldTestCase):
         self.assertEqual(caller.labels, ["wanderer:atai:write_post"])
         prompt = caller.calls[0][1]["system_prompt"]
         self.assertIn('"title"', prompt)
-        self.assertIn("说话要像真人", prompt)
+        self.assertIn("【表达自由】", prompt)
         posts = self.posts(ctx.student_id)
         self.assertEqual(len(posts), 1)
         post = posts[0]

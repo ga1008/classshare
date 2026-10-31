@@ -9,6 +9,7 @@ from classroom_app.services import blog_service, message_center_service, wandere
 from classroom_app.services.blog_notifications import notify_new_comment
 from classroom_app.services.wanderer_behavior_service import (
     DAO_DAILY_DEDUPE_KEY,
+    REFLECTION_DEDUPE_KEY,
     TICK_DEDUPE_KEY,
     ensure_wanderer_scheduled_tasks,
     run_wanderer_tick_once,
@@ -74,6 +75,9 @@ class SchedulerRegistrationTest(WandererWorldTestCase):
         self.assertEqual(rows[TICK_DEDUPE_KEY]["task_kind"], "wanderer_tick")
         self.assertEqual(rows[DAO_DAILY_DEDUPE_KEY]["recurrence_seconds"], 86400)
         self.assertIn("T03:30:00", rows[DAO_DAILY_DEDUPE_KEY]["run_at"])
+        self.assertEqual(rows[REFLECTION_DEDUPE_KEY]["task_kind"], "wanderer_daily_reflection")
+        self.assertEqual(rows[REFLECTION_DEDUPE_KEY]["recurrence_seconds"], 86400)
+        self.assertIn("T23:30:00", rows[REFLECTION_DEDUPE_KEY]["run_at"])
 
     def test_review_is_rearmed_when_the_hour_changes(self):
         with self.connect() as conn:
@@ -91,6 +95,12 @@ class SchedulerRegistrationTest(WandererWorldTestCase):
         self.assertEqual(rows[TICK_DEDUPE_KEY]["run_at"], tick_run_at)  # live tick keeps its clock
         armed = self.rows("SELECT value FROM wanderer_runtime_settings WHERE key = 'dao_review_hour_armed'")
         self.assertEqual(armed[0]["value"], "05:45")
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, "reflection_hour", "21:15")
+            ensure_wanderer_scheduled_tasks(conn)
+            conn.commit()
+        rows = {row["dedupe_key"]: row for row in self.rows("SELECT * FROM scheduled_tasks")}
+        self.assertIn("T21:15:00", rows[REFLECTION_DEDUPE_KEY]["run_at"])
 
     def test_disabled_tick_is_a_noop_unless_forced(self):
         with patch.dict("os.environ", {"WANDERER_ENABLED": "false"}):

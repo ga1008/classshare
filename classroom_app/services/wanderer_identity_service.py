@@ -45,7 +45,7 @@ MAX_TIER = 10
 DEFAULT_BEHAVIORS = {
     "blog_browse": 1, "blog_like": 1, "blog_comment": 1, "reply": 1, "dm_reply": 1,
     "classroom_visit": 1, "classroom_message": 1, "knowledge_read": 1, "promotion": 1, "blog_post": 1,
-    "social": 1,
+    "social": 1, "social_block": 1, "social_group": 1,
 }
 ACTION_KINDS = frozenset({
     "browse_post", "like_post", "like_comment", "comment", "reply", "dm_reply",
@@ -53,8 +53,12 @@ ACTION_KINDS = frozenset({
     "request_promotion", "reflect", "skip", "write_post", "experience_learn",
     # 好友/群聊 (social doc §10): friend decisions + proactive requests, chat messages sent.
     "social_friend", "social_message",
+    # Full social parity: block/unblock, create/invite/leave groups.
+    "social_block", "social_unblock", "social_group_create", "social_group_invite", "social_group_leave",
     # Lifecycle (lifecycle doc §2/§4.4/§6): life extension, appeal, resurrection.
     "extend_life", "appeal", "resurrect",
+    # Budget-exempt daily self-reflection.
+    "daily_reflection",
 })
 ORIGIN_SEED = "seed"
 ORIGIN_DAO = "dao"
@@ -74,11 +78,14 @@ _JSON_FIELDS = {
     "behaviors_json": ("behaviors", dict),
     "stats_json": ("stats", dict),
     "talents_json": ("talents", dict),
+    "persona_source_json": ("persona_source", dict),
+    "mood_json": ("mood", dict),
+    "self_tuning_json": ("self_tuning", dict),
 }
 _INT_FIELDS = (
     "id", "student_id", "tier", "activity_level", "daily_action_budget",
     "warnings_count", "knowledge_chars", "promotion_requested",
-    "life_extensions", "appeal_requested",
+    "life_extensions", "appeal_requested", "persona_version",
 )
 
 _SELECT_WANDERER = """
@@ -243,6 +250,7 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
     """Insert the agent row when missing. Returns True when this call created it."""
     if conn.execute("SELECT 1 FROM wanderer_agents WHERE slug = ? LIMIT 1", (seed["slug"],)).fetchone():
         return False
+    from .wanderer_persona_seeds import PERSONA_VERSION, persona_source_payload, persona_text_hash
     from .wanderer_voice_service import normalized_speech_style
     frequency = seed.get("interaction_frequency") or {}
     schedule = {
@@ -253,18 +261,22 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
     tier = clamp_tier(seed.get("initial_tier"))
     talents = normalize_talents(seed.get("talents"), slug=seed["slug"])
     lifespan = lifespan_weeks_for(tier, talents["vitality"])
+    source_payload = seed.get("persona_source") or persona_source_payload(seed)
+    prompt_hash = seed.get("persona_source_hash") or persona_text_hash(seed["persona_prompt"])
     conn.execute(
         """
         INSERT INTO wanderer_agents (
-            student_id, slug, display_name, archetype, persona_prompt, speech_style_json,
+            student_id, slug, display_name, archetype, persona_prompt, persona_version,
+            persona_source_hash, persona_source_json, speech_style_json,
             interests_json, schedule_json, activity_level, daily_action_budget, reply_policy_json,
             tier, cultivation_score, status, behaviors_json, stats_json, origin, created_at, updated_at,
             born_at, lifespan_weeks, talents_json, legacy_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(slug) DO NOTHING
         """,
         (
             student_id, seed["slug"], seed["display_name"], seed["archetype"], seed["persona_prompt"],
+            int(seed.get("persona_version") or PERSONA_VERSION), prompt_hash, _dumps(source_payload),
             _dumps(normalized_speech_style(seed)), _dumps(list(seed.get("interests") or [])),
             _dumps(schedule), int(frequency.get("activity_level") or 3),
             int(seed.get("daily_action_budget") or 10), _dumps(seed.get("reply_policy") or {}),
@@ -609,6 +621,14 @@ def mark_dead(conn: Any, wanderer_id: int, reason: str) -> int:
 
 def _after_death(conn: Any, wanderer: dict[str, Any], reason: str) -> None:
     """Life trajectory, reincarnation seed and grief of close friends; never breaks the death path."""
+    try:
+        from .wanderer_episodic_memory_service import record_memory
+
+        record_memory(conn, wanderer, kind="life", title="陨落", content=str(reason or "寿元耗尽。")[:1200],
+                      importance=1.0, tags=["死亡"], source_kind="death",
+                      source_ref=f"death:{wanderer.get('id')}:{local_iso()}")
+    except Exception as exc:  # noqa: BLE001 - memory is best-effort
+        print(f"[WANDERER] death memory for {wanderer.get('slug')} failed: {type(exc).__name__}: {exc}")
     try:
         from .wanderer_legacy_service import record_legacy
 

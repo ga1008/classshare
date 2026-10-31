@@ -176,6 +176,18 @@ async def run_turn(
     if result.get("status") == "capped":
         ctx.capped = True
     ctx.ai_calls += int(result.get("ai_calls") or 0)
+    if result.get("status") == "ok":
+        with ctx.connect() as conn:
+            from .wanderer_emotion_service import apply_turn_mood
+            from .wanderer_episodic_memory_service import record_memory
+            turn = result.get("turn") or {}
+            apply_turn_mood(conn, ctx.wanderer, turn)
+            inner = str(turn.get("inner") or "").strip()
+            if inner:
+                record_memory(conn, ctx.wanderer, kind="reflection", title="没发出去的心里话",
+                              content=inner, thread_key=thread_key, importance=0.55,
+                              source_kind="inner", source_ref=f"{thread_key}:{local_iso()}")
+            conn.commit()
     if result.get("status") != "ok" or (result.get("turn") or {}).get("action") in {"skip", "emoji"}:
         fallback = fallback_for_scene(ctx.wanderer, scene, thread_key, on_failure=True)
         if fallback:
@@ -229,6 +241,23 @@ async def remember(
         for part in said:
             thread = append_turn(conn, ctx.wanderer, thread_key, who=ctx.display_name, text=part,
                                  counterpart_identity=counterpart_identity)
+        if heard or said:
+            from .wanderer_emotion_service import mood_from_wanderer
+            from .wanderer_episodic_memory_service import record_memory
+            mood = mood_from_wanderer(ctx.wanderer)
+            pieces = []
+            if heard and str(heard[1] or "").strip():
+                pieces.append(f"{heard[0]}对我说：{str(heard[1]).strip()[:800]}")
+            if said:
+                pieces.append("我回应：" + " / ".join(str(item)[:500] for item in said))
+            if pieces:
+                record_memory(conn, ctx.wanderer, kind="conversation",
+                              title=f"与{heard[0] if heard else '对方'}的交流",
+                              content="\n".join(pieces), thread_key=thread_key,
+                              counterpart_identity=counterpart_identity,
+                              people=[counterpart_identity] if counterpart_identity else [],
+                              source_kind="thread", source_ref=f"{thread_key}:{local_iso()}",
+                              valence=mood.get("valence", 0.0), arousal=mood.get("arousal", 0.0))
         commit_learning(ctx, conn, thread_key)
         conn.commit()
     support = thread_key in ctx.support_threads
@@ -338,7 +367,7 @@ def day_start_iso(now: datetime) -> str:
 def today_action_count(conn: Any, wanderer_id: int, now: datetime) -> int:
     row = conn.execute(
         "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND created_at >= ? "
-        "AND action_kind NOT IN ('knowledge_forget','experience_learn')",
+        "AND action_kind NOT IN ('knowledge_forget','experience_learn','reflect','daily_reflection')",
         (int(wanderer_id), day_start_iso(now)),
     ).fetchone()
     return as_int(_row_value(row, "n"))

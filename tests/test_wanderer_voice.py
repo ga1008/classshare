@@ -17,6 +17,7 @@ from classroom_app.services.wanderer_persona_seeds import (
     SeedValidationError, WANDERER_SEEDS, render_persona_prompt, seed_wanderers, validate_seed,
 )
 from classroom_app.services.wanderer_prompt_service import build_system_prompt
+from classroom_app.services.wanderer_persona_seeds import render_persona_prompt_v1
 from classroom_app.services.wanderer_text_style import strip_ai_formatting
 from classroom_app.services.wanderer_voice_service import (
     EXAMPLE_LIMIT, GUIDE_MAX_CHARS, PROFILE_IDS, corpus_summary, load_corpus,
@@ -36,7 +37,7 @@ def old_style_line(seed: dict) -> str:
 
 def legacy_persona(seed: dict) -> str:
     return "\n".join(old_style_line(seed) if line.startswith("【说话方式】") else line
-                     for line in render_persona_prompt(seed).splitlines())
+                     for line in render_persona_prompt_v1(seed).splitlines())
 
 
 class VoiceCorpusTest(unittest.TestCase):

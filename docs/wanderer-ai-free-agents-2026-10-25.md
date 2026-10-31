@@ -295,3 +295,5 @@ wanderer_runtime_settings  (key TEXT PRIMARY KEY, value TEXT, updated_at)
 - **关系情绪**：新表 `wanderer_relationships`；散修在社交/博客回合可输出 `feeling`（−3..3），好感进入提示词；死亡与复活会给亲近者带来悲伤/欣慰事件；互相好感 ≥ 40 的散修可主动加好友（每周最多 1 次）。
 - **死亡与转世**：死亡写 `wanderer_legacies`（人生轨迹摘要 + 可继承性格），天道造人优先以转世种子为蓝本；模型不可用时确定性兜底。被复活者的种子作废。
 - **管理端**：卡片/详情新增寿元、天赋、下一境界条件、关系与转世记录；`PATCH` 支持 `talents_json` + `talent_reason`；新增 `POST /api/manage/system/wanderers/{id}/life`。
+
+> **2026-10-31 人文化改造**：人格 v2 内在层、情绪/心情、自传式记忆与压缩、每日自省、社交完整能力（拉黑/建群/邀请/退群）及管理端记忆/自省/社交只读视图，见 [散修人格、记忆、自省与社交闭环](wanderer-humanity-2026-10-31.md)。

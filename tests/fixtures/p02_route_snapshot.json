@@ -5137,6 +5137,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/conversations",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_wanderer_conversations",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/conversations/{conversation_key}/messages",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_wanderer_conversation_messages",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/system/wanderers/{wanderer_id:int}/knowledge",
     "methods": [
       "GET"
@@ -5150,6 +5166,38 @@
       "POST"
     ],
     "name": "api_adjust_wanderer_life",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/memory",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_wanderer_memory",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/persona-upgrade",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_upgrade_wanderer_persona",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/reflect-now",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_wanderer_reflect_now",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/reflections",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_list_wanderer_reflections",
     "include_in_schema": true
   },
   {
@@ -5182,6 +5230,14 @@
       "POST"
     ],
     "name": "api_revive_wanderer",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/social",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_wanderer_social",
     "include_in_schema": true
   },
   {

@@ -125,6 +125,26 @@
                         <input data-lq-component="input" class="lq-input form-control" type="time" name="dao_review_hour" required value="{{ settings.dao_review_hour }}">
                     </label>
                     <label data-lq-component="surface" class="lq-surface wd-switch">
+                        <span>允许每日自省</span>
+                        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="reflection_enabled" {% if settings.reflection_enabled %}checked{% endif %}>
+                    </label>
+                    <label class="form-group">
+                        <span class="form-label">每日自省时间</span>
+                        <input data-lq-component="input" class="lq-input form-control" type="time" name="reflection_hour" required value="{{ settings.reflection_hour }}">
+                    </label>
+                    <label class="form-group">
+                        <span class="form-label">每批自省人数</span>
+                        <input data-lq-component="input" class="lq-input form-control" type="number" name="reflection_batch_size" min="1" max="20" step="1" required value="{{ settings.reflection_batch_size }}">
+                    </label>
+                    <label class="form-group">
+                        <span class="form-label">提示词字符预算（默认 120000，最高 800000）</span>
+                        <input data-lq-component="input" class="lq-input form-control" type="number" name="prompt_char_budget" min="30000" max="800000" step="1000" required value="{{ settings.prompt_char_budget }}">
+                    </label>
+                    <label class="form-group">
+                        <span class="form-label">记忆保留天数（归档后可查看）</span>
+                        <input data-lq-component="input" class="lq-input form-control" type="number" name="memory_retention_days" min="30" max="3650" step="1" required value="{{ settings.memory_retention_days }}">
+                    </label>
+                    <label data-lq-component="surface" class="lq-surface wd-switch">
                         <span>允许旁听课堂</span>
                         <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" name="classroom_visits_enabled" {% if settings.classroom_visits_enabled %}checked{% endif %}>
                     </label>
@@ -229,11 +249,19 @@
                     <button type="button" role="tab" class="lq-tabs__tab" id="wd-tabs--lq-tab-actions" data-lq-tab="actions" aria-controls="wd-tabs--lq-panel-actions" aria-selected="false" tabindex="-1"><span class="lq-tabs__label">行为记录</span></button>
                     <button type="button" role="tab" class="lq-tabs__tab" id="wd-tabs--lq-tab-reviews" data-lq-tab="reviews" aria-controls="wd-tabs--lq-panel-reviews" aria-selected="false" tabindex="-1"><span class="lq-tabs__label">天道裁决</span></button>
                     <button type="button" role="tab" class="lq-tabs__tab" id="wd-tabs--lq-tab-persona" data-lq-tab="persona" aria-controls="wd-tabs--lq-panel-persona" aria-selected="false" tabindex="-1"><span class="lq-tabs__label">知识与人格</span></button>
+                    <button type="button" role="tab" class="lq-tabs__tab" id="wd-tabs--lq-tab-memory" data-lq-tab="memory" aria-controls="wd-tabs--lq-panel-memory" aria-selected="false" tabindex="-1"><span class="lq-tabs__label">记忆与自省</span></button>
+                    <button type="button" role="tab" class="lq-tabs__tab" id="wd-tabs--lq-tab-social" data-lq-tab="social" aria-controls="wd-tabs--lq-panel-social" aria-selected="false" tabindex="-1"><span class="lq-tabs__label">社交</span></button>
                 </div>
                 <div class="lq-tabs__panels">
                     <section class="lq-tabs__panel" role="tabpanel" id="wd-tabs--lq-panel-overview" aria-labelledby="wd-tabs--lq-tab-overview" tabindex="0" data-wd-panel="overview"></section>
                     <section class="lq-tabs__panel" role="tabpanel" id="wd-tabs--lq-panel-actions" aria-labelledby="wd-tabs--lq-tab-actions" tabindex="0" data-wd-panel="actions" hidden></section>
                     <section class="lq-tabs__panel" role="tabpanel" id="wd-tabs--lq-panel-reviews" aria-labelledby="wd-tabs--lq-tab-reviews" tabindex="0" data-wd-panel="reviews" hidden></section>
+                    <section class="lq-tabs__panel" role="tabpanel" id="wd-tabs--lq-panel-memory" aria-labelledby="wd-tabs--lq-tab-memory" tabindex="0" data-wd-panel="memory" hidden>
+                        <div class="wd-memory" data-wd-memory></div>
+                    </section>
+                    <section class="lq-tabs__panel" role="tabpanel" id="wd-tabs--lq-panel-social" aria-labelledby="wd-tabs--lq-tab-social" tabindex="0" data-wd-panel="social" hidden>
+                        <div class="wd-social" data-wd-social></div>
+                    </section>
                     <section class="lq-tabs__panel" role="tabpanel" id="wd-tabs--lq-panel-persona" aria-labelledby="wd-tabs--lq-tab-persona" tabindex="0" data-wd-panel="persona" hidden>
                         <form class="wd-avatar-form" data-wd-avatar-form>
                             <img class="wd-avatar-form__preview" data-wd-avatar-preview src="data:," alt="" width="64" height="64" decoding="async">
@@ -322,6 +350,7 @@
                             </fieldset>
                             <p class="wd-form-error" data-wd-persona-error role="alert" hidden></p>
                             {{ lq_btn('保存', variant='prominent', size='sm', type='submit') }}
+                            {{ lq_btn('升级为人格 v2', variant='glass', size='sm', attrs={'data-wd-persona-upgrade': ''}) }}
                         </form>
                     </section>
                 </div>

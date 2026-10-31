@@ -242,6 +242,16 @@ def finish(ctx: ActionContext, task: dict) -> tuple[bool, list]:
                         counterpart_identity=task["peer_identity"])
         from .wanderer_learning_service import apply_learning_safely
         apply_learning_safely(conn, ctx.wanderer, response.get("learning"))
+        from .wanderer_episodic_memory_service import record_memory
+        heard = [str(row.get("body") or "")[:600] for row in rows if row["sender_identity"] != ctx.identity]
+        if heard or response.get("parts"):
+            record_memory(conn, ctx.wanderer, kind="conversation", title="一段私信交流",
+                          content=("\n".join(f"对方：{item}" for item in heard[:6])
+                                   + ("\n我回应：" + " / ".join(response["parts"]) if response.get("parts") else "")),
+                          thread_key=thread_key(task), counterpart_identity=task["peer_identity"],
+                          people=[task["peer_identity"]], source_kind="inbox",
+                          source_ref=f"inbox:{task['id']}:{snapshot}",
+                          importance=0.6 if response.get("parts") else 0.45)
         if task["source"] == "social":
             from .social_message_service import mark_read
             mark_read(conn, build_wanderer_user_dict(ctx.wanderer), task["conversation_key"], snapshot, events)

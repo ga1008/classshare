@@ -29,9 +29,20 @@ DAO_MENTION_CALLS_PREFIX = "dao_mention_calls:"
 DEFAULT_DAO_MENTION_DAILY_CAP = 60
 SETTING_TICK_MAX_SECONDS = "tick_max_seconds"
 DEFAULT_TICK_MAX_SECONDS = 150
+SETTING_REFLECTION_ENABLED = "reflection_enabled"
+SETTING_REFLECTION_HOUR = "reflection_hour"
+SETTING_REFLECTION_HOUR_ARMED = "reflection_hour_armed"
+DEFAULT_REFLECTION_HOUR = "23:30"
+SETTING_REFLECTION_BATCH_SIZE = "reflection_batch_size"
+DEFAULT_REFLECTION_BATCH_SIZE = 10
+SETTING_PROMPT_CHAR_BUDGET = "prompt_char_budget"
+DEFAULT_PROMPT_CHAR_BUDGET = 120_000
+SETTING_MEMORY_RETENTION_DAYS = "memory_retention_days"
+DEFAULT_MEMORY_RETENTION_DAYS = 180
 SETTING_LIFECYCLE_ENABLED = "lifecycle_enabled"
 SETTING_LAST_MANUAL_TICK_SUMMARY = "last_manual_tick_summary"
 SETTING_LAST_MANUAL_REVIEW_SUMMARY = "last_manual_review_summary"
+SETTING_LAST_MANUAL_REFLECTION_SUMMARY = "last_manual_reflection_summary"
 SETTING_DAO_REVIEW_HOUR_ARMED = "dao_review_hour_armed"
 DEFAULT_TICK_BATCH_SIZE = 6
 DEFAULT_DAO_REVIEW_HOUR = "03:30"
@@ -174,6 +185,32 @@ def classroom_visits_enabled(conn: Any) -> bool:
 def lifecycle_enabled(conn: Any) -> bool:
     """Emergency stop for lifespan deaths only (lifecycle doc §11, default on)."""
     return str(wanderer_runtime_setting_get(conn, SETTING_LIFECYCLE_ENABLED, "1")).strip().lower() in {"1", "true"}
+
+
+def reflection_enabled(conn: Any) -> bool:
+    """Daily self-reflection switch (default on)."""
+    return str(wanderer_runtime_setting_get(conn, SETTING_REFLECTION_ENABLED, "1")).strip().lower() in {"1", "true"}
+
+
+def reflection_hour(conn: Any) -> tuple[int, int]:
+    return parse_review_hour(
+        wanderer_runtime_setting_get(conn, SETTING_REFLECTION_HOUR, DEFAULT_REFLECTION_HOUR)
+    )
+
+
+def reflection_batch_size(conn: Any) -> int:
+    """Wanderers reflected per daily run (runtime setting, default 10, 1..20)."""
+    return _setting_int(conn, SETTING_REFLECTION_BATCH_SIZE, DEFAULT_REFLECTION_BATCH_SIZE, low=1, high=20)
+
+
+def prompt_char_budget(conn: Any) -> int:
+    """Total system-prompt character budget (default 120k; up to 800k for 1M models)."""
+    return _setting_int(conn, SETTING_PROMPT_CHAR_BUDGET, DEFAULT_PROMPT_CHAR_BUDGET, low=30_000, high=800_000)
+
+
+def memory_retention_days(conn: Any) -> int:
+    """How long discarded episodes stay in the admin view (default 180 days)."""
+    return _setting_int(conn, SETTING_MEMORY_RETENTION_DAYS, DEFAULT_MEMORY_RETENTION_DAYS, low=30, high=3650)
 
 
 def parse_review_hour(raw: Any) -> tuple[int, int]:

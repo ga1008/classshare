@@ -56,6 +56,14 @@ from .wanderer_actions_knowledge import (
 )
 from .wanderer_ai_service import AiCaller
 from .wanderer_social_outreach import outreach_candidates, start_friend_conversation
+from .wanderer_social_actions import (
+    available_actions as social_maintenance_actions,
+    maybe_block as maybe_social_block,
+    maybe_create_group as maybe_social_group_create,
+    maybe_invite_group as maybe_social_group_invite,
+    maybe_leave_group as maybe_social_group_leave,
+    maybe_unblock as maybe_social_unblock,
+)
 from .wanderer_identity_service import (
     STATUS_ACTIVE,
     clamp_tier,
@@ -77,9 +85,11 @@ from .wanderer_settings_service import (
     SETTING_DAO_REVIEW_HOUR_ARMED,
     SETTING_LAST_TICK_AT,
     daily_ai_calls,
+    SETTING_REFLECTION_HOUR_ARMED,
     daily_cap,
     dao_review_hour,
     is_wanderer_runtime_enabled,
+    reflection_hour,
     tick_batch_size,
     tick_max_seconds,
     wanderer_runtime_setting_get,
@@ -89,10 +99,13 @@ from .wanderer_settings_service import (
 TASK_KIND_WANDERER_TICK = "wanderer_tick"
 TASK_KIND_WANDERER_REPLY_TICK = "wanderer_reply_tick"
 TASK_KIND_WANDERER_DAO_DAILY = "wanderer_dao_daily_review"
+TASK_KIND_WANDERER_REFLECTION = "wanderer_daily_reflection"
 TICK_DEDUPE_KEY = "wanderer:tick"
 DAO_DAILY_DEDUPE_KEY = "wanderer:dao-daily"
+REFLECTION_DEDUPE_KEY = "wanderer:daily-reflection"
 TICK_INTERVAL_SECONDS = 600
 DAO_INTERVAL_SECONDS = 86400
+REFLECTION_INTERVAL_SECONDS = 86400
 FIRST_TICK_DELAY_SECONDS = 120
 _LIVE_TASK_STATUSES = ("pending", "running")
 # A failure only bumps attempt_count (reset on every success) with backoff capped
@@ -100,6 +113,7 @@ _LIVE_TASK_STATUSES = ("pending", "running")
 # the tick tolerates long transient outages and the daily review about a day.
 TICK_MAX_ATTEMPTS = 1000
 DAO_MAX_ATTEMPTS = 24
+REFLECTION_MAX_ATTEMPTS = 24
 
 ActionFn = Callable[[ActionContext], Awaitable[list[dict[str, Any]]]]
 SleepFn = Callable[[float], Awaitable[Any]]
@@ -108,6 +122,9 @@ SleepFn = Callable[[float], Awaitable[Any]]
 _FAILURE_KIND = {
     "replies": "reply", "blog": "browse_post", "classroom": "classroom_visit",
     "knowledge": "knowledge_read", "promotion": "request_promotion", "reflect": "reflect", "post": "write_post",
+    "social_block": "social_block", "social_unblock": "social_unblock",
+    "social_group_create": "social_group_create", "social_group_invite": "social_group_invite",
+    "social_group_leave": "social_group_leave",
     "extend_life": "extend_life", "appeal": "appeal", "resurrect": "resurrect",
 }
 POST_WEIGHT = 4.0
@@ -168,6 +185,17 @@ def ensure_wanderer_scheduled_tasks(conn: Any) -> dict[str, int]:
     }
     if hour_changed:
         wanderer_runtime_setting_set(conn, SETTING_DAO_REVIEW_HOUR_ARMED, wanted_hour)
+    reflection_hour_value, reflection_minute = reflection_hour(conn)
+    reflection_wanted = f"{reflection_hour_value:02d}:{reflection_minute:02d}"
+    reflection_changed = wanderer_runtime_setting_get(conn, SETTING_REFLECTION_HOUR_ARMED) != reflection_wanted
+    ids["reflection"] = _arm(
+        conn, task_kind=TASK_KIND_WANDERER_REFLECTION, dedupe_key=REFLECTION_DEDUPE_KEY,
+        run_at=next_review_run_at(now, reflection_hour_value, reflection_minute),
+        recurrence=REFLECTION_INTERVAL_SECONDS, title="散修每日自省", max_attempts=REFLECTION_MAX_ATTEMPTS,
+        force=reflection_changed,
+    )
+    if reflection_changed:
+        wanderer_runtime_setting_set(conn, SETTING_REFLECTION_HOUR_ARMED, reflection_wanted)
     return ids
 
 
@@ -330,6 +358,8 @@ def choose_action(ctx: ActionContext, *, first: bool) -> str:
     with ctx.connect() as conn:
         if behavior_on(wanderer, "social") and outreach_candidates(conn, ctx):
             options.append(("social_outreach", 2.0))
+        for name in social_maintenance_actions(conn, ctx):
+            options.append((name, 0.6 if name in {"social_block", "social_group_create"} else 0.3))
         if promotion_eligible(ctx, conn):
             options.append(("promotion", 3.0))
         if can_extend_life(current_life(wanderer), wanderer.get("cultivation_score")):
@@ -362,6 +392,11 @@ ACTIONS: dict[str, ActionFn] = {
     "promotion": request_promotion,
     "post": write_post,
     "social_outreach": start_friend_conversation,
+    "social_block": maybe_social_block,
+    "social_unblock": maybe_social_unblock,
+    "social_group_create": maybe_social_group_create,
+    "social_group_invite": maybe_social_group_invite,
+    "social_group_leave": maybe_social_group_leave,
     "extend_life": maybe_extend_life,
     "appeal": request_appeal,
     "resurrect": try_resurrect,
@@ -439,7 +474,11 @@ async def run_wanderer_actions(
             "ai_calls": ctx.ai_calls, "stopped": False, "reply_only": True,
         }
     done = await _run_guarded(ctx, "reflect", reflect_on_reviews)
-    planned = min(actions_per_tick(ctx.wanderer.get("activity_level"), ctx.rng), max(0, budget_left - len(done)))
+    from .wanderer_emotion_service import proactive_multiplier
+    budget_used = sum(1 for item in done if str(item.get("kind") or "") not in {"reflect"})
+    base_actions = actions_per_tick(ctx.wanderer.get("activity_level"), ctx.rng)
+    planned = max(0, int(round(base_actions * proactive_multiplier(ctx.wanderer))))
+    planned = min(planned, max(0, budget_left - budget_used))
     stopped = False
     for index in range(planned):
         if index or done:

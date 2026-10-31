@@ -12,7 +12,14 @@ from classroom_app.services.wanderer_identity_service import (
     load_wanderers_by_student_ids,
     mark_dead,
 )
-from classroom_app.services.wanderer_persona_seeds import WANDERER_SEEDS, render_persona_prompt, seed_wanderers
+from classroom_app.services.wanderer_persona_seeds import (
+    SEED_BY_SLUG,
+    WANDERER_SEEDS,
+    render_persona_prompt,
+    render_persona_prompt_v1,
+    seed_wanderers,
+    upgrade_seed_personas,
+)
 from tests.wanderer_test_support import WandererDbTestCase, reset_wanderer_caches
 
 
@@ -47,11 +54,38 @@ class WandererPersonaSeedTest(unittest.TestCase):
         for seed in WANDERER_SEEDS:
             prompt = render_persona_prompt(seed)
             self.assertGreaterEqual(len(prompt), 300, seed["slug"])
-            self.assertLessEqual(len(prompt), 600, seed["slug"])
+            self.assertLessEqual(len(prompt), 1400, seed["slug"])
             self.assertTrue(prompt.startswith(f"你是{seed['display_name']}"))
-            for marker in ("散修", "真实的学生", "其他散修", "【童年】", "【求学】", "【喜好】", "【说话方式】",
-                           "【性格】", "【互动习惯】", "【禁忌】"):
+            for marker in ("散修", "真实的学生", "其他散修", "【童年】", "【求学】", "【喜好】", "【说话气质】",
+                           "【性格底色】", "【互动习惯】", "【底线】", "【心里最想要的】", "【最怕的】",
+                           "【矛盾】", "【情绪触发】", "【不肯说的事】", "【正在慢慢改变】"):
                 self.assertIn(marker, prompt, seed["slug"])
+
+
+class PersonaUpgradeTest(WandererDbTestCase):
+    def test_untouched_v1_seed_is_upgraded_but_admin_edit_is_kept(self):
+        with self.connect() as conn:
+            seed = SEED_BY_SLUG["linwanzhou"]
+            conn.execute("UPDATE wanderer_agents SET persona_prompt = ?, persona_version = 1, "
+                         "persona_updated_at = NULL WHERE slug = ?", (render_persona_prompt_v1(seed), "linwanzhou"))
+            conn.commit()
+            upgraded = upgrade_seed_personas(conn)
+            conn.commit()
+            row = conn.execute("SELECT persona_prompt, persona_version FROM wanderer_agents WHERE slug = 'linwanzhou'").fetchone()
+        self.assertIn("linwanzhou", upgraded)
+        self.assertEqual(row["persona_version"], 2)
+        self.assertIn("【心里最想要的】", row["persona_prompt"])
+
+    def test_admin_edited_persona_is_never_overwritten(self):
+        with self.connect() as conn:
+            edited = "这是管理员写的人格，不要在启动时覆盖。"
+            conn.execute("UPDATE wanderer_agents SET persona_prompt = ?, persona_version = 1, "
+                         "persona_updated_at = '2026-10-31T00:00:00' WHERE slug = 'atai'", (edited,))
+            conn.commit()
+            upgraded = upgrade_seed_personas(conn)
+            row = conn.execute("SELECT persona_prompt FROM wanderer_agents WHERE slug = 'atai'").fetchone()
+        self.assertNotIn("atai", upgraded)
+        self.assertEqual(row["persona_prompt"], edited)
 
 
 class WandererSeedingTest(WandererDbTestCase):

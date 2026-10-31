@@ -11,6 +11,9 @@ docs/wanderer-ai-free-agents-2026-10-25.md §3. Six runtime-owned tables:
 * ``wanderer_runtime_settings``  key/value switches and daily counters.
 * ``wanderer_relationships``     how one wanderer feels about each peer (lifecycle doc §5).
 * ``wanderer_legacies``          a dead wanderer's life trajectory and reincarnation seed (§7).
+* ``wanderer_episodic_memories`` importance/recency/relevance-ranked autobiographical events.
+* ``wanderer_memory_chapters``   era summaries folded from old episodic events.
+* ``wanderer_daily_reflections`` one self-reflection per wanderer per local day (budget-exempt).
 
 Engine-aware and idempotent (``CREATE TABLE IF NOT EXISTS`` on SQLite and
 PostgreSQL), ensured lazily at runtime like ``schema_polls`` — deliberately not
@@ -231,6 +234,65 @@ def _table_statements(id_column: str) -> list[str]:
             UNIQUE (wanderer_id, source, conversation_key)
         )
         """,
+        f"""
+        CREATE TABLE IF NOT EXISTS wanderer_episodic_memories (
+            {id_column},
+            wanderer_id INTEGER NOT NULL,
+            occurred_at TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'event',
+            thread_key TEXT NOT NULL DEFAULT '',
+            counterpart_identity TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            content TEXT NOT NULL DEFAULT '',
+            importance REAL NOT NULL DEFAULT 0,
+            valence REAL NOT NULL DEFAULT 0,
+            arousal REAL NOT NULL DEFAULT 0,
+            tags_json TEXT NOT NULL DEFAULT '[]',
+            people_json TEXT NOT NULL DEFAULT '[]',
+            source_kind TEXT NOT NULL DEFAULT '',
+            source_ref TEXT NOT NULL DEFAULT '',
+            episode_hash TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            superseded_by INTEGER,
+            access_count INTEGER NOT NULL DEFAULT 0,
+            last_accessed_at TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE (wanderer_id, episode_hash)
+        )
+        """,
+        f"""
+        CREATE TABLE IF NOT EXISTS wanderer_memory_chapters (
+            {id_column},
+            wanderer_id INTEGER NOT NULL,
+            chapter_key TEXT NOT NULL,
+            period_start TEXT NOT NULL DEFAULT '',
+            period_end TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            summary TEXT NOT NULL DEFAULT '',
+            episode_ids_json TEXT NOT NULL DEFAULT '[]',
+            source_chars INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL,
+            UNIQUE (wanderer_id, chapter_key)
+        )
+        """,
+        f"""
+        CREATE TABLE IF NOT EXISTS wanderer_daily_reflections (
+            {id_column},
+            wanderer_id INTEGER NOT NULL,
+            reflection_date TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            context_chars INTEGER NOT NULL DEFAULT 0,
+            prompt_chars INTEGER NOT NULL DEFAULT 0,
+            ai_calls INTEGER NOT NULL DEFAULT 0,
+            output_json TEXT NOT NULL DEFAULT '{{}}',
+            applied_json TEXT NOT NULL DEFAULT '{{}}',
+            error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            applied_at TEXT,
+            UNIQUE (wanderer_id, reflection_date)
+        )
+        """,
     ]
 
 
@@ -254,6 +316,16 @@ _INDEX_STATEMENTS = (
     "CREATE INDEX IF NOT EXISTS idx_wanderer_relationships_affinity "
     "ON wanderer_relationships (wanderer_id, affinity)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_legacies_status ON wanderer_legacies (status, id)",
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_episodes_status "
+    "ON wanderer_episodic_memories (wanderer_id, status, occurred_at)",
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_episodes_importance "
+    "ON wanderer_episodic_memories (wanderer_id, importance)",
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_episodes_kind "
+    "ON wanderer_episodic_memories (wanderer_id, kind, occurred_at)",
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_chapters_period "
+    "ON wanderer_memory_chapters (wanderer_id, period_start)",
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_reflections_date "
+    "ON wanderer_daily_reflections (wanderer_id, reflection_date)",
 )
 
 
@@ -281,6 +353,21 @@ ADDED_COLUMNS = (
     ("wanderer_agents", "appeal_requested_at", "TEXT"),
     ("wanderer_agents", "appeal_note", "TEXT NOT NULL DEFAULT ''"),
     ("wanderer_agents", "legacy_id", "INTEGER"),
+    # Humanity v2 (2026-10-31): persona provenance, live mood, next-day self-tuning.
+    ("wanderer_agents", "persona_version", "INTEGER NOT NULL DEFAULT 1"),
+    ("wanderer_agents", "persona_source_hash", "TEXT NOT NULL DEFAULT ''"),
+    ("wanderer_agents", "persona_source_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("wanderer_agents", "persona_updated_at", "TEXT"),
+    ("wanderer_agents", "mood_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("wanderer_agents", "self_tuning_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("wanderer_agents", "last_reflection_at", "TEXT"),
+    ("wanderer_relationships", "trust", "REAL NOT NULL DEFAULT 0"),
+    ("wanderer_relationships", "familiarity", "REAL NOT NULL DEFAULT 0"),
+    ("wanderer_relationships", "shared_topics_json", "TEXT NOT NULL DEFAULT '[]'"),
+    ("wanderer_action_log", "tick_id", "TEXT NOT NULL DEFAULT ''"),
+    ("wanderer_action_log", "sequence", "INTEGER NOT NULL DEFAULT 0"),
+    ("wanderer_action_log", "episode_id", "INTEGER"),
+    ("wanderer_action_log", "content_chars", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 
