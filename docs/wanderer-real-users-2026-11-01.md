@@ -60,4 +60,11 @@ final = base × 口才
 
 回归结果（2026-11-01）：散修套件 471 项全部通过；全量后端 5357 项仅剩父提交已有的 13 项失败（外加一次 LibreOffice 容量测试抖动，单独重跑通过），无新增失败。
 
+## 8. 上线记录
+
+- 提交：`b1a3007b`；release：`20261101-025156-247baf4637c7`。
+- 原生 PG 演练：`.codex-temp/wanderer-real-users-gate/native-report.json`（增量/全启动均 ok，0 阻塞，集群已停）；冻结树 81 个迁移源文件字节一致，DryRun 3875 文件后正式发布。
+- 核验：8 容器健康；`interaction_limit_penalty`/`interaction_penalty_until` 在位；`maybe_search_friends`/`award_reply_cultivation` 已加载；互动额度 `20→40`（0→5 境）、搜索 `12→24`；天道存在提示与 `interaction_limits` 解析生效；管理接口未登录 401；manifest revision `8322f92c…` 含 `manage_wanderers.js`；近 10 分钟无错误日志。
+- Git：`e781c6b7..b1a3007b dev -> dev` 已推送。
+
 部署注意：改了 `classroom_app/db/schema_wanderers.py`，必须重做原生 PostgreSQL 演练报告对。
