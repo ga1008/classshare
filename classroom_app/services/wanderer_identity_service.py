@@ -45,7 +45,7 @@ MAX_TIER = 10
 DEFAULT_BEHAVIORS = {
     "blog_browse": 1, "blog_like": 1, "blog_comment": 1, "reply": 1, "dm_reply": 1,
     "classroom_visit": 1, "classroom_message": 1, "knowledge_read": 1, "promotion": 1, "blog_post": 1,
-    "social": 1, "social_block": 1, "social_group": 1,
+    "social": 1, "social_block": 1, "social_group": 1, "social_seek": 1, "manual_read": 1,
 }
 ACTION_KINDS = frozenset({
     "browse_post", "like_post", "like_comment", "comment", "reply", "dm_reply",
@@ -57,9 +57,24 @@ ACTION_KINDS = frozenset({
     "social_block", "social_unblock", "social_group_create", "social_group_invite", "social_group_leave",
     # Lifecycle (lifecycle doc §2/§4.4/§6): life extension, appeal, resurrection.
     "extend_life", "appeal", "resurrect",
+    # Autonomy (2026-10-31 round 2): deliberately reading the manual and finding a friend.
+    "read_manual", "social_seek",
+    # 天道 verdicts are logged into the same trace so the wanderer sees its own punishment.
+    "dao_verdict",
     # Budget-exempt daily self-reflection.
     "daily_reflection",
 })
+_DEFAULT_LOCATIONS = {
+    "browse_post": "博客", "like_post": "博客", "like_comment": "博客", "comment": "博客", "reply": "博客",
+    "write_post": "博客", "classroom_visit": "课堂", "classroom_message": "课堂",
+    "knowledge_read": "知识库", "knowledge_forget": "知识库", "experience_learn": "知识库",
+    "dm_reply": "私信", "social_friend": "好友", "social_message": "社交", "social_seek": "寻友",
+    "social_block": "社交", "social_unblock": "社交", "social_group_create": "群聊",
+    "social_group_invite": "群聊", "social_group_leave": "群聊",
+    "request_promotion": "天道台", "reflect": "天道台", "dao_verdict": "天道台",
+    "extend_life": "生命之树", "appeal": "天道台", "resurrect": "生命之树",
+    "read_manual": "平台手册", "daily_reflection": "自省", "skip": "平台",
+}
 ORIGIN_SEED = "seed"
 ORIGIN_DAO = "dao"
 ORIGIN_REINCARNATED = "reincarnated"
@@ -494,6 +509,7 @@ def log_wanderer_action(
     target_id: Any = "",
     class_offering_id: Optional[int] = None,
     content_preview: str = "",
+    location: str = "",
     ai_calls: int = 0,
     mood: str = "",
     outcome: str = "ok",
@@ -502,16 +518,17 @@ def log_wanderer_action(
     ensure_wanderer_schema(conn)
     if action_kind not in ACTION_KINDS:
         raise ValueError(f"unknown wanderer action: {action_kind}")
+    location = str(location or "").strip() or _DEFAULT_LOCATIONS.get(action_kind) or "平台"
     return execute_insert_returning_id(
         conn,
         """
         INSERT INTO wanderer_action_log (wanderer_id, action_kind, target_type, target_id, class_offering_id,
-                                         content_preview, ai_calls, mood, outcome, detail_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                         content_preview, location, ai_calls, mood, outcome, detail_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (int(wanderer_id), action_kind, str(target_type or ""), "" if target_id is None else str(target_id),
-         class_offering_id, str(content_preview or "")[:200], int(ai_calls), str(mood or "")[:40],
-         str(outcome or "ok"), _dumps(detail or {}), local_iso()),
+         class_offering_id, str(content_preview or "")[:200], str(location or "")[:120], int(ai_calls),
+         str(mood or "")[:40], str(outcome or "ok"), _dumps(detail or {}), local_iso()),
     )
 
 

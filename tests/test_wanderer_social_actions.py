@@ -38,6 +38,45 @@ class SocialActionTest(WandererWorldTestCase):
             conn.commit()
         return pk
 
+    def test_wanderer_can_deliberately_find_and_request_a_peer(self):
+        from datetime import datetime
+        from classroom_app.services.wanderer_social_friends import maybe_seek_friend, seek_candidates
+
+        with self.connect() as conn:
+            wanderer = self.wanderer(conn, "atai")
+        ctx = ActionContext(conn_factory=self.connect, wanderer=wanderer, ai_caller=StubCaller(),
+                            sleep=ZeroSleep(), now=datetime(2026, 10, 31, 12, 0, 0))
+        ctx.wanderer = {**wanderer, "schedule": {**(wanderer.get("schedule") or {}), "active_hours": [[0, 24]]}}
+        with self.connect() as conn:
+            candidates = seek_candidates(conn, ctx)
+        self.assertTrue(candidates)
+        target = candidates[0]["identity"]
+        caller = StubCaller(json.dumps({"action": "request", "target": target, "note": "想认识同修",
+                                        "reason": "看着顺眼"}, ensure_ascii=False))
+        ctx.ai_caller = caller
+        with patch("classroom_app.services.wanderer_social_friends.social_push_service.push_events") as push:
+            push.return_value = None
+            result = asyncio.run(maybe_seek_friend(ctx))
+        self.assertEqual(result[0]["kind"], "social_seek")
+        with self.connect() as conn:
+            row = conn.execute("SELECT status, requester_identity FROM social_friendships "
+                               "WHERE (identity_a = ? AND identity_b = ?) OR (identity_a = ? AND identity_b = ?)",
+                               (ctx.identity, target, target, ctx.identity)).fetchone()
+            action = conn.execute("SELECT action_kind, location FROM wanderer_action_log "
+                                  "WHERE wanderer_id = ? ORDER BY id DESC LIMIT 1", (wanderer["id"],)).fetchone()
+        self.assertEqual(row["status"], "pending")
+        self.assertEqual(row["requester_identity"], ctx.identity)
+        self.assertEqual(action["action_kind"], "social_seek")
+        self.assertIn("寻友", action["location"])
+
+        with self.connect() as conn:
+            for _ in range(2):
+                conn.execute("INSERT INTO wanderer_action_log (wanderer_id, action_kind, target_type, outcome, "
+                             "detail_json, created_at) VALUES (?, 'social_friend', 'friend_request_out', 'ok', '{}', ?)",
+                             (wanderer["id"], datetime.now().isoformat(timespec="seconds")))
+            conn.commit()
+        self.assertEqual(asyncio.run(maybe_seek_friend(ctx)), [])
+
     def test_wanderer_can_block_a_friend_after_negative_history(self):
         me = f"student:{self.ctx_student_id}"
         peer = f"student:{self.student_pk}"

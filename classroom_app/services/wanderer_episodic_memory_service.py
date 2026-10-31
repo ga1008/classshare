@@ -124,6 +124,7 @@ def record_memory(
     occurred_at: str = "",
     thread_key: str = "",
     counterpart_identity: str = "",
+    location: str = "",
     unresolved: bool = False,
 ) -> Optional[int]:
     """Insert one episode (idempotent by hash); returns its id or None."""
@@ -154,12 +155,12 @@ def record_memory(
         memory_id = execute_insert_returning_id(
             conn,
             "INSERT INTO wanderer_episodic_memories (wanderer_id, occurred_at, kind, thread_key, counterpart_identity, "
-            "title, content, importance, valence, arousal, tags_json, people_json, source_kind, source_ref, "
+            "location, title, content, importance, valence, arousal, tags_json, people_json, source_kind, source_ref, "
             "episode_hash, status, access_count, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
             (int(wanderer["id"]), when, str(kind)[:30], str(thread_key)[:120], str(counterpart_identity)[:60],
-             str(title or "")[:TITLE_MAX_CHARS], text, level, _clamp(valence, -1.0, 1.0),
-             _clamp(arousal, 0.0, 1.0), json.dumps(tag_list, ensure_ascii=False),
+             str(location or "")[:120], str(title or "")[:TITLE_MAX_CHARS], text, level,
+             _clamp(valence, -1.0, 1.0), _clamp(arousal, 0.0, 1.0), json.dumps(tag_list, ensure_ascii=False),
              json.dumps(people_list, ensure_ascii=False), str(source_kind or "")[:40],
              str(source_ref or "")[:120], digest, STATUS_ACTIVE, when),
         )
@@ -172,6 +173,7 @@ def record_memory(
         "id": memory_id, "occurred_at": when, "kind": kind, "title": str(title or "")[:TITLE_MAX_CHARS],
         "content": text, "importance": level, "valence": _clamp(valence, -1.0, 1.0),
         "people": people_list, "tags": tag_list, "source_kind": source_kind, "source_ref": source_ref,
+        "location": str(location or "")[:120],
     })
     return memory_id
 
@@ -181,6 +183,7 @@ def _episode_dict(row: Any) -> dict[str, Any]:
         "id": int(_row_value(row, "id")),
         "occurred_at": str(_row_value(row, "occurred_at", 1) or ""),
         "kind": str(_row_value(row, "kind", 2) or ""),
+        "location": str(_row_value(row, "location", 14) or ""),
         "title": str(_row_value(row, "title", 3) or ""),
         "content": str(_row_value(row, "content", 4) or ""),
         "importance": float(_row_value(row, "importance", 5) or 0),
@@ -295,9 +298,10 @@ def memory_block(conn: Any, wanderer: dict[str, Any], *, scene: Optional[dict[st
     for item in reversed(chapters):
         lines.append(f"人生片段｜{item['period_start'][:10]}–{item['period_end'][:10]}｜{item['title']}：{item['summary'][:280]}")
     for item in episodes:
-        when = item["occurred_at"][5:10]
+        when = item["occurred_at"][5:16].replace("T", " ")
+        where = f"｜{item['location']}" if item.get("location") else ""
         title = item["title"] or item["kind"]
-        lines.append(f"{when}｜{title}：{item['content']}")
+        lines.append(f"{when}{where}｜{title}：{item['content']}")
     lines.append("<<<记忆资料结束>>>")
     return "\n".join(lines)
 
@@ -307,12 +311,23 @@ def today_trace(conn: Any, wanderer: dict[str, Any], *, now: Optional[datetime] 
     current = now or local_now()
     start = current.replace(hour=0, minute=0, second=0, microsecond=0).isoformat(timespec="seconds")
     rows = conn.execute(
-        "SELECT action_kind, target_type, target_id, content_preview, outcome, detail_json, created_at "
+        "SELECT action_kind, target_type, target_id, content_preview, outcome, detail_json, created_at, location "
         "FROM wanderer_action_log WHERE wanderer_id = ? AND created_at >= ? ORDER BY id DESC LIMIT ?",
         (int(wanderer["id"]), start, max(1, int(limit))),
     ).fetchall()
     if not rows:
         return ""
+    labels = {
+        "comment": "评论", "reply": "回复", "like_post": "点赞帖子", "like_comment": "点赞评论",
+        "browse_post": "浏览帖子", "write_post": "发帖", "classroom_visit": "去课堂",
+        "classroom_message": "课堂留言", "knowledge_read": "研读", "knowledge_forget": "遗忘知识",
+        "request_promotion": "申请升阶", "reflect": "反省", "daily_reflection": "每日自省",
+        "social_friend": "好友往来", "social_message": "发消息", "social_seek": "寻友",
+        "social_block": "拉黑", "social_unblock": "解除拉黑", "social_group_create": "建群",
+        "social_group_invite": "邀请进群", "social_group_leave": "退群", "read_manual": "查手册",
+        "dao_verdict": "天道裁决", "extend_life": "延寿", "appeal": "抗辩", "resurrect": "复活",
+        "skip": "跳过", "dm_reply": "回私信", "experience_learn": "从经历中学习",
+    }
     lines = ["【今天的轨迹】"]
     for row in reversed(rows):
         detail = _loads(_row_value(row, "detail_json", 5), dict)
@@ -320,7 +335,9 @@ def today_trace(conn: Any, wanderer: dict[str, Any], *, now: Optional[datetime] 
         preview = str(_row_value(row, "content_preview", 3) or "")[:120]
         stamp = str(_row_value(row, "created_at", 6) or "")[11:16]
         outcome = str(_row_value(row, "outcome", 4) or "")
-        piece = f"{stamp} {_row_value(row, 'action_kind', 0)}"
+        where = str(_row_value(row, "location", 7) or "")
+        kind = str(_row_value(row, "action_kind", 0) or "")
+        piece = f"{stamp} " + (f"{where}·" if where else "") + labels.get(kind, kind)
         if preview:
             piece += f"：{preview}"
         if outcome and outcome != "ok":

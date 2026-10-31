@@ -64,6 +64,13 @@ class WandererSchemaSqliteTest(WandererDbTestCase):
         self.assertTrue(LIFECYCLE_COLUMNS <= columns, LIFECYCLE_COLUMNS - columns)
         self.assertTrue(HUMANITY_COLUMNS <= columns, HUMANITY_COLUMNS - columns)
 
+    def test_action_and_memory_locations_exist(self):
+        with self.connect() as conn:
+            action_columns = {row[1] for row in conn.execute("PRAGMA table_info(wanderer_action_log)")}
+            memory_columns = {row[1] for row in conn.execute("PRAGMA table_info(wanderer_episodic_memories)")}
+        self.assertIn("location", action_columns)
+        self.assertIn("location", memory_columns)
+
 
 class WandererSchemaDialectTest(unittest.TestCase):
     def test_postgres_ddl_uses_identity_not_autoincrement(self):

@@ -23,7 +23,8 @@ from classroom_app.services.wanderer_settings_service import (
 from tests.wanderer_test_support import WandererDbTestCase, reset_wanderer_caches
 
 ONLY_BLOG = {"blog_browse": 1, "blog_like": 1, "blog_comment": 1, "reply": 1, "dm_reply": 1,
-             "classroom_visit": 0, "classroom_message": 0, "knowledge_read": 0, "promotion": 0, "blog_post": 0}
+             "classroom_visit": 0, "classroom_message": 0, "knowledge_read": 0, "promotion": 0, "blog_post": 0,
+             "social": 0, "social_block": 0, "social_group": 0, "social_seek": 0, "manual_read": 0}
 ONLY_CLASSROOM = {**{key: 0 for key in ONLY_BLOG}, "classroom_visit": 1, "classroom_message": 1}
 _RESET_TABLES = (
     "wanderer_daily_reflections", "wanderer_memory_chapters", "wanderer_episodic_memories",

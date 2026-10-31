@@ -190,7 +190,8 @@ async def study_material(ctx: ActionContext) -> list[dict[str, Any]]:
         from .wanderer_episodic_memory_service import record_memory
         record_memory(conn, ctx.wanderer, kind="knowledge", title=f"读了《{title or '一份材料'}》",
                       content=digest[:1200], importance=0.58, tags=tags,
-                      source_kind="knowledge", source_ref=str(target["target_id"]))
+                      source_kind="knowledge", source_ref=str(target["target_id"]),
+                      location=f"知识库 · {title or '材料'}")
         bump_stats(conn, ctx.wanderer_id, {"knowledge_reads": 1})
         conn.commit()
     record_action(ctx, "knowledge_read", **target, content_preview=title, ai_calls=calls,

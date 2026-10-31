@@ -176,7 +176,8 @@ def _like_post(ctx: ActionContext, post_id: int) -> Optional[dict[str, Any]]:
             return outcome("like_post", "failed")
         bump_stats(conn, ctx.wanderer_id, {"likes_given": 1})
         conn.commit()
-    record_action(ctx, "like_post", target_type="blog_post", target_id=post_id)
+    record_action(ctx, "like_post", target_type="blog_post", target_id=post_id,
+                  location=f"博客 · 帖子#{int(post_id)}")
     return outcome("like_post")
 
 
@@ -205,6 +206,7 @@ async def _post_comments(
             break
         record_action(ctx, action_kind, target_type="blog_comment", target_id=created.get("id"),
                       content_preview=part, ai_calls=calls, mood=mood,
+                      location=f"博客 · 帖子#{int(post_id)}",
                       detail={"post_id": int(post_id), "parent_comment_id": parent_comment_id, "part": index + 1,
                               "parts": len(parts), "moderation_state": created.get("moderation_state")})
         results.append(outcome(action_kind, ai_calls=calls,
@@ -617,6 +619,7 @@ async def write_post(ctx: ActionContext) -> list[dict[str, Any]]:
         return [outcome("write_post", "failed", ai_calls=calls)]
     post_id = int(created["id"])
     record_action(ctx, "write_post", target_type="blog_post", target_id=post_id, content_preview=title,
+                  location=f"博客 · 我的帖子#{int(post_id)}",
                   ai_calls=calls, mood=mood,
                   detail={"post_id": post_id, "chars": len(body), "moderation_state": created.get("moderation_state")})
     await remember(ctx, _thread_key(post_id), said=[f"《{title}》{body}"])

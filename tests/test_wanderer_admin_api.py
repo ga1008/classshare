@@ -402,10 +402,12 @@ class WandererAdminApiTest(WandererDbTestCase):
         wid = self.wanderer_ids[4]
         with self.connect() as conn:
             wanderer_identity_service.log_wanderer_action(
-                conn, wid, "skip", target_type="tick", outcome="skipped", detail={"reason": "capped"})
+                conn, wid, "skip", target_type="tick", outcome="skipped", detail={"reason": "capped"},
+                location="平台 · 自主活动")
             conn.commit()
         items = self.super_client().get(f"{API}/{wid}/actions").json()["items"]
         self.assertEqual(items[0]["detail"], {"reason": "capped"})
+        self.assertEqual(items[0]["location"], "平台 · 自主活动")
 
     def test_engine_not_ready_returns_503(self):
         self.install_engine("heavenly_dao_service", None, [])

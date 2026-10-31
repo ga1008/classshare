@@ -232,7 +232,7 @@ def _apply_payload(conn: Any, wanderer: dict[str, Any], payload: dict[str, Any],
         if text.strip():
             memory_id = record_memory(conn, wanderer, kind="reflection", title="反省时想起的事",
                                       content=text, importance=0.62, source_kind="reflection",
-                                      source_ref=f"{reflection_date(now)}:{len(new_episodes)}")
+                                      source_ref=f"{reflection_date(now)}:{len(new_episodes)}", location="自省")
             if memory_id:
                 new_episodes.append(memory_id)
     applied["new_episodes"] = new_episodes
@@ -242,7 +242,7 @@ def _apply_payload(conn: Any, wanderer: dict[str, Any], payload: dict[str, Any],
     if summary:
         record_memory(conn, wanderer, kind="reflection", title=f"{reflection_date(now)} 自省",
                       content=summary, importance=0.7, tags=["自省"],
-                      source_kind="daily_reflection", source_ref=reflection_date(now))
+                      source_kind="daily_reflection", source_ref=reflection_date(now), location="自省")
 
     promotion_requested = False
     if bool(payload.get("promotion_intent")):

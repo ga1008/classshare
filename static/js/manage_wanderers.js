@@ -411,7 +411,7 @@ function actionRow(item) {
     const title = `${item.action_label}${item.content_preview ? ` · ${item.content_preview}` : ''}`;
     const detail = item.detail && typeof item.detail === 'object' ? item.detail : {};
     const reason = item.outcome === 'skipped' && detail.reason ? `原因：${detail.reason}` : '';
-    const meta = [formatTime(item.created_at), item.outcome !== 'ok' ? item.outcome : '', reason, item.ai_calls ? `AI ${item.ai_calls} 次` : '', item.mood]
+    const meta = [formatTime(item.created_at), item.location, item.outcome !== 'ok' ? item.outcome : '', reason, item.ai_calls ? `AI ${item.ai_calls} 次` : '', item.mood]
         .filter(Boolean).join(' · ');
     const href = safeHref(item.href);
     return href ? { title, meta, primary: { href } } : { title, meta };

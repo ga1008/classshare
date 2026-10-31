@@ -55,6 +55,8 @@ from .wanderer_actions_knowledge import (
     try_resurrect,
 )
 from .wanderer_ai_service import AiCaller
+from .wanderer_manual_action import read_manual
+from .wanderer_social_friends import maybe_seek_friend
 from .wanderer_social_outreach import outreach_candidates, start_friend_conversation
 from .wanderer_social_actions import (
     available_actions as social_maintenance_actions,
@@ -124,7 +126,8 @@ _FAILURE_KIND = {
     "knowledge": "knowledge_read", "promotion": "request_promotion", "reflect": "reflect", "post": "write_post",
     "social_block": "social_block", "social_unblock": "social_unblock",
     "social_group_create": "social_group_create", "social_group_invite": "social_group_invite",
-    "social_group_leave": "social_group_leave",
+    "social_group_leave": "social_group_leave", "social_seek": "social_seek",
+    "manual": "read_manual",
     "extend_life": "extend_life", "appeal": "appeal", "resurrect": "resurrect",
 }
 POST_WEIGHT = 4.0
@@ -358,6 +361,10 @@ def choose_action(ctx: ActionContext, *, first: bool) -> str:
     with ctx.connect() as conn:
         if behavior_on(wanderer, "social") and outreach_candidates(conn, ctx):
             options.append(("social_outreach", 2.0))
+        if behavior_on(wanderer, "social") and behavior_on(wanderer, "social_seek"):
+            options.append(("social_seek", 0.7))
+        if behavior_on(wanderer, "manual_read"):
+            options.append(("manual", 0.5))
         for name in social_maintenance_actions(conn, ctx):
             options.append((name, 0.6 if name in {"social_block", "social_group_create"} else 0.3))
         if promotion_eligible(ctx, conn):
@@ -392,6 +399,8 @@ ACTIONS: dict[str, ActionFn] = {
     "promotion": request_promotion,
     "post": write_post,
     "social_outreach": start_friend_conversation,
+    "social_seek": maybe_seek_friend,
+    "manual": read_manual,
     "social_block": maybe_social_block,
     "social_unblock": maybe_social_unblock,
     "social_group_create": maybe_social_group_create,

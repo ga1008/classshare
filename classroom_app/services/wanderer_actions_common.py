@@ -184,9 +184,12 @@ async def run_turn(
             apply_turn_mood(conn, ctx.wanderer, turn)
             inner = str(turn.get("inner") or "").strip()
             if inner:
+                where = str(scene.get("kind") or "内心")
+                if scene.get("title"):
+                    where = f"{where} · {str(scene.get('title'))[:40]}"
                 record_memory(conn, ctx.wanderer, kind="reflection", title="没发出去的心里话",
                               content=inner, thread_key=thread_key, importance=0.55,
-                              source_kind="inner", source_ref=f"{thread_key}:{local_iso()}")
+                              source_kind="inner", source_ref=f"{thread_key}:{local_iso()}", location=where)
             conn.commit()
     if result.get("status") != "ok" or (result.get("turn") or {}).get("action") in {"skip", "emoji"}:
         fallback = fallback_for_scene(ctx.wanderer, scene, thread_key, on_failure=True)
@@ -224,6 +227,30 @@ def turn_parts(ctx: ActionContext, turn: dict[str, Any], *, public: bool = True,
     return [part for part in cleaned if part]
 
 
+def thread_location(thread_key: Any) -> str:
+    """Human-readable place for a conversation thread (used on memories and the trace)."""
+    key = str(thread_key or "")
+    if key.startswith("social:group"):
+        return "群聊"
+    if key.startswith("social:friend"):
+        return "好友申请"
+    if key.startswith("social:"):
+        return "私信"
+    if key.startswith("blog"):
+        return "博客"
+    if key.startswith("classroom"):
+        return "课堂"
+    if key.startswith("knowledge") or key.startswith("material"):
+        return "知识库"
+    if key == "manual" or key.startswith("manual:"):
+        return "平台手册"
+    if key == "dao" or key.startswith("dao"):
+        return "天道台"
+    if key.startswith("reflection"):
+        return "自省"
+    return "平台"
+
+
 async def remember(
     ctx: ActionContext,
     thread_key: str,
@@ -231,6 +258,7 @@ async def remember(
     said: Sequence[str] = (),
     heard: Optional[tuple[str, str]] = None,
     counterpart_identity: str = "",
+    location: str = "",
 ) -> None:
     """Append what was heard/said to the thread, then compact if it grew too large."""
     thread: Optional[dict[str, Any]] = None
@@ -245,6 +273,8 @@ async def remember(
             from .wanderer_emotion_service import mood_from_wanderer
             from .wanderer_episodic_memory_service import record_memory
             mood = mood_from_wanderer(ctx.wanderer)
+            if not location:
+                location = thread_location(thread_key)
             pieces = []
             if heard and str(heard[1] or "").strip():
                 pieces.append(f"{heard[0]}对我说：{str(heard[1]).strip()[:800]}")
@@ -254,7 +284,7 @@ async def remember(
                 record_memory(conn, ctx.wanderer, kind="conversation",
                               title=f"与{heard[0] if heard else '对方'}的交流",
                               content="\n".join(pieces), thread_key=thread_key,
-                              counterpart_identity=counterpart_identity,
+                              counterpart_identity=counterpart_identity, location=location,
                               people=[counterpart_identity] if counterpart_identity else [],
                               source_kind="thread", source_ref=f"{thread_key}:{local_iso()}",
                               valence=mood.get("valence", 0.0), arousal=mood.get("arousal", 0.0))

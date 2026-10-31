@@ -175,6 +175,7 @@ def _table_statements(id_column: str) -> list[str]:
             target_id TEXT NOT NULL DEFAULT '',
             class_offering_id INTEGER,
             content_preview TEXT NOT NULL DEFAULT '',
+            location TEXT NOT NULL DEFAULT '',
             ai_calls INTEGER NOT NULL DEFAULT 0,
             mood TEXT NOT NULL DEFAULT '',
             outcome TEXT NOT NULL DEFAULT 'ok',
@@ -242,6 +243,7 @@ def _table_statements(id_column: str) -> list[str]:
             kind TEXT NOT NULL DEFAULT 'event',
             thread_key TEXT NOT NULL DEFAULT '',
             counterpart_identity TEXT NOT NULL DEFAULT '',
+            location TEXT NOT NULL DEFAULT '',
             title TEXT NOT NULL DEFAULT '',
             content TEXT NOT NULL DEFAULT '',
             importance REAL NOT NULL DEFAULT 0,
@@ -368,6 +370,9 @@ ADDED_COLUMNS = (
     ("wanderer_action_log", "sequence", "INTEGER NOT NULL DEFAULT 0"),
     ("wanderer_action_log", "episode_id", "INTEGER"),
     ("wanderer_action_log", "content_chars", "INTEGER NOT NULL DEFAULT 0"),
+    # Autonomy (2026-10-31 round 2): where an action happened, for the trace and admin view.
+    ("wanderer_action_log", "location", "TEXT NOT NULL DEFAULT ''"),
+    ("wanderer_episodic_memories", "location", "TEXT NOT NULL DEFAULT ''"),
 )
 
 

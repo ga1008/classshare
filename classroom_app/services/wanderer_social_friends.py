@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
 from . import social_push_service
-from .social_common import SocialError, blocked_either, ensure_schema, utc_day_start_iso
+from .social_common import SocialError, blocked_either, ensure_schema, parse_iso, utc_day_start_iso
 from .social_friend_service import accept_request, decline_request, send_request
 from .social_identity_service import load_people
 from .social_relations import (
@@ -51,6 +51,9 @@ from .wanderer_social_triggers import (
 )
 
 PROACTIVE_PROB = 0.04
+IGNORE_DAYS = 7
+IGNORE_SECONDS = IGNORE_DAYS * 86400
+DEFER_SECONDS = 3600
 PROACTIVE_WEEKLY_LIMIT = 2
 PROACTIVE_WANDERER_WEEKLY_LIMIT = 1
 PROACTIVE_LOOKBACK_DAYS = 30
@@ -84,18 +87,104 @@ def _pending_request(conn: Any, request_id: int, me: str, requester: str = "") -
     return row if me in (row["identity_a"], row["identity_b"]) else None
 
 
-def _defer(conn: Any, ctx: ActionContext, row: dict[str, Any], *, seconds: float = 3600) -> None:
-    """Re-arm after a pause and inside the next preferred activity window."""
+def _defer(conn: Any, ctx: ActionContext, row: dict[str, Any], *, seconds: float = DEFER_SECONDS,
+           ignored: bool = False) -> None:
+    """Re-arm after a pause and inside the next preferred activity window.
+
+    ``ignore`` parks the same pending request for a week; the request row is
+    untouched, so the requester still sees it waiting and cannot re-send it.
+    """
     from .scheduled_task_service import schedule_task
     moment = ctx.current_time() + timedelta(seconds=max(60, seconds))
     wait = seconds_until_awake(ctx.wanderer, moment)
     moment += timedelta(seconds=wait if wait is not None else 86400)
     schedule_task(conn, task_kind=TASK_KIND_FRIEND_REQUEST, run_at=moment,
                   payload={"wanderer_id": ctx.wanderer_id, "request_id": int(row["id"]),
-                           "requester": row["requester_identity"], "deferred": True},
+                           "requester": row["requester_identity"], "deferred": not ignored,
+                           "ignored": ignored},
                   dedupe_key=friend_dedupe_key(ctx.wanderer_id, row["requester_identity"]), owner_role="system",
                   title=f"散修处理好友申请 · {ctx.display_name}", priority=TASK_PRIORITY,
                   max_attempts=TASK_MAX_ATTEMPTS, replace=True)
+
+
+def _request_history(conn: Any, wanderer_id: int, request_id: int, created_at: str = "") -> dict[str, Any]:
+    """How often this *same* request instance was considered, and the last decision."""
+    sql = ("SELECT created_at, outcome, detail_json FROM wanderer_action_log WHERE wanderer_id = ? "
+           "AND action_kind = 'social_friend' AND target_type = ? AND target_id = ?")
+    params: list[Any] = [int(wanderer_id), TARGET_REQUEST_IN, str(int(request_id))]
+    if created_at:
+        # A declined request that is re-sent reuses the row id; the timestamp separates the instances.
+        sql += " AND detail_json LIKE ?"
+        params.append(f'%"request_created_at": "{created_at}"%')
+    rows = conn.execute(sql + " ORDER BY id DESC LIMIT 20", tuple(params)).fetchall()
+    decisions = []
+    for row in rows:
+        detail = _loads_detail(row)
+        decisions.append(str(detail.get("decision") or row_outcome(row)))
+    return {"seen_count": len(rows), "last_decision": decisions[0] if decisions else "",
+            "decisions": decisions}
+
+
+def _field(row: Any, key: str) -> Any:
+    try:
+        return row[key]
+    except (TypeError, KeyError, IndexError):
+        return ""
+
+
+def _loads_detail(row: Any) -> dict[str, Any]:
+    try:
+        value = json.loads(_field(row, "detail_json") or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def row_outcome(row: Any) -> str:
+    return str(_field(row, "outcome") or "")
+
+
+def _local_stamp(value: Any) -> str:
+    created = parse_iso(value)
+    if created is None:
+        return str(value or "")
+    return created.astimezone().strftime("%Y-%m-%d %H:%M")
+
+
+def _request_age_hours(row: dict[str, Any], now: datetime) -> float:
+    created = parse_iso(row.get("created_at"))
+    if created is None:
+        return 0.0
+    if created.tzinfo is not None:
+        created = created.astimezone().replace(tzinfo=None)
+    return max(0.0, (now - created).total_seconds() / 3600.0)
+
+
+def _request_scene(row: dict[str, Any], history: dict[str, Any], now: datetime,
+                   context: Optional[dict[str, Any]], *, peer_name: str = "") -> dict[str, Any]:
+    """The scene must make one request unmistakably one request (not a daily repeat)."""
+    created = _local_stamp(row.get("created_at"))
+    age_hours = _request_age_hours(row, now)
+    seen = int(history.get("seen_count") or 0)
+    age_text = f"约 {age_hours / 24:.1f} 天前" if age_hours >= 24 else f"约 {age_hours:.0f} 小时前"
+    last = str(history.get("last_decision") or "")
+    last_text = {"ignore": "你上次选择先忽略", "defer": "你上次选择稍后再看",
+                 "decline": "你上次拒绝了旧的那次申请；这是后来重新发起的",
+                 "accept": "你上次接受了"}.get(last, "")
+    meta = (f"这是同一条好友申请，编号 {row.get('id')}，发起于 {created}（{age_text}）。"
+            f"这是你第 {seen + 1} 次看到它（此前处理过 {seen} 次）；对方没有重复发送，"
+            "也不能再重复发送这条申请。" + (f" {last_text}。" if last_text else ""))
+    return {
+        "kind": "审核好友申请", "title": f"{peer_name or row.get('requester_identity')} 的好友申请（同一条，等待中）",
+        "meta": meta, "body": str(row.get("request_message") or "（没有附言）"),
+        "friend_context": context_block(context or {}),
+        "request": {"id": int(row.get("id") or 0), "created_at": created, "age_hours": round(age_hours, 1),
+                    "seen_count": seen, "last_decision": last, "note": str(row.get("request_message") or "")},
+        "task": ("依据你的人格、喜好、对方资料和结交记忆决定：accept 接受、decline 拒绝、"
+                 "ignore 暂时不处理（申请会继续挂着，对方不会收到拒绝）、defer 过一小时再看。"
+                 "这是一条旧申请，不要当成对方今天又发了一次。理由仅供你的记忆和后台记录，不对申请人公开。"),
+        "output_contract": '只输出 JSON：{"decision":"accept|decline|ignore|defer","reason":"具体的个人原因"}。不得省略原因。',
+    }
 
 
 def _claim_request(conn: Any, row: dict[str, Any]) -> bool:
@@ -109,23 +198,31 @@ def _claim_request(conn: Any, row: dict[str, Any]) -> bool:
 
 
 def _decision_memory(conn: Any, ctx: ActionContext, row: dict[str, Any], decision: str, reason: str,
-                     *, calls: int = 0, source: str = "personality") -> None:
+                     *, calls: int = 0, source: str = "personality", peer_name: str = "",
+                     history: Optional[dict[str, Any]] = None) -> None:
     peer = str(row["requester_identity"])
-    detail = {"decision": decision, "reason": reason, "requester": peer,
-              "request_created_at": row["created_at"], "source": source}
+    seen = int((history or {}).get("seen_count") or 0)
+    created = _local_stamp(row.get("created_at"))
+    detail = {"decision": decision, "reason": reason, "requester": peer, "requester_name": peer_name,
+              "request_created_at": row["created_at"], "request_created_local": created,
+              "request_age_hours": round(_request_age_hours(row, ctx.current_time()), 1),
+              "seen_count": seen, "same_request": True, "source": source}
+    location = f"好友申请 · {peer_name or peer}"
     log_wanderer_action(conn, ctx.wanderer_id, "social_friend", target_type=TARGET_REQUEST_IN,
-                        target_id=str(row["id"]), ai_calls=calls,
-                        outcome="skipped" if decision == "defer" else "ok", detail=detail)
+                        target_id=str(row["id"]), ai_calls=calls, location=location,
+                        outcome="skipped" if decision in {"defer", "ignore"} else "ok", detail=detail)
+    stamp = (f"这是一条 {created} 发来的同一条好友申请（编号 {row['id']}），你已看过 {seen} 次；"
+             "对方没有重复发送。") if created else ""
     append_turn(conn, ctx.wanderer, f"social:friend:{peer}", who=ctx.display_name,
-                text=f"收到好友申请，附言：{row.get('request_message') or '无'}。我的决定：{decision}。原因：{reason}",
+                text=f"{stamp}附言：{row.get('request_message') or '无'}。我的决定：{decision}。原因：{reason}",
                 counterpart_identity=peer)
-    if decision != "defer":
-        from .wanderer_episodic_memory_service import record_memory
-        record_memory(conn, ctx.wanderer, kind="relationship", title="一次好友申请的决定",
-                      content=f"{peer} 想加我为好友，附言：{row.get('request_message') or '无'}。"
-                              f"我的决定：{decision}。原因：{reason}",
-                      importance=0.72, people=[peer], source_kind="friend_request",
-                      source_ref=f"request:{row['id']}", counterpart_identity=peer)
+    from .wanderer_episodic_memory_service import record_memory
+    record_memory(conn, ctx.wanderer, kind="relationship", title="一条好友申请的处置",
+                  content=f"{peer_name or peer} 在 {created or '此前'} 发来好友申请，附言："
+                          f"{row.get('request_message') or '无'}。这是同一条申请，我第 {seen + 1} 次考虑，"
+                          f"决定：{decision}。原因：{reason}",
+                  importance=0.72, people=[peer], source_kind="friend_request",
+                  source_ref=f"request:{row['id']}", counterpart_identity=peer, location=location)
 
 
 async def decide_friend_request(ctx: ActionContext, request_id: int, *, deferred: bool = False,
@@ -136,24 +233,24 @@ async def decide_friend_request(ctx: ActionContext, request_id: int, *, deferred
         if row and blocked_either(conn, ctx.identity, row["requester_identity"]):
             return {"decision": "gone"}
         context = friend_context(conn, ctx.wanderer, row["requester_identity"]) if row else None
+        history = (_request_history(conn, ctx.wanderer_id, int(row["id"]), str(row.get("created_at") or ""))
+                   if row else {})
     if row is None:
         return {"decision": "gone"}
-    calls, source, seconds = 0, "personality", 3600.0
+    peer_name = str(((context or {}).get("profile") or {}).get("name") or "")
+    calls, source, seconds = 0, "personality", DEFER_SECONDS
     if not is_awake_now(ctx.wanderer, ctx.current_time()):
         decision, reason, source = "defer", "现在不在我偏好的上线时段，留到下次上线再考虑。", "schedule"
         seconds = 60
     else:
-        scene = {"kind": "审核好友申请", "title": "由你自己决定是否交这个朋友",
-                 "body": str(row.get("request_message") or "无附言"), "friend_context": context_block(context or {}),
-                 "task": "依据你的人格、喜好、对方资料和结交记忆决定接受、拒绝或稍后考虑。教师也可以拒绝。理由仅供你的记忆和后台记录，不对申请人公开。",
-                 "output_contract": '只输出 JSON：{"decision":"accept|decline|defer","reason":"具体的个人原因"}。不得省略原因。'}
+        scene = _request_scene(row, history, ctx.current_time(), context or {}, peer_name=peer_name)
         result = await run_turn(ctx, scene=scene, thread_key=f"social:friend:{row['requester_identity']}",
                                 suffix="friend_decision")
         parsed = extract_json_object(result.get("raw_text")) or {}
         decision = str(parsed.get("decision") or "").strip().lower()
         reason = str(parsed.get("reason") or "").strip()[:500]
         calls = int(result.get("ai_calls") or 0)
-        if result.get("status") != "ok" or decision not in {"accept", "decline", "defer"} or not reason:
+        if result.get("status") != "ok" or decision not in {"accept", "decline", "ignore", "defer"} or not reason:
             decision, reason, source = "defer", "这次未能完成判断，保留申请稍后重新考虑。", "retry"
             seconds = 86400 if result.get("status") == "capped" else 1800
     events: list = []
@@ -168,13 +265,16 @@ async def decide_friend_request(ctx: ActionContext, request_id: int, *, deferred
             if not _claim_request(conn, row) or blocked_either(conn, ctx.identity, row["requester_identity"]):
                 return {"decision": "gone"}
             ctx.wanderer = fresh
-            if decision != "defer" and not is_awake_now(fresh, ctx.current_time()):
+            if decision == "defer" and not is_awake_now(fresh, ctx.current_time()):
                 decision, reason, source, seconds = "defer", "上线时段已改变，留到下次上线再考虑。", "schedule", 60
-            if decision == "defer":
+            if decision == "ignore":
+                _defer(conn, ctx, row, seconds=IGNORE_SECONDS, ignored=True)
+            elif decision == "defer":
                 _defer(conn, ctx, row, seconds=seconds)
             else:
                 (accept_request if decision == "accept" else decline_request)(conn, user, int(row["id"]), events)
-            _decision_memory(conn, ctx, row, decision, reason, calls=calls, source=source)
+            _decision_memory(conn, ctx, row, decision, reason, calls=calls, source=source,
+                             peer_name=peer_name, history=history)
             conn.commit()
     except SocialError as exc:
         record_action(ctx, "social_friend", target_type=TARGET_REQUEST_IN, target_id=str(row["id"]),
@@ -206,7 +306,8 @@ async def handle_wanderer_friend_request(task: dict[str, Any], *, ai_caller: Any
 
 def week_requests(conn: Any, wanderer_id: int, now: datetime) -> int:
     row = conn.execute(
-        "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND action_kind = 'social_friend' "
+        "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? "
+        "AND action_kind IN ('social_friend', 'social_seek') "
         "AND target_type = ? AND outcome = 'ok' AND created_at >= ?",
         (int(wanderer_id), TARGET_REQUEST_OUT, (now - timedelta(days=7)).isoformat(timespec="seconds")),
     ).fetchone()
@@ -324,8 +425,107 @@ async def maybe_befriend(ctx: ActionContext, *, chance: float = PROACTIVE_PROB) 
         return [outcome("social_friend", "failed", ai_calls=calls)]
     await social_push_service.push_events(events)
     record_action(ctx, "social_friend", **target, content_preview=note, ai_calls=calls,
+                  location=f"好友申请 · {person['name']}",
                   detail={"decision": "request", "status": result.get("status")})
     return [outcome("social_friend", ai_calls=calls)]
+
+
+def seek_candidates(conn: Any, ctx: ActionContext, *, limit: int = 8) -> list[dict[str, Any]]:
+    """People this wanderer could deliberately approach: recommendations, engaged users, 散修 peers."""
+    from .social_identity_service import suggest_users
+
+    now = ctx.current_time()
+    found: dict[str, dict[str, Any]] = {}
+    try:
+        for person in suggest_users(conn, build_wanderer_user_dict(ctx.wanderer)):
+            if person.get("can_add") and person.get("relation") in (None, "", "none"):
+                found[str(person["identity"])] = dict(person)
+    except Exception as exc:  # noqa: BLE001 - recommendations are optional; friends still work
+        print(f"[WANDERER] seek suggestions skipped: {type(exc).__name__}: {exc}")
+    for person in befriend_candidates(conn, ctx.identity, now, ctx.wanderer):
+        found.setdefault(str(person["identity"]), dict(person))
+    for person in list_wanderers(conn, statuses=[STATUS_ACTIVE]):
+        identity = f"student:{int(person['student_id'])}"
+        if identity == ctx.identity or identity in found:
+            continue
+        if get_friendship(conn, ctx.identity, identity) is not None or blocked_either(conn, ctx.identity, identity):
+            continue
+        found[identity] = {"identity": identity, "name": str(person.get("display_name") or "散修"),
+                           "is_wanderer": True, "can_add": True, "relation": "none",
+                           "tier_name": str(person.get("tier_name") or "")}
+    people: list[dict[str, Any]] = []
+    for identity, person in found.items():
+        if not person.get("active", True) or identity == ctx.identity:
+            continue
+        people.append({"identity": identity, "name": str(person.get("name") or identity)[:40],
+                       "is_wanderer": bool(person.get("is_wanderer")),
+                       "tier_name": str(person.get("tier_name") or "")[:20],
+                       "relation": str(person.get("relation") or "none")})
+        if len(people) >= max(1, int(limit)):
+            break
+    return people
+
+
+async def maybe_seek_friend(ctx: ActionContext) -> list[dict[str, Any]]:
+    """Deliberately look through candidates and decide whether to send one friend request."""
+    if (not behavior_on(ctx.wanderer, SOCIAL_BEHAVIOR) or not behavior_on(ctx.wanderer, "social_seek")
+            or not is_awake_now(ctx.wanderer, ctx.current_time())):
+        return []
+    now = ctx.current_time()
+    with ctx.connect() as conn:
+        if week_requests(conn, ctx.wanderer_id, now) >= PROACTIVE_WEEKLY_LIMIT:
+            return []
+        candidates = seek_candidates(conn, ctx)
+    if not candidates:
+        return []
+    scene = {
+        "kind": "寻友", "title": "看看有没有想认识的人",
+        "meta": ("下面是平台按公开资料、共同课堂和近期互动推荐的人，不全是熟人；"
+                 "你可以选一个发出好友申请，也可以觉得没意思就跳过。"),
+        "body": json.dumps(candidates, ensure_ascii=False),
+        "task": ("依据你的人格、兴趣和当前心情，从候选人里挑一个真正想认识的人，写一句不超过 20 字的附言；"
+                 "没有想认识的就 skip，不必为了社交而社交。"),
+        "output_contract": ('只输出 JSON：{"action":"request|skip","target":"候选人里的 identity",'
+                            '"note":"附言","reason":"你自己的理由"}。'),
+    }
+    result = await run_turn(ctx, scene=scene, thread_key="social:seek", suffix="seek_friend")
+    parsed = extract_json_object(result.get("raw_text")) or {}
+    calls = int(result.get("ai_calls") or 0)
+    action = str(parsed.get("action") or "skip").strip().lower()
+    target = str(parsed.get("target") or "").strip()
+    note = str(parsed.get("note") or "").strip()[:REQUEST_NOTE_MAX]
+    reason = str(parsed.get("reason") or "").strip()[:300]
+    chosen = next((item for item in candidates if item["identity"] == target), None)
+    if result.get("status") != "ok" or action != "request" or chosen is None:
+        record_action(ctx, "social_seek", target_type="seek", outcome="skipped", ai_calls=calls,
+                      location="寻友 · 候选人名单",
+                      detail={"reason": reason or "没有想认识的人", "status": result.get("status")})
+        return [outcome("social_seek", "skipped", ai_calls=calls)]
+    events: list = []
+    try:
+        with ctx.connect() as conn:
+            sent = send_request(conn, build_wanderer_user_dict(ctx.wanderer), target, note, events)
+            conn.commit()
+    except SocialError as exc:
+        record_action(ctx, "social_seek", target_type=TARGET_REQUEST_OUT, target_id=target,
+                      outcome="failed", ai_calls=calls, location=f"寻友 · {chosen['name']}",
+                      detail={"error": str(exc.detail)[:200], "reason": reason})
+        return [outcome("social_seek", "failed", ai_calls=calls)]
+    await social_push_service.push_events(events)
+    record_action(ctx, "social_seek", target_type=TARGET_REQUEST_OUT, target_id=target,
+                  content_preview=note, outcome="ok", ai_calls=calls,
+                  location=f"寻友 · {chosen['name']}",
+                  detail={"decision": "request", "reason": reason, "status": sent.get("status"),
+                          "is_wanderer": chosen["is_wanderer"]})
+    from .wanderer_episodic_memory_service import record_memory
+    with ctx.connect() as conn:
+        record_memory(conn, ctx.wanderer, kind="relationship", title="主动认识一个人",
+                      content=f"我在寻友时看到 {chosen['name']}，决定发出好友申请：{note or '无附言'}。原因：{reason}",
+                      importance=0.62, people=[target], source_kind="friend_seek",
+                      source_ref=f"seek:{target}:{now.isoformat(timespec='seconds')}",
+                      counterpart_identity=target, location=f"寻友 · {chosen['name']}")
+        conn.commit()
+    return [outcome("social_seek", ai_calls=calls)]
 
 
 # ---------------------------------------------------------------------------
@@ -397,6 +597,7 @@ def recover_pending_requests(conn_factory: ConnFactory = None, *, now: Optional[
     with _connect(conn_factory) as conn:
         if not is_wanderer_runtime_enabled(conn):
             return 0
+        ignored_since = (now or datetime.now()) - timedelta(days=IGNORE_DAYS)
         rows = conn.execute(
             "SELECT f.id, f.requester_identity, w.student_id FROM social_friendships f "
             "JOIN wanderer_agents w ON (f.identity_a = 'student:' || CAST(w.student_id AS TEXT) "
@@ -405,7 +606,14 @@ def recover_pending_requests(conn_factory: ConnFactory = None, *, now: Optional[
             "AND f.requester_identity <> 'student:' || CAST(w.student_id AS TEXT) "
             "AND NOT EXISTS (SELECT 1 FROM scheduled_tasks t WHERE t.dedupe_key = "
             "'wanderer:friend:' || CAST(w.id AS TEXT) || ':' || f.requester_identity "
-            "AND t.status IN ('pending', 'running')) ORDER BY f.created_at LIMIT 40"
+            "AND t.status IN ('pending', 'running')) "
+            "AND NOT EXISTS (SELECT 1 FROM wanderer_action_log l WHERE l.wanderer_id = w.id "
+            "AND l.action_kind = 'social_friend' AND l.target_type = 'friend_request' "
+            "AND l.target_id = CAST(f.id AS TEXT) AND l.created_at >= ? "
+            "AND l.detail_json LIKE '%\"decision\": \"ignore\"%' "
+            "AND l.detail_json LIKE '%\"request_created_at\": \"' || f.created_at || '\"%') "
+            "ORDER BY f.created_at LIMIT 40",
+            (ignored_since.isoformat(timespec="seconds"),),
         ).fetchall()
         recovered = 0
         for row in rows:

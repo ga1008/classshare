@@ -259,6 +259,7 @@ async def _speak(ctx: ActionContext, offering: dict[str, Any], online: int, stat
         return outcome("classroom_message", "failed", ai_calls=calls, support_pending=bool(result.get("support_fallback")))
     record_action(ctx, "classroom_message", target_type="chat_log", target_id=stored.get("id"),
                   class_offering_id=offering_id, content_preview=text, ai_calls=calls,
+                  location=f"课堂 · #{int(offering_id)}",
                   mood=str(turn.get("mood") or ""), detail={"online": online, "in_progress": state["in_progress"]})
     with ctx.connect() as conn:
         bump_stats(conn, ctx.wanderer_id, {"classroom_messages": 1})
@@ -316,6 +317,7 @@ async def visit_classroom(ctx: ActionContext) -> list[dict[str, Any]]:
     silent_calls = int(spoken["ai_calls"]) if spoken and spoken["kind"] == "skip" else 0
     record_action(ctx, "classroom_visit", target_type="classroom", target_id=offering_id,
                   class_offering_id=offering_id, content_preview=str(offering.get("course_name") or ""),
+                  location=f"课堂 · {str(offering.get('course_name') or ('#' + str(offering_id)))[:40]}",
                   ai_calls=silent_calls, detail={"online": online_count, "in_progress": state["in_progress"],
                   "support_seen_id": support_seen if spoken and spoken.get("support_pending") else support_anchor})
     done = [outcome("classroom_visit", ai_calls=silent_calls)]

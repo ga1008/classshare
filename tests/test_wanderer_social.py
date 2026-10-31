@@ -295,6 +295,40 @@ class WandererSocialTest(WandererWorldTestCase):
         self.assertEqual(recover_pending_requests(self.connect), 1)
         self.assertEqual(recover_pending_requests(self.connect), 0)
 
+    def test_ignored_request_stays_pending_for_the_same_request_not_daily_reenactment(self):
+        from classroom_app.services.wanderer_social_friends import IGNORE_SECONDS, recover_pending_requests
+        request_id = self._request_id(self.real, self.lele)
+        self.assertEqual(self._decide(self.lele, request_id, 0.9, decision="ignore"), "friend request: ignore")
+        self.assertEqual(self._status(request_id), "pending")
+        task = self.tasks("wanderer_friend_request")[0]
+        scheduled = datetime.fromisoformat(task["run_at"])
+        self.assertGreaterEqual((scheduled - datetime.now()).total_seconds(), IGNORE_SECONDS - 120)
+        detail = json.loads(self.actions(self.lele["id"])[-1]["detail_json"])
+        self.assertTrue(detail["same_request"])
+        self.assertEqual(detail["seen_count"], 0)
+        self.assertIn("好友申请", self.actions(self.lele["id"])[-1]["location"])
+        history = self.rows("SELECT history_json FROM wanderer_memory_threads WHERE wanderer_id = ? AND thread_key = ?",
+                            (self.lele["id"], f"social:friend:{self.real}"))[0]["history_json"]
+        self.assertIn("同一条好友申请", history)
+        self.assertIn("对方没有重复发送", history)
+        with self.connect() as conn:
+            conn.execute("DELETE FROM scheduled_tasks WHERE task_kind = 'wanderer_friend_request'")
+            conn.commit()
+        self.assertEqual(recover_pending_requests(self.connect), 0)
+
+    def test_second_look_reports_the_same_request_and_seen_count(self):
+        request_id = self._request_id(self.real, self.lele)
+        self._decide(self.lele, request_id, 0.9, decision="defer")
+        caller = StubCaller('{"decision":"accept","reason":"再看一次还是想认识"}')
+        task = {"payload": {"wanderer_id": self.lele["id"], "request_id": request_id, "deferred": True}}
+        asyncio.run(handle_wanderer_friend_request(task, ai_caller=caller))
+        prompt = json.dumps(caller.calls[0][1], ensure_ascii=False)
+        self.assertIn("同一条好友申请", prompt)
+        self.assertIn("第 2 次看到", prompt)
+        self.assertIn("对方没有重复发送", prompt)
+        detail = json.loads(self.actions(self.lele["id"])[-1]["detail_json"])
+        self.assertEqual(detail["seen_count"], 1)
+
     def test_recovery_does_not_rearm_task_claimed_after_candidate_snapshot(self):
         from classroom_app.services import wanderer_social_friends as service
         self._request_id(self.real, self.lele)

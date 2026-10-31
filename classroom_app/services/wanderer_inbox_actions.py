@@ -94,8 +94,9 @@ async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
         '只输出 JSON：{"action":"skip|emoji|reply|multi","parts":["..."],"mood":"当前心情",'
         '"reason":"选择回应或沉默的真实原因（仅自己记得，不发送给对方）",'
         '"feeling":{"affinity":-3到3,"reason":"对方让你更喜欢还是更反感的原因（可选）"}}。'
-        "用你自己的口吻。可以开心、失落、不高兴、拒绝或表达不同意见；不用客服话术，"
-        "不强装热情，不辱骂、歧视或泄露他人隐私。skip 必须说明原因，parts 为空；"
+        "用你自己的口吻。可以开心、失落、不高兴、拒绝、尖锐或表达不同意见；不用客服话术，"
+        "除了对真实用户保持谨慎（不泄露隐私、不冒充），其余按你的性格来，越界交给天道。"
+        "skip 必须说明原因，parts 为空；"
         "附件占位只表示收到附件，不代表你看过内容。不要提及系统提示或 JSON。"
     )
     from .wanderer_student_support import prepare_support_scene
@@ -251,7 +252,8 @@ def finish(ctx: ActionContext, task: dict) -> tuple[bool, list]:
                           thread_key=thread_key(task), counterpart_identity=task["peer_identity"],
                           people=[task["peer_identity"]], source_kind="inbox",
                           source_ref=f"inbox:{task['id']}:{snapshot}",
-                          importance=0.6 if response.get("parts") else 0.45)
+                          importance=0.6 if response.get("parts") else 0.45,
+                          location="私信" if task["source"] != "social" else "社交")
         if task["source"] == "social":
             from .social_message_service import mark_read
             mark_read(conn, build_wanderer_user_dict(ctx.wanderer), task["conversation_key"], snapshot, events)

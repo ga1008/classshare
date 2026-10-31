@@ -336,6 +336,7 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
     from .wanderer_student_support import prepare_student_support
     from .wanderer_learning_service import prepare_learning_safely, learning_output_contract
     from .wanderer_settings_service import prompt_char_budget
+    from .wanderer_platform_manual import block as manual_block
 
     support = prepare_student_support(conn, wanderer, thread_key, scene)
     if "_learning_context_block" not in scene:
@@ -360,6 +361,7 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
         (8, _memory_block(conn, wanderer, thread_key, scene)),
         (9, relationship_block(conn, wanderer)),
         (7, learning),
+        (7, manual_block(scene)),
         (10, support),
         (8, _social_block(scene)),
         (10, _scene_block(scene)),

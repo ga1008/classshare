@@ -83,13 +83,23 @@ def _dumps(value: Any) -> str:
 # Writing verdicts
 # ---------------------------------------------------------------------------
 
+def _one_line(text: Any, limit: int = 60) -> str:
+    """A single sentence, so a 天道 verdict is a hint rather than a wall of text."""
+    value = " ".join(str(text or "").split())
+    for mark in ("。", "！", "？", ";", "；"):
+        index = value.find(mark)
+        if 0 < index < limit:
+            return value[: index + 1]
+    return value[:limit] + ("…" if len(value) > limit else "")
+
+
 def notify_wanderer(conn: Any, wanderer: dict[str, Any], review_id: int, verdict: str, reason: str) -> int:
     """Inbox row for the wanderer itself (read by its tick; email is never queued)."""
     from .message_center_service import _build_notification_payload, _insert_notification
 
     payload = _build_notification_payload(
         recipient_role="student", recipient_user_pk=int(wanderer["student_id"]), category=NOTIFICATION_CATEGORY,
-        title=_VERDICT_TITLES.get(verdict, "天道裁决"), body_preview=str(reason or "")[:120],
+        title=_VERDICT_TITLES.get(verdict, "天道裁决"), body_preview=_one_line(reason, 80),
         actor_display_name="天道", ref_type="wanderer_dao_review", ref_id=str(review_id),
         metadata={"review_id": int(review_id), "verdict": verdict},
     )
@@ -105,7 +115,31 @@ def _record(conn: Any, wanderer: dict[str, Any], *, kind: str, verdict: str, fro
     conn.execute("UPDATE wanderer_agents SET last_review_id = ?, last_review_at = ?, updated_at = ? WHERE id = ?",
                  (review_id, now, now, int(wanderer["id"])))
     notify_wanderer(conn, wanderer, review_id, verdict, reason)
+    _trace_verdict(conn, wanderer, review_id, kind, verdict, reason)
     return review_id
+
+
+def _trace_verdict(conn: Any, wanderer: dict[str, Any], review_id: int, kind: str, verdict: str,
+                   reason: str) -> None:
+    """The wanderer's own action trace and memory must contain its 天道 verdict (one-line hint)."""
+    from ..db.savepoint import best_effort
+    from .wanderer_episodic_memory_service import record_memory
+    from .wanderer_identity_service import log_wanderer_action
+
+    hint = _one_line(reason, 60)
+    label = _VERDICT_TITLES.get(verdict, "天道裁决")
+    with best_effort(conn, "dao_wanderer_trace", log_prefix="[DAO]"):
+        log_wanderer_action(
+            conn, int(wanderer["id"]), "dao_verdict", target_type="dao_review", target_id=str(review_id),
+            content_preview=f"{label}：{hint}", location="天道台",
+            detail={"verdict": verdict, "review_kind": kind, "hint": hint, "reason": str(reason or "")[:500]},
+        )
+        record_memory(
+            conn, wanderer, kind="life", title=f"天道裁决：{label}",
+            content=f"天道对我的裁决是「{label}」：{hint}原因：{str(reason or '')[:300]}",
+            importance=0.82, tags=["天道", verdict], source_kind="dao_review",
+            source_ref=f"review:{review_id}", location="天道台",
+        )
 
 
 def _invalidate(wanderer: dict[str, Any]) -> None:
