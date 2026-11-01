@@ -64,7 +64,7 @@ final = base × 口才
 - `tests/test_wanderer_schema.py`：新列。
 - 全量回归与原生 PG 演练在发布前执行。
 
-回归结果（2026-11-01）：散修套件 471 项全部通过；全量后端 5357 项仅剩父提交已有的 13 项失败（外加一次 LibreOffice 容量测试抖动，单独重跑通过），无新增失败。
+回归结果（2026-11-01）：散修套件 472 项全部通过；全量后端 5358 项仅剩父提交已有的 13 项失败（外加一次 LibreOffice 容量测试抖动，单独重跑通过），无新增失败。
 
 ## 8. 上线记录
 
@@ -72,5 +72,11 @@ final = base × 口才
 - 原生 PG 演练：`.codex-temp/wanderer-real-users-gate/native-report.json`（增量/全启动均 ok，0 阻塞，集群已停）；冻结树 81 个迁移源文件字节一致，DryRun 3875 文件后正式发布。
 - 核验：8 容器健康；`interaction_limit_penalty`/`interaction_penalty_until` 在位；`maybe_search_friends`/`award_reply_cultivation` 已加载；互动额度 `20→40`（0→5 境）、搜索 `12→24`；天道存在提示与 `interaction_limits` 解析生效；管理接口未登录 401；manifest revision `8322f92c…` 含 `manage_wanderers.js`；近 10 分钟无错误日志。
 - Git：`e781c6b7..b1a3007b dev -> dev` 已推送。
+
+### 搜索修为补充发布
+
+- 提交：`77a9e964`；release：`20261101-151310-fd47a83672bb`（复用同一 PG 报告对，schema 未再变更）。
+- 核验：8 容器健康；`search_cultivation_gain(0)=0.5`、`(5)=1.75`；`web_search` 动作已注册；提示词含“最近七天使用”；管理接口 401；无近期错误。
+- Git：`b1a3007b..77a9e964 dev -> dev` 已推送（含此前的发布记录提交）。
 
 部署注意：改了 `classroom_app/db/schema_wanderers.py`，必须重做原生 PostgreSQL 演练报告对。
