@@ -368,9 +368,11 @@ function statsSection(detail) {
         items: stats.by_kind.map(item => ({ label: item.label, value: item.count })),
     });
     const usage = detail.web_search_usage;
+    const searchHistory = (usage?.history || []).slice(-3)
+        .map(item => `${String(item.date || '').slice(-5)} ${item.total || 0} 次`).join(' · ');
     const search = usage ? createContent('card', { title: '今日搜索', variant: 'stat',
         value: usage.available ? `${usage.used} / ${usage.limit}` : '暂不可用',
-        meta: usage.available ? `剩余 ${usage.remaining} 次${usage.reserved ? ` · 处理中 ${usage.reserved} 次` : ''}${usage.unknown ? ` · 待确认 ${usage.unknown} 次` : ''} · 北京时间零点重置` : '统计暂不可用，稍后刷新',
+        meta: usage.available ? `剩余 ${usage.remaining} 次${usage.reserved ? ` · 处理中 ${usage.reserved} 次` : ''}${usage.unknown ? ` · 待确认 ${usage.unknown} 次` : ''} · 北京时间零点重置${searchHistory ? ` · 近三天 ${searchHistory}` : ''}` : '统计暂不可用，稍后刷新',
         attrs: { 'data-wanderer-search-usage': '' },
     }) : null;
     return el('div', { class: 'wd-stats' }, [meter, daily, kinds, search].filter(Boolean));

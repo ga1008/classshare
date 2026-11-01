@@ -176,6 +176,7 @@ async def run_turn(
     if result.get("status") == "capped":
         ctx.capped = True
     ctx.ai_calls += int(result.get("ai_calls") or 0)
+    _record_search_actions(ctx, result)
     if result.get("status") == "ok":
         with ctx.connect() as conn:
             from .wanderer_emotion_service import apply_turn_mood
@@ -203,6 +204,33 @@ async def run_turn(
     else:
         ctx.pending_learning.pop(thread_key, None)
     return result
+
+
+def _record_search_actions(ctx: ActionContext, result: dict[str, Any]) -> None:
+    """Searches are practice inside the current action, not extra autonomous actions.
+
+    Successful searches get their own ``web_search`` trace row (excluded from the
+    daily autonomous budget) and tier-scaled cultivation; the enclosing action
+    still counts as the one autonomous behaviour.
+    """
+    from .wanderer_identity_service import log_wanderer_action
+    from .wanderer_life_service import award_search_cultivation
+
+    entries = [item for item in result.get("search_log") or []
+               if str(item.get("status") or "").lower() in {"succeeded", "empty", "success"}]
+    if not entries:
+        return
+    with ctx.connect() as conn:
+        for item in entries:
+            query = str(item.get("query") or "")[:120]
+            gained = award_search_cultivation(conn, ctx.wanderer, 1)
+            log_wanderer_action(
+                conn, ctx.wanderer_id, "web_search", target_type="web_search", target_id=query,
+                content_preview=f"搜索：{query}", location=f"网络搜索 · {query[:40]}",
+                detail={"query": query, "status": item.get("status"), "cultivation_gain": gained},
+            )
+        conn.commit()
+    ctx.reload()
 
 
 def clip_part(ctx: ActionContext, text: Any, *, limit: bool = True) -> str:
@@ -397,7 +425,7 @@ def day_start_iso(now: datetime) -> str:
 def today_action_count(conn: Any, wanderer_id: int, now: datetime) -> int:
     row = conn.execute(
         "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND created_at >= ? "
-        "AND action_kind NOT IN ('knowledge_forget','experience_learn','reflect','daily_reflection')",
+        "AND action_kind NOT IN ('knowledge_forget','experience_learn','reflect','daily_reflection','web_search')",
         (int(wanderer_id), day_start_iso(now)),
     ).fetchone()
     return as_int(_row_value(row, "n"))

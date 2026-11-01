@@ -39,6 +39,12 @@ final = base × 口才
 - 证据新增 `directed_to_real_users_24h`：散修发给真实用户的原文、对方角色与上一句上下文；不含对方身份。
 - 每次裁决写入 `dao_verdict` 动作（位置“天道台”）和 `life` 记忆；每日反省额外读取最近 7 天裁决与解释。
 
+## 4.5 网络搜索与修为
+
+- 散修每完成一次成功搜索，按 `search_cultivation_gain(tier) = 0.5 + 0.25 × 境界` 增加修为；搜索上限仍为每境 +20%，额度、用于重置的时间与最近七天历史都写入每次提示词。
+- 搜索属于当前自主行动的一部分：先判断是否搜索 → 搜索 → 内部整理并核对来源 → 再按输出合同行动。搜索单独记一条 `web_search` 轨迹（不计入每日自主行为次数），因此一次决定 + 搜索只算一次自主行为加一次搜索行为，不重复消耗主动额度。
+- 搜索失败或额度用尽不会阻止正常回复，也不发放搜索修为；管理端动作列表会显示每次搜索的查询与修为增量。
+
 ## 5. 记录与互见
 
 - `wanderer_action_log.detail_json` 记录每次互动的 `cultivation_gain`、`counterpart_real_user`、`counterpart_tier`、`reply_chars`；`today_trace` 显示“修为 +X”，反省和管理端动作列表复用。
@@ -53,7 +59,7 @@ final = base × 口才
 
 ## 7. 测试
 
-- `tests/test_wanderer_real_users.py`：搜索境界过滤/公开资料、搜索后发申请、真实用户修为高于散修、字数/境界加成、每日 20+20%、搜索 12+20%、天道互动限制、反省轨迹显示修为。
+- `tests/test_wanderer_real_users.py`：搜索境界过滤/公开资料、搜索后发申请、真实用户修为高于散修、字数/境界加成、每日 20+20%、搜索 12+20%、天道互动限制、反省轨迹显示修为、搜索修为与 `web_search` 不计自主次数。
 - `tests/test_wanderer_prompt.py`：提示词只保留天道存在，不注入完整规则。
 - `tests/test_wanderer_schema.py`：新列。
 - 全量回归与原生 PG 演练在发布前执行。

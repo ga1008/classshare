@@ -77,7 +77,8 @@ ACTION_LABELS = {
     "social_friend": "好友往来", "social_message": "聊天发言",
     "social_block": "拉黑", "social_unblock": "解除拉黑",
     "social_group_create": "建群", "social_group_invite": "邀请入群", "social_group_leave": "退群",
-    "social_seek": "寻友", "social_search": "好友搜索", "read_manual": "查阅手册", "dao_verdict": "天道裁决",
+    "social_seek": "寻友", "social_search": "好友搜索", "read_manual": "查阅手册", "web_search": "网络搜索",
+    "dao_verdict": "天道裁决",
     "daily_reflection": "每日自省",
     "experience_learn": "交流学习",
     "extend_life": "延寿", "appeal": "天道抗辩", "resurrect": "复活同修",
@@ -389,8 +390,8 @@ def build_wanderer_overview(conn: Any) -> dict[str, Any]:
 def _today_action_counts(conn: Any) -> dict[int, int]:
     rows = conn.execute(
         "SELECT wanderer_id, COUNT(*) AS n FROM wanderer_action_log "
-        "WHERE created_at >= ? AND action_kind <> ? GROUP BY wanderer_id",
-        (_today_start(), "skip"),
+        "WHERE created_at >= ? AND action_kind NOT IN ('skip','web_search') GROUP BY wanderer_id",
+        (_today_start(),),
     ).fetchall()
     pairs = [_row_dict(row) for row in rows]
     return {_as_int(item.get("wanderer_id")): _as_int(item.get("n")) for item in pairs}
@@ -455,8 +456,9 @@ def _card_for(conn: Any, wanderer_id: int) -> dict[str, Any]:
     wanderer = require_wanderer(conn, wanderer_id)
     today = _count(
         conn,
-        "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND created_at >= ? AND action_kind <> ?",
-        (int(wanderer_id), _today_start(), "skip"),
+        "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND created_at >= ? "
+        "AND action_kind NOT IN ('skip','web_search')",
+        (int(wanderer_id), _today_start()),
     )
     row = conn.execute(
         "SELECT * FROM wanderer_action_log WHERE wanderer_id = ? ORDER BY id DESC LIMIT 1", (int(wanderer_id),)
@@ -481,8 +483,9 @@ def _daily_series(conn: Any, wanderer_id: int) -> list[dict[str, Any]]:
     today = local_now().date()
     days = [today - timedelta(days=offset) for offset in range(STATS_SERIES_DAYS - 1, -1, -1)]
     rows = conn.execute(
-        "SELECT created_at FROM wanderer_action_log WHERE wanderer_id = ? AND created_at >= ? AND action_kind <> ?",
-        (wanderer_id, f"{days[0].isoformat()}T00:00:00", "skip"),
+        "SELECT created_at FROM wanderer_action_log WHERE wanderer_id = ? AND created_at >= ? "
+        "AND action_kind NOT IN ('skip','web_search')",
+        (wanderer_id, f"{days[0].isoformat()}T00:00:00"),
     ).fetchall()
     tally: dict[str, int] = {}
     for row in rows:

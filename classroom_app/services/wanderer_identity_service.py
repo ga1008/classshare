@@ -59,7 +59,7 @@ ACTION_KINDS = frozenset({
     # Lifecycle (lifecycle doc §2/§4.4/§6): life extension, appeal, resurrection.
     "extend_life", "appeal", "resurrect",
     # Autonomy (2026-10-31 round 2): deliberately reading the manual and finding a friend.
-    "read_manual", "social_seek", "social_search",
+    "read_manual", "social_seek", "social_search", "web_search",
     # 天道 verdicts are logged into the same trace so the wanderer sees its own punishment.
     "dao_verdict",
     # Budget-exempt daily self-reflection.
@@ -75,7 +75,7 @@ _DEFAULT_LOCATIONS = {
     "social_group_invite": "群聊", "social_group_leave": "群聊",
     "request_promotion": "天道台", "reflect": "天道台", "dao_verdict": "天道台",
     "extend_life": "生命之树", "appeal": "天道台", "resurrect": "生命之树",
-    "read_manual": "平台手册", "daily_reflection": "自省", "skip": "平台",
+    "read_manual": "平台手册", "web_search": "网络搜索", "daily_reflection": "自省", "skip": "平台",
 }
 ORIGIN_SEED = "seed"
 ORIGIN_DAO = "dao"

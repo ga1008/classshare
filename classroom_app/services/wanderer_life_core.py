@@ -60,6 +60,9 @@ ACTIVE_INTERACTION_TIER_BONUS = 0.20
 # Base daily web-search allowance and per-tier growth.
 WANDERER_SEARCH_BASE = 12
 WANDERER_SEARCH_TIER_BONUS = 0.20
+# Each successful web search adds cultivation; higher tiers learn more from it.
+SEARCH_CULTIVATION_BASE = 0.5
+SEARCH_CULTIVATION_TIER_BONUS = 0.25
 
 APPEAL_MIN_TIER = 5
 APPEAL_COOLDOWN_DAYS = 30
@@ -326,6 +329,11 @@ def active_interaction_limit(tier: Any, configured: Any = 0) -> int:
 def wanderer_search_limit(tier: Any) -> int:
     """Base 12 web searches per day, +20% per tier."""
     return int(round(WANDERER_SEARCH_BASE * (1.0 + WANDERER_SEARCH_TIER_BONUS * clamp_tier(tier))))
+
+
+def search_cultivation_gain(tier: Any) -> float:
+    """Cultivation for one successful search: 0.5 at tier 0, +0.25 per tier."""
+    return round(SEARCH_CULTIVATION_BASE + SEARCH_CULTIVATION_TIER_BONUS * clamp_tier(tier), 2)
 
 
 def tier_perks(tier: Any, daily_action_budget: Any = 10) -> dict[str, Any]:

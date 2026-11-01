@@ -140,6 +140,27 @@ def snapshot(conn, *, actor_kind, actor_id, channel, now=None, budget_date=None,
         'date': day, 'reset_at': reset.isoformat(), 'timezone': app_timezone_name(), 'channel': channel}
 
 
+def usage_history(conn, *, actor_kind, actor_id, channel, days=7, now=None):
+    """Recent daily search usage for the actor (oldest first), for prompts and admin."""
+    actor = _actor(actor_kind, actor_id, channel)
+    clock = _clock(now)
+    start = (clock.date() - timedelta(days=max(0, int(days) - 1))).isoformat()
+    rows = conn.execute(
+        "SELECT budget_date, state, COUNT(*) AS n FROM ai_web_search_calls "
+        "WHERE actor_kind=? AND actor_id=? AND channel=? AND budget_date>=? GROUP BY budget_date, state",
+        (*actor, start),
+    ).fetchall()
+    buckets: dict[str, dict[str, int]] = {}
+    for row in rows:
+        day = str(row['budget_date'] if not isinstance(row, tuple) else row[0])
+        state = str(row['state'] if not isinstance(row, tuple) else row[1])
+        count = int(row['n'] if not isinstance(row, tuple) else row[2] or 0)
+        item = buckets.setdefault(day, {})
+        item[state] = item.get(state, 0) + count
+        item['total'] = item.get('total', 0) + count
+    return [{'date': day, **buckets[day]} for day in sorted(buckets)]
+
+
 def get_call(conn, call_id):
     """Internal trusted receipt, including its token; never expose this row publicly."""
     row = conn.execute('SELECT * FROM ai_web_search_calls WHERE call_id=?', (str(call_id),)).fetchone()

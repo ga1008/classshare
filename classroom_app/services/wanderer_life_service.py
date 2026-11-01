@@ -41,6 +41,7 @@ from .wanderer_life_core import (
     lifespan_weeks_for,
     normalize_talents,
     promotion_ratio,
+    search_cultivation_gain,
     talent_bounds,
     talent_effects,
     talent_value,
@@ -186,6 +187,22 @@ def award_interaction_cultivation(conn: Any, wanderer: dict[str, Any], kinds: It
         (granted, json.dumps(stats, ensure_ascii=False, sort_keys=True), local_iso(), wanderer_id),
     )
     return granted
+
+
+def award_search_cultivation(conn: Any, wanderer: dict[str, Any], count: int = 1) -> float:
+    """Each successful web search is practice: add tier-scaled cultivation, no interaction cap."""
+    try:
+        searches = max(0, int(count or 0))
+    except (TypeError, ValueError):
+        searches = 0
+    if searches <= 0:
+        return 0.0
+    amount = round(search_cultivation_gain(wanderer.get("tier")) * searches, 2)
+    if amount <= 0:
+        return 0.0
+    conn.execute("UPDATE wanderer_agents SET cultivation_score = cultivation_score + ?, updated_at = ? "
+                 "WHERE id = ?", (amount, local_iso(), int(wanderer["id"])))
+    return amount
 
 
 def interaction_cultivation_locked(conn: Any, wanderer: dict[str, Any], kind: Any) -> bool:

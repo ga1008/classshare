@@ -9,6 +9,7 @@ from classroom_app.services.wanderer_behavior_service import daily_budget
 from classroom_app.services.wanderer_life_core import (
     active_interaction_limit,
     interaction_gain,
+    search_cultivation_gain,
     tier_perks,
     wanderer_search_limit,
 )
@@ -108,14 +109,49 @@ class RealUserRulesTest(WandererWorldTestCase):
         self.assertIn("修为 +3.5", trace)
         self.assertIn("cultivation_score", people[peer_identity])
 
+    def test_search_rewards_cultivation_by_tier_and_is_not_an_autonomous_action(self):
+        from classroom_app.services.wanderer_actions_common import today_action_count
+        from classroom_app.services.wanderer_life_service import award_search_cultivation
+        from classroom_app.services.wanderer_identity_service import log_wanderer_action
+
+        self.assertLess(search_cultivation_gain(0), search_cultivation_gain(5))
+        with self.connect() as conn:
+            wanderer = self.wanderer(conn, "atai")
+            before = wanderer["cultivation_score"]
+            gained = award_search_cultivation(conn, wanderer, 1)
+            log_wanderer_action(conn, wanderer["id"], "web_search", target_type="web_search",
+                                content_preview="搜索：气候", location="网络搜索 · 气候")
+            conn.commit()
+            after = self.wanderer(conn, "atai")["cultivation_score"]
+            count = today_action_count(conn, wanderer["id"], datetime.now())
+        self.assertEqual(gained, search_cultivation_gain(wanderer["tier"]))
+        self.assertAlmostEqual(after, before + gained, places=2)
+        self.assertEqual(count, 0)
+
+        from classroom_app.services.wanderer_actions_common import _record_search_actions
+        ctx = self._ctx(tier=wanderer["tier"])
+        ctx.wanderer = {**wanderer, "cultivation_score": after}
+        _record_search_actions(ctx, {"search_log": [{"query": "最新气候", "status": "succeeded"}]})
+        with self.connect() as conn:
+            rows = conn.execute("SELECT action_kind, detail_json FROM wanderer_action_log "
+                                "WHERE wanderer_id = ? AND action_kind = 'web_search'", (wanderer["id"],)).fetchall()
+            count = today_action_count(conn, wanderer["id"], datetime.now())
+        self.assertGreaterEqual(len(rows), 2)
+        self.assertIn("cultivation_gain", rows[-1]["detail_json"])
+        self.assertEqual(count, 0)
+
     def test_wanderer_search_quota_uses_the_tier_allowance(self):
-        from classroom_app.services.ai_web_search_service import snapshot_for_wanderer
+        from classroom_app.services.ai_web_search_service import search_context_block, snapshot_for_wanderer
 
         with self.connect() as conn:
             wanderer = self.wanderer(conn, "atai")
             quota = snapshot_for_wanderer(conn, {**wanderer, "tier": 5})
         self.assertEqual(quota["limit"], 24)
         self.assertEqual(quota["available"], True)
+        text = search_context_block({"limit": 24, "used": 2, "remaining": 22, "history": [
+            {"date": "2026-10-31", "total": 3}, {"date": "2026-11-01", "total": 2}]})
+        self.assertIn("最近七天使用", text)
+        self.assertIn("11-01 用 2 次", text)
 
     def test_dao_interaction_penalty_reduces_the_daily_budget(self):
         from classroom_app.services.heavenly_dao_service import _apply_interaction_limit_row, parse_discipline
