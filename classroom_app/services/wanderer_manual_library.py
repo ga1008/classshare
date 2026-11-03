@@ -18,6 +18,7 @@ import hashlib
 import io
 from typing import Any
 
+from ..db.connection import execute_insert_returning_id
 from .file_service import store_file_object_globally
 from .wanderer_life_core import (
     APPEAL_MIN_TIER,
@@ -295,7 +296,8 @@ def _ensure_folder(conn: Any, teacher_id: int) -> int:
     if row is not None:
         return int(_row_value(row, "id", 0))
     now = _local_iso()
-    cursor = conn.execute(
+    folder_id = int(execute_insert_returning_id(
+        conn,
         """
         INSERT INTO course_materials
         (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type, preview_type,
@@ -306,8 +308,7 @@ def _ensure_folder(conn: Any, teacher_id: int) -> int:
                 'idle', NULL, 'idle', NULL, 'public', ?, ?, 0, NULL, ?, ?)
         """,
         (int(teacher_id), MANUAL_FOLDER_PATH, MANUAL_FOLDER_NAME, MANUAL_OWNER_ROLE, int(teacher_id), now, now),
-    )
-    folder_id = int(cursor.lastrowid)
+    ))
     conn.execute("UPDATE course_materials SET root_id = ? WHERE id = ?", (folder_id, folder_id))
     return folder_id
 
@@ -343,7 +344,8 @@ def ensure_manual_materials(conn: Any) -> dict[str, Any]:
         ).fetchone()
         now = _local_iso()
         if row is None:
-            cursor = conn.execute(
+            material_id = int(execute_insert_returning_id(
+                conn,
                 """
                 INSERT INTO course_materials
                 (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type, preview_type,
@@ -355,8 +357,7 @@ def ensure_manual_materials(conn: Any) -> dict[str, Any]:
                 """,
                 (int(teacher_id), folder_id, folder_id, material_path, filename, stored["file_hash"],
                  stored["size"], MANUAL_OWNER_ROLE, int(teacher_id), now, now),
-            )
-            material_id = int(cursor.lastrowid)
+            ))
             created += 1
         else:
             material_id = int(_row_value(row, "id", 0))
