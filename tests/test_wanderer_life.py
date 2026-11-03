@@ -86,8 +86,10 @@ class LifeCoreTest(unittest.TestCase):
         self.assertEqual(core.knowledge_capacity_for(0, 1.0), 4000)
         self.assertEqual(core.knowledge_capacity_for(0, 1.5), 6000)
         self.assertEqual(core.knowledge_capacity_for(10, 1.0), 200_000)
-        self.assertEqual(core.cultivation_target(0), 19)
-        self.assertEqual(core.cultivation_target(1), 38)
+        self.assertEqual(core.cultivation_target(0), 24)
+        self.assertEqual(core.cultivation_target(1), 48)
+        self.assertTrue(all(a < b for a, b in zip(core.TIER_CULTIVATION_TARGETS,
+                                                  core.TIER_CULTIVATION_TARGETS[1:])))
         self.assertEqual(core.interaction_requirement(0, 1.0), 5)
         self.assertEqual(core.interaction_requirement(0, 1.8), 3)
         self.assertEqual(core.interaction_requirement(0, 0.6), 8)
@@ -165,7 +167,7 @@ class WandererLifeDbTest(WandererDbTestCase):
 
     def test_promotion_requirements_are_transparent(self):
         with self.connect() as conn:
-            wanderer = self._update(conn, "xiaoman", tier=0, knowledge_chars=2400, cultivation_score=20.0,
+            wanderer = self._update(conn, "xiaoman", tier=0, knowledge_chars=2400, cultivation_score=30.0,
                                     promotion_requested=0, promotion_requested_at=None, talents_json=TALENTS_NEUTRAL)
             for _index in range(5):
                 conn.execute(
@@ -175,8 +177,8 @@ class WandererLifeDbTest(WandererDbTestCase):
             conn.commit()
             requirements = promotion_requirements(conn, load_wanderer_by_slug(conn, "xiaoman"))
             self.assertTrue(requirements["ready"], requirements)
-            self.assertEqual(requirements["knowledge_target"], 2400)
-            self.assertEqual(requirements["cultivation_target"], 19)
+            self.assertEqual(requirements["knowledge_target"], 1400)
+            self.assertEqual(requirements["cultivation_target"], 24)
             self.assertEqual(requirements["interactions_needed"], 5)
             self._update(conn, "xiaoman", promotion_requested_at=datetime.now().isoformat(timespec="seconds"))
             blocked = promotion_requirements(conn, load_wanderer_by_slug(conn, "xiaoman"))

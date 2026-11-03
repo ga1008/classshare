@@ -27,7 +27,7 @@ def simulate(budget, *, insight=1.0, memory=1.0, vitality=1.0, share=STUDY_SHARE
         gained = budget * share * CHARS_PER_STUDY
         capacity = core.knowledge_capacity_for(tier, memory)
         knowledge = min(capacity, knowledge + gained)
-        cultivation += gained / 100.0 * insight
+        cultivation += gained / 100.0 * insight * core.tier_income_multiplier(tier)
         if (knowledge >= core.promotion_ratio(tier) * capacity
                 and cultivation >= core.cultivation_target(tier)
                 and days - last >= 7):
@@ -52,6 +52,24 @@ class LifeBalanceTest(unittest.TestCase):
             survived_ten += int(tier >= 10)
         self.assertGreaterEqual(survived_five, 18)
         self.assertGreaterEqual(survived_ten, 15)
+
+    def test_every_tier_is_reachable_at_three_readings_a_day(self):
+        for tier in range(core.MAX_TIER):
+            plan = core.promotion_feasibility(tier, studies_per_day=3.0)
+            self.assertTrue(plan["fits"], plan)
+            self.assertLessEqual(plan["days_needed"], plan["days_available"])
+
+    def test_requirements_rise_while_income_also_rises(self):
+        self.assertTrue(all(a < b for a, b in zip(core.TIER_CULTIVATION_TARGETS,
+                                                  core.TIER_CULTIVATION_TARGETS[1:])))
+        knowledge_targets = [
+            core.promotion_ratio(tier) * core.base_knowledge_capacity(tier)
+            for tier in range(core.MAX_TIER)
+        ]
+        self.assertTrue(all(a < b for a, b in zip(knowledge_targets, knowledge_targets[1:])))
+        self.assertLess(core.tier_income_multiplier(0), core.tier_income_multiplier(9))
+        self.assertLess(core.tier_income_multiplier(0, knowledge=False),
+                        core.tier_income_multiplier(9, knowledge=False))
 
     def test_no_effort_dies_at_tier_zero(self):
         died, days, tier, _promotions = simulate(10, share=0.0)

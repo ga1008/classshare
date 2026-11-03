@@ -66,10 +66,16 @@ REFLECTIONS_PER_TICK = 2
 # ---------------------------------------------------------------------------
 
 def readable_materials(conn: Any, wanderer: dict[str, Any]) -> list[dict[str, Any]]:
-    """Indexed materials a wanderer may read: public material or public outermost folder only."""
+    """Indexed materials a wanderer may read at its current stage.
+
+    A row tagged with ``wanderer_min_tier``/``wanderer_max_tier`` is governed by
+    that band only (stage gating wins over public scope); untagged rows keep the
+    legacy "public material or public outermost folder" rule.
+    """
     from .material_search_schema import ensure_material_search_schema
 
     ensure_material_search_schema(conn)  # runtime-owned index; the scheduler may be first to touch it
+    tier = clamp_tier(wanderer.get("tier"))
     rows = conn.execute(
         """
         SELECT d.material_id, m.name AS material_name
@@ -77,11 +83,18 @@ def readable_materials(conn: Any, wanderer: dict[str, Any]) -> list[dict[str, An
         JOIN course_materials m ON m.id = d.material_id
         LEFT JOIN course_materials r ON r.id = m.root_id
         WHERE d.status = 'ready' AND d.chunk_count > 0
-          AND (LOWER(COALESCE(m.scope_level, '')) = 'public'
-               OR LOWER(COALESCE(r.scope_level, '')) = 'public')
+          AND (
+            ((m.wanderer_min_tier IS NOT NULL OR m.wanderer_max_tier IS NOT NULL)
+              AND COALESCE(m.wanderer_min_tier, 0) <= ?
+              AND (m.wanderer_max_tier IS NULL OR m.wanderer_max_tier >= ?))
+            OR ((m.wanderer_min_tier IS NULL AND m.wanderer_max_tier IS NULL)
+              AND (LOWER(COALESCE(m.scope_level, '')) = 'public'
+                   OR LOWER(COALESCE(r.scope_level, '')) = 'public'))
+          )
         ORDER BY d.material_id DESC
         LIMIT 200
-        """
+        """,
+        (tier, tier),
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -117,8 +130,13 @@ def pick_reading(ctx: ActionContext, conn: Any) -> Optional[dict[str, Any]]:
     if not materials:
         return None
     interests = ctx.wanderer.get("interests") or []
-    material = weighted_choice(ctx.rng, materials,
-                               [1.0 + interest_score(interests, item.get("material_name")) for item in materials])
+    # Built-in manuals are the starter corpus: a small boost keeps a new
+    # wanderer from wandering a library that has no other open documents.
+    material = weighted_choice(ctx.rng, materials, [
+        1.0 + interest_score(interests, item.get("material_name"))
+        + (1.5 if "手册" in str(item.get("material_name") or "") else 0.0)
+        for item in materials
+    ])
     chunks = [dict(row) for row in conn.execute(
         "SELECT ordinal, page_number, locator_label, heading, text FROM material_search_chunks "
         "WHERE material_id = ? ORDER BY ordinal",

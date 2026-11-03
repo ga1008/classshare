@@ -188,6 +188,10 @@ def _life_block(conn: Any, wanderer: dict[str, Any]) -> str:
             f"{req['cultivation_target']}；近七日互动 {req['interactions']}/{req['interactions_needed']} 次；"
             f"距上次申请冷却 {req['cooldown_days_left']} 天。"
         )
+        lines.append(
+            "学习文档区的《散修进阶手册》和《平台与天道手册》任何境界都能读；"
+            "其它文档按你当前境界的开放范围可见。想升阶就先研读，再认真互动。"
+        )
         if req["ready"]:
             lines.append("你已经满足升阶条件，可以按自己的性格决定要不要向天道申请。")
     return "\n".join(lines)

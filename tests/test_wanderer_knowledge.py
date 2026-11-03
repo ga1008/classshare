@@ -1,5 +1,6 @@
 import unittest
 
+from classroom_app.services import wanderer_life_core as core
 from classroom_app.services.wanderer_identity_service import (
     evaluate_death,
     knowledge_capacity_chars,
@@ -114,12 +115,15 @@ class WandererKnowledgeTest(WandererDbTestCase):
                 (wanderer["id"],),
             ).fetchone()[0]
             after = load_wanderer(conn, wanderer["id"])["cultivation_score"]
+            tier = load_wanderer(conn, wanderer["id"]).get("tier")
             conn.rollback()
         self.assertEqual(rows, 1)
         self.assertEqual(first["entry_id"], second["entry_id"])
-        self.assertEqual(first["score_delta"], 2.0)
-        self.assertEqual(second["score_delta"], 0.5)
-        self.assertAlmostEqual(after - before, 2.5)
+        # chenmo sits at a higher tier, so both reads carry the tier income bonus.
+        bonus = core.tier_income_multiplier(tier)
+        self.assertAlmostEqual(first["score_delta"], round(2.0 * bonus, 2))
+        self.assertAlmostEqual(second["score_delta"], round(0.5 * bonus, 2))
+        self.assertAlmostEqual(after - before, round(2.5 * bonus, 2))
 
     def test_rejects_bad_input(self):
         with self.connect() as conn:

@@ -158,14 +158,15 @@ def award_interaction_cultivation(conn: Any, wanderer: dict[str, Any], kinds: It
     """
     points = 0.0
     eloquence = talent_value(wanderer.get("talents"), "eloquence")
+    source_tier = wanderer.get("tier")
     for item in kinds or []:
         if isinstance(item, dict):
             points += interaction_gain(item.get("kind"), eloquence,
                                        real_user=bool(item.get("real_user")),
                                        target_tier=item.get("target_tier"),
-                                       chars=item.get("chars"))
+                                       chars=item.get("chars"), source_tier=source_tier)
         else:
-            points += interaction_gain(item, eloquence)
+            points += interaction_gain(item, eloquence, source_tier=source_tier)
     if points <= 0:
         return 0.0
     wanderer_id = int(wanderer["id"])

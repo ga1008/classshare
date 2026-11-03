@@ -607,6 +607,9 @@ def _ensure_resource_scope_schema(conn: sqlite3.Connection) -> None:
             "published_at": "TEXT",
             "archived_at": "TEXT",
             "deleted_at": "TEXT",
+            # 散修阅读段位：NULL 表示不按段位开放；两列都为空时沿用 scope_level。
+            "wanderer_min_tier": "INTEGER",
+            "wanderer_max_tier": "INTEGER",
         }.items():
             _add_column_if_missing(conn, "course_materials", column_name, column_def)
         conn.execute(

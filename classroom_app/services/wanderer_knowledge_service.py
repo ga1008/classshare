@@ -158,6 +158,7 @@ def add_knowledge(
         score_delta, crit = knowledge_gain(
             new_chars, talent_value(wanderer.get("talents"), "insight"),
             talent_value(wanderer.get("talents"), "luck"), rng or random.random,
+            tier=wanderer.get("tier"),
         )
     knowledge_chars = _active_chars(conn, wanderer_id)
     conn.execute(

@@ -189,6 +189,14 @@ def ensure_wanderer_scheduled_tasks(conn: Any) -> dict[str, int]:
     }
     if hour_changed:
         wanderer_runtime_setting_set(conn, SETTING_DAO_REVIEW_HOUR_ARMED, wanted_hour)
+    # Seed/refresh the always-readable manuals in the learning library. Idempotent
+    # and cheap: an unchanged content hash skips the write.
+    try:
+        from .wanderer_manual_library import ensure_manual_materials
+
+        ensure_manual_materials(conn)
+    except Exception as exc:  # noqa: BLE001 - manuals must never block the scheduler
+        print(f"[WANDERER MANUAL] 播种失败: {type(exc).__name__}: {exc}")
     reflection_hour_value, reflection_minute = reflection_hour(conn)
     reflection_wanted = f"{reflection_hour_value:02d}:{reflection_minute:02d}"
     reflection_changed = wanderer_runtime_setting_get(conn, SETTING_REFLECTION_HOUR_ARMED) != reflection_wanted
@@ -445,7 +453,7 @@ def _award_outcomes(ctx: ActionContext, items: list[dict[str, Any]]) -> None:
         return
     eloquence = (ctx.wanderer.get("talents") or {}).get("eloquence") if isinstance(
         ctx.wanderer.get("talents"), dict) else 1.0
-    raw = [interaction_gain(kind, eloquence) for kind in eligible]
+    raw = [interaction_gain(kind, eloquence, source_tier=ctx.wanderer.get("tier")) for kind in eligible]
     total_raw = sum(raw)
     with ctx.connect() as conn:
         granted = award_interaction_cultivation(conn, ctx.wanderer, eligible)

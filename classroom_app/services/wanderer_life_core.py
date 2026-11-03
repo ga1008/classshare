@@ -34,8 +34,18 @@ CRITICAL_REMAINING_DAYS = 7
 # output limit is the only ceiling.
 ACTIVE_SPEECH_BASE_CHARS = 100
 
-# Knowledge ratio needed to apply for the next tier (design §4.2).
-PROMOTION_KNOWLEDGE_RATIO: tuple[float, ...] = (0.60, 0.60, 0.60, 0.55, 0.55, 0.50, 0.50, 0.45, 0.45, 0.40)
+# Knowledge ratio needed to apply for the next tier (design §4.2). The ratio
+# rises with tier so the absolute target keeps growing even after the knowledge
+# capacity cap, and the ladder never goes backwards.
+PROMOTION_KNOWLEDGE_RATIO: tuple[float, ...] = (0.35, 0.38, 0.40, 0.42, 0.44, 0.46, 0.48, 0.50, 0.52, 0.55)
+# Absolute cultivation for each tier → next tier (2026-11-03 rebalance).
+# Higher tiers need more, but their per-action gains scale as well, so a
+# diligent life can climb from 0 to 10 within its lifespan.
+TIER_CULTIVATION_TARGETS: tuple[int, ...] = (24, 48, 90, 160, 280, 460, 720, 1080, 1560, 2200)
+# Income grows with the tier: reading and interacting at a higher realm is
+# worth more per action (the user-facing "获得修为的能力越强").
+TIER_KNOWLEDGE_GAIN_BONUS = 0.10
+TIER_INTERACTION_GAIN_BONUS = 0.08
 PROMOTION_COOLDOWN_DAYS = 7
 PROMOTION_MIN_INTERACTIONS = 5
 SCORE_CHARS_PER_POINT = 100.0
@@ -259,8 +269,43 @@ def cultivation_target(tier: Any) -> int:
     level = clamp_tier(tier)
     if level >= MAX_TIER:
         return 0
-    value = 0.8 * promotion_ratio(level) * base_knowledge_capacity(level) / SCORE_CHARS_PER_POINT
-    return max(10, int(round(value)))
+    return TIER_CULTIVATION_TARGETS[level]
+
+
+def tier_income_multiplier(tier: Any, *, knowledge: bool = True) -> float:
+    """Per-action cultivation multiplier: 1.0 at tier 0, +10% (reading) / +8% (interaction) per tier."""
+    bonus = TIER_KNOWLEDGE_GAIN_BONUS if knowledge else TIER_INTERACTION_GAIN_BONUS
+    return round(1.0 + bonus * clamp_tier(tier), 2)
+
+
+def promotion_feasibility(tier: Any, *, studies_per_day: float = 3.0,
+                          insight: float = 1.0, memory: float = 1.0) -> dict[str, Any]:
+    """How many active days a diligent wanderer needs for the next tier.
+
+    ``studies_per_day`` is deliberate reading; each reading fixes at most 800
+    digest chars. Returns the two binding budgets (knowledge chars, cultivation)
+    and whether both fit inside the tier's lifespan increment.
+    """
+    level = clamp_tier(tier)
+    if level >= MAX_TIER:
+        return {"tier": level, "max_tier": True, "fits": True, "days_needed": 0, "days_available": 0}
+    capacity = knowledge_capacity_for(level, memory)
+    knowledge_needed = int(round(promotion_ratio(level) * capacity))
+    knowledge_per_study = 800.0
+    cultivation_per_study = knowledge_per_study / SCORE_CHARS_PER_POINT * max(0.2, insight) * tier_income_multiplier(level)
+    cultivation_needed = cultivation_target(level)
+    studies = max(knowledge_needed / knowledge_per_study, cultivation_needed / max(0.01, cultivation_per_study))
+    days_needed = int(math.ceil(studies / max(0.1, studies_per_day)))
+    days_available = int(round((BASE_LIFESPAN_WEEKS[level + 1] - BASE_LIFESPAN_WEEKS[level]) * 7))
+    return {
+        "tier": level,
+        "knowledge_needed": knowledge_needed,
+        "cultivation_needed": cultivation_needed,
+        "days_needed": days_needed,
+        "days_available": days_available,
+        "fits": days_needed <= max(1, int(days_available * 0.6)),
+        "max_tier": False,
+    }
 
 
 def interaction_requirement(tier: Any, eloquence: Any = 1.0) -> int:
@@ -271,8 +316,9 @@ def interaction_requirement(tier: Any, eloquence: Any = 1.0) -> int:
     return max(3, int(round(PROMOTION_MIN_INTERACTIONS / factor)))
 
 
-def knowledge_gain(chars: Any, insight: Any, luck: Any, rng: Optional[Callable[[], float]] = None) -> tuple[float, bool]:
-    """(cultivation points, 顿悟 whether doubled)."""
+def knowledge_gain(chars: Any, insight: Any, luck: Any, rng: Optional[Callable[[], float]] = None,
+                   *, tier: Any = 0) -> tuple[float, bool]:
+    """(cultivation points, 顿悟 whether doubled); higher tiers learn faster."""
     try:
         size = max(0.0, float(chars or 0))
         insight_factor = max(0.2, float(insight or 1.0))
@@ -280,24 +326,26 @@ def knowledge_gain(chars: Any, insight: Any, luck: Any, rng: Optional[Callable[[
     except (TypeError, ValueError):
         size, insight_factor, luck_factor = max(0.0, float(chars or 0)), 1.0, 1.0
     crit = rng is not None and rng() < min(0.30, 0.10 * luck_factor)
-    points = size / SCORE_CHARS_PER_POINT * insight_factor * (2.0 if crit else 1.0)
+    points = (size / SCORE_CHARS_PER_POINT * insight_factor * tier_income_multiplier(tier)
+              * (2.0 if crit else 1.0))
     return round(points, 2), crit
 
 
 def interaction_gain(action_kind: Any, eloquence: Any = 1.0, *, real_user: bool = False,
-                     target_tier: Any = 0, chars: Any = 0) -> float:
+                     target_tier: Any = 0, chars: Any = 0, source_tier: Any = 0) -> float:
     """Cultivation for one interaction; a real user's reply is the richest channel.
 
     ``real_user`` applies the tier bonus (each real-user tier +20%) and a length
     bonus (longer replies are worth more), capped at 5× the normal base.
+    ``source_tier`` is the acting wanderer's own tier: higher realms earn more.
     """
     base = INTERACTION_POINTS.get(str(action_kind or ""), 0.0)
     if base <= 0:
         return 0.0
     try:
-        factor = max(0.2, float(eloquence or 1.0))
+        factor = max(0.2, float(eloquence or 1.0)) * tier_income_multiplier(source_tier, knowledge=False)
     except (TypeError, ValueError):
-        factor = 1.0
+        factor = tier_income_multiplier(source_tier, knowledge=False)
     if real_user:
         try:
             length = max(0.0, float(chars or 0))
