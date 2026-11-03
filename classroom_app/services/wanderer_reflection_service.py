@@ -44,6 +44,7 @@ REFLECTION_CONTRACT = """【输出合同】只输出一个 JSON 对象，不要 
                "planned_actions": ["..."]},
   "promotion_intent": false
 }
+用朴素记录：写具体做了什么、当时怎么想、明天怎么做；不要文学化自我标签（如“安静自省”“清醒而自省”“静下来的雀跃”）。
 不必每项都填满；没有把握的字段可以省略，但不要编造没有发生的事。"""
 
 
@@ -327,7 +328,8 @@ async def run_reflection(ctx: ActionContext, *, force: bool = False) -> dict[str
         scene = {
             "kind": "夜深了，你一个人坐着回想今天", "title": "每日自省",
             "meta": f"{date} · 不看别人，只看自己的一天", "body": body,
-            "tags": ["自省", "今天"], "task": "回顾今天做过的事、说过的话和后果；诚实地看自己，然后决定明天怎么过。",
+            "tags": ["自省", "今天"], "task": "回顾今天做过的事、说过的话和后果；诚实地看自己，然后决定明天怎么过。"
+                                                    "用朴素的话，不写文学化自我描述。",
             "output_contract": REFLECTION_CONTRACT,
         }
         result = await run_turn(ctx, scene=scene, thread_key="reflection", suffix="daily_reflection")

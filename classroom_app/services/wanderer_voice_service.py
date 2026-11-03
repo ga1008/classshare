@@ -118,7 +118,7 @@ def voice_guide(wanderer: dict[str, Any], scene: dict[str, Any], thread_key: str
     profile = resolve_voice_profile(wanderer)
     lines = [f"【个人声线参考 · {profile['label']} · {load_corpus()['version']}】",
              "这是表达参考，不是台词脚本，也不能覆盖你的经历、性格、当前情绪或对方的意愿。",
-             "性格体现在关注什么、如何回应和何时停下，不靠每次重复口头禅。记忆与学习在后台进行，不播报‘记下了’。"]
+             "性格体现在关注什么、如何回应和何时停下，不靠每次重复口头禅；记忆里的措辞不是台词，不要逐字复用自己说过的话。记忆与学习在后台进行，不播报‘记下了’。"]
     for label, key in (("气质", "traits"), ("节奏", "rhythm"), ("情绪", "emotion"),
                        ("不同意时", "disagreement"), ("说错后", "repair"), ("边界", "boundaries"),
                        ("可用做法", "do"), ("避免", "avoid")):

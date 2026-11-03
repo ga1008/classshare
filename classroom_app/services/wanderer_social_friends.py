@@ -37,6 +37,8 @@ from .wanderer_actions_social import social_context
 from .wanderer_identity_service import STATUS_ACTIVE, build_wanderer_user_dict, list_wanderers, load_wanderer, log_wanderer_action
 from .wanderer_memory_service import append_turn
 from .wanderer_prompt_service import extract_json_object
+from .wanderer_repetition_guard import filter_repetition_parts, recent_self_texts
+from .wanderer_style_guard import guard_text
 from .wanderer_social_context import context_block, friend_context
 from .wanderer_settings_service import wanderer_runtime_setting_get, wanderer_runtime_setting_set
 from .wanderer_social_triggers import (
@@ -394,10 +396,16 @@ async def _request_note(ctx: ActionContext, person: dict[str, Any]) -> tuple[str
         "task": f"写一句很短的好友申请附言（不超过 {REQUEST_NOTE_MAX // 2} 字），像你平时说话；用 reply 输出一条。",
     }
     result = await run_turn(ctx, scene=scene, thread_key=f"social:friend:{person['identity']}", suffix="friend_note")
+    calls = int(result.get("ai_calls") or 0)
     parts = turn_parts(ctx, result.get("turn") or {})
     if parts:
-        return parts[0][:REQUEST_NOTE_MAX], int(result.get("ai_calls") or 0)
-    return f"我是{ctx.display_name}，看过你的留言，交个朋友？", int(result.get("ai_calls") or 0)
+        note = guard_text(parts[0][:REQUEST_NOTE_MAX], channel="dm").text
+        with ctx.connect() as conn:
+            recent = recent_self_texts(conn, ctx.wanderer_id)
+        kept, _ = filter_repetition_parts([note], recent)
+        if kept:
+            return kept[0], calls
+    return f"我是{ctx.display_name}，看过你的留言，交个朋友？", calls
 
 
 async def maybe_befriend(ctx: ActionContext, *, chance: float = PROACTIVE_PROB) -> list[dict[str, Any]]:

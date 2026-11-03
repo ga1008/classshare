@@ -5,9 +5,18 @@ import random
 import unittest
 
 from classroom_app.services import wanderer_behavior_service
-from classroom_app.services.wanderer_actions_blog import post_draft, post_eligible, write_post
+from classroom_app.services.wanderer_actions_blog import (
+    POST_BODY_MAX_CHARS,
+    POST_BODY_MIN_CHARS,
+    _post_body_limit,
+    _post_output_contract,
+    post_draft,
+    post_eligible,
+    write_post,
+)
 from classroom_app.services.wanderer_actions_common import ActionContext
 from classroom_app.services.wanderer_actions_knowledge import INTERACTION_KINDS
+from classroom_app.services.wanderer_identity_service import log_wanderer_action
 from classroom_app.services.wanderer_settings_service import SETTING_BLOG_POSTS_DAILY_CAP, wanderer_runtime_setting_set
 from tests.wanderer_behavior_support import ONLY_BLOG, StubCaller, WandererWorldTestCase, ZeroSleep
 
@@ -86,6 +95,44 @@ class WandererBlogPostTest(WandererWorldTestCase):
             self.assertEqual([item["outcome"] for item in self.run_action(ctx)], ["skipped"])
         self.assertEqual(self.posts(ctx.student_id), [])
 
+    def test_repeated_own_phrase_is_not_published_as_post(self):
+        repeated = ("今天早上跑了五公里，配速比上周快了十秒。跑到第三公里的时候差点想停，后来还是慢慢跑完了。"
+                    "回来喝了点水，洗了个澡，坐在窗边发了会儿呆，觉得今天状态还不错。明天还想再跑一次，看看能不能快一点。")
+        ctx = self.ctx("atai", StubCaller(draft()))
+        with self.connect() as conn:
+            log_wanderer_action(conn, ctx.wanderer_id, "comment", content_preview=repeated)
+            conn.commit()
+        ctx.ai_caller = StubCaller(draft(parts=[repeated]))
+        self.assertEqual([item["outcome"] for item in self.run_action(ctx)], ["skipped"])
+        self.assertEqual(self.posts(ctx.student_id), [])
+        skips = [row for row in self.actions(ctx.wanderer_id) if row["action_kind"] == "skip"]
+        self.assertEqual(json.loads(skips[-1]["detail_json"])["reason"], "repetition")
+
+    def test_post_style_guard_removes_summary_and_advice(self):
+        body = ("总的来说，今天早上跑了五公里，配速比上周快了十秒。跑到第三公里的时候差点想停，后来还是慢慢跑完了。"
+                "回来喝了点水，洗了个澡，坐在窗边发了会儿呆，觉得今天状态还不错。明天还想再跑一次，看看能不能快一点。"
+                "建议你早点睡。")
+        ctx = self.ctx("atai", StubCaller(draft(parts=[body])))
+        self.run_action(ctx)
+        posts = self.posts(ctx.student_id)
+        self.assertEqual(len(posts), 1)
+        text = posts[0]["content_md"]
+        self.assertNotIn("总的来说", text)
+        self.assertNotIn("建议你", text)
+        self.assertIn("今天早上跑了五公里", text)
+        logged = [row for row in self.actions(ctx.wanderer_id) if row["action_kind"] == "write_post"]
+        style = json.loads(logged[0]["detail_json"])["style"]
+        self.assertIn("summary", style)
+        self.assertIn("advice", style)
+
+    def test_post_body_limits_follow_p0(self):
+        self.assertEqual(POST_BODY_MIN_CHARS, 80)
+        self.assertEqual(POST_BODY_MAX_CHARS, 260)
+        self.assertEqual(_post_body_limit({"tier": 0}), 100)
+        self.assertEqual(_post_body_limit({"tier": 1}), 200)
+        self.assertEqual(_post_body_limit({"tier": 2}), 260)
+        self.assertEqual(_post_body_limit({"tier": 6}), 260)
+
     def test_tick_chooses_post_only_when_the_roll_passes(self):
         atai = self.set_wanderer("atai", behaviors_json={**NOTHING_ELSE, "blog_post": 1}, activity_level=1,
                                  reply_policy_json={"post_prob": 1.0, "max_parts": 2})
@@ -105,6 +152,26 @@ class WandererBlogPostTest(WandererWorldTestCase):
         self.assertEqual(len(title), 30)
         self.assertFalse(title.startswith("#"))
         self.assertTrue(body.startswith("记录"))
+
+    def test_post_draft_strips_platform_meta_and_trims_to_sentence(self):
+        raw = json.dumps({"action": "reply", "title": "散修日记",
+                          "parts": ["我是来旁听的散修乐乐。今天在平台的互动区坐了一会儿。"],
+                          "mood": "平静"}, ensure_ascii=False)
+        action, title, body, mood = post_draft(raw, max_body=100)
+        self.assertEqual((action, title, mood), ("reply", "日记", "平静"))
+        self.assertEqual(body, "我是来旁听的乐乐。今天在这儿坐了一会儿。")
+
+    def test_post_draft_uses_sentence_boundary_when_clipping(self):
+        raw = json.dumps({"action": "reply", "title": "标题",
+                          "parts": ["第一句。" + "好" * 100]}, ensure_ascii=False)
+        _, _, body, _ = post_draft(raw, max_body=20)
+        self.assertEqual(body, "第一句。")
+
+    def test_post_contract_discourages_aphorism_ending(self):
+        contract = _post_output_contract({"tier": 0})
+        self.assertIn("不要升华", contract)
+        self.assertIn("不要祝福", contract)
+        self.assertIn("停在事实", contract)
 
     def test_tier_zero_post_body_is_capped_at_one_hundred_chars(self):
         ctx = self.ctx("momo", StubCaller(draft(parts=["好" * 150])), tier=0)

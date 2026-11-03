@@ -580,6 +580,52 @@ class WandererSocialTest(WandererWorldTestCase):
         self.assertEqual(group_reply_probability(self.atai, interest=0, mentioned=False, streak=0,
                                                  last_is_wanderer=False, sent_today=GROUP_DAILY_CAP), 0.0)
 
+    def test_group_duplicate_suggestion_is_suppressed(self):
+        _, key = self.make_group(self.atai)
+        self.send(self.real, key, "别在真页面上试，本地起个环境随便折腾。")
+        caller = StubCaller(turn("reply", ["别在别人页面上试，自己本地搭个环境最稳。"]))
+        result = self.run_reply(self.atai, key, caller)
+        self.assertIn("parts=0", result)
+        self.assertEqual(self.messages_from(self.ident(self.atai), key), [])
+        self.assertIn("group_echo", self.reasons(self.atai))
+
+    def test_repeated_own_phrase_is_suppressed(self):
+        _, key = self.make_group(self.atai)
+        self.send(self.real, key, "今天好热")
+        with self.connect() as conn:
+            log_wanderer_action(conn, self.atai["id"], "comment",
+                                content_preview="这章我读了，读到一半就饿得不行。")
+            conn.commit()
+        caller = StubCaller(turn("reply", ["这章我读了，读到一半就饿得不行。"]))
+        result = self.run_reply(self.atai, key, caller)
+        self.assertIn("parts=0", result)
+        self.assertEqual(self.messages_from(self.ident(self.atai), key), [])
+        self.assertIn("repetition", self.reasons(self.atai))
+
+    def test_style_guard_removes_summary_and_advice_before_sending(self):
+        _, key = self.make_group(self.atai)
+        self.send(self.real, key, "今天好热")
+        caller = StubCaller(turn("reply", ["我来总结一下：今天确实热。建议你多喝水。"]))
+        result = self.run_reply(self.atai, key, caller)
+        self.assertIn("parts=1", result)
+        messages = self.messages_from(self.ident(self.atai), key)
+        self.assertEqual(len(messages), 1)
+        self.assertNotIn("总结", messages[0]["body"])
+        self.assertNotIn("建议你", messages[0]["body"])
+        actions = [row for row in self.actions(self.atai["id"]) if row["action_kind"] == "social_message"]
+        style = json.loads(actions[0]["detail_json"])["style"]
+        self.assertIn("summary", style)
+        self.assertIn("advice", style)
+
+    def test_group_mention_bypasses_echo_filter(self):
+        _, key = self.make_group(self.atai)
+        self.send(self.real, key, "@阿泰 别在真页面上试，本地起个环境随便折腾。",
+                  mentions=[self.ident(self.atai)])
+        caller = StubCaller(turn("reply", ["别在别人页面上试，自己本地搭个环境最稳。"]))
+        result = self.run_reply(self.atai, key, caller, mentioned=True)
+        self.assertIn("parts=1", result)
+        self.assertEqual(len(self.messages_from(self.ident(self.atai), key)), 1)
+
     def test_group_mention_is_answered_even_at_the_group_daily_cap(self):
         group_id, key = self.make_group(self.atai)
         self.insert_messages(key, self.ident(self.atai), GROUP_DAILY_CAP, prefix="cap")

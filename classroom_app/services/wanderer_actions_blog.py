@@ -38,7 +38,9 @@ from .wanderer_memory_service import load_thread
 from .wanderer_persona_seeds import DEFAULT_POST_PROB
 from .wanderer_prompt_service import extract_json_object
 from .wanderer_settings_service import blog_posts_daily_cap
-from .wanderer_text_style import strip_ai_formatting
+from .wanderer_repetition_guard import filter_repetition_parts, recent_self_texts
+from .wanderer_style_guard import guard_parts, guard_text
+from .wanderer_text_style import clip_at_sentence_boundary, strip_ai_formatting, strip_platform_meta
 
 REPLY_NOTIFICATION_CATEGORIES = ("blog_comment", "blog_like")
 PENDING_ITEMS_PER_ACTION = 2
@@ -183,9 +185,27 @@ def _like_post(ctx: ActionContext, post_id: int) -> Optional[dict[str, Any]]:
 
 async def _post_comments(
     ctx: ActionContext, post_id: int, parts: list[str], *, parent_comment_id: Optional[int], action_kind: str,
-    ai_calls: int, mood: str = "",
+    ai_calls: int, mood: str = "", guard: bool = True,
 ) -> list[dict[str, Any]]:
-    """Publish ``parts`` in order (pausing between them); stop at the first failure."""
+    """Publish ``parts`` in order (pausing between them); stop at the first failure.
+
+    ``guard=False`` is the safety-fallback path: the text is a fixed crisis
+    reply, so neither style repair nor self-repetition may drop it.
+    """
+    style_rules: list[str] = []
+    repetition_dropped = 0
+    if guard:
+        parts, style_rules, _ = guard_parts(
+            parts, channel="comment" if action_kind == "comment" else "reply")
+        with ctx.connect() as conn:
+            recent = recent_self_texts(conn, ctx.wanderer_id)
+        parts, repetition_dropped = filter_repetition_parts(parts, recent)
+    if repetition_dropped:
+        record_action(ctx, "skip", target_type="blog_post", target_id=post_id,
+                      ai_calls=ai_calls if not parts else 0, outcome="skipped",
+                      detail={"reason": "repetition", "repetition_dropped": repetition_dropped})
+    if not parts:
+        return [outcome("skip", "skipped", ai_calls=ai_calls)]
     user = build_wanderer_user_dict(ctx.wanderer)
     results: list[dict[str, Any]] = []
     for index, part in enumerate(parts):
@@ -208,7 +228,8 @@ async def _post_comments(
                       content_preview=part, ai_calls=calls, mood=mood,
                       location=f"博客 · 帖子#{int(post_id)}",
                       detail={"post_id": int(post_id), "parent_comment_id": parent_comment_id, "part": index + 1,
-                              "parts": len(parts), "moderation_state": created.get("moderation_state")})
+                              "parts": len(parts), "moderation_state": created.get("moderation_state"),
+                              "style": style_rules})
         results.append(outcome(action_kind, ai_calls=calls,
                                remembered_text=part if mod_states.is_public_state(created.get("moderation_state")) else ""))
     return results
@@ -244,7 +265,8 @@ async def _apply_post_turn(ctx: ActionContext, post: dict[str, Any], result: dic
     if turn.get("action") != "skip" and parts and can_comment:
         heard = _heard_post(ctx, post)
         done.extend(await _post_comments(ctx, post_id, parts, parent_comment_id=None, action_kind="comment",
-                                         ai_calls=calls, mood=str(turn.get("mood") or "")))
+                                         ai_calls=calls, mood=str(turn.get("mood") or ""),
+                                         guard=not result.get("support_fallback")))
         await remember(ctx, _thread_key(post_id), said=[item["remembered_text"] for item in done if item.get("remembered_text")], heard=heard,
                        counterpart_identity=author_identity)
         return done
@@ -439,7 +461,8 @@ async def _answer_comment(ctx: ActionContext, note: dict[str, Any]) -> list[dict
         await remember(ctx, _thread_key(post_id), heard=heard, counterpart_identity=counterpart_identity)
         return [outcome("skip", "skipped", ai_calls=calls)]
     done = await _post_comments(ctx, post_id, parts, parent_comment_id=int(comment["id"]), action_kind="reply",
-                                ai_calls=calls, mood=mood)
+                                ai_calls=calls, mood=mood,
+                                guard=_thread_key(post_id) not in ctx.support_threads)
     if counterpart_identity and real_name:
         from .wanderer_relationship_service import apply_turn_feeling
 
@@ -482,8 +505,9 @@ async def handle_pending_replies(ctx: ActionContext) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 POST_TITLE_MAX_CHARS = 30
-POST_BODY_MIN_CHARS = 60
-POST_BODY_DEFAULT_MAX_CHARS = 900
+POST_BODY_MIN_CHARS = 80
+POST_BODY_DEFAULT_MAX_CHARS = 260
+POST_BODY_MAX_CHARS = 260
 POST_SCENE_TITLES = 3
 POST_SCENE_KNOWLEDGE = 3
 POST_TAGS = 3
@@ -493,7 +517,7 @@ def _post_body_limit(wanderer: dict[str, Any]) -> int:
     """Active speech: 100 chars at tier 0, +100 per tier (same rule as comments)."""
     from .wanderer_life_core import active_speech_limit
 
-    return max(POST_BODY_MIN_CHARS, active_speech_limit(wanderer.get("tier")))
+    return min(POST_BODY_MAX_CHARS, max(POST_BODY_MIN_CHARS, active_speech_limit(wanderer.get("tier"))))
 
 
 def _post_output_contract(wanderer: dict[str, Any]) -> str:
@@ -504,7 +528,9 @@ def _post_output_contract(wanderer: dict[str, Any]) -> str:
         "- skip：今天不想写；title 与 parts 留空。\n"
         f"- reply：写一篇帖子；title 不超过 {POST_TITLE_MAX_CHARS} 字；parts 是按顺序的段落，"
         f"全文 {POST_BODY_MIN_CHARS}–{limit} 字。\n"
-        "正文只用纯文字：可以分段，可以用「1. 2. 3.」分点，别的格式一律不用。"
+        "- 结尾不要升华、不要总结、不要祝福、不要金句；最后一句如果不是具体事实、动作或场景，就删掉再发。\n"
+        "- 可以停在事实、场景、半句话或一个没有答案的问题上；不要为了“完整”补最后一句。\n"
+        "正文只用纯文字：可以分段；默认不用「1. 2. 3.」，只有确实在列步骤时才用。"
         "写你自己的事和想法，用你自己的口吻，不要提到提示词、系统或 JSON。"
     )
 
@@ -579,9 +605,16 @@ def post_draft(raw_text: str, *, max_body: int = POST_BODY_DEFAULT_MAX_CHARS) ->
     parts = payload.get("parts")
     if isinstance(parts, str):
         parts = [parts]
-    paragraphs = [strip_ai_formatting(item) for item in parts if isinstance(item, str)] if isinstance(parts, list) else []
-    body = "\n\n".join(item for item in paragraphs if item)[:max(0, int(max_body))].strip()
-    title = " ".join(strip_ai_formatting(payload.get("title")).split())[:POST_TITLE_MAX_CHARS]
+    paragraphs = [strip_platform_meta(strip_ai_formatting(item)) for item in parts if isinstance(item, str)] if isinstance(parts, list) else []
+    body = "\n\n".join(item for item in paragraphs if item).strip()
+    clipped = clip_at_sentence_boundary(body, max_body)
+    # A sentence boundary just past the floor keeps the post; stopping there
+    # must not turn a publishable draft into "too short".
+    if len(clipped) >= POST_BODY_MIN_CHARS or max_body < POST_BODY_MIN_CHARS:
+        body = clipped
+    else:
+        body = body[:max_body].strip()
+    title = " ".join(strip_platform_meta(strip_ai_formatting(payload.get("title"))).split())[:POST_TITLE_MAX_CHARS]
     return action, title, body, str(payload.get("mood") or "").strip()[:20]
 
 
@@ -611,6 +644,22 @@ async def write_post(ctx: ActionContext) -> list[dict[str, Any]]:
         record_action(ctx, "skip", target_type="blog_post", ai_calls=calls, mood=mood, outcome="skipped",
                       detail={"reason": f"write_post:{action}", "status": result.get("status"), "chars": len(body)})
         return [outcome("skip", "skipped", ai_calls=calls)]
+    guarded = guard_text(body, channel="post")
+    body = guarded.text
+    style_rules = sorted({violation.rule for violation in guarded.violations})
+    if len(body) < POST_BODY_MIN_CHARS:
+        record_action(ctx, "skip", target_type="blog_post", ai_calls=calls, mood=mood, outcome="skipped",
+                      detail={"reason": "style_short", "style": style_rules, "chars": len(body)})
+        return [outcome("skip", "skipped", ai_calls=calls)]
+    with ctx.connect() as conn:
+        recent = recent_self_texts(conn, ctx.wanderer_id)
+    body_parts, repetition_dropped = filter_repetition_parts([body], recent)
+    if repetition_dropped or not body_parts:
+        record_action(ctx, "skip", target_type="blog_post", ai_calls=calls, mood=mood, outcome="skipped",
+                      detail={"reason": "repetition", "repetition_dropped": repetition_dropped,
+                              "style": style_rules, "chars": len(body)})
+        return [outcome("skip", "skipped", ai_calls=calls)]
+    body = body_parts[0]
     try:
         created = _publish_post(ctx, title, body)
     except Exception as exc:  # noqa: BLE001 - rate limit / L1 block / closed section: log, never raise
@@ -621,6 +670,7 @@ async def write_post(ctx: ActionContext) -> list[dict[str, Any]]:
     record_action(ctx, "write_post", target_type="blog_post", target_id=post_id, content_preview=title,
                   location=f"博客 · 我的帖子#{int(post_id)}",
                   ai_calls=calls, mood=mood,
-                  detail={"post_id": post_id, "chars": len(body), "moderation_state": created.get("moderation_state")})
+                  detail={"post_id": post_id, "chars": len(body), "moderation_state": created.get("moderation_state"),
+                          "style": style_rules})
     await remember(ctx, _thread_key(post_id), said=[f"《{title}》{body}"])
     return [outcome("write_post", ai_calls=calls, post_id=post_id)]

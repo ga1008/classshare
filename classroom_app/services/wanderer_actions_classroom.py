@@ -36,6 +36,9 @@ from .wanderer_actions_common import (
     turn_parts,
     weighted_choice,
 )
+from .wanderer_echo_guard import filter_echo_parts
+from .wanderer_repetition_guard import filter_repetition_parts, recent_self_texts
+from .wanderer_style_guard import guard_parts
 from .wanderer_identity_service import WANDERER_CLASS_NAME, load_wanderers_by_student_ids
 from .wanderer_settings_service import (
     INTERNAL_TOKEN_HEADER,
@@ -192,8 +195,9 @@ def _classroom_scene(ctx: ActionContext, offering: dict[str, Any], lines: list[s
         "meta": f"当前在线 {online} 人；{_status_text(state)}",
         "context_lines": lines,
         "tags": [*list(ctx.wanderer.get("interests") or []), str(offering.get("course_name") or "")],
-        "task": "你在旁听这门课的互动区，你不是这个班的学生。按性格决定要不要留言一句（reply）或 skip；"
-                "上课时别刷屏、别跑题，没人说话时也可以安静地走。",
+        "task": "你在旁听这门课的互动区，你不是这个班的学生。可以只看不说；只有对某个人/某句话有具体反应时"
+                "才留言一句（reply），否则 skip；上课时别刷屏、别跑题、不重复别人已经说过的建议，"
+                "没人说话时也可以安静地走。",
     }
 
 
@@ -246,9 +250,30 @@ async def _speak(ctx: ActionContext, offering: dict[str, Any], online: int, stat
     turn = result.get("turn") or {}
     calls = int(result.get("ai_calls") or 0)
     parts = turn_parts(ctx, turn)
+    echo_dropped = 0
+    repetition_dropped = 0
+    style_rules: list[str] = []
+    if parts and not result.get("support_fallback"):
+        # style first so dedupe runs on the text that would actually be posted
+        parts, style_rules, _ = guard_parts(parts, channel="classroom")
+        if parts:
+            recent = [line.split("：", 1)[-1] for line in lines[-10:]]
+            parts, echo_dropped = filter_echo_parts(parts, recent)
+        if parts:
+            with ctx.connect() as conn:
+                own_recent = recent_self_texts(conn, ctx.wanderer_id)
+            parts, repetition_dropped = filter_repetition_parts(parts, own_recent)
     if turn.get("action") == "skip" or not parts:
+        reasons = [name for name, count in (("echo", echo_dropped), ("repetition", repetition_dropped)) if count]
+        if reasons:
+            record_action(ctx, "skip", target_type="classroom", target_id=offering_id,
+                          outcome="skipped", detail={"reason": "+".join(reasons),
+                                                     "echo_dropped": echo_dropped,
+                                                     "repetition_dropped": repetition_dropped,
+                                                     "style": style_rules})
         await remember(ctx, thread_key)
-        return outcome("skip", "skipped", ai_calls=calls)
+        extra = {"reason": "+".join(reasons)} if reasons else {}
+        return outcome("skip", "skipped", ai_calls=calls, **extra)
     text = " ".join(parts)
     try:
         stored = await _post_message(ctx, offering_id, text)
@@ -260,7 +285,9 @@ async def _speak(ctx: ActionContext, offering: dict[str, Any], online: int, stat
     record_action(ctx, "classroom_message", target_type="chat_log", target_id=stored.get("id"),
                   class_offering_id=offering_id, content_preview=text, ai_calls=calls,
                   location=f"课堂 · #{int(offering_id)}",
-                  mood=str(turn.get("mood") or ""), detail={"online": online, "in_progress": state["in_progress"]})
+                  mood=str(turn.get("mood") or ""),
+                  detail={"online": online, "in_progress": state["in_progress"], "echo_dropped": echo_dropped,
+                          "repetition_dropped": repetition_dropped, "style": style_rules})
     with ctx.connect() as conn:
         bump_stats(conn, ctx.wanderer_id, {"classroom_messages": 1})
         conn.commit()

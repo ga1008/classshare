@@ -51,6 +51,9 @@ from .wanderer_actions_common import (
     run_turn,
     turn_parts,
 )
+from .wanderer_echo_guard import filter_echo_parts
+from .wanderer_repetition_guard import filter_repetition_parts, recent_self_texts
+from .wanderer_style_guard import guard_parts
 from .wanderer_identity_service import STATUS_ACTIVE, build_wanderer_user_dict, load_wanderer
 from .wanderer_prompt_service import SCENE_GROUP_CHAT, SCENE_SOCIAL_CHAT
 from .wanderer_memory_service import HISTORY_DB_LIMIT, append_turn, invalidate_thread_cache, load_thread
@@ -477,8 +480,25 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
         return await _skip(ctx, window, "wanderer_pause" if not mode else "ignore_policy")
     parts, calls, mood, action, turn = await _compose(ctx, window, mode, mentioned)
     parts = parts[:quota]
+    echo_dropped = 0
+    repetition_dropped = 0
+    style_rules: list[str] = []
+    if parts and not window.get("_support_fallback"):
+        parts, style_rules, _ = guard_parts(
+            parts, channel="group" if window["type"] == "group" else "dm")
+    if parts and window["type"] == "group" and not mentioned and not window.get("_support_fallback"):
+        recent = [str(row.get("body") or "") for row in window["rows"][-10:]
+                  if str(row.get("sender_identity") or "") != ctx.identity and not row.get("recalled_at")]
+        parts, echo_dropped = filter_echo_parts(parts, recent)
+    # Direct messages and @-mentions are personal questions: never leave them
+    # unanswered just because this wanderer has said the same thing before.
+    if parts and not direct and not window.get("_support_fallback"):
+        with ctx.connect() as conn:
+            own_recent = recent_self_texts(conn, ctx.wanderer_id)
+        parts, repetition_dropped = filter_repetition_parts(parts, own_recent)
     if not parts:
-        return await _skip(ctx, window, f"turn:{action}", ai_calls=calls, mood=mood)
+        reason = "group_echo" if echo_dropped else "repetition" if repetition_dropped else f"turn:{action}"
+        return await _skip(ctx, window, reason, ai_calls=calls, mood=mood)
     sent, error = await post_parts(ctx, window, parts, direct=direct)
     nudged = await _maybe_nudge(ctx, window) if sent else False
     status = "ok" if sent == len(parts) else "failed"
@@ -495,7 +515,8 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
                   ai_calls=calls, mood=mood, outcome=status, location=location,
                   detail={"parts": sent, "mode": mode, "turn": action, "nudged": nudged, "error": error,
                           "cultivation_gain": gain["gained"], "counterpart_real_user": gain["real_user"],
-                          "counterpart_tier": gain["tier"],
+                          "counterpart_tier": gain["tier"], "echo_dropped": echo_dropped,
+                          "repetition_dropped": repetition_dropped, "style": style_rules,
                           "reply_chars": sum(len(part) for part in parts[:sent])})
     if window.get("new"):
         from .wanderer_relationship_service import apply_turn_feeling

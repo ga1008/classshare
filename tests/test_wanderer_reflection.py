@@ -5,6 +5,7 @@ from datetime import datetime
 
 from classroom_app.services.wanderer_actions_common import ActionContext, today_action_count
 from classroom_app.services.wanderer_reflection_service import (
+    REFLECTION_CONTRACT,
     reflection_date,
     run_daily_reflections,
     run_reflection,
@@ -110,6 +111,12 @@ class ReflectionTest(WandererDbTestCase):
             wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "4096")
             conn.commit()
         self.assertEqual(row["status"], "skipped_capped")
+
+
+class ReflectionContractTest(unittest.TestCase):
+    def test_reflection_uses_plain_records_not_literary_labels(self):
+        self.assertIn("不要文学化", REFLECTION_CONTRACT)
+        self.assertIn("具体做了什么", REFLECTION_CONTRACT)
 
 
 if __name__ == "__main__":

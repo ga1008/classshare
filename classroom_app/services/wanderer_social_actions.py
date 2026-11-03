@@ -15,6 +15,7 @@ from ..time_utils import local_iso
 from .wanderer_actions_common import ActionContext, behavior_on, outcome, record_action, run_turn
 from .wanderer_identity_service import build_wanderer_user_dict
 from .wanderer_prompt_service import extract_json_object
+from .wanderer_text_style import strip_platform_meta
 
 BLOCK_AFFINITY = -60.0
 UNBLOCK_AFFINITY = -20.0
@@ -266,7 +267,7 @@ async def maybe_create_group(ctx: ActionContext) -> list[dict[str, Any]]:
         return [outcome("skip", "skipped", ai_calls=calls)]
     allowed = {item["identity"] for item in friends}
     members = [str(item) for item in (payload.get("members") or []) if str(item) in allowed][:4]
-    name = str(payload.get("name") or "").strip()[:40]
+    name = strip_platform_meta(str(payload.get("name") or "").strip())[:40]
     if not members or not name:
         record_action(ctx, "skip", target_type="social_group", ai_calls=calls, outcome="skipped",
                       detail={"reason": "invalid_group_draft"})

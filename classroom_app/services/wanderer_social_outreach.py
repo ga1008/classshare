@@ -9,6 +9,8 @@ from .social_identity_service import load_people
 from .social_relations import friendship_rows, other_side
 from .wanderer_actions_common import ActionContext, behavior_on, day_start_iso, outcome, record_action, remember, run_turn, turn_parts
 from .wanderer_actions_social import _counted, _gate, chat_scene, load_window, post_parts
+from .wanderer_repetition_guard import filter_repetition_parts, recent_self_texts
+from .wanderer_style_guard import guard_parts
 from .wanderer_social_triggers import SOCIAL_BEHAVIOR, is_awake_now
 
 OUTREACH_DAILY_LIMIT = 2
@@ -75,9 +77,19 @@ async def start_friend_conversation(ctx: ActionContext) -> list[dict[str, Any]]:
     turn = result.get("turn") or {}
     calls = int(result.get("ai_calls") or 0)
     parts = turn_parts(ctx, turn)[:quota] if result.get("status") == "ok" else []
+    repetition_dropped = 0
+    style_rules: list[str] = []
+    if parts:
+        parts, style_rules, _ = guard_parts(parts, channel="dm")
+        with ctx.connect() as conn:
+            recent = recent_self_texts(conn, ctx.wanderer_id)
+        parts, repetition_dropped = filter_repetition_parts(parts, recent)
     if not parts or turn.get("action") == "skip":
+        reason = "repetition" if repetition_dropped else "chose_silence"
         record_action(ctx, "skip", target_type=OUTREACH_TARGET_TYPE, target_id=key, ai_calls=calls,
-                      outcome="skipped", detail={"reason": "chose_silence", "status": result.get("status")})
+                      outcome="skipped", detail={"reason": reason, "status": result.get("status"),
+                                                 "repetition_dropped": repetition_dropped,
+                                                 "style": style_rules})
         await remember(ctx, f"social:{key}")
         return [outcome("skip", "skipped", ai_calls=calls)]
     anchor = max((int(row["id"]) for row in window["rows"]), default=0)
@@ -86,7 +98,8 @@ async def start_friend_conversation(ctx: ActionContext) -> list[dict[str, Any]]:
     status = "ok" if sent == len(parts) else "failed"
     record_action(ctx, "social_message", target_type=OUTREACH_TARGET_TYPE, target_id=key, ai_calls=calls,
                   content_preview=" / ".join(parts[:sent]), outcome=status,
-                  detail={"initiated": True, "parts": sent, "error": error, "decision": turn.get("action")})
+                  detail={"initiated": True, "parts": sent, "error": error, "decision": turn.get("action"),
+                          "repetition_dropped": repetition_dropped, "style": style_rules})
     if sent:
         await remember(ctx, f"social:{key}", said=parts[:sent], counterpart_identity=window["parsed"]["peer"])
     return [outcome("social_message", status, ai_calls=calls, parts=sent)]

@@ -33,7 +33,7 @@ from .wanderer_identity_service import (
 )
 from .wanderer_memory_service import append_turn, compact_thread, load_thread, needs_compaction, thread_history_text
 from .wanderer_prompt_service import build_system_prompt
-from .wanderer_text_style import strip_ai_formatting
+from .wanderer_text_style import strip_ai_formatting, strip_platform_meta
 
 ACTION_PAUSE_SECONDS = (1.0, 4.0)
 TURN_USER_MESSAGE = "请依据系统提示里的人格、记忆与当前场景做出你的决定，只按输出合同输出一个 JSON 对象。"
@@ -239,7 +239,7 @@ def clip_part(ctx: ActionContext, text: Any, *, limit: bool = True) -> str:
     Passive replies (a question/@-mention) pass ``limit=False``: they keep their
     full length but still lose Markdown formatting and keep the persona voice.
     """
-    value = strip_ai_formatting(text)
+    value = strip_platform_meta(strip_ai_formatting(text))
     if not limit:
         return value
     cap = reply_char_limit(ctx.wanderer.get("tier"))

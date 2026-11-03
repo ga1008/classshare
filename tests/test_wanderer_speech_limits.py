@@ -44,6 +44,11 @@ class SpeechLimitTest(unittest.TestCase):
         self.assertEqual(len(active), 100)
         self.assertEqual(len(default), 150)
 
+    def test_sentence_clip_does_not_shrink_a_post_below_the_floor(self):
+        raw = '{"action":"reply","title":"标题","parts":["' + "好" * 69 + "。" + "好" * 40 + '"]}'
+        _, _, body, _ = post_draft(raw, max_body=100)
+        self.assertEqual(len(body), 100)
+
 
 if __name__ == "__main__":
     unittest.main()

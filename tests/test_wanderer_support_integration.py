@@ -244,6 +244,23 @@ class SupportIntegrationTest(WandererWorldTestCase):
         self.assertEqual(sum(r["outcome"] == "ok" for r in result), 3)
         self.assertEqual(caller.calls, [])
 
+    def test_repeated_blog_safety_reply_is_not_dropped_as_repetition(self):
+        post_id = self.make_post(title="聊一会儿", content="今天发生了一些事。")
+        with self.connect() as conn:
+            mine = blog_service.add_comment(conn, build_wanderer_user_dict(self.atai), post_id, content_md="我在听。")
+            first = blog_service.add_comment(conn, self.student, post_id, content_md=URGENT, parent_comment_id=int(mine["id"]))
+            conn.commit()
+        self.atai = self.set_wanderer("atai", reply_policy_json={"ignore_prob": 1})
+        caller = StubCaller(error=AssertionError("no model"))
+        ctx = ActionContext(self.connect, self.atai, capped=True, ai_caller=caller, sleep=ZeroSleep())
+        asyncio.run(blog._answer_comment(ctx, {"ref_type": "blog_comment", "ref_id": first["id"]}))
+        with self.connect() as conn:
+            second = blog_service.add_comment(conn, self.student, post_id, content_md=URGENT, parent_comment_id=int(mine["id"]))
+            conn.commit()
+        result = asyncio.run(blog._answer_comment(ctx, {"ref_type": "blog_comment", "ref_id": second["id"]}))
+        self.assertEqual(sum(r["outcome"] == "ok" for r in result), 3)
+        self.assertEqual(caller.calls, [])
+
     def test_safety_does_not_bypass_existing_conversation_rate_limit(self):
         support.WandererSocialTest.insert_messages(self, self.key, self.ident(self.atai), 6, prefix="safety-rate")
         self.send(self.real, self.key, URGENT)

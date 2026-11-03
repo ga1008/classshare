@@ -13,6 +13,12 @@ from classroom_app.services.wanderer_knowledge_service import (
     knowledge_summary,
     select_knowledge_for_scene,
 )
+from classroom_app.services.wanderer_prompt_service import _knowledge_depth_block, _knowledge_digest
+from classroom_app.services.wanderer_text_style import (
+    KNOWLEDGE_DEPTH_HIGH,
+    KNOWLEDGE_DEPTH_LOW,
+    KNOWLEDGE_DEPTH_MID,
+)
 from tests.wanderer_test_support import WandererDbTestCase
 
 
@@ -45,6 +51,26 @@ class TierHelpersTest(unittest.TestCase):
         bands = {wisdom_directive(tier) for tier in (0, 3, 6, 9)}
         self.assertEqual(len(bands), 4)
         self.assertEqual(wisdom_directive(1), wisdom_directive(2))
+
+
+class KnowledgeDepthTest(unittest.TestCase):
+    def test_digest_caps_follow_tier(self):
+        long = "第一句。" + "细节" * 300
+        low = _knowledge_digest(long, 0)
+        mid = _knowledge_digest(long, 4)
+        high = _knowledge_digest(long, 8)
+        self.assertLessEqual(len(low), 81)
+        self.assertLessEqual(len(mid), 161)
+        self.assertLessEqual(len(high), 401)
+        self.assertLess(len(low), len(mid))
+        self.assertLess(len(mid), len(high))
+        self.assertTrue(low.startswith("第一句。"))
+        self.assertTrue(low.endswith("…"))
+
+    def test_depth_block_bands(self):
+        self.assertEqual(_knowledge_depth_block({"tier": 0}), KNOWLEDGE_DEPTH_LOW)
+        self.assertEqual(_knowledge_depth_block({"tier": 3}), KNOWLEDGE_DEPTH_MID)
+        self.assertEqual(_knowledge_depth_block({"tier": 6}), KNOWLEDGE_DEPTH_HIGH)
 
 
 class WandererKnowledgeTest(WandererDbTestCase):

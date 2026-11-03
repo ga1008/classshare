@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from classroom_app.routers import wanderer_internal
 from classroom_app.services import chat_handler, wanderer_actions_classroom
 from classroom_app.services.wanderer_actions_classroom import fetch_online_counts, session_state
+from classroom_app.services.wanderer_identity_service import log_wanderer_action
 from classroom_app.services.wanderer_settings_service import INTERNAL_TOKEN_HEADER, wanderer_internal_token
 from tests.wanderer_behavior_support import ONLY_CLASSROOM, StubCaller, WandererWorldTestCase, turn
 
@@ -57,10 +58,52 @@ class ClassroomVisitTest(WandererWorldTestCase):
         system_prompt = caller.calls[0][1]["system_prompt"]
         self.assertIn("当前在线 7 人", system_prompt)
         self.assertIn("列表推导式怎么写", system_prompt)
+        self.assertIn("可以只看不说", system_prompt)
+        self.assertIn("不重复别人已经说过的建议", system_prompt)
         kinds = [row["action_kind"] for row in self.actions(self.chen["id"])]
         self.assertEqual(sorted(kinds), ["classroom_message", "classroom_visit"])
         stats = self.rows("SELECT stats_json FROM wanderer_agents WHERE id = ?", (self.chen["id"],))[0]
         self.assertIn(self.offering_id, json.loads(stats["stats_json"])["visited_offerings"])
+
+    def test_duplicate_suggestion_is_not_posted(self):
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO chat_logs (class_offering_id, user_id, user_name, user_role, message, timestamp, logged_at) "
+                "VALUES (?, ?, ?, 'student', ?, '20:00', ?)",
+                (self.offering_id, str(self.student_pk), "真实同学",
+                 "别在真页面上试，本地起个环境随便折腾。", datetime.now().isoformat()),
+            )
+            conn.commit()
+        caller = StubCaller(turn("reply", ["别在别人页面上试，自己本地搭个环境最稳。"]))
+        self.tick(caller, [self.chen["id"]])
+        self.assertEqual(self._mine(), [])
+        self.broadcast.assert_not_awaited()
+        skips = [row for row in self.actions(self.chen["id"]) if row["action_kind"] == "skip"]
+        self.assertEqual(len(skips), 1)
+        self.assertEqual(json.loads(skips[0]["detail_json"])["reason"], "echo")
+        self.assertEqual(sum(int(row["ai_calls"] or 0) for row in self.actions(self.chen["id"])), 1)
+
+    def test_repeated_own_phrase_is_not_posted(self):
+        with self.connect() as conn:
+            log_wanderer_action(conn, self.chen["id"], "comment",
+                                content_preview="这章我读了，读到一半就饿得不行。")
+            conn.commit()
+        caller = StubCaller(turn("reply", ["这章我读了，读到一半就饿得不行。"]))
+        self.tick(caller, [self.chen["id"]])
+        self.assertEqual(self._mine(), [])
+        self.broadcast.assert_not_awaited()
+        skips = [row for row in self.actions(self.chen["id"]) if row["action_kind"] == "skip"]
+        self.assertTrue(skips)
+        self.assertEqual(json.loads(skips[-1]["detail_json"])["reason"], "repetition")
+        self.assertEqual(sum(int(row["ai_calls"] or 0) for row in self.actions(self.chen["id"])), 1)
+
+    def test_style_guard_removes_teaching_and_advice(self):
+        self.tick(StubCaller(turn("reply", ["补充一点：这章我读了。建议你早点睡。"])), [self.chen["id"]])
+        self.assertEqual([row["message"] for row in self._mine()], ["这章我读了。"])
+        messages = [row for row in self.actions(self.chen["id"]) if row["action_kind"] == "classroom_message"]
+        style = json.loads(messages[0]["detail_json"])["style"]
+        self.assertIn("teaching", style)
+        self.assertIn("advice", style)
 
     def test_five_minute_throttle(self):
         caller = StubCaller(turn("reply", ["第一句"]), turn("reply", ["第二句"]))

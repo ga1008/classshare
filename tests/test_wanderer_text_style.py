@@ -2,7 +2,15 @@
 import unittest
 
 from classroom_app.services.wanderer_prompt_service import build_system_prompt
-from classroom_app.services.wanderer_text_style import ANTI_AI_STYLE_RULES, strip_ai_formatting
+from classroom_app.services.wanderer_text_style import (
+    ANTI_AI_STYLE_RULES,
+    GROUP_ECHO_RULES,
+    PUBLIC_TEXT_RULES,
+    VOICE_FIRST_RULES,
+    clip_at_sentence_boundary,
+    strip_ai_formatting,
+    strip_platform_meta,
+)
 from tests.wanderer_test_support import WandererDbTestCase
 
 
@@ -28,6 +36,60 @@ class StripAiFormattingTest(unittest.TestCase):
         for text in ("哈哈哈哈", "😂😂", "冲就完事了！💪", "2*3=6 吗", "snake_case_name 挺好"):
             self.assertEqual(strip_ai_formatting(text), text)
         self.assertEqual(strip_ai_formatting(None), "")
+
+
+class PlatformMetaTest(unittest.TestCase):
+    def test_public_platform_terms_are_rewritten(self):
+        cases = {
+            "我是来旁听的散修乐乐～": "我是来旁听的乐乐～",
+            "散修嘛，跟校园里的热闹有点隔着。": "我嘛，跟校园里的热闹有点隔着。",
+            "这个平台的境界和修为": "这里的水平和本事",
+            "天道不公，互动区也没人理我。": "老天不公，这儿也没人理我。",
+            "散修之间不用客气": "我们之间不用客气",
+            "我是散修。": "我就是我。",
+            "我是散修乐乐": "我是乐乐",
+        }
+        for text, expected in cases.items():
+            self.assertEqual(strip_platform_meta(text), expected)
+
+    def test_plain_text_is_untouched(self):
+        for text in ("今天天气不错。", "哈哈哈哈", "2*3=6 吗"):
+            self.assertEqual(strip_platform_meta(text), text)
+
+    def test_everyday_words_containing_a_term_survive(self):
+        for text in ("我最近到了平台期，进步很慢。", "平台化改造还没做完。", "互动区域有点吵。"):
+            self.assertEqual(strip_platform_meta(text), text)
+
+    def test_clip_at_sentence_boundary(self):
+        self.assertEqual(clip_at_sentence_boundary("第一句。" + "好" * 100, 20), "第一句。")
+        self.assertEqual(clip_at_sentence_boundary("好" * 100, 20), "好" * 20)
+        self.assertEqual(clip_at_sentence_boundary("第一段。\n\n第二段。" + "好" * 100, 20), "第一段。\n\n第二段。")
+        self.assertEqual(clip_at_sentence_boundary("他说：“好。”后面还有很多字", 8), "他说：“好。”")
+
+
+class PublicTextPromptTest(WandererDbTestCase):
+    def test_public_scene_gets_public_text_rules(self):
+        with self.connect() as conn:
+            wanderer = self.wanderer(conn, "atai")
+            public = build_system_prompt(conn, wanderer, scene={"kind": "博客帖子"}, thread_key="blog_draft")
+            internal = build_system_prompt(conn, wanderer, scene={"kind": "每日自省"}, thread_key="reflection")
+        self.assertIn(PUBLIC_TEXT_RULES, public)
+        self.assertIn(VOICE_FIRST_RULES, public)
+        self.assertLess(public.index(ANTI_AI_STYLE_RULES), public.index(VOICE_FIRST_RULES))
+        self.assertLess(public.index(VOICE_FIRST_RULES), public.index(PUBLIC_TEXT_RULES))
+        self.assertNotIn(PUBLIC_TEXT_RULES, internal)
+        self.assertNotIn(VOICE_FIRST_RULES, internal)
+
+    def test_group_scenes_get_echo_rules_but_dm_does_not(self):
+        with self.connect() as conn:
+            wanderer = self.wanderer(conn, "atai")
+            classroom = build_system_prompt(conn, wanderer, scene={"kind": "课堂互动区（旁听）"},
+                                            thread_key="classroom:1")
+            group = build_system_prompt(conn, wanderer, scene={"kind": "群聊"}, thread_key="social:group:1")
+            dm = build_system_prompt(conn, wanderer, scene={"kind": "好友私聊"}, thread_key="social:friend:2")
+        self.assertIn(GROUP_ECHO_RULES, classroom)
+        self.assertIn(GROUP_ECHO_RULES, group)
+        self.assertNotIn(GROUP_ECHO_RULES, dm)
 
 
 class AntiAiRulesInPromptTest(WandererDbTestCase):
