@@ -367,6 +367,8 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
         "git_last_sync_status": "TEXT DEFAULT ''",
         "git_last_sync_summary": "TEXT DEFAULT ''",
         "git_head_commit": "TEXT DEFAULT ''",
+        "wanderer_min_tier": "INTEGER",
+        "wanderer_max_tier": "INTEGER",
     },
     "material_ai_import_records": {
         "signature_revision": "TEXT NOT NULL DEFAULT ''",

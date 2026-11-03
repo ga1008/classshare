@@ -718,6 +718,8 @@ REQUIRED_POSTGRES_COLUMNS = {
         "school_name",
         "college",
         "department",
+        "wanderer_min_tier",
+        "wanderer_max_tier",
         "created_at",
         "updated_at",
     ),
