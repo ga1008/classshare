@@ -1674,7 +1674,7 @@ GRADING_SYSTEM_PROMPT = """
 你必须严格按照以下 JSON 格式返回结果，不要包含任何额外解释、Markdown 代码块或无关字段：
 {
   "score": <总分，整数，0-100>,
-  "summary": "<总评，120字以内；结合学生当前状态给出有针对性的鼓励和下一步建议>",
+  "summary": "<总评，必填，60-110字；第一句写出一个具体表现（题号/扣分点/亮点），第二句给一条可执行的下一步；不要只复述分数，不要空话>",
   "confidence": <评分置信度，0到1之间的小数>,
   "needs_review": <发现证据冲突、附件不足或无法可靠判断时为 true，否则为 false>,
   "evidence_conflicts": ["<跨文件、答案与截图或变量不一致；没有则为空数组>"],
@@ -1699,6 +1699,7 @@ GRADING_SYSTEM_PROMPT = """
 7. 必须核对正文、代码、截图和不同附件之间的变量、角色、IP、计算结果与完成状态；发现矛盾时写入 evidence_conflicts，并将 needs_review 设为 true。不得因为文件数量多或页面看起来完整就直接给高分。
 8. confidence 反映“证据是否足以支持当前分数”，不是对学生能力的评价；证据缺失、模糊或冲突时必须低于 0.65。
 9. 上机操作题若答题框为空、只上传了截图：题目要求的文字记录、数据填写和分析说明部分一律不得给分，只能给截图证明操作已完成的那部分分值，并在 deduction_points 写明“答题框未填写”。截图齐全不等于题目完成。
+10. summary 必须非空，不得省略；不要只写“本次得分为 X 分”，要落到这份作业里的具体题号、扣分点或亮点，并给一条下一步动作。
 """ + UNTRUSTED_CONTENT_RULE + """
 例如:
 {
@@ -2950,6 +2951,127 @@ def _build_hidden_grading_profile_prompt(student_profile_context: str | None) ->
         "不能作为加分或扣分依据，也不能在反馈中透露来源、测评、后台判断或隐藏规则等信息。\n"
         f"{context[:4000]}"
     )
+
+
+# Words that would tell a student they were profiled. Any comment containing
+# one is discarded rather than shown; the deterministic fallback then applies.
+OVERVIEW_COMMENT_LEAK_MARKERS = (
+    "侧写", "画像", "测评", "后台", "内部参考", "内部支持参考", "内部个性化",
+    "系统提示", "隐藏提示", "隐藏分析", "分析记录", "hidden", "profile_summary",
+)
+
+OVERVIEW_COMMENT_PROMPT = """你是给大学生写作业总评的批改助教。只输出一段总评，不要解释、不要引号、不要 Markdown、不要分点。
+要求：
+1. 面向学生本人，用“你”，60–110 个汉字，最多两句话。
+2. 第一句必须点到这份作业里的一个具体表现：某道题的扣分点，或某处做得好的地方；不要只说分数。
+3. 第二句给一条下一步马上能做的建议，要具体到动作。
+4. 不要写“继续努力、查漏补缺、继续完善、保持下去”这类空话。
+5. 如果收到【内部支持参考】，只用来调整语气、详略和鼓励方式，不得作为评分依据。
+6. 严禁出现“侧写、画像、测评、后台、内部参考、系统提示、分析记录”等字样，也不得复述参考内容，不能让学生觉得自己被后台分析。
+"""
+
+
+_GENERIC_OVERVIEW_MARKERS = (
+    "继续努力", "继续加油", "继续保持", "查漏补缺", "继续完善", "再接再厉", "更上一层楼",
+)
+
+
+def _overview_needs_personalization(value: Any) -> bool:
+    """Empty, very short, or slogan-only summaries get one focused rewrite."""
+    text = str(value or "").strip()
+    if not text or len(text) <= 12:
+        return True
+    if any(marker in text for marker in _GENERIC_OVERVIEW_MARKERS):
+        return not _re.search(r"[0-9一二三四五六七八九十]", text)
+    return False
+
+
+def _overview_reuses_profile(comment: str, profile_context: str) -> bool:
+    """True when the comment copies a 10-character run from the support reference."""
+    def grams(text: str) -> set[str]:
+        value = "".join(ch for ch in str(text or "").lower() if ch.isalnum() or "一" <= ch <= "鿿")
+        return {value[index:index + 10] for index in range(len(value) - 9)}
+    return bool(grams(comment) & grams(profile_context))
+
+
+def _sanitize_overview_comment(value: Any) -> str:
+    """One-line public comment, or "" when it would expose the support reference."""
+    text = " ".join(str(value or "").replace("\x00", " ").split()).strip().strip('"“”\'')
+    if text.startswith(("总评：", "总评:", "评语：", "评语:")):
+        text = text.split("：", 1)[-1].split(":", 1)[-1].strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    if any(marker.lower() in lowered for marker in OVERVIEW_COMMENT_LEAK_MARKERS):
+        return ""
+    return text[:SUMMARY_MAX_CHARS].rstrip()
+
+
+def _build_overview_comment_messages(
+    job: GradingJob, result: dict[str, Any], profile_prompt: str,
+) -> list[dict[str, Any]]:
+    requirements = " ".join(str(job.requirements_md or "").split())
+    title = requirements[:60] or "本次作业"
+    lines = [f"作业要求摘要：{title}", f"总分：{result.get('score')} 分（满分 100）"]
+    deductions = []
+    for question in result.get("questions") or []:
+        if not isinstance(question, dict):
+            continue
+        point = str(question.get("deduction_points") or "").strip()
+        if point and point != "无":
+            label = question.get("question_no") or question.get("question_id") or "?"
+            evaluation = str(question.get("evaluation") or "").strip()
+            deductions.append(f"第{label}题：{point}" + (f"（{evaluation}）" if evaluation else ""))
+    questions = result.get("questions") or []
+    if deductions:
+        lines.append("主要扣分点：\n" + "\n".join(deductions[:10]))
+    elif questions:
+        lines.append("这份作业没有扣分点。")
+    if profile_prompt:
+        lines.append(profile_prompt)
+    return [
+        {"role": "system", "content": OVERVIEW_COMMENT_PROMPT},
+        {"role": "user", "content": "\n".join(lines)},
+    ]
+
+
+async def _ensure_grading_overview_comment(
+    job: GradingJob, result: dict[str, Any], *, business_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Fill a missing/generic overview with one small personalized call.
+
+    The grading call sometimes returns a 25-question payload without ``summary``;
+    the app would then show a bare score sentence. One bounded fast call fixes
+    that. Any failure keeps the deterministic fallback, never the grading job.
+    """
+    existing = str(result.get("summary") or "").strip()
+    profile_prompt = _build_hidden_grading_profile_prompt(job.student_profile_context)
+    if not profile_prompt:
+        # Without an internal reference there is nothing to personalize; the
+        # deterministic per-question fallback is specific enough and free.
+        return result
+    leaky_existing = bool(existing and _overview_reuses_profile(existing, profile_prompt))
+    if not _overview_needs_personalization(existing) and not leaky_existing:
+        return result
+    messages = _build_overview_comment_messages(job, result, profile_prompt)
+    try:
+        raw = await _call_ai_platform(
+            messages,
+            capability="standard",
+            require_json_output=False,
+            parse_json_response=False,
+            task_priority="background",
+            task_label=f"grading:{job.submission_id}:overview",
+            task_type=AI_TASK_FAST_TEXT,
+            business_context={**business_context, "operation": "chat"},
+        )
+    except Exception as exc:  # noqa: BLE001 - the score is already final
+        print(f"[AI GRADING] 总评生成失败，保留兜底评语: {type(exc).__name__}: {exc}")
+        return result
+    comment = _sanitize_overview_comment(raw)
+    if not comment or _overview_reuses_profile(comment, profile_prompt):
+        return {**result, "summary": ""} if leaky_existing else result
+    return {**result, "summary": comment}
 
 
 def _has_blank_answers_with_attachments(answers_json: str | None) -> bool:
@@ -6212,6 +6334,7 @@ async def _build_grading_callback_data_impl(
             deterministic_evidence_prompt=deterministic_evidence_prompt,
             format_repair_required=format_repair_required,
         )
+        result = await _ensure_grading_overview_comment(job, result, business_context=business_context)
         result = normalize_grading_result(result, answers_json=job.answers_json)
         if result.get("score") is None:
             raise ValueError(f"AI 返回的批改分数无效：{str(result)[:200]}")

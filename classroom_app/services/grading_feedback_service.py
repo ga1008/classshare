@@ -103,11 +103,25 @@ def _extract_existing_question_keys(text: str) -> set[str]:
     return keys
 
 
-def _default_overview(score: int | None, fallback_reason: str = "") -> str:
+def _default_overview(
+    score: int | None, fallback_reason: str = "", questions: list[Any] | None = None,
+) -> str:
     if fallback_reason:
         return fallback_reason.strip()
     if score is None:
         return "本次批改已完成，但 AI 未返回可直接展示的总览评语。请结合逐题反馈继续修改。"
+    deducted: list[str] = []
+    for question in questions or []:
+        if not isinstance(question, dict):
+            continue
+        point = str(question.get("deduction_points") or "").strip()
+        if point and point != "无":
+            deducted.append(str(question.get("question_no") or "?"))
+    if deducted:
+        labels = "、".join(f"第 {number} 题" for number in deducted[:3])
+        return f"本次 {score} 分。{labels}还有扣分点，先把这几处的步骤和依据补完整，下一次会更稳。"
+    if questions:
+        return f"本次 {score} 分，这份作业没有扣分点。保持提交前的自查习惯就好。"
     return f"本次得分为 {score} 分。请根据下方逐题反馈检查错误点并继续完善。"
 
 
@@ -309,7 +323,10 @@ def normalize_structured_grading_payload(
 
 
 def build_structured_feedback_markdown(result: dict[str, Any]) -> str:
-    summary = _compact_inline_text(result.get("summary"), default=_default_overview(result.get("score")))
+    summary = _compact_inline_text(
+        result.get("summary"),
+        default=_default_overview(result.get("score"), questions=result.get("questions")),
+    )
     lines = ["## 总览评语", summary, "", "## 逐题反馈"]
     for question in result.get("questions") or []:
         question_no = question.get("question_no") or "?"
