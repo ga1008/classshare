@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from classroom_app import database
 from classroom_app.services import wanderer_ai_service
+from classroom_app.services.ai_model_policy import resolve_execution_plan
 from classroom_app.services.wanderer_settings_service import (
     SETTING_DAILY_AI_CALL_CAP,
     daily_ai_calls,
@@ -64,7 +65,7 @@ class WandererAiTest(WandererDbTestCase):
         self.assertEqual(self._calls_today(), 1)
         endpoint, payload, kwargs = caller.calls[0]
         self.assertEqual(endpoint, "/api/ai/chat")
-        self.assertEqual(payload["task_type"], "fast_text_response")
+        self.assertEqual(payload["task_type"], "deep_text_reasoning")
         self.assertEqual(payload["task_label"], "wanderer:lele:blog_reply")
         self.assertEqual(payload["task_priority"], "background")
         self.assertFalse(payload["web_search_enabled"])
@@ -77,6 +78,23 @@ class WandererAiTest(WandererDbTestCase):
         self.assertEqual(kwargs["task_type"], "wanderer_turn")
         self.assertEqual(kwargs["student_id"], wanderer["student_id"])
         self.assertEqual(kwargs["timeout"], 60.0)
+
+    def test_wanderer_turn_resolves_to_high_thinking(self):
+        caller = StubCaller()
+        self._turn("lele", caller)
+        _endpoint, payload, _kwargs = caller.calls[0]
+        plan = resolve_execution_plan(payload["task_type"], "standard", payload["business_context"], environ={})
+        self.assertEqual((plan.profile_id, plan.thinking_type, plan.reasoning_effort),
+                         ("text_deep", "enabled", "high"))
+
+    def test_memory_compaction_uses_the_same_high_tier(self):
+        with self.connect() as conn:
+            wanderer = self.wanderer(conn, "momo")
+        caller = StubCaller()
+        asyncio.run(wanderer_ai_service.summarize_text(
+            database.get_db_connection, wanderer, "长对话", ai_caller=caller))
+        _endpoint, payload, _kwargs = caller.calls[0]
+        self.assertEqual(payload["task_type"], "deep_text_reasoning")
 
     def test_cap_blocks_calls_without_counting(self):
         with self.connect() as conn:

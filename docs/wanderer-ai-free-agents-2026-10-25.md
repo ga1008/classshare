@@ -11,7 +11,7 @@
 
 1. **性格决定行为**。每个散修的决策由其人格提示词驱动；天道规则只在触犯后才介入（反思→调整）。不得把所有散修写成"礼貌 AI 助手"。
 2. **复用平台身份与链路**。散修是 `students` 表里的真实行，以 `student:<id>` 身份走现有博客评论/点赞/通知/私信/课堂留言/境界标志链路；不新造第二套内容表。
-3. **AI 调用全部走 `ai_gateway_post`，P2 后台优先级，文本档 `fast_text_response`（天道审核用 `deep_text_reasoning`）**；有日配额、有上限、可一键停。生产是 2c/4GB，每轮只做有限动作。
+3. **AI 调用全部走 `ai_gateway_post`，P2 后台优先级，文本档 `deep_text_reasoning`（2026-11-03 起；`operation=chat` → thinking enabled + effort=high，覆盖聊天/发帖/回复/课堂/社交/浏览/反省/记忆压缩；天道审核同档位，但 operation 为 adjudication/generation → effort=max）**；有日配额、有上限、可一键停。生产是 2c/4GB，每轮只做有限动作。
 4. **提示词是数据，不是代码**：人格、知识、记忆、天道裁决全部在数据库中，每次生成前实时读取拼装；管理员可改。
 5. **业务闭环**：每个动作有日志（`wanderer_action_log`），天道裁决有记录（`wanderer_dao_reviews`），散修能读到裁决并反思；管理端可看可控可关；死亡不可逆转但可由管理员"复活"（显式动作，留痕）。
 6. **不污染教学数据**：散修的 `enrollment_status='wanderer'`，所有按 `enrollment_status='active'` 取名册/成绩/考勤的地方自然排除；它们的班级是一个隐藏占位班 `散修·无宗门`（`academic_source='wanderer'`），永不绑定课堂。散修不能登录（无密码）。

@@ -24,7 +24,7 @@ import time
 import uuid
 from typing import Any, Awaitable, Callable, Optional
 
-from .ai_model_policy import AI_TASK_DEEP_TEXT, AI_TASK_FAST_TEXT
+from .ai_model_policy import AI_TASK_DEEP_TEXT
 from .prompt_utils import build_time_context_text
 from .wanderer_prompt_service import default_turn, extract_json_object, max_parts_for, parse_turn_output
 from .wanderer_settings_service import (
@@ -50,6 +50,10 @@ DAO_OPERATION_ADJUDICATION = "adjudication"
 DAO_OPERATION_GENERATION = "generation"
 
 AI_CHAT_ENDPOINT = "/api/ai/chat"
+# Every wanderer behaviour (chat, posts, replies, browsing, reflection) runs on
+# deep text with thinking enabled; with operation "chat" the policy resolves
+# reasoning effort to "high". 天道 stays on its own max-effort adjudication path.
+WANDERER_TASK_TYPE = AI_TASK_DEEP_TEXT
 TURN_TIMEOUT_SECONDS = 60.0
 DAO_TIMEOUT_SECONDS = 180.0
 TURN_SEARCH_LIMIT = 2
@@ -316,7 +320,7 @@ async def generate_turn(
     payload = _payload(
         system_prompt=system_prompt,
         user_message=f"{build_time_context_text()}\n\n{user_message}",
-        task_type=AI_TASK_FAST_TEXT,
+        task_type=WANDERER_TASK_TYPE,
         task_label=f"wanderer:{slug}:{suffix}",
         logical_call_id=logical_call_id,
     )
@@ -422,7 +426,7 @@ async def summarize_text(
     payload = _payload(
         system_prompt=SUMMARY_SYSTEM_PROMPT,
         user_message=str(text or "")[:200_000],
-        task_type=AI_TASK_FAST_TEXT,
+        task_type=WANDERER_TASK_TYPE,
         task_label=f"wanderer:{slug}:memory_compact",
         logical_call_id=logical_call_id,
     )
