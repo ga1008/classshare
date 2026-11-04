@@ -436,3 +436,53 @@ test('classroom document library publishes a teacher upload only to this class a
     expect((await context.request.get(`/materials/download/${materialId}`, { maxRedirects: 0 })).status()).toBe(303);
   } finally { await context.close(); }
 });
+
+test('classroom document library navigates folders with Back and Up for teachers and students', async ({ page, browser }) => {
+  const f = fixture();
+  await loginTeacher(page, f);
+  const folderName = `课堂导航验证-${Date.now()}`;
+  const root = await page.request.post('/api/materials/folders', { data: { name: folderName } });
+  expect(root.ok()).toBe(true);
+  const rootId = (await root.json()).material.id;
+  const nested = await page.request.post('/api/materials/folders', { data: { name: '子目录', parent_id: rootId } });
+  expect(nested.ok()).toBe(true);
+  const nestedId = (await nested.json()).material.id;
+  const assigned = await page.request.post(`/api/materials/${rootId}/assign`, { data: { class_offering_ids: [f.classOfferingId] } });
+  expect(assigned.ok()).toBe(true);
+
+  const studentContext = await browser.newContext({ baseURL: new URL(page.url()).origin });
+  try {
+    const student = await studentContext.newPage();
+    await loginStudent(student, f);
+    for (const classroom of [page, student]) {
+      await classroom.goto(`/classroom/${f.classOfferingId}`);
+      await classroom.getByRole('tab', { name: '材料与文档', exact: true }).click();
+      const library = classroom.locator('#classroom-material-collection');
+      const back = library.getByRole('button', { name: '返回', exact: true });
+      const up = library.getByRole('button', { name: '上一级', exact: true });
+      const breadcrumbs = library.getByRole('navigation', { name: '当前材料目录' });
+      const openFolder = (id: number) =>
+        library.locator(`.mcard[data-id="${id}"]`).getByRole('button', { name: '打开文件夹' });
+
+      await expect(breadcrumbs).toHaveText('课堂文档库');
+      await expect(back).toBeDisabled();
+      await expect(up).toBeDisabled();
+      await openFolder(rootId).click();
+      await expect(breadcrumbs).toContainText(folderName);
+      await openFolder(nestedId).click();
+      await expect(breadcrumbs).toContainText('子目录');
+
+      await up.click();
+      await expect(breadcrumbs).not.toContainText('子目录');
+      await expect(openFolder(nestedId)).toBeVisible();
+      await back.press('Enter');
+      await expect(breadcrumbs).toContainText('子目录');
+      await back.click();
+      await expect(openFolder(nestedId)).toBeVisible();
+      await back.click();
+      await expect(breadcrumbs).toHaveText('课堂文档库');
+      await expect(back).toBeDisabled();
+      await expect(up).toBeDisabled();
+    }
+  } finally { await studentContext.close(); }
+});

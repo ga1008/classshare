@@ -1,6 +1,6 @@
 # LQ 模块使用记录本
 
-生成于 2026-11-04，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
+生成于 2026-11-05，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
 
 ## 怎么用
 
@@ -604,7 +604,7 @@
 - **设计摘要**：所有操作入口：`lq-btn` + 变体 + 尺寸 + 可选图标/徽标/加载态；原生 button/a 语义与 type、form、href 保留。
 - **参数 / 变体**：`label, variant(prominent|glass|soft|ghost|destructive|link), size(sm|md|lg), icon, href, type, disabled, aria_disabled, loading, badge, attrs`；纯图标按钮必须给 aria-label。
 - **状态**：default / hover / focus-visible / active 按压 / disabled（native）/ aria-disabled / loading（保留名称，防重复提交）。
-- **规则**：禁止 div 模拟按钮；颜色只来自变体不传任意色；固定宽度长标签用 overflow-label。
+- **规则**：禁止 div 模拟按钮；颜色只来自变体不传任意色；固定宽度长标签用 overflow-label。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。
 - **根类**：`lq-btn`
 - **Jinja 宏** `templates/macros/lq/button.html`：`lq_btn`
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`

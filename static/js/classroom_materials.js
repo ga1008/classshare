@@ -193,10 +193,18 @@ function updateSelectionBar() {
     }
 }
 
+function setDirectoryButtonDisabled(button, disabled) {
+    button.disabled = disabled;
+    for (const name of ['aria-disabled', 'data-lq-disabled']) {
+        if (disabled) button.setAttribute(name, 'true');
+        else button.removeAttribute(name);
+    }
+}
+
 function renderBreadcrumbs() {
     const dom = refs();
-    dom.backBtn.disabled = state.history.length === 0;
-    dom.upBtn.disabled = state.currentParentId === null;
+    setDirectoryButtonDisabled(dom.backBtn, state.history.length === 0);
+    setDirectoryButtonDisabled(dom.upBtn, state.currentParentId === null);
     dom.breadcrumbs.innerHTML = renderMaterialBreadcrumbs(state.breadcrumbs, '课堂文档库');
 }
 

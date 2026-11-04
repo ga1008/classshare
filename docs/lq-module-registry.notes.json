@@ -75,7 +75,7 @@
     "summary": "所有操作入口：`lq-btn` + 变体 + 尺寸 + 可选图标/徽标/加载态；原生 button/a 语义与 type、form、href 保留。",
     "params": "`label, variant(prominent|glass|soft|ghost|destructive|link), size(sm|md|lg), icon, href, type, disabled, aria_disabled, loading, badge, attrs`；纯图标按钮必须给 aria-label。",
     "states": "default / hover / focus-visible / active 按压 / disabled（native）/ aria-disabled / loading（保留名称，防重复提交）。",
-    "rules": "禁止 div 模拟按钮；颜色只来自变体不传任意色；固定宽度长标签用 overflow-label。",
+    "rules": "禁止 div 模拟按钮；颜色只来自变体不传任意色；固定宽度长标签用 overflow-label。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。",
     "entries": {
       "react": [
         "LqButton"
