@@ -30,6 +30,10 @@ from .wanderer_life_service import promotion_requirements
 
 SPAM_WINDOW_SECONDS = 600
 SPAM_THRESHOLD = 5
+# Only wanderer-initiated conversations carry this nonce prefix (see
+# wanderer_social_outreach.start_friend_conversation). Replies to a real user's
+# question use "wanderer:<id>:<anchor>" and never count as flooding.
+PROACTIVE_NONCE_PREFIX = "wanderer-outreach:"
 WARNING_WINDOW_DAYS = 14
 RECENT_COMMENT_PREVIEWS = 5
 _SANCTIONED_STATES = ("limited", "removed", "appeal_pending")
@@ -170,19 +174,32 @@ def social_activity(conn: Any, identity: str, now: datetime) -> dict[str, Any]:
 
     ensure_schema(conn)
     rows = conn.execute(
-        "SELECT conversation_type, conversation_key, created_at, recalled_at FROM social_messages "
+        "SELECT conversation_type, conversation_key, created_at, recalled_at, client_nonce "
+        "FROM social_messages "
         "WHERE sender_identity = ? AND created_at >= ? AND message_type IN (?, ?, ?) "
         "ORDER BY conversation_key, created_at",
         (identity, _utc_iso(now - timedelta(days=1)), *_CHAT_TYPES),
     ).fetchall()
     by_conversation: dict[str, list[datetime]] = {}
+    proactive_by_conversation: dict[str, list[datetime]] = {}
+    proactive = 0
     for row in rows:
         moment = parse_datetime(row["created_at"])
-        if moment is not None:
-            by_conversation.setdefault(str(row["conversation_key"]), []).append(moment.replace(tzinfo=None))
-    peaks = [_room_peak(times) for times in by_conversation.values()]
+        if moment is None:
+            continue
+        moment = moment.replace(tzinfo=None)
+        key = str(row["conversation_key"])
+        by_conversation.setdefault(key, []).append(moment)
+        # Only a conversation the wanderer started unasked can be spam. Answers
+        # to a real user's questions, however fast, are normal conversation.
+        if str(row["client_nonce"] or "").startswith(PROACTIVE_NONCE_PREFIX):
+            proactive += 1
+            proactive_by_conversation.setdefault(key, []).append(moment)
+    peaks = [_room_peak(times) for times in proactive_by_conversation.values()]
     return {
         "messages_24h": len(rows),
+        "reply_messages_24h": len(rows) - proactive,
+        "proactive_messages_24h": proactive,
         "dm_conversations": sum(1 for key in by_conversation if key.startswith("dm:")),
         "groups_spoken": sum(1 for key in by_conversation if key.startswith("group:")),
         "max_in_10_minutes": max(peaks, default=0),

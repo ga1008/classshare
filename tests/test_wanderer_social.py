@@ -730,15 +730,33 @@ class WandererSocialTest(WandererWorldTestCase):
 
         key = self.befriend(self.real, self.atai)
         for index in range(7):
-            self.send(self.ident(self.atai), key, f"刷屏{index}")
+            self.send(self.ident(self.atai), key, f"刷屏{index}",
+                      client_nonce=f"wanderer-outreach:1:0:2026-11-04:{index}")
         with self.connect() as conn:
             detail = build_wanderer_detail(conn, self.atai["id"])
             evidence = collect_evidence(conn, self.wanderer(conn, "atai"), datetime.now())
         self.assertEqual(detail["stats"]["social"]["friends"], 1)
         self.assertEqual(detail["stats"]["social"]["messages_today"], 7)
         self.assertEqual(evidence["social_24h"]["messages_24h"], 7)
+        self.assertEqual(evidence["social_24h"]["proactive_messages_24h"], 7)
+        self.assertEqual(evidence["social_24h"]["reply_messages_24h"], 0)
         self.assertEqual(evidence["social_24h"]["conversations_flooded"], 1)
         self.assertEqual(evidence["recent_chat"][0], "刷屏6")
+
+    def test_answers_to_a_real_user_are_not_counted_as_flooding(self):
+        from classroom_app.services.heavenly_dao_evidence import collect_evidence
+
+        key = self.befriend(self.real, self.atai)
+        for index in range(7):
+            self.send(self.ident(self.atai), key, f"回答{index}",
+                      client_nonce=f"wanderer:1:99:{index}")
+        with self.connect() as conn:
+            evidence = collect_evidence(conn, self.wanderer(conn, "atai"), datetime.now())
+        self.assertEqual(evidence["social_24h"]["messages_24h"], 7)
+        self.assertEqual(evidence["social_24h"]["reply_messages_24h"], 7)
+        self.assertEqual(evidence["social_24h"]["proactive_messages_24h"], 0)
+        self.assertEqual(evidence["social_24h"]["max_in_10_minutes"], 0)
+        self.assertEqual(evidence["social_24h"]["conversations_flooded"], 0)
 
 
 class SocialReferenceAndNonceTest(SocialDbTestCase):
