@@ -3,7 +3,8 @@
 * Study: pick an indexed material the wanderer may read — only materials that
   are themselves 完全公开 (``course_materials.scope_level='public'``) or whose
   outermost folder is — take 1-3 consecutive chunks (<= 6000 chars), and let
-  one AI turn write "what I remember" (<= 800 字) into the knowledge base.
+  one AI turn write "what I remember" (per-tier cap, 1000 字 at tier 0) into
+  the knowledge base.
   Classroom-assigned (non-public) materials are never read. The gained
   cultivation is scaled by 悟性 (and 气运 may double it).
 * Promotion: ``wanderer_life_service.promotion_requirements`` decides readiness
@@ -39,9 +40,17 @@ from .wanderer_identity_service import (
     current_life,
     invalidate_wanderer_cache,
     load_wanderer,
+    load_wanderers_by_student_ids,
 )
 from .wanderer_knowledge_service import add_knowledge
-from .wanderer_life_core import APPEAL_MIN_TIER, can_extend_life
+from .wanderer_life_core import (
+    APPEAL_MIN_TIER,
+    GIFT_MIN_TIER,
+    GIFT_MIN_WEEKS,
+    can_extend_life,
+    knowledge_digest_limit,
+    max_gift_weeks,
+)
 from .wanderer_life_service import (
     INTERACTION_KINDS,
     can_resurrect,
@@ -54,7 +63,6 @@ from .wanderer_prompt_service import INJECTION_GUARD, extract_json_object
 
 READING_MAX_CHARS = 6000
 READING_MAX_CHUNKS = 3
-KNOWLEDGE_DIGEST_LIMIT = 800
 APPEAL_WARNING_WINDOW_DAYS = 7
 APPEAL_COOLDOWN_DAYS = 30
 REFLECTION_KINDS = ("promotion", "discipline", "admin_override", "revive", "appeal")
@@ -167,13 +175,14 @@ def _knowledge_tags(interests: list[Any], *texts: Any) -> list[str]:
     return [str(tag) for tag in interests if str(tag).strip() and str(tag).lower() in haystack]
 
 
-def _study_scene(material: dict[str, Any], first: dict[str, Any], interests: list[Any]) -> dict[str, Any]:
+def _study_scene(material: dict[str, Any], first: dict[str, Any], interests: list[Any],
+                 limit: int = 800) -> dict[str, Any]:
     return {
         "kind": "研读学习文档",
         "title": f"{material.get('material_name') or '学习文档'} · {first.get('locator_label') or ''}",
         "meta": "你在自学，没有人在看你。",
         "tags": [*interests, str(first.get("heading") or "")],
-        "task": "固化知识：读完用户消息里的文档片段后，用你自己的话写下你记住的要点（合计不超过 800 字），"
+        "task": f"固化知识：读完用户消息里的文档片段后，用你自己的话写下你记住的要点（合计不超过 {limit} 字），"
                 "分成 2-3 条放进 parts（action 用 multi 或 reply）；实在读不进去就 skip。",
     }
 
@@ -190,7 +199,8 @@ async def study_material(ctx: ActionContext) -> list[dict[str, Any]]:
     first = chunks[0]
     interests = list(ctx.wanderer.get("interests") or [])
     message = f"{INJECTION_GUARD}\n<<<文档开始>>>\n{_reading_text(chunks)}\n<<<文档结束>>>"
-    result = await run_turn(ctx, scene=_study_scene(material, first, interests), thread_key="study",
+    digest_limit = knowledge_digest_limit(ctx.wanderer.get("tier"))
+    result = await run_turn(ctx, scene=_study_scene(material, first, interests, digest_limit), thread_key="study",
                             suffix="knowledge_read", user_message=message)
     calls = int(result.get("ai_calls") or 0)
     parts = turn_parts(ctx, result.get("turn") or {}, public=False) if result.get("status") == "ok" else []
@@ -199,7 +209,7 @@ async def study_material(ctx: ActionContext) -> list[dict[str, Any]]:
         record_action(ctx, "knowledge_read", **target, ai_calls=calls, outcome="skipped",
                       detail={"reason": result.get("status") or "skip"})
         return [outcome("knowledge_read", "skipped", ai_calls=calls)]
-    digest = "\n".join(parts)[:KNOWLEDGE_DIGEST_LIMIT]
+    digest = "\n".join(parts)[:digest_limit]
     title = str(first.get("heading") or first.get("locator_label") or material.get("material_name") or "")
     tags = _knowledge_tags(interests, first.get("heading"), material.get("material_name"), digest)
     with ctx.connect() as conn:
@@ -272,6 +282,138 @@ async def request_promotion(ctx: ActionContext) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Lifespan gifts (tier ≥ 3): ask 天道, never transfer in the same turn
+# ---------------------------------------------------------------------------
+
+def gift_candidates(conn: Any, wanderer: dict[str, Any]) -> list[dict[str, Any]]:
+    """Living wanderer friends this person could give a little lifespan to."""
+    from .social_relations import are_friends
+
+    rows = conn.execute(
+        "SELECT r.peer_identity, r.affinity FROM wanderer_relationships r "
+        "JOIN students s ON r.peer_identity = 'student:' || CAST(s.id AS TEXT) "
+        "JOIN wanderer_agents w ON w.student_id = s.id "
+        "WHERE r.wanderer_id = ? AND w.status = 'active' "
+        "ORDER BY r.affinity DESC, r.interactions DESC LIMIT 40",
+        (int(wanderer["id"]),),
+    ).fetchall()
+    pairs: list[tuple[str, int, float]] = []
+    for row in rows:
+        identity = str(row["peer_identity"] or "")
+        if not identity.startswith("student:"):
+            continue
+        try:
+            pairs.append((identity, int(identity.split(":", 1)[1]), float(row["affinity"] or 0)))
+        except (TypeError, ValueError):
+            continue
+    if not pairs:
+        return []
+    wanderers = load_wanderers_by_student_ids(conn, [pk for _identity, pk, _aff in pairs])
+    me = f"student:{int(wanderer['student_id'])}"
+    candidates: list[dict[str, Any]] = []
+    for identity, pk, affinity in pairs:
+        target = wanderers.get(pk)
+        if not target or identity == me or str(target.get("status")) != "active":
+            continue
+        if not are_friends(conn, me, identity):
+            continue
+        life = current_life(target)
+        candidates.append({
+            "identity": identity,
+            "name": str(target.get("display_name") or ""),
+            "tier": clamp_tier(target.get("tier")),
+            "remaining_days": int(life.get("remaining_days") or 0),
+            "affinity": affinity,
+        })
+    return candidates[:6]
+
+
+def request_lifespan_gift(conn: Any, wanderer: dict[str, Any], gift: Any) -> tuple[bool, str]:
+    """Validate one gift request and persist it for the next 天道 review."""
+    if not isinstance(gift, dict):
+        return False, "bad_request"
+    if clamp_tier(wanderer.get("tier")) < GIFT_MIN_TIER:
+        return False, "tier_too_low"
+    if int(wanderer.get("gift_requested") or 0):
+        return False, "already_pending"
+    target_identity = str(gift.get("target") or gift.get("target_identity") or "").strip()
+    candidate = next((item for item in gift_candidates(conn, wanderer)
+                      if item["identity"] == target_identity), None)
+    if candidate is None:
+        return False, "not_a_friend"
+    room = max_gift_weeks(current_life(wanderer).get("remaining_weeks"))
+    if room < GIFT_MIN_WEEKS:
+        return False, "too_little_life"
+    try:
+        weeks = round(float(gift.get("weeks") or 0), 1)
+    except (TypeError, ValueError):
+        weeks = 0.0
+    if weeks < GIFT_MIN_WEEKS:
+        return False, "missing_weeks"
+    weeks = min(max(GIFT_MIN_WEEKS, weeks), room)
+    reason = str(gift.get("reason") or "").strip()[:500]
+    now = local_iso()
+    conn.execute(
+        "UPDATE wanderer_agents SET gift_requested = 1, gift_target_identity = ?, gift_weeks = ?, "
+        "gift_reason = ?, gift_requested_at = ?, updated_at = ? WHERE id = ?",
+        (target_identity, weeks, reason, now, now, int(wanderer["id"])),
+    )
+    return True, ""
+
+
+async def offer_lifespan(ctx: ActionContext) -> list[dict[str, Any]]:
+    if ctx.capped or clamp_tier(ctx.wanderer.get("tier")) < GIFT_MIN_TIER or int(ctx.wanderer.get("gift_requested") or 0):
+        return []
+    with ctx.connect() as conn:
+        candidates = gift_candidates(conn, ctx.wanderer)
+    room = max_gift_weeks(current_life(ctx.wanderer).get("remaining_weeks"))
+    if not candidates or room < GIFT_MIN_WEEKS:
+        record_action(ctx, "life_gift", target_type="dao", outcome="skipped",
+                      detail={"reason": "no_friend_or_no_life"})
+        return [outcome("life_gift", "skipped")]
+    lines = "\n".join(
+        f"- {item['name']}（第 {item['tier']} 境，剩余约 {item['remaining_days']} 天）" for item in candidates
+    )
+    scene = {
+        "kind": "寿元赠与", "title": "要不要分一点寿元给朋友",
+        "meta": f"你现在最多可以给出 {room:g} 周寿元；给出后不能撤回，要等天道审核。",
+        "body": f"{lines}\n\n{INJECTION_GUARD}",
+        "tags": ["寿元", "朋友"],
+        "task": "只在你真的愿意、并且对方需要的时候才这么做。想赠就选一个人和数量，写清理由；"
+                "不想赠就 skip。给出的是你剩下的寿命，不能反悔。",
+        "output_contract": ('只输出 JSON：{"action":"skip|reply","parts":[],'
+                            '"gift":{"target":"student:12","weeks":1,"reason":"不超过 200 字"}}；'
+                            "不想赠时 action=skip，reason 可选。"),
+    }
+    result = await run_turn(ctx, scene=scene, thread_key="dao", suffix="life_gift")
+    calls = int(result.get("ai_calls") or 0)
+    turn = result.get("turn") or {}
+    gift = turn.get("gift")
+    if not isinstance(gift, dict) or str(turn.get("action") or "") == "skip":
+        record_action(ctx, "life_gift", target_type="dao", ai_calls=calls, outcome="skipped",
+                      detail={"reason": "declined"})
+        return [outcome("life_gift", "skipped", ai_calls=calls)]
+    with ctx.connect() as conn:
+        ok, reason = request_lifespan_gift(conn, ctx.wanderer, gift)
+        conn.commit()
+    if not ok:
+        record_action(ctx, "life_gift", target_type="dao", ai_calls=calls, outcome="failed",
+                      detail={"reason": reason, "gift": gift})
+        return [outcome("life_gift", "failed", ai_calls=calls)]
+    ctx.reload()
+    target = str(ctx.wanderer.get("gift_target_identity") or gift.get("target") or "")
+    try:
+        weeks = float(ctx.wanderer.get("gift_weeks") or gift.get("weeks") or 0)
+    except (TypeError, ValueError):
+        weeks = 0.0
+    record_action(ctx, "life_gift", target_type="wanderer", target_id=target, ai_calls=calls,
+                  content_preview=f"申请赠寿 {weeks:g} 周",
+                  detail={"weeks": weeks, "reason": str(gift.get("reason") or "")[:200]})
+    await remember(ctx, "dao", said=[f"我想把 {weeks:g} 周寿元赠给 {target}。"])
+    return [outcome("life_gift", ai_calls=calls)]
+
+
+# ---------------------------------------------------------------------------
 # Reflection on 天道 verdicts
 # ---------------------------------------------------------------------------
 
@@ -323,7 +465,7 @@ async def _reflect_once(ctx: ActionContext, review: dict[str, Any]) -> dict[str,
     if not parts:
         record_action(ctx, "reflect", **target, ai_calls=calls, outcome="skipped", detail={"reason": "no_reflection"})
         return outcome("reflect", "skipped", ai_calls=calls)
-    text = "\n".join(parts)[:KNOWLEDGE_DIGEST_LIMIT]
+    text = "\n".join(parts)[:knowledge_digest_limit(ctx.wanderer.get("tier"))]
     with ctx.connect() as conn:
         add_knowledge(conn, ctx.wanderer, source_kind="reflection", source_ref=f"review:{review['id']}",
                       title=f"天道裁决反思·{review.get('verdict') or ''}", digest=text, tags=["天道", "反思"])

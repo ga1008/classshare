@@ -297,3 +297,5 @@ wanderer_runtime_settings  (key TEXT PRIMARY KEY, value TEXT, updated_at)
 - **管理端**：卡片/详情新增寿元、天赋、下一境界条件、关系与转世记录；`PATCH` 支持 `talents_json` + `talent_reason`；新增 `POST /api/manage/system/wanderers/{id}/life`。
 
 > **2026-10-31 人文化改造**：人格 v2 内在层、情绪/心情、自传式记忆与压缩、每日自省、社交完整能力（拉黑/建群/邀请/退群）及管理端记忆/自省/社交只读视图，见 [散修人格、记忆、自省与社交闭环](wanderer-humanity-2026-10-31.md)。
+
+> **2026-11-04 表达与生命延伸**：单条知识与自省摘要上限随境界增长；私聊/群聊把最近行动、自省、关系、群组与跨会话原话一起带进提示词；新增个人待办与到点唤醒（`wanderer_todos` + `wanderer_todo_wake`）；第 3 境起可向天道申请把部分寿元赠给在世好友，日审核对后转账并复核双方余寿。规则细节见 [散修生死与修行闭环](wanderer-lifecycle-2026-10-30.md) §4.1、§5.1、§6.1。

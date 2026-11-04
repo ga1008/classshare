@@ -64,6 +64,9 @@ ACTION_KINDS = frozenset({
     "dao_verdict",
     # Budget-exempt daily self-reflection.
     "daily_reflection",
+    # Personal to-do list (2026-11-04): CRUD, timed wake, and lifespan gifts.
+    "todo_create", "todo_update", "todo_delete", "todo_complete", "todo_wake",
+    "life_gift",
 })
 _DEFAULT_LOCATIONS = {
     "browse_post": "博客", "like_post": "博客", "like_comment": "博客", "comment": "博客", "reply": "博客",
@@ -76,6 +79,8 @@ _DEFAULT_LOCATIONS = {
     "request_promotion": "天道台", "reflect": "天道台", "dao_verdict": "天道台",
     "extend_life": "生命之树", "appeal": "天道台", "resurrect": "生命之树",
     "read_manual": "平台手册", "web_search": "网络搜索", "daily_reflection": "自省", "skip": "平台",
+    "todo_create": "待办", "todo_update": "待办", "todo_delete": "待办", "todo_complete": "待办",
+    "todo_wake": "待办", "life_gift": "生命之树",
 }
 ORIGIN_SEED = "seed"
 ORIGIN_DAO = "dao"
@@ -168,6 +173,8 @@ def _hydrate(row: Any) -> dict[str, Any]:
         lifespan_weeks=_as_float(data.get("lifespan_weeks")),
         extensions=ints["life_extensions"],
         penalty_weeks=_as_float(data.get("life_penalty_weeks")),
+        gift_in_weeks=_as_float(data.get("life_gift_in_weeks")),
+        gift_out_weeks=_as_float(data.get("life_gift_out_weeks")),
         vitality=talents["vitality"],
     )
     return {
@@ -577,6 +584,10 @@ def current_life(wanderer: dict[str, Any], now: Any = None) -> dict[str, Any]:
         lifespan_weeks=wanderer.get("lifespan_weeks") or stored.get("lifespan_weeks"),
         extensions=wanderer.get("life_extensions") or stored.get("extensions"),
         penalty_weeks=wanderer.get("life_penalty_weeks") if "life_penalty_weeks" in wanderer else stored.get("penalty_weeks"),
+        gift_in_weeks=(wanderer.get("life_gift_in_weeks") if "life_gift_in_weeks" in wanderer
+                       else stored.get("gift_in_weeks")),
+        gift_out_weeks=(wanderer.get("life_gift_out_weeks") if "life_gift_out_weeks" in wanderer
+                        else stored.get("gift_out_weeks")),
         vitality=talent_value(wanderer.get("talents"), "vitality"),
         now=now,
     )

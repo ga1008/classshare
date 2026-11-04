@@ -74,6 +74,29 @@ WANDERER_SEARCH_TIER_BONUS = 0.20
 SEARCH_CULTIVATION_BASE = 0.5
 SEARCH_CULTIVATION_TIER_BONUS = 0.25
 
+# Knowledge and reflection grow with the realm (2026-11-04). A tier-0 wanderer
+# keeps a 1000-char note (the old write cap was 800); each tier adds 200,
+# capped at 3000. Prompt excerpts grow more slowly so a high-tier prompt still
+# fits the budget.
+KNOWLEDGE_DIGEST_BASE_CHARS = 1000
+KNOWLEDGE_DIGEST_TIER_STEP = 200
+KNOWLEDGE_DIGEST_MAX_CHARS = 3000
+KNOWLEDGE_PROMPT_CAP_BASE = 200
+KNOWLEDGE_PROMPT_CAP_TIER_STEP = 60
+KNOWLEDGE_PROMPT_CAP_MAX = 900
+REFLECTION_SUMMARY_BASE_CHARS = 1200
+REFLECTION_SUMMARY_TIER_STEP = 200
+REFLECTION_SUMMARY_MAX_CHARS = 3200
+
+# Personal to-do list capacity: 3 at tier 0, +3 per tier.
+TODO_CAPACITY_PER_TIER = 3
+# Lifespan gifts (tier ≥ 3): at most a quarter of what is left, and never the
+# last week, so a gift can never be a disguised way to die early.
+GIFT_MIN_TIER = 3
+GIFT_MAX_RATIO = 0.25
+GIFT_MIN_WEEKS = 0.5
+GIFT_KEEP_WEEKS = 1.0
+
 APPEAL_MIN_TIER = 5
 APPEAL_COOLDOWN_DAYS = 30
 APPEAL_REJECTED_PENALTY_WEEKS = 0.5
@@ -173,6 +196,8 @@ def life_state(
     extensions: Any = 0,
     penalty_weeks: Any = 0,
     vitality: Any = 1.0,
+    gift_in_weeks: Any = 0,
+    gift_out_weeks: Any = 0,
     now: Optional[datetime] = None,
 ) -> dict[str, Any]:
     """Everything a prompt, page or test needs to know about one life.
@@ -198,8 +223,13 @@ def life_state(
         penalty = max(0.0, float(penalty_weeks or 0))
     except (TypeError, ValueError):
         penalty = 0.0
-    granted = round(weeks + extension_count * LIFE_EXTENSION_WEEKS, 1)
-    effective = max(0.0, granted - penalty)
+    try:
+        gift_in = max(0.0, float(gift_in_weeks or 0))
+        gift_out = max(0.0, float(gift_out_weeks or 0))
+    except (TypeError, ValueError):
+        gift_in, gift_out = 0.0, 0.0
+    granted = round(weeks + extension_count * LIFE_EXTENSION_WEEKS + gift_in, 1)
+    effective = max(0.0, granted - penalty - gift_out)
     expires = born + timedelta(weeks=effective)
     remaining_seconds = (expires - moment).total_seconds()
     remaining_days = max(0, int(math.ceil(remaining_seconds / 86400.0)))
@@ -211,6 +241,8 @@ def life_state(
         "granted_weeks": granted,
         "extensions": extension_count,
         "penalty_weeks": round(penalty, 1),
+        "gift_in_weeks": round(gift_in, 1),
+        "gift_out_weeks": round(gift_out, 1),
         "weeks_lived": round(max(0.0, lived_seconds) / 604800.0, 1),
         "remaining_weeks": round(max(0, remaining_days) / 7.0, 1),
         "remaining_days": remaining_days,
@@ -262,6 +294,41 @@ def knowledge_capacity_for(tier: Any, memory: Any = 1.0) -> int:
 
 def promotion_ratio(tier: Any) -> float:
     return PROMOTION_KNOWLEDGE_RATIO[clamp_tier(tier)]
+
+
+def knowledge_digest_limit(tier: Any) -> int:
+    """Stored digest chars per knowledge note: 1000 at tier 0, +200 per tier."""
+    return min(KNOWLEDGE_DIGEST_MAX_CHARS,
+               KNOWLEDGE_DIGEST_BASE_CHARS + KNOWLEDGE_DIGEST_TIER_STEP * clamp_tier(tier))
+
+
+def knowledge_prompt_cap(tier: Any) -> int:
+    """How much of one note the prompt shows: 200 at tier 0, +60 per tier."""
+    return min(KNOWLEDGE_PROMPT_CAP_MAX,
+               KNOWLEDGE_PROMPT_CAP_BASE + KNOWLEDGE_PROMPT_CAP_TIER_STEP * clamp_tier(tier))
+
+
+def reflection_summary_limit(tier: Any) -> int:
+    """Stored daily-reflection summary chars: 1200 at tier 0, +200 per tier."""
+    return min(REFLECTION_SUMMARY_MAX_CHARS,
+               REFLECTION_SUMMARY_BASE_CHARS + REFLECTION_SUMMARY_TIER_STEP * clamp_tier(tier))
+
+
+def todo_capacity(tier: Any) -> int:
+    """Open to-do slots: 3 at tier 0, +3 per tier (tier 10 → 33)."""
+    return TODO_CAPACITY_PER_TIER * (clamp_tier(tier) + 1)
+
+
+def max_gift_weeks(remaining_weeks: Any) -> float:
+    """Largest lifespan gift this wanderer may offer right now (0 when ineligible)."""
+    try:
+        left = max(0.0, float(remaining_weeks or 0))
+    except (TypeError, ValueError):
+        left = 0.0
+    room = min(left * GIFT_MAX_RATIO, left - GIFT_KEEP_WEEKS)
+    if room < GIFT_MIN_WEEKS:
+        return 0.0
+    return round(room, 1)
 
 
 def cultivation_target(tier: Any) -> int:

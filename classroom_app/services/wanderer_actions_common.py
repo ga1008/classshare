@@ -191,6 +191,13 @@ async def run_turn(
                 record_memory(conn, ctx.wanderer, kind="reflection", title="没发出去的心里话",
                               content=inner, thread_key=thread_key, importance=0.55,
                               source_kind="inner", source_ref=f"{thread_key}:{local_iso()}", location=where)
+            if turn.get("todos"):
+                try:
+                    from .wanderer_todo_service import apply_todo_ops
+
+                    apply_todo_ops(conn, ctx.wanderer, turn.get("todos"), now=ctx.current_time())
+                except Exception as exc:  # noqa: BLE001 - a to-do must never break the reply
+                    print(f"[WANDERER TODO] 应用失败: {type(exc).__name__}: {exc}")
             conn.commit()
     if result.get("status") != "ok" or (result.get("turn") or {}).get("action") in {"skip", "emoji"}:
         fallback = fallback_for_scene(ctx.wanderer, scene, thread_key, on_failure=True)
@@ -425,7 +432,8 @@ def day_start_iso(now: datetime) -> str:
 def today_action_count(conn: Any, wanderer_id: int, now: datetime) -> int:
     row = conn.execute(
         "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND created_at >= ? "
-        "AND action_kind NOT IN ('knowledge_forget','experience_learn','reflect','daily_reflection','web_search')",
+        "AND action_kind NOT IN ('knowledge_forget','experience_learn','reflect','daily_reflection','web_search',"
+        "'todo_create','todo_update','todo_delete','todo_complete')",
         (int(wanderer_id), day_start_iso(now)),
     ).fetchone()
     return as_int(_row_value(row, "n"))

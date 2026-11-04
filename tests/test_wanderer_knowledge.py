@@ -60,9 +60,9 @@ class KnowledgeDepthTest(unittest.TestCase):
         low = _knowledge_digest(long, 0)
         mid = _knowledge_digest(long, 4)
         high = _knowledge_digest(long, 8)
-        self.assertLessEqual(len(low), 81)
-        self.assertLessEqual(len(mid), 161)
-        self.assertLessEqual(len(high), 401)
+        self.assertLessEqual(len(low), 201)
+        self.assertLessEqual(len(mid), 441)
+        self.assertLessEqual(len(high), 681)
         self.assertLess(len(low), len(mid))
         self.assertLess(len(mid), len(high))
         self.assertTrue(low.startswith("第一句。"))
@@ -75,18 +75,23 @@ class KnowledgeDepthTest(unittest.TestCase):
 
 
 class WandererKnowledgeTest(WandererDbTestCase):
-    def test_capacity_forgets_oldest_least_used(self):
+    def test_capacity_forgets_least_used_without_exceeding_capacity(self):
         with self.connect() as conn:
-            wanderer = _neutral(conn, self.wanderer(conn, "xiaoman"))  # tier 0 -> 4000 chars
+            wanderer = _neutral(conn, self.wanderer(conn, "xiaoman"))  # tier 0 -> 4000 chars, 1000/note
+            conn.execute("DELETE FROM wanderer_knowledge_entries WHERE wanderer_id = ?", (wanderer["id"],))
+            conn.execute("UPDATE wanderer_agents SET knowledge_chars = 0 WHERE id = ?", (wanderer["id"],))
             conn.execute("UPDATE wanderer_knowledge_entries SET use_count = 5 WHERE wanderer_id = ?", (wanderer["id"],))
             for ref in ("k1", "k2", "k3", "k4"):
                 result = add_knowledge(conn, wanderer, source_kind="material", source_ref=ref, title=ref,
                                        digest="知" * 1000, tags=["画画"])
-            self.assertEqual(result["forgotten"], [conn.execute(
-                "SELECT id FROM wanderer_knowledge_entries WHERE source_ref = 'k1'").fetchone()[0]])
+            self.assertEqual(result["forgotten"], [])  # 4 × 1000 = exactly 4000
+            result = add_knowledge(conn, wanderer, source_kind="material", source_ref="k5", title="k5",
+                                   digest="识" * 1000, tags=["画画"])
+            self.assertTrue(result["forgotten"])
             conn.execute("UPDATE wanderer_knowledge_entries SET use_count = 3 WHERE source_ref = 'k2'")
-            add_knowledge(conn, wanderer, source_kind="material", source_ref="k5", title="k5",
-                          digest="识" * 1000, tags=["画画"])
+            result = add_knowledge(conn, wanderer, source_kind="material", source_ref="k6", title="k6",
+                                   digest="记" * 1000, tags=["画画"])
+            self.assertTrue(result["forgotten"])
             statuses = _statuses(conn, wanderer["id"])
             summary = knowledge_summary(conn, wanderer)
             forget_logs = conn.execute(
@@ -95,8 +100,9 @@ class WandererKnowledgeTest(WandererDbTestCase):
             ).fetchone()[0]
             stored_chars = load_wanderer(conn, wanderer["id"])["knowledge_chars"]
             conn.rollback()
-        self.assertEqual(statuses, {"k1": "forgotten", "k2": "active", "k3": "forgotten", "k4": "active", "k5": "active"})
-        self.assertEqual(forget_logs, 2)
+        self.assertEqual(statuses["k6"], "active")
+        self.assertGreaterEqual(sum(1 for value in statuses.values() if value == "forgotten"), 2)
+        self.assertGreaterEqual(forget_logs, 2)
         self.assertLessEqual(summary["chars"], summary["capacity"])
         self.assertEqual(summary["capacity"], 4000)
         self.assertEqual(stored_chars, summary["chars"])

@@ -33,7 +33,7 @@ from .wanderer_identity_service import (
     wisdom_directive,
 )
 from .wanderer_knowledge_service import select_knowledge_for_scene
-from .wanderer_life_core import talent_effects
+from .wanderer_life_core import knowledge_prompt_cap, talent_effects
 from .wanderer_life_service import promotion_requirements
 from .wanderer_memory_service import load_thread, thread_context_block
 from .wanderer_relationship_service import relationship_block
@@ -201,13 +201,9 @@ def _knowledge_limit(tier: int) -> int:
     return 3 + tier // 2
 
 
-_KNOWLEDGE_DIGEST_CAPS = ((2, 80), (5, 160), (10, 400))
-
-
 def _knowledge_digest(digest: Any, tier: Any) -> str:
     """Only the part of a learned note this tier can actually recall."""
-    level = clamp_tier(tier)
-    cap = next(limit for upper, limit in _KNOWLEDGE_DIGEST_CAPS if level <= upper)
+    cap = knowledge_prompt_cap(tier)
     text = str(digest or "").strip()
     if len(text) <= cap:
         return text
@@ -296,9 +292,13 @@ def _counterpart_line(counterpart: Optional[dict[str, Any]]) -> str:
         cultivation = counterpart.get("cultivation")
         suffix = f"，境界：{tier_name}" if tier_name else ""
         suffix += f"，修为：{float(cultivation):g}" if cultivation is not None else ""
+        days = counterpart.get("remaining_days")
+        suffix += f"，剩余寿元：{int(days)} 天" if days is not None else ""
         return f"【对方】{name}（散修{suffix}）——对方也是散修，可以调侃。"
     role = str(counterpart.get("role_label") or "真实学生")
-    return f"【对方】{name}（{role}，真实用户）。"
+    org = str(counterpart.get("org") or "").strip()
+    suffix = f"，{org}" if org else ""
+    return f"【对方】{name}（{role}{suffix}，真实用户）。"
 
 
 def _memory_block(conn: Any, wanderer: dict[str, Any], thread_key: str, scene: dict[str, Any]) -> str:
@@ -311,6 +311,139 @@ def _memory_block(conn: Any, wanderer: dict[str, Any], thread_key: str, scene: d
     if counterpart:
         parts.append(counterpart)
     return "\n".join(parts)
+
+
+def _conversation_label(key: str, me: str, people: dict[str, Any], groups: dict[str, str]) -> str:
+    value = str(key or "")
+    if value.startswith("dm:"):
+        parties = [part for part in value[3:].split("|") if part]
+        peer = next((part for part in parties if part != me), parties[0] if parties else "")
+        return f"私聊·{(people.get(peer) or {}).get('name') or peer}"
+    if value.startswith("group:"):
+        group_id = value.split(":", 1)[1]
+        return f"群聊·{groups.get(group_id) or '群'}"
+    return "会话"
+
+
+def _cross_channel_block(conn: Any, wanderer: dict[str, Any], *, include_incoming_dm: bool = False) -> str:
+    """Recent traces across every channel, so a DM is not forgotten in a group.
+
+    Bounded on purpose: the block is a continuity aid, not another transcript.
+    """
+    from .social_identity_service import load_people
+
+    lines: list[str] = []
+    try:
+        actions = conn.execute(
+            "SELECT action_kind, location, content_preview, outcome, created_at FROM wanderer_action_log "
+            "WHERE wanderer_id = ? AND action_kind NOT IN ('skip', 'knowledge_forget') "
+            "ORDER BY id DESC LIMIT 12",
+            (int(wanderer["id"]),),
+        ).fetchall()
+        if actions:
+            lines.append("【最近的行动】")
+            for row in actions:
+                when = str(row["created_at"] or "")[11:16]
+                where = str(row["location"] or "").strip()
+                preview = _clip(row["content_preview"], 60)
+                status = "" if str(row["outcome"] or "") == "ok" else f"（{row['outcome']}）"
+                lines.append(f"[{when}] {row['action_kind']}{'·' + where if where else ''}：{preview}{status}")
+    except Exception:  # noqa: BLE001 - trace is optional
+        pass
+    try:
+        reflection = conn.execute(
+            "SELECT applied_json, output_json FROM wanderer_daily_reflections WHERE wanderer_id = ? "
+            "AND status = 'applied' ORDER BY reflection_date DESC LIMIT 1",
+            (int(wanderer["id"]),),
+        ).fetchone()
+        if reflection is not None:
+            applied = _json_or_empty(reflection["applied_json"])
+            output = _json_or_empty(reflection["output_json"])
+            summary = str(applied.get("summary") or (output.get("today") or {}).get("summary") or "")[:400]
+            if summary:
+                lines.append(f"【上次自省】{summary}")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        rel_rows = conn.execute(
+            "SELECT peer_identity, affinity, last_reason FROM wanderer_relationships "
+            "WHERE wanderer_id = ? ORDER BY ABS(affinity) DESC, interactions DESC LIMIT 6",
+            (int(wanderer["id"]),),
+        ).fetchall()
+        peers = {str(row["peer_identity"]) for row in rel_rows}
+        people = load_people(conn, peers) if peers else {}
+        group_rows = conn.execute(
+            "SELECT g.id, g.name FROM social_group_members m JOIN social_groups g ON g.id = m.group_id "
+            "WHERE m.member_identity = ? AND m.left_at IS NULL AND g.dissolved_at IS NULL LIMIT 8",
+            (f"student:{int(wanderer['student_id'])}",),
+        ).fetchall()
+        groups = {str(row["id"]): str(row["name"] or "") for row in group_rows}
+        socials: list[str] = []
+        if rel_rows:
+            socials.append("【关系】" + "；".join(
+                f"{(people.get(str(row['peer_identity'])) or {}).get('name') or row['peer_identity']}"
+                f"（好感 {float(row['affinity'] or 0):+.0f}{'：' + str(row['last_reason'])[:40] if row['last_reason'] else ''}）"
+                for row in rel_rows))
+        if groups:
+            socials.append("【在的群】" + "、".join(groups.values()))
+        me = f"student:{int(wanderer['student_id'])}"
+        if include_incoming_dm:
+            social_sql = ("SELECT conversation_key, conversation_type, sender_identity, body, created_at "
+                          "FROM social_messages WHERE (sender_identity = ? OR (conversation_type = 'dm' "
+                          "AND (conversation_key LIKE ? OR conversation_key LIKE ?))) "
+                          "AND message_type = 'text' AND recalled_at IS NULL ORDER BY id DESC LIMIT 10")
+            social_params: tuple[Any, ...] = (me, f"dm:%|{me}", f"dm:{me}|%")
+        else:
+            social_sql = ("SELECT conversation_key, conversation_type, sender_identity, body, created_at "
+                          "FROM social_messages WHERE sender_identity = ? "
+                          "AND message_type = 'text' AND recalled_at IS NULL ORDER BY id DESC LIMIT 10")
+            social_params = (me,)
+        messages = conn.execute(social_sql, social_params).fetchall()
+        if messages:
+            chat_peers: set[str] = set()
+            for row in messages:
+                key = str(row["conversation_key"])
+                if key.startswith("dm:"):
+                    chat_peers.update(part for part in key[3:].split("|") if part and part != me)
+            chat_people = load_people(conn, chat_peers | {str(row["sender_identity"]) for row in messages})
+            chat_lines = []
+            for row in reversed(messages):
+                sender = str(row["sender_identity"] or "")
+                who = "我" if sender == me else (chat_people.get(sender) or {}).get("name") or sender
+                chat_lines.append(
+                    f"- [{str(row['created_at'] or '')[11:16]}] "
+                    f"{_conversation_label(str(row['conversation_key']), me, chat_people, groups)} {who}："
+                    f"{_clip(row['body'], 70)}"
+                )
+            socials.append("【你在别的场合看到或说过的话】\n" + "\n".join(chat_lines))
+        if socials:
+            lines.append("\n".join(socials))
+    except Exception:  # noqa: BLE001
+        pass
+    if not lines:
+        return ""
+    return ("【跨场合的近期记忆】这些是你在别的场合看到或说过的，只用来保持连贯；"
+            "不要把私聊内容搬到群里或公开场合，也不要把没发生的事说成记得。\n" + "\n".join(lines))[:4_000]
+
+
+def _json_or_empty(value: Any) -> dict[str, Any]:
+    import json as _json
+
+    try:
+        parsed = _json.loads(str(value or "{}"))
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _todo_block(conn: Any, wanderer: dict[str, Any], scene: dict[str, Any]) -> str:
+    from .wanderer_todo_service import todo_block, todo_ops_contract
+
+    try:
+        body = todo_block(conn, wanderer, wake_todo_id=scene.get("_wake_todo_id"))
+    except Exception:  # noqa: BLE001 - a missing table must not break the prompt
+        return ""
+    return f"{body}\n{todo_ops_contract(wanderer.get('tier'))}"
 
 
 def _mood_block(wanderer: dict[str, Any]) -> str:
@@ -339,10 +472,14 @@ def _roster_line(person: dict[str, Any]) -> str:
         tier_name = str(person.get("tier_name") or "")
         cultivation = person.get("cultivation")
         extra = "，修为：" + f"{float(cultivation):g}" if cultivation is not None else ""
+        days = person.get("remaining_days")
+        extra += f"，剩余寿元：{int(days)} 天" if days is not None else ""
         return f"- {name}（散修{'，境界：' + tier_name if tier_name else ''}{extra}）——可以调侃"
+    org = str(person.get("org") or "").strip()
+    suffix = f"，{org}" if org else ""
     if str(person.get("role") or "") == "teacher":
-        return f"- {name}（老师，真实用户）"
-    return f"- {name}（真实学生）"
+        return f"- {name}（老师{suffix}，真实用户）"
+    return f"- {name}（真实学生{suffix}）"
 
 
 def _social_block(scene: dict[str, Any]) -> str:
@@ -363,6 +500,11 @@ def _scene_block(scene: dict[str, Any]) -> str:
         lines.append(f"标题：{_clip(scene['title'], 120)}")
     if scene.get("meta"):
         lines.append(f"情况：{_clip(scene['meta'], 200)}")
+    focus = scene.get("reply_focus")
+    if isinstance(focus, dict) and str(focus.get("body") or "").strip():
+        direct = "（直接对你说的）" if focus.get("direct") else ""
+        lines.append(f"【最后一条要回应】{_clip(focus.get('sender') or '对方', 30)}{direct}："
+                     f"{_clip(focus.get('body'), 200)}")
     quoted: list[str] = []
     if scene.get("body"):
         quoted.append(f"正文：\n{_clip(scene['body'], SCENE_BODY_MAX_CHARS)}")
@@ -476,11 +618,14 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
         (9, voice_guide(wanderer, scene, thread_key, recent_self)),
         (10, _tier_block(wanderer, passive=passive)),
         (10, _life_block(conn, wanderer)),
+        (9, _todo_block(conn, wanderer, scene)),
         (9, _mood_block(wanderer)),
         (6, _knowledge_block(conn, wanderer, scene_tags)),
         (10, _knowledge_depth_block(wanderer) if _is_public_scene(scene) else ""),
         (10, _dao_block(conn, wanderer)),
         (8, _episodic_block(conn, wanderer, scene)),
+        (7, _cross_channel_block(conn, wanderer,
+                                 include_incoming_dm=str(scene.get("scene_type") or "") == SCENE_GROUP_CHAT)),
         (8, _memory_block(conn, wanderer, thread_key, scene)),
         (9, relationship_block(conn, wanderer)),
         (7, learning),
@@ -593,4 +738,12 @@ def parse_turn_output(text: Any, *, max_parts: int = 3) -> dict[str, Any]:
     inner = str(payload.get("inner") or "").strip()
     if inner:
         result["inner"] = inner[:120]
+    todos = payload.get("todos")
+    if isinstance(todos, list):
+        cleaned_todos = [item for item in todos if isinstance(item, dict)][:5]
+        if cleaned_todos:
+            result["todos"] = cleaned_todos
+    gift = payload.get("gift")
+    if isinstance(gift, dict):
+        result["gift"] = gift
     return result

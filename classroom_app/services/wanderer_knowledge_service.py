@@ -17,10 +17,15 @@ from ..db.connection import execute_insert_returning_id
 from ..db.schema_wanderers import ensure_wanderer_schema
 from ..time_utils import local_iso
 from .wanderer_identity_service import invalidate_wanderer_cache, log_wanderer_action
-from .wanderer_life_core import SCORE_CHARS_PER_POINT, knowledge_capacity_for, knowledge_gain, talent_value
+from .wanderer_life_core import (
+    SCORE_CHARS_PER_POINT,
+    knowledge_capacity_for,
+    knowledge_digest_limit,
+    knowledge_gain,
+    talent_value,
+)
 
 SOURCE_KINDS = frozenset({"material_page", "material", "blog_post", "classroom", "seed", "reflection", "legacy"})
-KNOWLEDGE_DIGEST_MAX_CHARS = 1200
 KNOWLEDGE_TITLE_MAX_CHARS = 120
 _MAX_TAGS = 12
 
@@ -131,7 +136,7 @@ def add_knowledge(
     ensure_wanderer_schema(conn)
     if source_kind not in SOURCE_KINDS:
         raise ValueError(f"unknown knowledge source_kind: {source_kind}")
-    clean_digest = str(digest or "").strip()[:KNOWLEDGE_DIGEST_MAX_CHARS]
+    clean_digest = str(digest or "").strip()[:knowledge_digest_limit(wanderer.get("tier"))]
     if not clean_digest:
         raise ValueError("知识摘要不能为空")
     wanderer_id = int(wanderer["id"])

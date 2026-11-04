@@ -10,12 +10,13 @@ WANDERER_TABLES = {
     "wanderer_agents", "wanderer_knowledge_entries", "wanderer_memory_threads",
     "wanderer_action_log", "wanderer_dao_reviews", "wanderer_runtime_settings",
     "wanderer_relationships", "wanderer_legacies", "wanderer_episodic_memories",
-    "wanderer_memory_chapters", "wanderer_daily_reflections",
+    "wanderer_memory_chapters", "wanderer_daily_reflections", "wanderer_todos",
 }
 LIFECYCLE_COLUMNS = {
     "born_at", "lifespan_weeks", "life_penalty_weeks", "life_extensions", "talents_json",
     "last_extend_at", "last_appeal_at", "last_resurrect_at", "appeal_requested",
-    "appeal_requested_at", "appeal_note", "legacy_id",
+    "appeal_requested_at", "appeal_note", "legacy_id", "life_gift_in_weeks", "life_gift_out_weeks",
+    "gift_requested", "gift_target_identity", "gift_weeks", "gift_reason", "gift_requested_at",
 }
 HUMANITY_COLUMNS = {
     "persona_version", "persona_source_hash", "persona_source_json", "persona_updated_at",
@@ -56,7 +57,7 @@ class WandererSchemaSqliteTest(WandererDbTestCase):
                      "idx_wanderer_dao_reviews_wanderer", "idx_wanderer_relationships_affinity",
                      "idx_wanderer_legacies_status", "idx_wanderer_episodes_status",
                      "idx_wanderer_episodes_importance", "idx_wanderer_chapters_period",
-                     "idx_wanderer_reflections_date"):
+                     "idx_wanderer_reflections_date", "idx_wanderer_todos_due"):
             self.assertIn(name, indexes)
 
     def test_lifecycle_columns_exist(self):

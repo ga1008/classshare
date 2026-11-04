@@ -732,6 +732,13 @@ register_task_handler(TASK_KIND_WANDERER_DAO_DAILY, handle_wanderer_dao_daily_re
 register_task_handler(TASK_KIND_WANDERER_REFLECTION, handle_wanderer_daily_reflection)
 register_task_handler(TASK_KIND_DAO_MENTION_REPLY, handle_dao_mention_reply)
 
+from .wanderer_todo_service import (  # noqa: E402
+    TASK_KIND_WANDERER_TODO_WAKE,
+    handle_wanderer_todo_wake,
+)
+
+register_task_handler(TASK_KIND_WANDERER_TODO_WAKE, handle_wanderer_todo_wake)
+
 from .wanderer_actions_social import (  # noqa: E402
     handle_wanderer_group_watch,
     handle_wanderer_social_reply,

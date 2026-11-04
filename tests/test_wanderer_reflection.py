@@ -36,6 +36,7 @@ class ReflectionTest(WandererDbTestCase):
         with self.connect() as conn:
             conn.execute("DELETE FROM wanderer_daily_reflections")
             conn.execute("DELETE FROM wanderer_action_log")
+            conn.execute("DELETE FROM wanderer_todos")
             conn.execute("UPDATE wanderer_agents SET mood_json = '{}', self_tuning_json = '{}'")
             conn.commit()
 
@@ -68,6 +69,21 @@ class ReflectionTest(WandererDbTestCase):
 
         again = asyncio.run(run_reflection(self._ctx("atai", StubCaller(_payload()))))
         self.assertEqual(again["status"], "skipped")
+
+    def test_reflection_can_manage_the_todo_list(self):
+        payload = json.loads(_payload())
+        payload["todos"] = [{"op": "create", "title": "明天问问他膝盖"}]
+        ctx = self._ctx("atai", StubCaller(json.dumps(payload, ensure_ascii=False)))
+        result = asyncio.run(run_reflection(ctx))
+        self.assertEqual(result["status"], "applied", result)
+        with self.connect() as conn:
+            rows = [dict(row) for row in conn.execute(
+                "SELECT title, status FROM wanderer_todos WHERE wanderer_id = ?", (ctx.wanderer_id,)
+            ).fetchall()]
+            prompt = str(ctx.ai_caller.calls[0][1])
+        self.assertEqual(rows, [{"title": "明天问问他膝盖", "status": "pending"}])
+        self.assertIn("【你的待办】", prompt)
+        self.assertIn("todos", prompt)
 
     def test_unparseable_reflection_is_failed_without_mutation(self):
         ctx = self._ctx("momo", StubCaller("这不是 JSON"))

@@ -51,7 +51,7 @@ def _student_people(conn: Any, ids: list[int]) -> dict[str, dict[str, Any]]:
     if not ids:
         return {}
     from .cultivation_display_service import load_student_emblems
-    from .wanderer_identity_service import load_wanderers_by_student_ids
+    from .wanderer_identity_service import current_life, load_wanderers_by_student_ids
 
     marks, params = in_clause(ids)
     rows = conn.execute(
@@ -67,6 +67,7 @@ def _student_people(conn: Any, ids: list[int]) -> dict[str, dict[str, Any]]:
         wanderer = wanderers.get(student_id) or {}
         status = str(row["enrollment_status"] or "active")
         identity = f"student:{student_id}"
+        life = current_life(wanderer) if wanderer else {}
         people[identity] = {
             "identity": identity,
             "role": "student",
@@ -78,6 +79,9 @@ def _student_people(conn: Any, ids: list[int]) -> dict[str, dict[str, Any]]:
             "wanderer_slug": str(wanderer.get("slug") or ""),
             "cultivation_score": float(wanderer.get("cultivation_score") or 0),
             "wanderer_tier": int(wanderer.get("tier") or 0),
+            "remaining_days": int(life.get("remaining_days") or 0) if wanderer else None,
+            "remaining_weeks": float(life.get("remaining_weeks") or 0) if wanderer else None,
+            "expires_at": str(life.get("expires_at") or "") if wanderer else "",
             "mood": str(row["today_mood"] or ""),
             "active": status in ACTIVE_STUDENT_STATUSES and wanderer.get("status") != "dead",
             "tier_badge": _tier_badge(emblems.get(student_id)),

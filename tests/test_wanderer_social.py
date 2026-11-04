@@ -28,6 +28,7 @@ from classroom_app.services.wanderer_actions_social import (
     watch_group,
 )
 from classroom_app.services.wanderer_identity_service import build_wanderer_user_dict, log_wanderer_action
+from classroom_app.services.wanderer_prompt_service import SCENE_GROUP_CHAT, build_system_prompt
 from classroom_app.services.wanderer_settings_service import SETTING_DAILY_AI_CALL_CAP, wanderer_runtime_setting_set
 from classroom_app.services.wanderer_social_friends import (
     TARGET_REQUEST_OUT,
@@ -361,6 +362,26 @@ class WandererSocialTest(WandererWorldTestCase):
         self.assertNotIn("S-0001", prompt)
         self.assertEqual(asyncio.run(start_friend_conversation(ctx)), [])  # no nag before a reply
 
+    def test_group_prompt_carries_dm_context_and_peer_lifespan(self):
+        key = self.befriend(self.real, self.lele)
+        self.send(self.real, key, "昨天说的那本书我找到了")
+        scene = {
+            "kind": "群聊",
+            "scene_type": SCENE_GROUP_CHAT,
+            "participants": [
+                {"name": "乐乐", "is_wanderer": True, "tier_name": "第 3 境", "cultivation": 12.0,
+                 "remaining_days": 42},
+                {"name": "真实同学", "is_wanderer": False, "role": "student", "org": "合成一班"},
+            ],
+        }
+        with self.connect() as conn:
+            prompt = build_system_prompt(conn, self.lele, scene=scene, thread_key="group:1")
+        self.assertIn("【跨场合的近期记忆】", prompt)
+        self.assertIn("昨天说的那本书我找到了", prompt)
+        self.assertIn("私聊·", prompt)
+        self.assertIn("剩余寿元：42 天", prompt)
+        self.assertIn("合成一班", prompt)
+
     def test_proactive_chat_model_can_choose_silence(self):
         from classroom_app.services.wanderer_social_outreach import start_friend_conversation
         key = self.befriend(self.real, self.atai)
@@ -473,7 +494,7 @@ class WandererSocialTest(WandererWorldTestCase):
         self.assertTrue(self.pushes.of_type("read"))  # the peer sees the read receipt
         prompt = caller.calls[0][1]["system_prompt"]
         self.assertIn("【聊天场景】这是好友私聊", prompt)
-        self.assertIn("真实同学（真实学生）", prompt)
+        self.assertIn("真实同学（真实学生", prompt)
         self.assertIn("明天一起打球？", prompt)
         self.assertEqual(caller.labels, ["wanderer:atai:dm_inbox"])
         logged = [row for row in self.actions(self.atai["id"]) if row["action_kind"] == "social_message"]

@@ -17,6 +17,7 @@ from typing import Any, Callable, Optional
 from ..time_utils import local_iso, local_now
 from .wanderer_actions_common import ActionContext, record_action, run_turn
 from .wanderer_identity_service import STATUS_ACTIVE, invalidate_wanderer_cache, list_wanderers
+from .wanderer_life_core import reflection_summary_limit
 from .wanderer_prompt_service import extract_json_object
 from .wanderer_settings_service import (
     is_wanderer_runtime_enabled,
@@ -30,7 +31,6 @@ REFLECTION_DEDUPE_KEY = "wanderer:daily-reflection"
 REFLECTION_INTERVAL_SECONDS = 86_400
 REFLECTION_MAX_ATTEMPTS = 24
 REFLECTION_INPUT_CHARS = 60_000
-REFLECTION_SUMMARY_MAX = 1_200
 REFLECTION_CONTRACT = """【输出合同】只输出一个 JSON 对象，不要 Markdown，不要解释：
 {
   "mood": {"label": "一两个词", "valence": -1到1, "energy": 0到1, "reason": "为什么"},
@@ -42,10 +42,20 @@ REFLECTION_CONTRACT = """【输出合同】只输出一个 JSON 对象，不要 
                "tone": {"warmth": -1到1, "directness": -1到1, "playfulness": -1到1, "verbosity": -1到1},
                "focus_topics": ["..."], "avoid_topics": ["..."], "people_to_contact": ["student:12"],
                "planned_actions": ["..."]},
+  "todos": [{"op": "create|update|delete|complete", "id": 12, "title": "...", "detail": "...",
+             "due_at": "YYYY-MM-DD HH:MM", "due_in_minutes": 120}],
   "promotion_intent": false
 }
 用朴素记录：写具体做了什么、当时怎么想、明天怎么做；不要文学化自我标签（如“安静自省”“清醒而自省”“静下来的雀跃”）。
+自省时顺带看一遍待办清单：想做的事可以新增，拖延的可以改期或取消，做完的可以 complete；最多 5 个操作。
 不必每项都填满；没有把握的字段可以省略，但不要编造没有发生的事。"""
+
+
+def reflection_contract(tier: Any = 0) -> str:
+    """The contract plus this tier's retained-summary budget (manual documents it)."""
+    limit = reflection_summary_limit(tier)
+    return (REFLECTION_CONTRACT
+            + f"\n今天的小结（today.summary）最多保留 {limit} 字，超出会被截断；把最重要的写在前面。")
 
 
 def reflection_date(now: Any = None) -> str:
@@ -153,7 +163,8 @@ def _input_text(conn: Any, wanderer: dict[str, Any], now: Any) -> str:
     if previous is not None:
         output = _loads(_row_value(previous, "output_json", 0), dict)
         applied = _loads(_row_value(previous, "applied_json", 1), dict)
-        summary = str((output.get("today") or {}).get("summary") or applied.get("summary") or "")[:500]
+        preview = reflection_summary_limit(wanderer.get("tier"))
+        summary = str((output.get("today") or {}).get("summary") or applied.get("summary") or "")[:preview]
         intentions = (applied.get("self_tuning") or {}).get("intentions") or []
         previous_text = f"上次反省：{summary}\n上次给自己的计划：{'；'.join(str(item) for item in intentions)[:500]}"
     requirements = _requirements_text(conn, wanderer)
@@ -175,10 +186,20 @@ def _input_text(conn: Any, wanderer: dict[str, Any], now: Any) -> str:
         relationship_block(conn, wanderer),
         memory_block(conn, wanderer, budget_chars=12_000),
         today_trace(conn, wanderer, now=now, limit=40),
+        _todo_reflection_block(conn, wanderer, now),
         dao_block,
         previous_text,
     ]
     return "\n\n".join(block for block in blocks if block)[:REFLECTION_INPUT_CHARS]
+
+
+def _todo_reflection_block(conn: Any, wanderer: dict[str, Any], now: Any) -> str:
+    from .wanderer_todo_service import todo_block
+
+    try:
+        return todo_block(conn, wanderer, now=now)
+    except Exception:  # noqa: BLE001 - reflection must not fail on a missing table
+        return ""
 
 
 def _tomorrow_date(now: Any) -> str:
@@ -250,7 +271,7 @@ def _apply_payload(conn: Any, wanderer: dict[str, Any], payload: dict[str, Any],
     applied["new_episodes"] = new_episodes
 
     today_summary = payload.get("today") if isinstance(payload.get("today"), dict) else {}
-    summary = str(today_summary.get("summary") or "")[:REFLECTION_SUMMARY_MAX]
+    summary = str(today_summary.get("summary") or "")[:reflection_summary_limit(wanderer.get("tier"))]
     if summary:
         record_memory(conn, wanderer, kind="reflection", title=f"{reflection_date(now)} 自省",
                       content=summary, importance=0.7, tags=["自省"],
@@ -330,7 +351,7 @@ async def run_reflection(ctx: ActionContext, *, force: bool = False) -> dict[str
             "meta": f"{date} · 不看别人，只看自己的一天", "body": body,
             "tags": ["自省", "今天"], "task": "回顾今天做过的事、说过的话和后果；诚实地看自己，然后决定明天怎么过。"
                                                     "用朴素的话，不写文学化自我描述。",
-            "output_contract": REFLECTION_CONTRACT,
+            "output_contract": reflection_contract(ctx.wanderer.get("tier")),
         }
         result = await run_turn(ctx, scene=scene, thread_key="reflection", suffix="daily_reflection")
         calls = int(result.get("ai_calls") or 0)

@@ -47,7 +47,9 @@ from .wanderer_actions_classroom import visit_classroom
 from .wanderer_actions_common import ActionContext, as_int, behavior_on, outcome, record_action, today_action_count
 from .wanderer_actions_knowledge import (
     appeal_eligible,
+    gift_candidates,
     maybe_extend_life,
+    offer_lifespan,
     promotion_eligible,
     reflect_on_reviews,
     request_appeal,
@@ -77,7 +79,7 @@ from .wanderer_identity_service import (
     load_wanderer,
     mark_dead,
 )
-from .wanderer_life_core import INTERACTION_POINTS, active_interaction_limit, can_extend_life
+from .wanderer_life_core import GIFT_MIN_TIER, INTERACTION_POINTS, active_interaction_limit, can_extend_life
 from .wanderer_life_service import (
     award_interaction_cultivation,
     backfill_all,
@@ -197,6 +199,12 @@ def ensure_wanderer_scheduled_tasks(conn: Any) -> dict[str, int]:
         ensure_manual_materials(conn)
     except Exception as exc:  # noqa: BLE001 - manuals must never block the scheduler
         print(f"[WANDERER MANUAL] 播种失败: {type(exc).__name__}: {exc}")
+    try:
+        from .wanderer_todo_service import ensure_todo_wakes
+
+        ensure_todo_wakes(conn, now=now)
+    except Exception as exc:  # noqa: BLE001 - a bad row must never block the scheduler
+        print(f"[WANDERER TODO] 补挂唤醒失败: {type(exc).__name__}: {exc}")
     reflection_hour_value, reflection_minute = reflection_hour(conn)
     reflection_wanted = f"{reflection_hour_value:02d}:{reflection_minute:02d}"
     reflection_changed = wanderer_runtime_setting_get(conn, SETTING_REFLECTION_HOUR_ARMED) != reflection_wanted
@@ -393,6 +401,13 @@ def choose_action(ctx: ActionContext, *, first: bool) -> str:
             options.append((name, 0.6 if name in {"social_block", "social_group_create"} else 0.3))
         if promotion_eligible(ctx, conn):
             options.append(("promotion", 3.0))
+        if (behavior_on(wanderer, "gift_life") and clamp_tier(wanderer.get("tier")) >= GIFT_MIN_TIER
+                and not as_int(wanderer.get("gift_requested"))):
+            try:
+                if gift_candidates(conn, wanderer):
+                    options.append(("gift_life", 0.25))
+            except Exception:  # noqa: BLE001 - an unreadable relationship table must not stop the tick
+                pass
         if can_extend_life(current_life(wanderer), wanderer.get("cultivation_score")):
             options.append(("extend_life", 6.0))
         if ctx.special and appeal_eligible(conn, wanderer, ctx.current_time()):
@@ -421,6 +436,7 @@ ACTIONS: dict[str, ActionFn] = {
     "classroom": visit_classroom,
     "knowledge": study_material,
     "promotion": request_promotion,
+    "gift_life": offer_lifespan,
     "post": write_post,
     "social_outreach": start_friend_conversation,
     "social_seek": maybe_seek_friend,

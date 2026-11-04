@@ -77,6 +77,24 @@ def _table_statements(id_column: str) -> list[str]:
         )
         """,
         f"""
+        CREATE TABLE IF NOT EXISTS wanderer_todos (
+            {id_column},
+            wanderer_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            detail TEXT NOT NULL DEFAULT '',
+            schedule_kind TEXT NOT NULL DEFAULT 'none',
+            due_at TEXT,
+            remind_at TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            source TEXT NOT NULL DEFAULT 'self',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT,
+            last_woke_at TEXT,
+            wake_count INTEGER NOT NULL DEFAULT 0
+        )
+        """,
+        f"""
         CREATE TABLE IF NOT EXISTS wanderer_relationships (
             {id_column},
             wanderer_id INTEGER NOT NULL,
@@ -330,6 +348,8 @@ _INDEX_STATEMENTS = (
     "ON wanderer_memory_chapters (wanderer_id, period_start)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_reflections_date "
     "ON wanderer_daily_reflections (wanderer_id, reflection_date)",
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_todos_due "
+    "ON wanderer_todos (wanderer_id, status, remind_at)",
 )
 
 
@@ -378,6 +398,14 @@ ADDED_COLUMNS = (
     # 2026-11-01: 天道 may restrict daily active interactions for a few days.
     ("wanderer_agents", "interaction_limit_penalty", "INTEGER NOT NULL DEFAULT 0"),
     ("wanderer_agents", "interaction_penalty_until", "TEXT"),
+    # 2026-11-04: lifespan gifts (tier ≥ 3) and their 天道 request.
+    ("wanderer_agents", "life_gift_in_weeks", "REAL NOT NULL DEFAULT 0"),
+    ("wanderer_agents", "life_gift_out_weeks", "REAL NOT NULL DEFAULT 0"),
+    ("wanderer_agents", "gift_requested", "INTEGER NOT NULL DEFAULT 0"),
+    ("wanderer_agents", "gift_target_identity", "TEXT NOT NULL DEFAULT ''"),
+    ("wanderer_agents", "gift_weeks", "REAL NOT NULL DEFAULT 0"),
+    ("wanderer_agents", "gift_reason", "TEXT NOT NULL DEFAULT ''"),
+    ("wanderer_agents", "gift_requested_at", "TEXT"),
 )
 
 

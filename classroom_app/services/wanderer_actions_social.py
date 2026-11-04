@@ -265,7 +265,9 @@ def _roster(window: dict[str, Any], me: str) -> list[dict[str, Any]]:
             continue
         roster.append({"name": person.get("name") or "", "is_self": identity == me, "role": person.get("role"),
                        "is_wanderer": bool(person.get("is_wanderer")), "tier_name": _tier_name(person),
-                       "cultivation": person.get("cultivation_score") if person.get("is_wanderer") else None})
+                       "cultivation": person.get("cultivation_score") if person.get("is_wanderer") else None,
+                       "org": person.get("org_label") or "",
+                       "remaining_days": person.get("remaining_days") if person.get("is_wanderer") else None})
         if len(roster) >= ROSTER_LIMIT:
             break
     return roster
@@ -277,9 +279,20 @@ def _counterpart(window: dict[str, Any]) -> Optional[dict[str, Any]]:
     person = window["people"].get(window["parsed"]["peer"]) or {}
     if person.get("is_wanderer"):
         return {"name": person.get("name") or "对方", "is_wanderer": True, "tier_name": _tier_name(person),
-                "cultivation": person.get("cultivation_score")}
+                "cultivation": person.get("cultivation_score"), "remaining_days": person.get("remaining_days")}
     label = "老师" if person.get("role") == "teacher" else "真实学生"
-    return {"name": person.get("name") or "对方", "is_wanderer": False, "role_label": label}
+    return {"name": person.get("name") or "对方", "is_wanderer": False, "role_label": label,
+            "org": person.get("org_label") or ""}
+
+
+def _reply_focus(window: dict[str, Any], me: str) -> Optional[dict[str, Any]]:
+    if not window.get("new"):
+        return None
+    row = window["new"][-1]
+    person = window["people"].get(str(row["sender_identity"])) or {}
+    return {"sender": person.get("name") or str(row["sender_identity"]),
+            "body": str(row.get("body") or "")[:200],
+            "direct": window["type"] == "dm" or is_mentioned(row, me)}
 
 
 def chat_scene(ctx: ActionContext, window: dict[str, Any], mode: str, mentioned: bool) -> dict[str, Any]:
@@ -302,6 +315,7 @@ def chat_scene(ctx: ActionContext, window: dict[str, Any], mode: str, mentioned:
         "title": f"群「{window['title']}」" if group else f"与 {window['title']} 的私聊",
         "meta": f"{len(window['new'])} 条新消息",
         "conversation_text": conversation_text(window["rows"], window["people"], ctx.identity),
+        "reply_focus": _reply_focus(window, ctx.identity),
         "friend_context": context,
         "tags": list(ctx.wanderer.get("interests") or []),
         "counterpart": _counterpart(window),

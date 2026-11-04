@@ -110,7 +110,7 @@ class KnowledgeReadTest(WandererWorldTestCase):
         wanderer = self.set_wanderer("xiaoman", tier=0)
         capacity = knowledge_capacity_chars(0)
         with self.connect() as conn:
-            for index in range(4):
+            for index in range(5):
                 add_knowledge(conn, wanderer, source_kind="blog_post", source_ref=f"filler:{index}",
                               title=f"旧知识{index}", digest="旧" * 950)
             conn.commit()
