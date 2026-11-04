@@ -50,6 +50,11 @@ function isTeacherView() {
     return config?.userInfo?.role === 'teacher';
 }
 
+// 课堂资源按课堂归属：上传必须带课堂 id，后端才能把文件写成 classroom 作用域。
+function resourceScopeId() {
+    return config?.classOfferingId ?? config?.courseId;
+}
+
 function getFileById(fileId) {
     const numericId = Number(fileId);
     return state.files.find((item) => Number(item.id) === numericId) || null;
@@ -474,7 +479,7 @@ function uploadFile(file) {
 
     const percentEl = item.querySelector('.upload-percent');
     const barEl = item.querySelector('.upload-bar');
-    const uploader = new ChunkedUploader(file, config.courseId, {
+    const uploader = new ChunkedUploader(file, resourceScopeId(), {
         onProgress(info) {
             percentEl.textContent = `${info.percent}%`;
             barEl.style.width = `${info.percent}%`;
@@ -633,7 +638,7 @@ export async function deleteFile(fileId) {
     if (!window.confirm(`确定要删除“${fileName}”吗？`)) return;
 
     try {
-        await apiFetch(`/api/courses/${config.courseId}/files/${fileId}`, {
+        await apiFetch(`/api/courses/${resourceScopeId()}/files/${fileId}`, {
             method: 'DELETE',
         });
         showToast('文件已删除', 'success');

@@ -713,6 +713,17 @@ class DescriptionUpdateRequest(BaseModel):
 
 # ==================== 辅助函数 ====================
 
+def _coerce_db_flag(value: object) -> bool:
+    """把数据库里读回的标志位还原成真正的布尔值。
+
+    ``chunked_uploads.is_public`` / ``is_teacher_resource`` 是 TEXT 列，
+    PostgreSQL 读回的是 'true'/'false' 字符串，而 ``bool('false')`` 为 True。
+    """
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+    return bool(value)
+
+
 async def broadcast_file_update(course_id: int, message_text: str):
     """
     查找与某个课程ID关联的所有班级课堂 (聊天室)，并广播一条系统消息。
@@ -935,6 +946,8 @@ async def complete_chunked_upload(
 
     temp_dir = Path(upload['temp_dir'])
     total_chunks = upload['total_chunks']
+    is_public = _coerce_db_flag(upload['is_public'])
+    is_teacher_resource = _coerce_db_flag(upload['is_teacher_resource'])
 
     try:
         file_hash, total_size = await asyncio.to_thread(
@@ -948,8 +961,8 @@ async def complete_chunked_upload(
                 user=user,
                 course_id=int(upload['course_id']),
                 class_offering_id=upload['class_offering_id'],
-                is_public=bool(upload['is_public']),
-                is_teacher_resource=bool(upload['is_teacher_resource']),
+                is_public=is_public,
+                is_teacher_resource=is_teacher_resource,
             )
             timestamp = datetime.now().isoformat()
             bind_global_file_references(conn, (file_hash,))
@@ -968,7 +981,7 @@ async def complete_chunked_upload(
                 scope_payload["class_offering_id"], scope_payload["class_id"],
                 scope_payload["school_code"], scope_payload["school_name"],
                 scope_payload["college"], scope_payload["department"],
-                timestamp if upload['is_public'] else None,
+                timestamp if is_public else None,
                 timestamp,
             ))
             conn.execute(
