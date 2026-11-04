@@ -3,9 +3,8 @@
 Answers "这个知识点在哪个文档、哪一页" for the AI chat, the global search box
 and the @助教 tutor, always inside the caller's visibility:
 
-- **student** → files under the nodes assigned to their active classrooms
-  (``course_material_assignments`` ancestor-or-self, the same rule as
-  ``ensure_user_material_access``); optionally boosted for the classroom the
+- **student** → files published to their active classrooms using the same
+  classroom grants as the reader; optionally boosted for the classroom the
   student is looking at.
 - **teacher** → own files plus whatever the library's scope rules already show
   them (``_material_visibility_condition``: public / school / department /
@@ -27,6 +26,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .material_document_kind_service import classify_material_kind, describe_material_kind
+from .material_publication_service import get_classroom_publication_nodes_for_offerings, get_restricted_material_paths
 from .material_search_schema import ensure_material_search_schema
 from .material_text_extraction_service import with_query
 from .materials_service import ensure_user_material_access, is_git_internal_material_path
@@ -102,24 +102,31 @@ def _student_offering_ids(conn: Any, student_id: int) -> list[int]:
     return _get_student_offering_ids(conn, int(student_id))
 
 
-def _student_scope_sql(offering_ids: list[int]) -> tuple[str, list[Any]]:
-    placeholders = ",".join("?" for _ in offering_ids)
-    sql = f"""
+def _matching_material_paths_sql(paths: set[tuple[int, str]]) -> tuple[str, list[Any]]:
+    values = ",".join("(CAST(? AS BIGINT), CAST(? AS TEXT))" for _ in paths)
+    return f"""
         EXISTS (
-            SELECT 1
-            FROM course_material_assignments a
-            JOIN course_materials an ON an.id = a.material_id
-            WHERE a.class_offering_id IN ({placeholders})
-              AND an.root_id = m.root_id
-              AND (m.material_path = an.material_path
-                   OR SUBSTR(m.material_path, 1, LENGTH(an.material_path) + 1) = an.material_path || '/')
+            WITH material_paths(root_id, path) AS (VALUES {values})
+            SELECT 1 FROM material_paths p
+            WHERE p.root_id = m.root_id
+              AND (m.material_path = p.path OR SUBSTR(m.material_path, 1, LENGTH(p.path) + 1) = p.path || '/')
         )
-    """
-    return sql, list(offering_ids)
+    """, [part for path in sorted(paths) for part in path]
 
 
-def _offering_scope_sql(class_offering_id: int) -> tuple[str, list[Any]]:
-    return _student_scope_sql([int(class_offering_id)])
+def _offering_scope_sql(conn: Any, offering_ids: list[int]) -> tuple[str, list[Any]]:
+    publications = get_classroom_publication_nodes_for_offerings(conn, offering_ids)
+    allowed = {(int(row["root_id"]), row["material_path"]) for nodes in publications.values() for row in nodes if row["root_id"]}
+    if not allowed:
+        return "1 = 0", []
+    sql, params = _matching_material_paths_sql(allowed)
+    restricted = get_restricted_material_paths(conn, {root for root, _ in allowed})
+    blocked = {(root, path) for root, paths in restricted.items() for path in paths}
+    if blocked:
+        deny_sql, deny_params = _matching_material_paths_sql(blocked)
+        sql = f"({sql}) AND NOT ({deny_sql})"
+        params.extend(deny_params)
+    return sql, params
 
 
 def _teacher_scope_sql(conn: Any, teacher_id: int) -> tuple[str, list[Any]]:
@@ -141,7 +148,7 @@ def resolve_scope(conn: Any, user: dict[str, Any]) -> tuple[str, list[Any]] | No
         offering_ids = _student_offering_ids(conn, user_pk)
         if not offering_ids:
             return None
-        return _student_scope_sql(offering_ids)
+        return _offering_scope_sql(conn, offering_ids)
     if role == "teacher":
         return _teacher_scope_sql(conn, user_pk)
     return None
@@ -243,7 +250,7 @@ def _boosted_material_ids(conn: Any, class_offering_id: int | None, material_ids
         return set()
     ids = sorted(material_ids)
     placeholders = ",".join("?" for _ in ids)
-    scope_sql, params = _offering_scope_sql(int(class_offering_id))
+    scope_sql, params = _offering_scope_sql(conn, [int(class_offering_id)])
     rows = conn.execute(
         f"SELECT m.id FROM course_materials m WHERE m.id IN ({placeholders}) AND {scope_sql}",
         [*ids, *params],
@@ -391,7 +398,7 @@ def search_offering_materials(
     phrase = query.lower() if len(query) <= 40 else ""
     if not tokens and not phrase:
         return []
-    scope_sql, scope_params = _offering_scope_sql(int(class_offering_id))
+    scope_sql, scope_params = _offering_scope_sql(conn, [int(class_offering_id)])
     rows = _fetch_candidates(conn, scope_sql, scope_params, tokens, phrase)
     if not rows:
         return []

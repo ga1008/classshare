@@ -1,0 +1,47 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+<section data-lq-component="surface" data-lq-surface="embedded" data-lq-padding="md" class="lq-surface workspace-panel cw-collection cw-material-library" id="classroom-material-collection" data-cw-source="materials">
+    <div class="section-header">
+        <div class="section-heading">
+            <h2 class="section-title">课堂文档库</h2>
+            <p class="section-subtitle">查看本课堂使用的教材与已发布的学习文档。</p>
+        </div>
+        <div class="header-actions materials-toolbar-group">
+            {% if user_info.role == 'teacher' %}
+            {{ lq_btn('AI生成期末材料', variant='prominent', size='sm', type='button', id='classroom-final-material-generate-btn', attrs={'data-cw-external-modal': ''}) }}
+            {{ lq_btn('教师归档', variant='ghost', size='sm', href='/manage/archive/postclass-materials') }}
+            {% endif %}
+            {{ lq_btn('刷新', variant='ghost', size='sm', type='button', id='classroom-materials-refresh-btn') }}
+        </div>
+    </div>
+
+    <div id="classroom-materials-textbook" hidden></div>
+    {% if user_info.role == 'teacher' %}
+    <form id="classroom-materials-upload" class="cw-material-upload" hidden>
+        <label class="cw-material-upload__field" for="classroom-materials-files">
+            <span>上传学习文档</span>
+            <input data-lq-component="file" class="lq-native-file" type="file" id="classroom-materials-files" name="files" multiple required aria-describedby="classroom-materials-upload-scope">
+        </label>
+        {{ lq_btn('上传', variant='soft', size='sm', type='submit', id='classroom-materials-upload-submit') }}
+        <p id="classroom-materials-upload-scope" class="cw-meta">上传的文档默认向本课堂学生开放。</p>
+        <p id="classroom-materials-upload-status" class="cw-meta" role="status" hidden></p>
+    </form>
+    {% endif %}
+
+    <div data-lq-component="toolbar" class="lq-domain-toolbar materials-toolbar classroom-materials-toolbar">
+        <div class="materials-path-actions" aria-label="材料导航">
+            {{ lq_btn('返回', variant='ghost', size='sm', type='button', id='classroom-materials-back-btn', disabled=true) }}
+            {{ lq_btn('上一级', variant='ghost', size='sm', type='button', id='classroom-materials-up-btn', disabled=true) }}
+            <label class="classroom-materials-select-all"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" id="classroom-materials-select-all" aria-label="选择本页全部材料" disabled>全选本页</label>
+        </div>
+        <nav class="materials-breadcrumbs" aria-label="当前材料目录" id="classroom-materials-breadcrumbs"></nav>
+    </div>
+
+    <div class="materials-selection-bar" id="classroom-materials-selection" hidden>
+        <div role="status">已选择 <strong id="classroom-materials-selection-count">0</strong> 项</div>
+        {{ lq_btn('下载选中', variant='soft', size='sm', type='button', id='classroom-materials-download-btn') }}
+    </div>
+
+    <div id="classroom-materials-list" aria-busy="true">
+        <div class="materials-empty" role="status">正在加载课程材料…</div>
+    </div>
+</section>

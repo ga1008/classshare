@@ -1,3 +1,5 @@
+import { escapeHtml } from './lq/html.js';
+
 const REPOSITORY_PROVIDER_META = {
     github: { color: '#24292f', badge: 'GitHub', icon: 'GH' },
     gitee: { color: '#c71d23', badge: 'Gitee', icon: 'GI' },
@@ -70,4 +72,31 @@ export function getMaterialPrimaryAction(item) {
         return { action: 'preview', label: '预览' };
     }
     return { action: 'download', label: '下载' };
+}
+
+export function buildMaterialUploadForm(fileList, { parentId, classOfferingId } = {}) {
+    const formData = new FormData();
+    const manifest = Array.from(fileList, (file) => {
+        formData.append('files', file, file.name);
+        return { relative_path: file.webkitRelativePath || file.name, content_type: file.type || '' };
+    });
+    formData.append('manifest', JSON.stringify(manifest));
+    if (parentId) formData.append('parent_id', String(parentId));
+    if (classOfferingId) formData.append('class_offering_id', String(classOfferingId));
+    return formData;
+}
+
+export function renderMaterialBreadcrumbs(breadcrumbs, rootLabel) {
+    const path = [{ id: 0, name: rootLabel }, ...breadcrumbs];
+    return path.map((crumb, index) => index === path.length - 1
+        ? `<span aria-current="location" tabindex="-1">${escapeHtml(crumb.name)}</span>`
+        : `<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-crumb-id="${Number(crumb.id)}">${escapeHtml(crumb.name)}</button>`
+    ).join('<span class="separator" aria-hidden="true">/</span>');
+}
+
+export function hasInlineMaterialPreview(item) {
+    if (item.node_type !== 'file') return false;
+    return (item.preview_mode === 'image' && Boolean(item.preview_image_url))
+        || (item.preview_mode === 'document' && Boolean(item.preview_frame_url))
+        || (item.preview_mode === 'media' && Boolean(item.preview_media_url));
 }

@@ -154,7 +154,9 @@ class MaterialContentUpdateRequest(BaseModel):
 
 
 class MaterialScopeUpdateRequest(BaseModel):
-    scope_level: str = "private"
+    scope_level: str | None = None
+    student_visible: bool | None = None
+    expected_updated_at: str | None = None
 
 
 class MaterialRepositoryCommandRequest(BaseModel):
@@ -376,6 +378,7 @@ def _decorate_material_ownership(conn, item: dict, user: dict | None) -> dict:
         "public": "完全公开",
     }.get(item["scope_level"], "私有")
     item["is_scope_root"] = item.get("parent_id") is None
+    item["student_visible"] = bool(item.get("student_visible"))
     return item
 
 
@@ -552,7 +555,7 @@ def _normalize_material_sort(sort_by: str | None, sort_order: str | None) -> tup
 
 def _normalize_material_scope_filter(value: str | None) -> str:
     scope = str(value or "all").strip().lower()
-    return scope if scope in {"all", "private", "department", "college", "school", "public", "shared", "owned"} else "all"
+    return scope if scope in {"all", "private", "department", "college", "school", "classroom", "public", "shared", "owned"} else "all"
 
 
 def _normalize_material_org_filter(value: str | None) -> str:
@@ -686,7 +689,7 @@ def _apply_material_library_filters(
             continue
         if scope_filter == "shared" and owned:
             continue
-        if scope_filter in {"private", "department", "college", "school", "public"} and row_scope != scope_filter:
+        if scope_filter in {"private", "department", "college", "school", "classroom", "public"} and row_scope != scope_filter:
             continue
         row_school = str(row["school_name"] or row["school_code"] or "").strip().lower()
         if school_filter and row_school != school_filter:
@@ -1178,14 +1181,12 @@ def _build_teacher_library_overview(
     }
 
 
-def _estimate_material_archive_size(conn, material_rows: list[dict]) -> int:
+def _estimate_material_archive_size(material_subtrees: list[tuple[dict, list[dict]]]) -> int:
     selected_row_ids: set[int] = set()
     total_size = 0
 
-    for material_row in material_rows:
-        subtree_rows = _collect_subtree_rows(conn, material_row, include_internal=False)
-        for row in subtree_rows:
-            row_dict = dict(row)
+    for _, subtree_rows in material_subtrees:
+        for row_dict in subtree_rows:
             row_id = int(row_dict["id"])
             if row_id in selected_row_ids:
                 continue
@@ -1359,16 +1360,15 @@ def _normalize_archive_name(used_names: set[str], desired_name: str) -> str:
         suffix += 1
 
 
-def _create_material_zip(conn, material_rows: list[dict]) -> str:
+def _create_material_zip(material_subtrees: list[tuple[dict, list[dict]]]) -> str:
     fd, temp_path = tempfile.mkstemp(prefix="course-materials-", suffix=".zip")
     os.close(fd)
     Path(temp_path).unlink(missing_ok=True)
     used_names: set[str] = set()
 
     with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for material_row in material_rows:
+        for material_row, subtree_rows in material_subtrees:
             base_name = _normalize_archive_name(used_names, material_row["name"])
-            subtree_rows = _collect_subtree_rows(conn, material_row, include_internal=False)
 
             if material_row["node_type"] == "folder" and not any(row["node_type"] == "file" for row in subtree_rows):
                 archive.writestr(f"{base_name}/", "")
@@ -1393,67 +1393,49 @@ def _create_material_zip(conn, material_rows: list[dict]) -> str:
     return temp_path
 
 
-def _resolve_allowed_scope_rows(conn, material_row, user: dict) -> list[dict]:
-    if user["role"] == "teacher":
-        rows = conn.execute(
-            """
-            SELECT id, material_path, name, node_type, preview_type, mime_type
-            FROM course_materials
-            WHERE root_id = ?
-            ORDER BY material_path
-            """,
-            (material_row["root_id"],),
-        ).fetchall()
-        return [dict(row) for row in rows if not is_git_internal_material_path(row["material_path"])]
+def _student_readable_material_ids(conn, rows: list[dict], user: dict) -> set[int]:
+    from ...services.materials_service import _get_student_offering_ids
+    from ...services.material_publication_service import (
+        get_classroom_publication_nodes_for_offerings,
+        get_restricted_material_paths,
+    )
 
-    offering_rows = conn.execute(
-        """
-        SELECT o.id
-        FROM class_offerings o
-        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
-        WHERE s.id = ?
-          AND COALESCE(s.enrollment_status, 'active') = 'active'
-        """,
-        (user["id"],),
-    ).fetchall()
-    offering_ids = [int(row["id"]) for row in offering_rows]
-    if not offering_ids:
-        return []
-
-    placeholders = ",".join("?" for _ in offering_ids)
-    assignment_rows = conn.execute(
-        f"""
-        SELECT m.material_path
-        FROM course_material_assignments a
-        JOIN course_materials m ON m.id = a.material_id
-        WHERE a.class_offering_id IN ({placeholders})
-          AND m.root_id = ?
-        ORDER BY LENGTH(m.material_path) DESC
-        """,
-        offering_ids + [material_row["root_id"]],
-    ).fetchall()
-    allowed_paths = [row["material_path"] for row in assignment_rows]
-    if not allowed_paths:
-        return []
-
-    rows = conn.execute(
-        """
-        SELECT id, material_path, name, node_type, preview_type, mime_type
-        FROM course_materials
-        WHERE root_id = ?
-        ORDER BY material_path
-        """,
-        (material_row["root_id"],),
-    ).fetchall()
-
-    result = []
+    if not rows:
+        return set()
+    offering_ids = _get_student_offering_ids(conn, int(user["id"]))
+    root_ids = sorted({int(row.get("root_id") or row["id"]) for row in rows})
+    restricted = get_restricted_material_paths(conn, root_ids)
+    publications = get_classroom_publication_nodes_for_offerings(
+        conn, offering_ids, root_ids=root_ids, restricted_paths=restricted,
+    )
+    root_placeholders = ",".join("?" for _ in root_ids)
+    scope_roots = {int(row["id"]): row for row in conn.execute(
+        f"SELECT * FROM course_materials WHERE id IN ({root_placeholders})", root_ids,
+    )}
+    readable = set()
     for row in rows:
-        row_dict = dict(row)
-        if is_git_internal_material_path(row_dict["material_path"]):
-            continue
-        if any(is_descendant_path(row_dict["material_path"], allowed_path) for allowed_path in allowed_paths):
-            result.append(row_dict)
-    return result
+        try:
+            ensure_user_material_access(
+                conn, int(row["id"]), user, material_row=row, student_offering_ids=offering_ids,
+                student_publications=publications, restricted_paths=restricted, student_scope_roots=scope_roots,
+            )
+        except HTTPException as exc:
+            if exc.status_code not in (403, 404):
+                raise
+        else:
+            readable.add(int(row["id"]))
+    return readable
+
+
+def _resolve_allowed_scope_rows(conn, material_row, user: dict) -> list[dict]:
+    rows = [dict(row) for row in conn.execute(
+        "SELECT * FROM course_materials WHERE root_id = ? ORDER BY material_path", (material_row["root_id"],),
+    ) if not is_git_internal_material_path(row["material_path"])]
+    if user["role"] == "student":
+        readable = _student_readable_material_ids(conn, rows, user)
+        rows = [row for row in rows if int(row["id"]) in readable]
+    fields = ("id", "material_path", "name", "node_type", "preview_type", "mime_type")
+    return [{key: row.get(key) for key in fields} for row in rows]
 
 
 def _normalize_positive_id_list(values: list[int] | tuple[int, ...] | None) -> list[int]:

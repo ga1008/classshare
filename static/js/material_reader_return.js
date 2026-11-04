@@ -1,10 +1,12 @@
 /** Classroom readers preserve the original tab's discussion and upload state. */
 export function returnFromClassroomReader(source, windowRef = window, frame = null) {
-    if (!source || !/^\/classroom\/[1-9]\d*$/.test(source.url || '')) return false;
+    if (!source || !/^\/classroom\/[1-9]\d*(?:#materials-panel)?$/.test(source.url || '')) return false;
     if (frame && source.close_tab) {
         try {
-            const initial = new URL(frame.src, windowRef.location.origin).href;
-            const current = frame.contentWindow?.location?.href;
+            const initial = new URL(windowRef.MATERIAL_RENDER_SHELL?.iframeSrc || frame.src, windowRef.location.origin).href;
+            const current = frame.hasAttribute?.('sandbox')
+                ? frame.dataset.materialFrameUrl
+                : frame.contentWindow?.location?.href;
             // history.length does not shrink after Back; compare the actual
             // package location so Back at its starting page can close the tab.
             if (current && current !== 'about:blank' && current !== initial) {

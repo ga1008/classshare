@@ -10130,8 +10130,11 @@
           {
             "path": "static/js/materials_manage.js",
             "hashMode": "text-lf",
-            "sha256": "34ae41777e537be10d400e19b2ef4b6c3c8fc6f3a3100ecf5dc1d6e186b99dbe",
-            "scope": "2026-10-27限定续审：文档库入口/header动作绑定、卡片菜单和选择处理；保留其余既有材料功能与警告。只读源码复核加真实Jinja主控制器浏览器，上传激活/取消/无重复动作/焦点/权限/失败输入与Git绑定回归。此记录不把旧大模块或全部材料业务标为完成。",
+            "sha256": "41a2ef187b1ef7641b2231a8b6831614e0a958bb95226159a6b849071c5955e0",
+            "scope": "2026-10-27限定续审：文档库入口/header动作绑定、卡片菜单和选择处理；保留其余既有材料功能与警告。只读源码复核加真实Jinja主控制器浏览器，上传激活/取消/无重复动作/焦点/权限/失败输入与Git绑定回归。此记录不把旧大模块或全部材料业务标为完成。2026-11-04限定复核：共享目录按钮和上传载荷保留原生事件；发布权限只影响操作可用性；属性保存保留 LQ 选择器与复选框的原生真值，携带版本并在冲突后保留草稿。隔离 SSR 和卡片 28 项通过，正式资源 4c66d29a98bd 的合成 Chromium 14 项通过，含 390px 暗色和 1440px 亮色的开放范围、学生复选框和冲突重试。",
+            "previousReviewedSha256": [
+              "34ae41777e537be10d400e19b2ef4b6c3c8fc6f3a3100ecf5dc1d6e186b99dbe"
+            ],
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
               "tests/test_material_library_cards.py",
@@ -10142,8 +10145,11 @@
           {
             "path": "templates/partials/materials/library_card.html",
             "hashMode": "text-lf",
-            "sha256": "bc368fe7ed62ed473ba7b0386dc11b3e2bc89e4a3e943a844c5ed1dd587a76ca",
-            "scope": "2026-10-27限定续审：文档库入口/header动作绑定、卡片菜单和选择处理；保留其余既有材料功能与警告。只读源码复核加真实Jinja主控制器浏览器，上传激活/取消/无重复动作/焦点/权限/失败输入与Git绑定回归。此记录不把旧大模块或全部材料业务标为完成。",
+            "sha256": "ba0de8ac9dad57fe5323a4e171a33baa11f9e9434c3204d976fcbe02dbe86674",
+            "scope": "2026-10-27限定续审：文档库入口/header动作绑定、卡片菜单和选择处理；保留其余既有材料功能与警告。只读源码复核加真实Jinja主控制器浏览器，上传激活/取消/无重复动作/焦点/权限/失败输入与Git绑定回归。此记录不把旧大模块或全部材料业务标为完成。2026-11-04限定复核：在原 LQ 开放范围 select 内添加课堂选项，保留标签、组件所有者和 change 入口。隔离 SSR 和卡片 28 项通过，正式资源 4c66d29a98bd 的合成 Chromium 14 项通过，其中两项验证课堂选项提交 scope_level=classroom。",
+            "previousReviewedSha256": [
+              "bc368fe7ed62ed473ba7b0386dc11b3e2bc89e4a3e943a844c5ed1dd587a76ca"
+            ],
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
               "tests/test_material_library_cards.py",

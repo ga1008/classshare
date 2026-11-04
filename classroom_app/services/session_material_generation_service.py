@@ -1287,6 +1287,9 @@ def persist_generated_materials(
     base_parent_id: int | None,
     nodes: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    from .session_learning_materials_service import _ensure_offering_owner, bind_material_in_transaction
+
+    _ensure_offering_owner(conn, class_offering_id, teacher_id)
     base_parent = None
     base_path = ""
     base_root_id = None
@@ -1388,8 +1391,6 @@ def persist_generated_materials(
 
     if not bound_material_row:
         raise HTTPException(500, "系统未找到可绑定到课时的生成文档。")
-
-    from .session_learning_materials_service import bind_material_in_transaction
 
     bind_material_in_transaction(
         conn, int(class_offering_id), int(session_id), int(bound_material_row["id"]), int(teacher_id),

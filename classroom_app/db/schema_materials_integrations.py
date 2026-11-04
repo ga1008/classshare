@@ -176,12 +176,20 @@ def ensure_materials_integrations_schema(conn: sqlite3.Connection) -> None:
                     class_offering_id INTEGER NOT NULL,
                     assigned_by_teacher_id INTEGER NOT NULL,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    publication_mode TEXT,
                     FOREIGN KEY (material_id) REFERENCES course_materials (id) ON DELETE CASCADE,
                     FOREIGN KEY (class_offering_id) REFERENCES class_offerings (id) ON DELETE CASCADE,
                     FOREIGN KEY (assigned_by_teacher_id) REFERENCES teachers (id),
                     UNIQUE (material_id, class_offering_id)
                 )
                  ''')
+    if engine == "postgres":
+        conn.execute("ALTER TABLE course_material_assignments ADD COLUMN IF NOT EXISTS publication_mode TEXT")
+    elif "publication_mode" not in {row[1] for row in conn.execute('PRAGMA table_info("course_material_assignments")')}:
+        conn.execute("ALTER TABLE course_material_assignments ADD COLUMN publication_mode TEXT")
+        from ..services.material_publication_service import mark_legacy_binding_publications
+
+        mark_legacy_binding_publications(conn)
 
     conn.execute('''
                 CREATE TABLE IF NOT EXISTS session_material_generation_tasks
@@ -481,6 +489,8 @@ def ensure_materials_integrations_schema(conn: sqlite3.Connection) -> None:
         ("git_last_sync_status", "TEXT DEFAULT ''"),
         ("git_last_sync_summary", "TEXT DEFAULT ''"),
         ("git_head_commit", "TEXT DEFAULT ''"),
+        # 组织/公开范围内学生的读取开关，课堂发布单独授权。
+        ("student_visible", "INTEGER NOT NULL DEFAULT 0"),
     ):
         try:
             conn.execute(f"ALTER TABLE course_materials ADD COLUMN {column_name} {column_def}")
@@ -928,6 +938,11 @@ def ensure_materials_integrations_schema(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_material_ai_import_source "
         "ON material_ai_import_records (source_material_id, parsed_material_id)"
     )
+    for material_column in ("package_material_id", "parsed_material_id"):
+        conn.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_material_import_{material_column} "
+            f"ON material_ai_import_records ({material_column})"
+        )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_material_ai_import_teacher_parent_status "
         "ON material_ai_import_records (teacher_id, parent_material_id, parse_status, updated_at DESC)"

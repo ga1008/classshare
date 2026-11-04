@@ -20,6 +20,11 @@ from ..core import ai_client
 from ..db.connection import get_configured_db_engine
 from ..db.schema_session_learning_materials import ensure_session_learning_materials_schema
 from .material_render_service import resolve_render_target
+from .material_publication_service import (
+    get_classroom_publication_nodes_for_offerings,
+    get_restricted_material_paths,
+    mark_legacy_binding_publications,
+)
 from .materials_service import (
     build_learning_material_brief,
     ensure_user_material_access,
@@ -49,7 +54,7 @@ def _normalize_session_id(session_id: int | None) -> int:
 def _ensure_offering_owner(conn, class_offering_id: int, teacher_id: int):
     row = conn.execute(
         "SELECT * FROM class_offerings WHERE id = ? AND teacher_id = ? LIMIT 1"
-        + (" FOR UPDATE" if get_configured_db_engine() == "postgres" else ""),
+        + (" FOR NO KEY UPDATE" if get_configured_db_engine() == "postgres" else ""),
         (class_offering_id, teacher_id),
     ).fetchone()
     if not row:
@@ -175,6 +180,44 @@ def _material_row(conn, material_id: int):
     ).fetchone()
 
 
+def _student_material_read_context(conn, user, materials) -> dict:
+    offering_ids = _get_student_offering_ids(conn, int(user["id"]))
+    roots = {material["root_id"] for material in materials if material and material["root_id"]}
+    restricted_paths = get_restricted_material_paths(conn, roots)
+    return {
+        "student_offering_ids": offering_ids,
+        "student_publications": get_classroom_publication_nodes_for_offerings(
+            conn, offering_ids, root_ids=roots, restricted_paths=restricted_paths,
+        ),
+        "restricted_paths": restricted_paths,
+    }
+
+
+def _can_read_material_preview(conn, material, render_target, user, access_cache, access_context) -> bool:
+    source_id = int(material["id"])
+    target = render_target or {}
+    required_ids = dict.fromkeys([source_id, int(target.get("node_id") or 0), int(target.get("entry_id") or 0)])
+    for required_id in required_ids:
+        if not required_id:
+            continue
+        if required_id not in access_cache:
+            try:
+                ensure_user_material_access(
+                    conn, required_id, user,
+                    material_row=material if required_id == source_id else None,
+                    **access_context,
+                )
+            except HTTPException as exc:
+                if exc.status_code not in (403, 404):
+                    raise
+                access_cache[required_id] = False
+            else:
+                access_cache[required_id] = True
+        if not access_cache[required_id]:
+            return False
+    return True
+
+
 def build_material_entries(
     conn, class_offering_id: int, session_id: int, *, teacher_id: int, persist_legacy: bool = True, user: dict | None = None,
 ) -> list[dict]:
@@ -200,44 +243,19 @@ def build_material_entries(
 
     # Use exactly the reader's authorization, with membership loaded once for
     # this complete collection. Binding or an open_url alone grants no access.
-    offering_ids = _get_student_offering_ids(conn, int(user["id"])) if user and user.get("role") == "student" else None
+    materials = {int(row["material_id"]): _material_row(conn, int(row["material_id"])) for row in rows}
+    access_context = _student_material_read_context(conn, user, materials.values()) if user and user.get("role") == "student" else {}
     access_cache: dict[int, bool] = {}
     entries: list[dict] = []
     for row in rows:
-        material = _material_row(conn, int(row["material_id"]))
+        material = materials[int(row["material_id"])]
         if not material:
             continue
         if is_git_internal_material_path(material["material_path"]):
             continue
         render_target = resolve_render_target(conn, material)
-        if user:
-            try:
-                source_id = int(material["id"])
-                # HTML child entries may resolve to a package-root shell plus
-                # an entry path. Both shell and entry use the reader's checks.
-                target = render_target or {}
-                required_ids = dict.fromkeys([source_id, int(target.get("node_id") or 0), int(target.get("entry_id") or 0)])
-                for required_id in required_ids:
-                    if required_id:
-                        if required_id in access_cache:
-                            if not access_cache[required_id]:
-                                raise HTTPException(403, "材料不可访问")
-                            continue
-                        try:
-                            ensure_user_material_access(
-                                conn, required_id, user,
-                                material_row=material if required_id == source_id else None,
-                                student_offering_ids=offering_ids,
-                            )
-                        except HTTPException as exc:
-                            if exc.status_code in (403, 404):
-                                access_cache[required_id] = False
-                            raise
-                        access_cache[required_id] = True
-            except HTTPException as exc:
-                if exc.status_code in (403, 404):
-                    continue
-                raise
+        if user and not _can_read_material_preview(conn, material, render_target, user, access_cache, access_context):
+            continue
         brief = build_learning_material_brief(material, render_target=render_target)
         entries.append(
             {
@@ -318,6 +336,7 @@ def unbind_material_in_transaction(conn, class_offering_id: int, session_id: int
     ).fetchone():
         raise HTTPException(404, "课次不存在或无权操作")
     _backfill_primary(conn, class_offering_id, session_id, teacher_id)
+    mark_legacy_binding_publications(conn, class_offering_id)
 
     from .git_learning_bindings_service import suppress_git_binding
     suppress_git_binding(conn, class_offering_id, session_id, int(material_id))
@@ -428,8 +447,10 @@ def set_blurb(conn, row_id: int, blurb: str, status: str = "ready") -> None:
     )
 
 
-def attach_learning_material_counts(conn, class_offering_id: int, session_items: list[dict], offering_data: dict) -> None:
-    """为时间轴页一次性附加每个课次/首页的材料数量（单查询，无写入）。"""
+def attach_learning_material_counts(
+    conn, class_offering_id: int, session_items: list[dict], offering_data: dict, *, user=None,
+) -> set[int] | None:
+    """Attach lesson and home counts, and return readable primary IDs for student timelines."""
     rows = conn.execute(
         "SELECT session_id, material_id FROM class_offering_learning_materials WHERE class_offering_id = ?",
         (class_offering_id,),
@@ -438,24 +459,41 @@ def attach_learning_material_counts(conn, class_offering_id: int, session_items:
     for row in rows:
         grouped.setdefault(int(row["session_id"]), set()).add(int(row["material_id"]))
 
-    def _count(session_id: int, primary_id: int) -> int:
-        ids = set(grouped.get(session_id, set()))
-        if primary_id:
-            ids.add(primary_id)
-        return len(ids)
-
-    for session in session_items:
+    targets = [
+        (int(session.get("id") or 0), session, "learning_material_id", "learning_material_count")
+        for session in session_items
+    ]
+    targets.append((HOME_SESSION_ID, offering_data, "home_learning_material_id", "home_learning_material_count"))
+    for session_id, item, material_key, _ in targets:
         try:
-            primary = int(session.get("learning_material_id") or 0)
+            primary = int(item.get(material_key) or 0)
         except (TypeError, ValueError):
             primary = 0
-        session["learning_material_count"] = _count(int(session.get("id") or 0), primary)
+        if primary:
+            grouped.setdefault(session_id, set()).add(primary)
 
-    try:
-        home_primary = int(offering_data.get("home_learning_material_id") or 0)
-    except (TypeError, ValueError):
-        home_primary = 0
-    offering_data["home_learning_material_count"] = _count(HOME_SESSION_ID, home_primary)
+    allowed = None
+    if user and user.get("role") == "student":
+        allowed = set()
+        material_ids = sorted({
+            material_id for session_id, *_ in targets for material_id in grouped.get(session_id, ())
+        })
+        if material_ids:
+            placeholders = ",".join("?" for _ in material_ids)
+            materials = conn.execute(
+                f"SELECT * FROM course_materials WHERE id IN ({placeholders})", material_ids,
+            ).fetchall()
+            access_context = _student_material_read_context(conn, user, materials)
+            access_cache: dict[int, bool] = {}
+            for material in materials:
+                if not is_git_internal_material_path(material["material_path"]) and _can_read_material_preview(
+                    conn, material, resolve_render_target(conn, material), user, access_cache, access_context,
+                ):
+                    allowed.add(int(material["id"]))
+    for session_id, item, _, count_key in targets:
+        material_ids = grouped.get(session_id, set())
+        item[count_key] = len(material_ids if allowed is None else material_ids & allowed)
+    return allowed
 
 
 def _clean_blurb(text: str) -> str:

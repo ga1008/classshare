@@ -89,15 +89,18 @@ class HtmlRenderer:
         folder_path = str(_row_get(folder_row, "material_path") or "")
         if root_id is None or not folder_path:
             return None
+        prefix = f"{folder_path}/"
         rows = conn.execute(
             """
             SELECT id, parent_id, root_id, name, material_path, preview_type, node_type, file_ext
             FROM course_materials
             WHERE root_id = ?
               AND node_type = 'file'
-              AND (material_path = ? OR material_path LIKE ?)
+              AND SUBSTR(material_path, 1, LENGTH(?)) = ?
+              AND (LOWER(file_ext) IN ('html', 'htm')
+                   OR (COALESCE(file_ext, '') = '' AND (LOWER(name) LIKE '%.html' OR LOWER(name) LIKE '%.htm')))
             """,
-            (root_id, folder_path, f"{folder_path}/%"),
+            (root_id, prefix, prefix),
         ).fetchall()
 
         folder_depth = len(_material_path_parts(folder_path))

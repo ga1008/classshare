@@ -281,7 +281,15 @@ def classroom_main(
             session_items,
             teacher_id=int(offering_data["teacher_id"]),
         )
-        attach_learning_material_counts(conn, class_offering_id, session_items, offering_data)
+        readable_material_ids = attach_learning_material_counts(conn, class_offering_id, session_items, offering_data, user=user)
+        if readable_material_ids is not None:
+            if offering_data.get("home_learning_material_id") not in readable_material_ids:
+                offering_data["home_learning_material_id"] = None
+                offering_data["home_learning_material"] = None
+            for session in session_items:
+                if session.get("learning_material_id") not in readable_material_ids:
+                    session["learning_material_id"] = None
+                    session["learning_material"] = None
         attach_session_knowledge_progress(conn, class_offering_id, session_items)
         teaching_plan = decorate_offering_sessions(
             session_items,

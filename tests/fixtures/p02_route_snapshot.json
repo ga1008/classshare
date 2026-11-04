@@ -2305,6 +2305,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/materials/{material_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_classroom_material_detail",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/member-panels/{panel_key}",
     "methods": [
       "GET"
@@ -2478,6 +2486,14 @@
       "GET"
     ],
     "name": "api_export_classroom_smart_attendance",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/textbook/{textbook_id}/attachment",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_classroom_textbook_attachment",
     "include_in_schema": true
   },
   {
@@ -8894,6 +8910,22 @@
       "GET"
     ],
     "name": "get_material_raw",
+    "include_in_schema": true
+  },
+  {
+    "path": "/materials/render-content/{grant}/",
+    "methods": [
+      "GET"
+    ],
+    "name": "render_isolated_material",
+    "include_in_schema": true
+  },
+  {
+    "path": "/materials/render-content/{grant}/{subpath:path}",
+    "methods": [
+      "GET"
+    ],
+    "name": "render_isolated_material",
     "include_in_schema": true
   },
   {

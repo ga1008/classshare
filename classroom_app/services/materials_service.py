@@ -6,7 +6,6 @@ from typing import Iterable
 
 from fastapi import HTTPException
 
-from ..db.connection import get_configured_db_engine
 from .file_preview_service import (
     TEXT_PREVIEW_TYPES,
     TEXTUAL_BASENAME_HINTS,
@@ -356,6 +355,7 @@ def get_learning_material_brief_map(
     *,
     teacher_id: int | None = None,
     markdown_only: bool = False,
+    owned_only: bool = False,
 ) -> dict[int, dict]:
     normalized_ids = _normalize_positive_ids(material_ids)
     if not normalized_ids:
@@ -380,7 +380,7 @@ def get_learning_material_brief_map(
         if is_git_internal_material_path(row["material_path"]):
             continue
         if actor_user is not None and int(row["teacher_id"] or 0) != int(teacher_id):
-            if not can_read_scoped_resource(conn, row, actor_user):
+            if owned_only or not can_read_scoped_resource(conn, row, actor_user):
                 continue
         render_target = resolve_render_target(conn, row)
         # markdown_only 现已升级为"可绑定材料"语义：Markdown 文档或可渲染 HTML。
@@ -591,7 +591,14 @@ def _get_student_offering_ids(conn, student_id: int) -> list[int]:
     return [int(row["id"]) for row in rows]
 
 
-def ensure_user_material_access(conn, material_id: int, user: dict, *, material_row=None, student_offering_ids=None):
+def ensure_user_material_access(
+    conn, material_id: int, user: dict, *, material_row=None,
+    student_offering_ids=None, student_publications=None, restricted_paths=None, student_scope_roots=None,
+):
+    from .material_publication_service import (
+        get_classroom_publication_nodes_for_offerings, get_restricted_material_paths, is_restricted_material,
+    )
+
     material = material_row if material_row is not None and int(material_row["id"]) == int(material_id) else conn.execute(
         "SELECT * FROM course_materials WHERE id = ?",
         (material_id,),
@@ -601,38 +608,54 @@ def ensure_user_material_access(conn, material_id: int, user: dict, *, material_
     if is_git_internal_material_path(material["material_path"]):
         raise HTTPException(404, "材料不存在")
 
-    if user["role"] == "teacher":
-        if int(material["teacher_id"]) != int(user["id"]) and not can_read_scoped_resource(conn, material, user):
-            raise HTTPException(403, "无权访问该材料")
+    role = user["role"]
+    user_id = int(user["id"])
+    if role == "teacher" and (
+        int(material["teacher_id"]) == user_id or can_read_scoped_resource(conn, material, user)
+    ):
         return material
 
-    if user["role"] != "student":
+    if restricted_paths is None:
+        restricted_paths = get_restricted_material_paths(conn, [material["root_id"]])
+    if is_restricted_material(material, restricted_paths):
+        raise HTTPException(403, "无权访问该材料")
+
+    if role not in {"student", "teacher"}:
         if can_read_scoped_resource(conn, material, user):
             return material
         raise HTTPException(403, "Permission denied")
 
-    offering_ids = student_offering_ids if student_offering_ids is not None else _get_student_offering_ids(conn, int(user["id"]))
-    if not offering_ids:
-        raise HTTPException(403, "当前学生没有可访问的课堂材料")
-
-    placeholders = ",".join("?" for _ in offering_ids)
-    params = offering_ids + [material["root_id"], material["material_path"], material["material_path"]]
-    allowed = conn.execute(
-        f"""
-        SELECT assigned.*
-        FROM course_material_assignments a
-        JOIN course_materials assigned ON assigned.id = a.material_id
-        WHERE a.class_offering_id IN ({placeholders})
-          AND assigned.root_id = ?
-          AND (? = assigned.material_path OR SUBSTR(?, 1, LENGTH(assigned.material_path) + 1) = assigned.material_path || '/')
-        ORDER BY LENGTH(assigned.material_path) DESC
-        LIMIT 1
-        """,
-        params,
-    ).fetchone()
-    if not allowed:
-        raise HTTPException(403, "无权访问该材料")
-    return material
+    root_id = int(material["root_id"] or material_id)
+    if role == "student":
+        offering_ids = student_offering_ids if student_offering_ids is not None else _get_student_offering_ids(conn, user_id)
+    else:
+        offering_ids = [
+            row["id"] for row in conn.execute("SELECT id FROM class_offerings WHERE teacher_id = ?", (user_id,)).fetchall()
+        ]
+    publications = student_publications if role == "student" and student_publications is not None else (
+        get_classroom_publication_nodes_for_offerings(conn, offering_ids, root_id=root_id, restricted_paths=restricted_paths)
+    )
+    if any(
+        int(anchor["root_id"] or 0) == root_id and is_descendant_path(material["material_path"], anchor["material_path"])
+        for offering_id in offering_ids
+        for anchor in publications.get(int(offering_id), ())
+    ):
+        return material
+    if role == "student":
+        root = material if root_id == int(material_id) else None
+        if root is None:
+            root = student_scope_roots.get(root_id) if student_scope_roots is not None else conn.execute(
+                "SELECT * FROM course_materials WHERE id = ?", (root_id,),
+            ).fetchone()
+        if root is not None and str(_row_value_compat(root, "student_visible", 0)).lower() in {"1", "true"}:
+            scope = str(_row_value_compat(root, "scope_level", "") or "")
+            if scope in {"public", "school", "college", "department"} and can_read_scoped_resource(conn, root, user):
+                if scope != "public" or offering_ids or conn.execute(
+                    "SELECT 1 FROM students WHERE id = ? AND COALESCE(enrollment_status, 'active') = 'active'",
+                    (user_id,),
+                ).fetchone():
+                    return material
+    raise HTTPException(403, "无权访问该材料")
 
 
 def get_material_breadcrumbs(conn, material_id: int) -> list[dict]:
@@ -661,18 +684,10 @@ def get_material_breadcrumbs(conn, material_id: int) -> list[dict]:
     return breadcrumbs
 
 
-def get_effective_assignment_nodes(conn, class_offering_id: int) -> list[dict]:
-    rows = conn.execute(
-        """
-        SELECT m.*, a.created_at AS assigned_at
-        FROM course_material_assignments a
-        JOIN course_materials m ON m.id = a.material_id
-        WHERE a.class_offering_id = ?
-        ORDER BY m.root_id, LENGTH(m.material_path), m.material_path
-        """,
-        (class_offering_id,),
-    ).fetchall()
+def get_effective_assignment_nodes(conn, class_offering_id: int, *, publication_nodes=None) -> list[dict]:
+    from .material_publication_service import get_classroom_publication_nodes
 
+    rows = get_classroom_publication_nodes(conn, class_offering_id) if publication_nodes is None else publication_nodes
     effective = []
     for row in rows:
         row_dict = dict(row)
@@ -689,10 +704,9 @@ def get_effective_assignment_nodes(conn, class_offering_id: int) -> list[dict]:
 
 
 def get_learning_material_assignment_anchor(conn, material_row):
-    if material_row["node_type"] != "file":
-        return material_row
-    parent_id = material_row["parent_id"]
-    if not parent_id:
+    if not material_row["parent_id"] or (
+        material_row["node_type"] == "file" and material_row["preview_type"] == "markdown"
+    ):
         return material_row
 
     # HTML 包成员（main.html / lesson_N.html）锚定到包根：学生打开课次页面时，
@@ -704,32 +718,14 @@ def get_learning_material_assignment_anchor(conn, material_row):
         if package and int(package.get("root_node_id") or 0) > 0:
             package_root = conn.execute(
                 """
-                SELECT id, parent_id, root_id, name, material_path, preview_type, node_type
-                FROM course_materials
-                WHERE id = ?
-                LIMIT 1
+                SELECT * FROM course_materials WHERE id = ? LIMIT 1
                 """,
                 (int(package["root_node_id"]),),
             ).fetchone()
             if package_root:
                 return package_root
 
-    parent = conn.execute(
-        """
-        SELECT id, parent_id, root_id, name, material_path, preview_type, node_type
-        FROM course_materials
-        WHERE id = ?
-        LIMIT 1
-        """,
-        (parent_id,),
-    ).fetchone()
-    if not parent:
-        return material_row
-    if is_git_internal_material_path(parent["material_path"]):
-        return material_row
-    if parent["node_type"] != "folder":
-        return material_row
-    return parent
+    return material_row
 
 
 def sync_classroom_learning_material_assignments(
@@ -739,6 +735,10 @@ def sync_classroom_learning_material_assignments(
     teacher_id: int,
     material_ids: Iterable[int | str | None],
 ) -> list[dict]:
+    from .material_publication_service import (
+        get_restricted_material_paths, is_restricted_material, record_classroom_material_publication,
+    )
+
     owned_offering = conn.execute(
         "SELECT id FROM class_offerings WHERE id = ? AND teacher_id = ? LIMIT 1",
         (class_offering_id, teacher_id),
@@ -755,98 +755,63 @@ def sync_classroom_learning_material_assignments(
         normalized_ids,
         teacher_id=teacher_id,
         markdown_only=True,
+        owned_only=True,
     )
     missing_ids = [material_id for material_id in normalized_ids if material_id not in material_map]
     if missing_ids:
         raise HTTPException(400, "所选课堂文档不存在、无权访问，或不是 Markdown 文档")
 
-    existing_rows = conn.execute(
-        """
-        SELECT m.id, m.parent_id, m.root_id, m.name, m.material_path, m.preview_type, m.node_type
-        FROM course_material_assignments a
-        JOIN course_materials m ON m.id = a.material_id
-        WHERE a.class_offering_id = ?
-        ORDER BY LENGTH(m.material_path) DESC, m.id DESC
-        """,
-        (class_offering_id,),
-    ).fetchall()
-    existing_assignments = [
-        build_learning_material_brief(row)
-        for row in existing_rows
-        if not is_git_internal_material_path(row["material_path"])
-    ]
-
+    restricted_paths = get_restricted_material_paths(conn, (row["root_id"] for row in material_map.values()))
     inserted_anchors: list[dict] = []
-    assigned_anchor_ids = {int(item["id"]) for item in existing_assignments if int(item.get("id") or 0) > 0}
+    assigned_anchor_ids = {
+        int(row["material_id"])
+        for row in conn.execute(
+            "SELECT material_id FROM course_material_assignments WHERE class_offering_id = ?",
+            (class_offering_id,),
+        ).fetchall()
+    }
     now = datetime.now().isoformat()
 
     for material_id in normalized_ids:
         material = material_map[material_id]
-        if any(
-            int(existing["root_id"]) == int(material["root_id"])
-            and is_descendant_path(material["material_path"], existing["material_path"])
-            for existing in existing_assignments
-        ):
-            continue
-
         anchor_row = get_learning_material_assignment_anchor(conn, material)
+        if is_restricted_material(material, restricted_paths) or is_restricted_material(anchor_row, restricted_paths):
+            raise HTTPException(403, "过程材料仅供教师归档")
         anchor = build_learning_material_brief(anchor_row)
         anchor_id = int(anchor["id"] or 0)
         if anchor_id <= 0 or anchor_id in assigned_anchor_ids:
             continue
 
-        if get_configured_db_engine() == "postgres":
-            conn.execute(
-                """
-                INSERT INTO course_material_assignments (
-                    material_id,
-                    class_offering_id,
-                    assigned_by_teacher_id,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT (material_id, class_offering_id) DO NOTHING
-                """,
-                (anchor_id, class_offering_id, teacher_id, now),
-            )
-        else:
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO course_material_assignments (
-                    material_id,
-                    class_offering_id,
-                    assigned_by_teacher_id,
-                    created_at
-                )
-                VALUES (?, ?, ?, ?)
-                """,
-                (anchor_id, class_offering_id, teacher_id, now),
-            )
+        record_classroom_material_publication(
+            conn, anchor_id, class_offering_id, teacher_id, mode="binding", now=now,
+        )
         assigned_anchor_ids.add(anchor_id)
-        existing_assignments.append(anchor)
         inserted_anchors.append(anchor)
 
     return inserted_anchors
 
 
-def get_nearest_assignment_anchor(conn, class_offering_id: int, material_row) -> dict | None:
-    rows = conn.execute(
-        """
-        SELECT m.*
-        FROM course_material_assignments a
-        JOIN course_materials m ON m.id = a.material_id
-        WHERE a.class_offering_id = ?
-          AND m.root_id = ?
-        ORDER BY LENGTH(m.material_path) DESC
-        """,
-        (class_offering_id, material_row["root_id"]),
-    ).fetchall()
+def get_nearest_assignment_anchor(
+    conn, class_offering_id: int, material_row, *, publication_nodes=None, restricted_paths=None,
+) -> dict | None:
+    from .material_publication_service import (
+        get_classroom_publication_nodes_for_offerings, get_restricted_material_paths, is_restricted_material,
+    )
 
-    current_path = material_row["material_path"]
-    for row in rows:
-        row_dict = dict(row)
-        if is_git_internal_material_path(row_dict["material_path"]):
-            continue
-        if is_descendant_path(current_path, row_dict["material_path"]):
-            return row_dict
-    return None
+    root_id = material_row["root_id"]
+    if restricted_paths is None:
+        restricted_paths = get_restricted_material_paths(conn, [root_id])
+    if is_git_internal_material_path(material_row["material_path"]) or is_restricted_material(material_row, restricted_paths):
+        return None
+    if publication_nodes is None:
+        publication_nodes = get_classroom_publication_nodes_for_offerings(
+            conn, [class_offering_id], root_id=root_id, restricted_paths=restricted_paths,
+        ).get(class_offering_id, ())
+    return max(
+        (
+            anchor for anchor in publication_nodes
+            if anchor["root_id"] == root_id and is_descendant_path(material_row["material_path"], anchor["material_path"])
+        ),
+        key=lambda anchor: len(anchor["material_path"]),
+        default=None,
+    )

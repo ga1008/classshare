@@ -10,8 +10,10 @@
 
 from __future__ import annotations
 
+from itertools import islice
 from typing import Any
 from .assessment_classification_service import assessment_kind_info
+from .material_publication_service import get_classroom_publication_nodes_for_offerings
 
 MAX_PER_KIND = 6
 MIN_QUERY_LENGTH = 2
@@ -91,32 +93,38 @@ def _search_classrooms(conn: Any, *, role: str, user_pk: int, pattern: str) -> l
     ]
 
 
-def _search_materials(conn: Any, offering_ids: list[int], pattern: str) -> list[dict[str, Any]]:
-    if not offering_ids:
+def _search_materials(conn: Any, offering_ids: list[int], query: str) -> list[dict[str, Any]]:
+    publications = get_classroom_publication_nodes_for_offerings(conn, offering_ids)
+    term = query.lower()
+    matches = (
+        (offering_id, material)
+        for offering_id, materials in publications.items()
+        for material in materials
+        if material["node_type"] == "file" and term in str(material["name"] or "").lower()
+    )
+    matches = list(islice(matches, MAX_PER_KIND))
+    if not matches:
         return []
-    placeholders = ",".join("?" for _ in offering_ids)
+    matched_offerings = sorted({offering_id for offering_id, _ in matches})
+    placeholders = ",".join("?" for _ in matched_offerings)
     rows = conn.execute(
         f"""
-        SELECT DISTINCT m.id, m.name, a.class_offering_id, c.name AS course_name
-        FROM course_material_assignments a
-        JOIN course_materials m ON m.id = a.material_id
-        JOIN class_offerings o ON o.id = a.class_offering_id
+        SELECT o.id, c.name AS course_name
+        FROM class_offerings o
         JOIN courses c ON c.id = o.course_id
-        WHERE a.class_offering_id IN ({placeholders})
-          AND m.node_type = 'file'
-          AND LOWER(m.name) LIKE ? ESCAPE '\\'
-        LIMIT ?
+        WHERE o.id IN ({placeholders})
         """,
-        (*offering_ids, pattern, MAX_PER_KIND),
+        matched_offerings,
     ).fetchall()
+    course_names = {int(row["id"]): row["course_name"] for row in rows}
     return [
         {
             "kind": "material",
-            "title": str(row["name"] or "课程材料"),
-            "subtitle": f"{row['course_name'] or '课程'} · 课堂材料区",
-            "link_url": f"/classroom/{int(row['class_offering_id'])}",
+            "title": str(material["name"] or "课程材料"),
+            "subtitle": f"{course_names.get(offering_id) or '课程'} · 课堂材料区",
+            "link_url": f"/classroom/{offering_id}",
         }
-        for row in rows
+        for offering_id, material in matches
     ]
 
 
@@ -223,7 +231,7 @@ def search_everything(conn: Any, user: dict[str, Any], raw_query: str) -> dict[s
     groups = []
     for kind, results in (
         ("classroom", _search_classrooms(conn, role=role, user_pk=user_pk, pattern=pattern)),
-        ("material", _search_materials(conn, offering_ids, pattern)),
+        ("material", _search_materials(conn, offering_ids, query)),
         ("knowledge", _search_knowledge_points(conn, user, query)),
         ("assignment", _search_assignments(conn, offering_ids, pattern, role=role)),
         ("blog", _search_blog(conn, pattern)),

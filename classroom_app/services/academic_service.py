@@ -856,18 +856,14 @@ def build_textbook_prompt_context(textbook: dict[str, Any] | None) -> str:
 
 
 def _safe_fetch_recent_material_names(conn, class_offering_id: int) -> list[str]:
+    from .material_publication_service import get_classroom_publication_nodes
+
     try:
-        rows = conn.execute(
-            """
-            SELECT m.name
-            FROM course_material_assignments a
-            JOIN course_materials m ON m.id = a.material_id
-            WHERE a.class_offering_id = ?
-            ORDER BY a.created_at DESC, m.updated_at DESC, m.id DESC
-            LIMIT 8
-            """,
-            (class_offering_id,),
-        ).fetchall()
+        rows = sorted(
+            get_classroom_publication_nodes(conn, class_offering_id),
+            key=lambda row: (str(row.get("assigned_at") or ""), str(row.get("updated_at") or ""), row["id"]),
+            reverse=True,
+        )[:8]
     except sqlite3.Error:
         return []
 

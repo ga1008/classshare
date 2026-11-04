@@ -369,6 +369,10 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
         "git_head_commit": "TEXT DEFAULT ''",
         "wanderer_min_tier": "INTEGER",
         "wanderer_max_tier": "INTEGER",
+        "student_visible": "INTEGER NOT NULL DEFAULT 0",
+    },
+    "course_material_assignments": {
+        "publication_mode": "TEXT",
     },
     "material_ai_import_records": {
         "signature_revision": "TEXT NOT NULL DEFAULT ''",

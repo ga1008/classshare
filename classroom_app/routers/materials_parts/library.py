@@ -9,6 +9,14 @@ from ...services.base_resource_modes_service import (
     build_mode_permissions,
 )
 from ...services.material_attributes_service import update_material_attributes
+from ...services.material_publication_service import (
+    get_classroom_publication_nodes_for_offerings,
+    get_restricted_material_paths,
+    is_restricted_material,
+    mark_legacy_binding_publications,
+    record_classroom_material_publication,
+    remove_classroom_material_publication,
+)
 from ...services.material_delete_service import build_material_delete_impact, unlink_material_delete_references
 from ...services.ordinary_grade_record_service import classify_ordinary_grade_assignment
 
@@ -122,6 +130,9 @@ def _serialize_material_attributes(conn, material, user: dict) -> dict[str, Any]
     item = _decorate_material_ownership(conn, item, user)
     item = attach_git_repository_metadata(conn, [item])[0]
     can_manage = bool(item.get("can_manage"))
+    item["can_publish_to_classroom"] = can_manage and not is_restricted_material(
+        material, get_restricted_material_paths(conn, [material["root_id"]]),
+    )
     item["permissions"] = build_mode_permissions(can_use=True, can_manage=can_manage)
     ai_import_record = _find_material_ai_import_record(
         conn,
@@ -576,7 +587,7 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
         ).fetchone()[0]
         assignments = conn.execute(
             """
-            SELECT a.class_offering_id, a.created_at, c.name AS class_name, co.name AS course_name, o.semester
+            SELECT a.class_offering_id, a.created_at, a.publication_mode, c.name AS class_name, co.name AS course_name, o.semester
             FROM course_material_assignments a
             JOIN class_offerings o ON o.id = a.class_offering_id
             JOIN classes c ON c.id = o.class_id
@@ -597,6 +608,27 @@ async def get_material_detail(material_id: int, user: dict = Depends(get_current
             },
         )
         detail = _decorate_material_ownership(conn, detail, user)
+        detail["can_publish_to_classroom"] = False
+        detail["classroom_student_visible"] = False
+        if detail["can_manage"]:
+            root_id = int(material["root_id"])
+            restricted_paths = get_restricted_material_paths(conn, [root_id])
+            detail["can_publish_to_classroom"] = not is_restricted_material(material, restricted_paths)
+            if detail["can_publish_to_classroom"]:
+                linked = conn.execute(
+                    """SELECT DISTINCT a.class_offering_id FROM course_material_assignments a
+                       JOIN course_materials m ON m.id=a.material_id WHERE m.root_id=?""",
+                    (root_id,),
+                ).fetchall()
+                published = get_classroom_publication_nodes_for_offerings(
+                    conn, (row["class_offering_id"] for row in linked), root_id=root_id, restricted_paths=restricted_paths,
+                )
+                detail["classroom_student_visible"] = any(
+                    get_nearest_assignment_anchor(
+                        conn, offering_id, material, publication_nodes=nodes, restricted_paths=restricted_paths,
+                    )
+                    for offering_id, nodes in published.items()
+                )
         detail = attach_git_repository_metadata(conn, [detail])[0]
         detail = attach_render_metadata(conn, [detail])[0]
         if material["node_type"] == "folder":
@@ -634,8 +666,14 @@ async def patch_material_attributes(
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(400, "请求数据格式错误")
+    expected_updated_at = payload.get("expected_updated_at")
+    if expected_updated_at is not None and not isinstance(expected_updated_at, str):
+        raise HTTPException(400, "材料修订信息格式错误")
     with get_db_connection() as conn:
-        refreshed = update_material_attributes(conn, material_id=material_id, teacher_id=int(user["id"]), payload=payload)
+        refreshed = update_material_attributes(
+            conn, material_id=material_id, teacher_id=int(user["id"]), payload=payload,
+            expected_updated_at=expected_updated_at,
+        )
         attributes = _serialize_material_attributes(conn, refreshed, user)
         conn.commit()
     return {"status": "success", "message": "材料属性已保存", "attributes": attributes}
@@ -742,17 +780,24 @@ async def upload_materials(
     manifest: str = Form(default=""),
     parent_id: int | None = Form(default=None),
     user: dict = Depends(get_current_teacher),
+    *,
+    class_offering_id: int | None = Form(default=None),
 ):
     if not files:
         raise HTTPException(400, "请选择要上传的材料")
     from ...services.material_tree_service import lock_material_trees, ensure_plain_tree_operation, touch_material_nodes
     # Authorize before reading/decompressing uploads, then repeat under lock.
-    if parent_id is not None:
+    if class_offering_id is not None and parent_id is not None:
+        raise HTTPException(400, "请从课堂材料首页上传，以仅向本课堂开放")
+    if class_offering_id is not None or parent_id is not None:
         with get_db_connection() as conn:
-            destination = ensure_teacher_material_owner(conn, parent_id, user['id'])
-            if destination['node_type'] != 'folder':
-                raise HTTPException(400, '请选择有管理权的普通材料文件夹。')
-            ensure_plain_tree_operation(conn, destination, action='upload')
+            if class_offering_id is not None:
+                _ensure_classroom_material_uploader(conn, class_offering_id, user)
+            if parent_id is not None:
+                destination = ensure_teacher_material_owner(conn, parent_id, user['id'])
+                if destination['node_type'] != 'folder':
+                    raise HTTPException(400, '请选择有管理权的普通材料文件夹。')
+                ensure_plain_tree_operation(conn, destination, action='upload')
 
     try:
         manifest_items = json.loads(manifest) if manifest else []
@@ -803,6 +848,9 @@ async def upload_materials(
         base_prefix = ""
         base_root_id = None
         inherited_scope = "private"
+        if class_offering_id is not None:
+            _ensure_classroom_material_uploader(conn, class_offering_id, user, lock=True)
+            inherited_scope = "classroom"
         locked = lock_material_trees(conn, teacher_id=user['id'], material_ids=(parent_id,))
         if parent_id is not None:
             base_parent = locked[parent_id]
@@ -931,6 +979,10 @@ async def upload_materials(
             refresh_root_git_metadata(conn, affected_root_id)
         touch_material_nodes(conn, (base_root_id, parent_id), now)
 
+        if class_offering_id is not None:
+            for material_id in top_level_created_ids:
+                record_classroom_material_publication(conn, material_id, class_offering_id, int(user["id"]), now=now)
+
         conn.commit()
 
         created_items = []
@@ -962,6 +1014,14 @@ async def upload_materials(
     }
 
 
+def _ensure_classroom_material_uploader(conn, class_offering_id: int, user: dict, *, lock: bool = False):
+    query = "SELECT id FROM class_offerings WHERE id = ? AND teacher_id = ?"
+    if lock and get_configured_db_engine() == "postgres":
+        query += " FOR NO KEY UPDATE"
+    if not conn.execute(query, (class_offering_id, user["id"])).fetchone():
+        raise HTTPException(403, "只有任课教师可以管理本课堂的材料分配")
+
+
 @router.post("/api/materials/{material_id}/assign", response_class=JSONResponse)
 async def assign_material_to_classrooms(
     material_id: int,
@@ -971,14 +1031,12 @@ async def assign_material_to_classrooms(
     desired_ids = {int(item) for item in payload.class_offering_ids if item}
 
     with get_db_connection() as conn:
-        material = ensure_user_material_access(conn, material_id, user)
-        offering_rows = conn.execute(
-            "SELECT id FROM class_offerings WHERE teacher_id = ?",
-            (user["id"],),
-        ).fetchall()
+        from ...services.material_tree_service import ensure_subtree_owner, lock_material_trees
+
+        ensure_teacher_material_owner(conn, material_id, user["id"])
+        offering_rows = conn.execute("SELECT id FROM class_offerings WHERE teacher_id = ?", (user["id"],)).fetchall()
         allowed_ids = {int(row["id"]) for row in offering_rows}
-        invalid_ids = desired_ids - allowed_ids
-        if invalid_ids:
+        if desired_ids - allowed_ids:
             raise HTTPException(403, "包含无权分配的课堂")
 
         existing_rows = conn.execute(
@@ -987,45 +1045,46 @@ async def assign_material_to_classrooms(
             FROM course_material_assignments a
             JOIN class_offerings o ON o.id = a.class_offering_id
             WHERE a.material_id = ? AND o.teacher_id = ?
+              AND (a.publication_mode IN ('explicit', 'explicit_archive') OR a.publication_mode IS NULL)
             """,
             (material_id, user["id"]),
         ).fetchall()
-        existing_ids = {int(row["class_offering_id"]) for row in existing_rows}
+        locked_ids = {int(row["class_offering_id"]) for row in existing_rows} | desired_ids
+        for offering_id in sorted(locked_ids):
+            _ensure_classroom_material_uploader(conn, offering_id, user, lock=True)
+        material = lock_material_trees(conn, teacher_id=user["id"], material_ids=(material_id,))[material_id]
+        ensure_subtree_owner(conn, material)
+        for offering_id in sorted(locked_ids):
+            mark_legacy_binding_publications(conn, offering_id)
 
-        remove_ids = existing_ids - desired_ids
-        add_ids = desired_ids - existing_ids
+        explicit_ids = {
+            int(row["class_offering_id"])
+            for row in conn.execute(
+                """
+                SELECT a.class_offering_id
+                FROM course_material_assignments a
+                JOIN class_offerings o ON o.id = a.class_offering_id
+                WHERE a.material_id = ? AND o.teacher_id = ?
+                  AND (a.publication_mode IN ('explicit', 'explicit_archive') OR a.publication_mode IS NULL)
+                """,
+                (material_id, user["id"]),
+            ).fetchall()
+        }
+        if explicit_ids - locked_ids:
+            raise HTTPException(409, "材料的课堂分配已变化，请刷新后重试。")
+        remove_ids = explicit_ids - desired_ids
+        add_ids = desired_ids - explicit_ids
         now = datetime.now().isoformat()
-
-        for class_offering_id in remove_ids:
-            conn.execute(
-                "DELETE FROM course_material_assignments WHERE material_id = ? AND class_offering_id = ?",
-                (material_id, class_offering_id),
-            )
-
-        for class_offering_id in add_ids:
-            if get_configured_db_engine() == "postgres":
-                conn.execute(
-                    """
-                    INSERT INTO course_material_assignments (material_id, class_offering_id, assigned_by_teacher_id, created_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT (material_id, class_offering_id) DO NOTHING
-                    """,
-                    (material_id, class_offering_id, user["id"], now),
-                )
-            else:
-                conn.execute(
-                    """
-                    INSERT INTO course_material_assignments (material_id, class_offering_id, assigned_by_teacher_id, created_at)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (material_id, class_offering_id, user["id"], now),
-                )
+        for offering_id in sorted(remove_ids):
+            remove_classroom_material_publication(conn, material_id, offering_id)
+        for offering_id in sorted(desired_ids):
+            record_classroom_material_publication(conn, material_id, offering_id, int(user["id"]), now=now)
 
         conn.commit()
 
         assignment_rows = conn.execute(
             """
-            SELECT a.class_offering_id, a.created_at, c.name AS class_name, co.name AS course_name, o.semester
+            SELECT a.class_offering_id, a.created_at, a.publication_mode, c.name AS class_name, co.name AS course_name, o.semester
             FROM course_material_assignments a
             JOIN class_offerings o ON o.id = a.class_offering_id
             JOIN classes c ON c.id = o.class_id
@@ -1051,48 +1110,14 @@ async def update_material_scope(
     payload: MaterialScopeUpdateRequest,
     user: dict = Depends(get_current_teacher),
 ):
-    normalized_scope = str(payload.scope_level or "private").strip().lower()
-    if normalized_scope not in {"private", "school", "college", "department", "public"}:
-        raise HTTPException(400, "Invalid material scope")
-    now_text = datetime.now().isoformat()
     with get_db_connection() as conn:
-        material = ensure_teacher_material_owner(conn, material_id, user["id"])
-        if material["parent_id"] is not None:
-            raise HTTPException(400, "开放范围由最外层文件夹统一决定，请在最外层文件夹上设置")
-        owner_scope = load_teacher_org_scope(conn, int(material["teacher_id"]))
-        conn.execute(
-            """
-            UPDATE course_materials
-            SET scope_level = ?,
-                owner_role = 'teacher',
-                owner_user_pk = ?,
-                school_code = ?,
-                school_name = ?,
-                college = ?,
-                department = ?,
-                published_at = CASE WHEN ? != 'private' THEN COALESCE(published_at, ?) ELSE published_at END,
-                updated_at = ?
-            WHERE root_id = ?
-              AND (material_path = ? OR material_path LIKE ?)
-            """,
-            (
-                normalized_scope,
-                int(material["teacher_id"]),
-                owner_scope["school_code"],
-                owner_scope["school_name"],
-                owner_scope["college"],
-                owner_scope["department"],
-                normalized_scope,
-                now_text,
-                now_text,
-                int(material["root_id"]),
-                material["material_path"],
-                f"{material['material_path']}/%",
-            ),
+        refreshed = update_material_attributes(
+            conn, material_id=material_id, teacher_id=int(user["id"]),
+            payload=payload.model_dump(exclude_none=True, exclude={"expected_updated_at"}),
+            expected_updated_at=payload.expected_updated_at,
         )
-        conn.commit()
-        refreshed = ensure_teacher_material_owner(conn, material_id, user["id"])
         item = _serialize_material_items(conn, [refreshed], user=user)[0]
+        conn.commit()
     return {"status": "success", "material": item}
 
 

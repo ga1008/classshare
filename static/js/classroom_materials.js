@@ -1,23 +1,15 @@
 import { apiFetch } from './api.js';
 import { getLayerSystem } from './lq/layer.js';
 import { submitGradeMaterialWithPreflight } from './grade_material_preflight.js';
-import { escapeHtml, formatSize, getFileIcon, showToast } from './ui.js';
+import { escapeHtml, formatSize, showToast } from './ui.js';
+import { tabs } from './lq/navigation.js';
+import { renderMaterialCards } from './materials_library_cards.js';
 import { enhancePromptPoolInput, enhancePromptPoolInputs, recordPromptForInput } from './prompt_pool.js';
 import {
     bindProcessMaterialExportDownloadActions,
     startProcessMaterialExportDownloadFromTrigger,
 } from './process_material_editor_preview.js';
-import {
-    getLearningDocumentUrl,
-    getMaterialPrimaryAction,
-    getMaterialTypeLabel,
-    getRenderLabel,
-    getRenderUrl,
-    getRepositoryVisualMeta,
-    hasLearningDocument,
-    isGitRepository,
-    isRenderable,
-} from './materials_common.js';
+import { buildMaterialUploadForm, getMaterialTypeLabel, hasInlineMaterialPreview, renderMaterialBreadcrumbs } from './materials_common.js';
 
 let config = null;
 
@@ -26,7 +18,12 @@ const state = {
     breadcrumbs: [],
     history: [],
     items: [],
+    listRequest: 0,
+    directoryReady: false,
+    directoryPending: false,
+    uploadBusy: false,
     selectedIds: new Set(),
+    detailRequest: 0,
     detailItem: null,
     detailPreview: null,
     detailExportUrl: '',
@@ -66,6 +63,11 @@ function withClassroomLearningContext(urlText) {
 function refs() {
     return {
         list: document.getElementById('classroom-materials-list'),
+        textbook: document.getElementById('classroom-materials-textbook'),
+        upload: document.getElementById('classroom-materials-upload'),
+        uploadInput: document.getElementById('classroom-materials-files'),
+        uploadSubmit: document.getElementById('classroom-materials-upload-submit'),
+        uploadStatus: document.getElementById('classroom-materials-upload-status'),
         breadcrumbs: document.getElementById('classroom-materials-breadcrumbs'),
         backBtn: document.getElementById('classroom-materials-back-btn'),
         upBtn: document.getElementById('classroom-materials-up-btn'),
@@ -150,6 +152,7 @@ function openModal(modal) {
         modal.style.display = 'none';
         modal.setAttribute('aria-hidden', 'true');
         modal.classList.remove('show');
+        if (modal.id === 'classroom-material-detail-modal') clearMaterialDetail();
     };
     const handle = layers.open(modal, {
         type: 'modal', surface: modal.querySelector('.modal-dialog') || modal.firstElementChild,
@@ -176,48 +179,6 @@ function getMetaText(item) {
     return formatSize(item.file_size || 0);
 }
 
-function getVisualMeta(item) {
-    const repositoryMeta = getRepositoryVisualMeta(item);
-    if (repositoryMeta) {
-        return {
-            color: repositoryMeta.color,
-            label: repositoryMeta.icon,
-            badge: repositoryMeta.badge,
-        };
-    }
-    if (item.node_type === 'folder') {
-        return { color: '#0ea5e9', label: 'DIR', badge: '' };
-    }
-    const fileMeta = getFileIcon(item.name || 'file');
-    return { color: fileMeta.color, label: fileMeta.label, badge: '' };
-}
-
-function getDownloadAction(item) {
-    if (item.node_type !== 'file') {
-        return '';
-    }
-
-    if (item.download_allowed !== false) {
-        return '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="download">下载</button>';
-    }
-
-    const title = escapeHtml(item.download_blocked_reason || '已限制下载');
-    return `
-        <button data-lq-component="button"
-            type="button"
-            class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm resource-download-blocked"
-            data-action="download-blocked"
-            title="${title}"
-            aria-label="${title}"
-        >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="9"></circle>
-                <path d="M5 5l14 14"></path>
-            </svg>
-        </button>
-    `;
-}
-
 function updateSelectionBar() {
     const el = refs().selectionBar;
     if (!el) return;
@@ -233,78 +194,52 @@ function updateSelectionBar() {
 }
 
 function renderBreadcrumbs() {
-    const container = refs().breadcrumbs;
+    const dom = refs();
+    dom.backBtn.disabled = state.history.length === 0;
+    dom.upBtn.disabled = state.currentParentId === null;
+    dom.breadcrumbs.innerHTML = renderMaterialBreadcrumbs(state.breadcrumbs, '课堂文档库');
+}
+
+function renderTextbook(textbook) {
+    const { textbook: container } = refs();
     if (!container) return;
-    if (!state.breadcrumbs.length) {
-        container.innerHTML = '<span class="text-muted">已分配材料</span>';
+    container.hidden = !textbook;
+    if (!textbook) {
+        container.replaceChildren();
         return;
     }
-    container.innerHTML = state.breadcrumbs.map((crumb, index) => `
-        ${index > 0 ? '<span class="separator">/</span>' : ''}
-        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-crumb-id="${crumb.id}">${escapeHtml(crumb.name)}</button>
-    `).join('');
+    const details = [textbook.author, textbook.publisher, textbook.publication_date].filter(Boolean).join(' · ');
+    container.innerHTML = `
+        <article data-lq-component="surface" data-lq-surface="embedded" class="lq-surface cw-textbook">
+            <div>
+                <span class="cw-meta">本课堂教材</span>
+                <h3>${escapeHtml(textbook.title || textbook.name)}</h3>
+                ${details ? `<p class="cw-meta">${escapeHtml(details)}</p>` : ''}
+            </div>
+            <div class="cw-textbook__actions">
+                ${textbook.preview_url ? `<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" href="${escapeHtml(textbook.preview_url)}" target="_blank" rel="noopener">预览教材</a>` : ''}
+                ${textbook.download_url ? `<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--ghost" href="${escapeHtml(textbook.download_url)}">下载教材</a>` : ''}
+                ${!textbook.preview_url && !textbook.download_url ? '<span class="cw-meta">暂无可查看的教材附件</span>' : ''}
+            </div>
+        </article>`;
 }
 
 function renderList() {
-    const container = refs().list;
-    if (!container) return;
-    if (!state.items.length) {
-        container.innerHTML = '<div class="materials-empty">当前课堂还没有分配课程材料。</div>';
-        updateSelectionBar();
-        return;
-    }
-
-    container.innerHTML = state.items.map((item) => {
-        const visualMeta = getVisualMeta(item);
-        const primaryAction = getMaterialPrimaryAction(item);
-        const documentAction = hasLearningDocument(item)
-            ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="view-doc">文档</button>'
-            : '';
-        const renderAction = isRenderable(item)
-            ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm materials-render-btn" data-action="render">${escapeHtml(getRenderLabel(item))}</button>`
-            : '';
-        const repositoryBadge = isGitRepository(item)
-            ? `<span class="materials-repo-badge" style="--repo-color:${visualMeta.color};">${escapeHtml(visualMeta.badge)}</span>`
-            : '';
-
-        return `
-            <div
-                class="materials-row"
-                data-id="${item.id}"
-                data-material-node-type="${escapeHtml(item.node_type || '')}"
-                data-material-name="${escapeHtml(item.name || '')}"
-                data-material-path="${escapeHtml(item.material_path || '')}"
-                data-material-preview-supported="${item.preview_supported ? 'true' : 'false'}"
-                data-material-download-allowed="${item.download_allowed === false ? 'false' : 'true'}"
-                data-material-has-document="${hasLearningDocument(item) ? 'true' : 'false'}"
-                data-material-primary-action="${escapeHtml(primaryAction.action || '')}"
-            >
-                <div>
-                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-role="select-item" data-id="${item.id}" aria-label="${escapeHtml(`选择材料：${item.name || '未命名材料'}`)}" ${state.selectedIds.has(item.id) ? 'checked' : ''}>
-                </div>
-                <div class="materials-name-cell">
-                    <div class="materials-type-icon" style="background:${visualMeta.color}16;color:${visualMeta.color};">${escapeHtml(visualMeta.label)}</div>
-                    <div class="materials-name-copy">
-                        <strong>${escapeHtml(item.name)}</strong>
-                        <div class="materials-name-badges">${repositoryBadge}</div>
-                        <span>${escapeHtml(item.material_path || '')}</span>
-                    </div>
-                </div>
-                <div>${escapeHtml(getMaterialTypeLabel(item))}</div>
-                <div>${escapeHtml(getMetaText(item))}</div>
-                <div class="materials-row-actions">
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="${primaryAction.action}">
-                        ${primaryAction.label}
-                    </button>
-                    ${renderAction}
-                    ${documentAction}
-                    ${getDownloadAction(item)}
-                </div>
-            </div>
-        `;
-    }).join('');
-
+    const { list } = refs();
+    list.innerHTML = state.items.length
+        ? renderMaterialCards(state.items, { classroom: true, selectedIds: state.selectedIds, canViewDetails: isTeacher() })
+        : `<div class="materials-empty" role="status">${state.currentParentId ? '此文件夹暂无材料。' : '当前课堂还没有分配课程材料。'}</div>`;
     updateSelectionBar();
+}
+
+function markSelected(checkbox) {
+    const id = Number(checkbox.dataset.id);
+    if (checkbox.checked) state.selectedIds.add(id);
+    else state.selectedIds.delete(id);
+    checkbox.closest('.mcard')?.classList.toggle('is-selected', checkbox.checked);
+    const surface = checkbox.closest('.mcard__paper');
+    if (checkbox.checked) surface?.setAttribute('data-lq-selected', 'true');
+    else surface?.removeAttribute('data-lq-selected');
 }
 
 function compactValue(value) {
@@ -323,8 +258,9 @@ function compactDateTime(value) {
 function getOpenUrl(item) {
     if (!item) return '';
     if (item.node_type === 'folder') return '';
+    if (item.preview_url) return item.preview_url;
     if (item.preview_supported) return withClassroomLearningContext(`/materials/view/${item.id}`);
-    if (item.download_allowed !== false) return `/materials/download/${item.id}`;
+    if (item.download_allowed !== false) return item.download_url || `/materials/download/${item.id}`;
     return '';
 }
 
@@ -628,23 +564,24 @@ function setDetailExportButtons(material = null, preview = null) {
     }
 }
 
-async function openMaterialDetail(materialId) {
+function clearMaterialDetail() {
+    state.detailRequest++;
+    state.detailItem = null;
+    refs().detailContent?.replaceChildren();
+}
+
+async function openMaterialDetail(materialId, { mode = 'management' } = {}) {
     const dom = refs();
     const item = state.items.find((entry) => Number(entry.id) === Number(materialId));
+    const classroomPreview = mode === 'classroom-preview';
+    const generatedArchive = mode === 'generated-archive';
+    if (classroomPreview ? !item || !hasInlineMaterialPreview(item) : !isTeacher() || (!item?.can_manage && !generatedArchive)) return;
+    const request = ++state.detailRequest;
+    const isCurrent = () => request === state.detailRequest;
     state.detailItem = item || null;
     state.detailPreview = null;
     state.detailExportUrl = item?.ai_import_record?.export_url || '';
     state.detailExportPdfUrl = item?.ai_import_record?.export_pdf_url || '';
-
-    if (!isTeacher()) {
-        const action = getMaterialPrimaryAction(item || {});
-        if (action.action === 'open') {
-            await loadMaterials(materialId, true);
-        } else if (item?.preview_supported) {
-            window.open(withClassroomLearningContext(`/materials/view/${materialId}`), '_blank', 'noopener');
-        }
-        return;
-    }
 
     dom.detailTitle.textContent = item?.name || '材料详情';
     dom.detailKicker.textContent = item?.node_type === 'folder' ? '材料文件夹' : '课程材料';
@@ -655,20 +592,36 @@ async function openMaterialDetail(materialId) {
     if (dom.detailExportBtn) dom.detailExportBtn.disabled = true;
     if (dom.detailExportPdfBtn) dom.detailExportPdfBtn.disabled = true;
     setDetailExportButtons(item, null);
-    if (dom.detailOpenBtn) dom.detailOpenBtn.textContent = item?.node_type === 'folder' ? '打开文件夹' : '打开';
+    if (dom.detailOpenBtn) {
+        dom.detailOpenBtn.hidden = generatedArchive;
+        dom.detailOpenBtn.textContent = classroomPreview ? '新标签打开' : item?.node_type === 'folder' ? '打开文件夹' : '打开';
+    }
     if (dom.detailDownloadBtn) dom.detailDownloadBtn.disabled = !item || item.node_type !== 'file' || item.download_allowed === false;
     openModal(dom.detailModal);
 
     try {
-        const detail = await apiFetch(`/api/materials/${materialId}`, { silent: true });
-        const material = detail.material || item || {};
+        const detailUrl = classroomPreview
+            ? `/api/classrooms/${config.classOfferingId}/materials/${materialId}`
+            : `/api/materials/${materialId}`;
+        const detail = await apiFetch(detailUrl, { silent: true });
+        if (!isCurrent()) return;
+        const material = { ...item, ...detail.material };
         state.detailItem = material;
+        if (classroomPreview) {
+            const { renderMaterialPreview } = await import('./material_renderers.js');
+            if (!isCurrent()) return;
+            dom.detailLoading.hidden = true;
+            dom.detailContent.hidden = false;
+            await renderMaterialPreview(dom.detailContent, material, { isCurrent });
+            return;
+        }
         state.detailExportUrl = material.ai_import_record?.export_url || '';
         state.detailExportPdfUrl = material.ai_import_record?.export_pdf_url || '';
         let preview = null;
         if (material.ai_import_record?.preview_url) {
             try {
                 const previewData = await apiFetch(material.ai_import_record.preview_url, { silent: true });
+                if (!isCurrent()) return;
                 preview = previewData.preview || null;
                 state.detailPreview = preview;
                 state.detailExportUrl = preview?.export_url || state.detailExportUrl;
@@ -677,6 +630,7 @@ async function openMaterialDetail(materialId) {
                 console.warn('final material preview failed', error);
             }
         }
+        if (!isCurrent()) return;
         dom.detailTitle.textContent = material.name || item?.name || '材料详情';
         dom.detailKicker.textContent = material.ai_import_record?.document_type_label || (material.node_type === 'folder' ? '材料文件夹' : '课程材料');
         dom.detailPath.textContent = material.material_path || '';
@@ -690,6 +644,7 @@ async function openMaterialDetail(materialId) {
         if (dom.detailExportPdfBtn) dom.detailExportPdfBtn.disabled = !state.detailExportPdfUrl;
         setDetailExportButtons(material, preview);
     } catch (error) {
+        if (!isCurrent()) return;
         dom.detailLoading.hidden = true;
         dom.detailContent.hidden = false;
         dom.detailContent.innerHTML = `<div class="materials-empty">加载材料详情失败：${escapeHtml(error.message || '未知错误')}</div>`;
@@ -1456,10 +1411,11 @@ async function submitFinalMaterialGeneration() {
         if (!data) { setFinalMaterialStatus('已取消生成，课堂成绩与材料保持不变。', ''); return; }
         showToast(data.message || '期末材料已生成', 'success');
         await recordPromptForInput(dom.finalMaterialPrompt, prompt);
-        closeModal(dom.finalMaterialModal);
+        await closeModal(dom.finalMaterialModal);
         state.finalMaterialPrerequisitesLoaded = false;
         state.finalMaterialPrerequisites = {};
-        await loadMaterials(state.currentParentId, false);
+        const archiveId = Number(data?.task?.package_material_id || data?.task?.parsed_material_id || 0);
+        if (archiveId) await openMaterialDetail(archiveId, { mode: 'generated-archive' });
     } catch (error) {
         setFinalMaterialStatus(error.message || '生成失败', 'error');
         showToast(error.message || '生成失败', 'error');
@@ -1469,18 +1425,77 @@ async function submitFinalMaterialGeneration() {
     }
 }
 
-async function loadMaterials(parentId = null, trackHistory = false) {
-    const query = parentId ? `?parent_id=${parentId}` : '';
-    const data = await apiFetch(`/api/classrooms/${config.classOfferingId}/materials${query}`, { silent: true });
-    if (trackHistory && state.currentParentId !== parentId) {
-        state.history.push(state.currentParentId);
+async function loadMaterials(parentId = null, { navigation } = {}) {
+    const dom = refs();
+    const request = ++state.listRequest;
+    state.directoryPending = true;
+    dom.list.setAttribute('aria-busy', 'true');
+    try {
+        const query = parentId ? `?parent_id=${parentId}` : '';
+        const data = await apiFetch(`/api/classrooms/${config.classOfferingId}/materials${query}`, { silent: true });
+        if (request !== state.listRequest) return;
+        if (navigation === 'back') state.history.pop();
+        else if (navigation && state.currentParentId !== parentId) state.history.push(state.currentParentId);
+        if (state.currentParentId !== parentId) state.selectedIds.clear();
+        state.currentParentId = parentId;
+        state.breadcrumbs = data.breadcrumbs || [];
+        state.items = data.items || [];
+        const listed = new Set(state.items.map(item => Number(item.id)));
+        for (const id of state.selectedIds) if (!listed.has(id)) state.selectedIds.delete(id);
+        if (dom.upload) dom.upload.hidden = data.capabilities?.can_upload !== true;
+        renderTextbook(data.textbook);
+        renderBreadcrumbs();
+        renderList();
+        state.directoryReady = true;
+        if (navigation && !dom.list.closest('[hidden]')) {
+            dom.breadcrumbs.querySelector('[aria-current="location"]')?.focus({ preventScroll: true });
+        }
+    } catch (error) {
+        if (request === state.listRequest) throw error;
+    } finally {
+        if (request === state.listRequest) {
+            state.directoryPending = false;
+            dom.list.removeAttribute('aria-busy');
+        }
     }
-    state.currentParentId = parentId;
-    state.breadcrumbs = data.breadcrumbs || [];
-    state.items = data.items || [];
-    state.selectedIds.clear();
-    renderBreadcrumbs();
-    renderList();
+}
+
+function showDirectoryError(error) {
+    const { list } = refs();
+    if (state.directoryReady) {
+        showToast(error.message || '打开材料目录失败', 'error');
+        return;
+    }
+    list.innerHTML = `<div class="materials-empty" role="alert">加载材料失败：${escapeHtml(error.message || '未知错误')}。请点击刷新重试。</div>`;
+}
+
+async function submitClassroomDocuments(event, dom) {
+    event.preventDefault();
+    const files = dom.uploadInput.files;
+    if (state.uploadBusy || dom.upload.hidden || !files.length) return;
+    state.uploadBusy = true;
+    dom.uploadInput.disabled = true;
+    dom.uploadSubmit.disabled = true;
+    dom.uploadSubmit.setAttribute('aria-busy', 'true');
+    dom.uploadStatus.hidden = false;
+    dom.uploadStatus.textContent = '正在上传学习文档…';
+    try {
+        const result = await apiFetch('/api/materials/upload', {
+            method: 'POST',
+            body: buildMaterialUploadForm(files, { classOfferingId: config.classOfferingId }),
+            silent: true,
+        });
+        dom.upload.reset();
+        dom.uploadStatus.textContent = result.message || '学习文档已上传并发布到本课堂。';
+        if (!state.currentParentId && !state.directoryPending) await loadMaterials().catch(showDirectoryError);
+    } catch (error) {
+        dom.uploadStatus.textContent = error.message || '上传失败，请重试。';
+    } finally {
+        state.uploadBusy = false;
+        dom.uploadInput.disabled = false;
+        dom.uploadSubmit.disabled = false;
+        dom.uploadSubmit.removeAttribute('aria-busy');
+    }
 }
 
 function getBlockedSelectedItems(ids) {
@@ -1568,24 +1583,18 @@ export function init(appConfig) {
     enhancePromptPoolInput(dom.finalMaterialPrompt);
     bindProcessMaterialExportDownloadActions(dom.detailContent, showToast, { saved: false });
 
-    dom.refreshBtn?.addEventListener('click', () => {
-        loadMaterials(state.currentParentId).catch((error) => {
-            showToast(error.message || '刷新材料失败', 'error');
-        });
-    });
+    dom.refreshBtn?.addEventListener('click', () => refresh().catch(showDirectoryError));
+    dom.upload?.addEventListener('submit', (event) => void submitClassroomDocuments(event, dom));
 
     dom.backBtn?.addEventListener('click', () => {
-        const previousParentId = state.history.pop();
-        loadMaterials(previousParentId ?? null, false).catch((error) => {
-            showToast(error.message || '返回失败', 'error');
-        });
+        if (state.history.length) {
+            loadMaterials(state.history.at(-1), { navigation: 'back' }).catch(showDirectoryError);
+        }
     });
 
     dom.upBtn?.addEventListener('click', () => {
         const parentCrumb = state.breadcrumbs.length >= 2 ? state.breadcrumbs[state.breadcrumbs.length - 2] : null;
-        loadMaterials(parentCrumb ? Number(parentCrumb.id) : null, true).catch((error) => {
-            showToast(error.message || '返回上一级失败', 'error');
-        });
+        loadMaterials(parentCrumb ? Number(parentCrumb.id) : null, { navigation: 'folder' }).catch(showDirectoryError);
     });
 
     dom.selectionDownloadBtn?.addEventListener('click', async () => {
@@ -1646,9 +1655,7 @@ export function init(appConfig) {
         if (!item) return;
         if (item.node_type === 'folder') {
             closeModal(dom.detailModal);
-            loadMaterials(Number(item.id), true).catch((error) => {
-                showToast(error.message || '打开目录失败', 'error');
-            });
+            loadMaterials(Number(item.id), { navigation: 'folder' }).catch(showDirectoryError);
             return;
         }
         const url = getOpenUrl(item);
@@ -1662,7 +1669,7 @@ export function init(appConfig) {
             showToast(item.download_blocked_reason || '当前材料已限制下载', 'warning');
             return;
         }
-        window.location.href = `/materials/download/${item.id}`;
+        window.location.href = item.download_url || `/materials/download/${item.id}`;
     });
 
     dom.detailExportBtn?.addEventListener('click', () => {
@@ -1699,7 +1706,7 @@ export function init(appConfig) {
             showToast('期末材料已优化', 'success');
             await recordPromptForInput(promptInput, prompt);
             await openMaterialDetail(state.detailItem.id);
-            await loadMaterials(state.currentParentId, false);
+            await loadMaterials(state.currentParentId);
         } catch (error) {
             showToast(error.message || 'AI 优化失败', 'error');
         } finally {
@@ -1708,101 +1715,66 @@ export function init(appConfig) {
         }
     });
 
-    dom.breadcrumbs?.addEventListener('click', (event) => {
+    dom.breadcrumbs.addEventListener('click', (event) => {
         const button = event.target.closest('[data-crumb-id]');
-        if (!button) return;
-        loadMaterials(Number(button.dataset.crumbId), true).catch((error) => {
-            showToast(error.message || '打开目录失败', 'error');
-        });
+        if (button) loadMaterials(Number(button.dataset.crumbId) || null, { navigation: 'folder' }).catch(showDirectoryError);
+    });
+
+    dom.list.addEventListener('change', (event) => {
+        if (event.target.matches('[data-role="select-item"]')) {
+            markSelected(event.target);
+            updateSelectionBar();
+        }
     });
 
     dom.list.addEventListener('click', (event) => {
-        const row = event.target.closest('.materials-row');
-        if (!row) return;
-        const materialId = Number(row.dataset.id);
-        const item = state.items.find((entry) => Number(entry.id) === materialId);
-        if (!item) return;
-
-        const checkbox = event.target.closest('[data-role="select-item"]');
-        if (checkbox) {
-            if (checkbox.checked) state.selectedIds.add(materialId);
-            else state.selectedIds.delete(materialId);
-            updateSelectionBar();
-            return;
-        }
-
-        const action = event.target.closest('[data-action]')?.dataset.action;
-        if (!action) {
-            openMaterialDetail(materialId).catch((error) => {
-                showToast(error.message || '打开材料详情失败', 'error');
-            });
-            return;
-        }
-
-        if (action === 'open') {
-            loadMaterials(materialId, true).catch((error) => {
-                showToast(error.message || '打开目录失败', 'error');
-            });
-        } else if (action === 'preview') {
-            window.open(withClassroomLearningContext(`/materials/view/${materialId}`), '_blank', 'noopener');
-        } else if (action === 'render') {
-            const renderUrl = getRenderUrl(item);
-            if (!renderUrl) {
-                showToast('当前材料不支持直接渲染', 'warning');
-                return;
-            }
-            window.open(renderUrl, '_blank', 'noopener');
-        } else if (action === 'view-doc') {
-            const viewerUrl = getLearningDocumentUrl(item);
-            if (!viewerUrl) {
-                showToast('当前目录没有可查看的 README.md', 'warning');
-                return;
-            }
-            window.open(withClassroomLearningContext(viewerUrl), '_blank', 'noopener');
-        } else if (action === 'download-blocked') {
-            showToast(item.download_blocked_reason || '当前材料已限制下载', 'warning');
-        } else if (action === 'download') {
-            window.location.href = `/materials/download/${materialId}`;
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+        const materialId = Number(button.closest('.mcard')?.dataset.id);
+        if (!materialId) return;
+        if (button.dataset.action === 'explore') {
+            loadMaterials(materialId, { navigation: 'folder' }).catch(showDirectoryError);
+        } else if (button.dataset.action === 'preview') {
+            void openMaterialDetail(materialId, { mode: 'classroom-preview' });
+        } else if (button.dataset.action === 'details') {
+            void openMaterialDetail(materialId);
         }
     });
 
-    dom.selectAll?.addEventListener('change', () => {
-        state.selectedIds.clear();
-        if (dom.selectAll.checked) state.items.forEach(item => state.selectedIds.add(Number(item.id)));
+    dom.selectAll.addEventListener('change', () => {
         dom.list.querySelectorAll('[data-role="select-item"]').forEach(checkbox => {
-            checkbox.checked = state.selectedIds.has(Number(checkbox.dataset.id));
+            checkbox.checked = dom.selectAll.checked;
+            markSelected(checkbox);
         });
         updateSelectionBar();
     });
 
-    dom.list.addEventListener('dblclick', (event) => {
-        const row = event.target.closest('.materials-row');
-        if (!row) return;
-        const materialId = Number(row.dataset.id);
-        const item = state.items.find((entry) => Number(entry.id) === materialId);
-        if (!item) return;
-        if (item.node_type === 'folder') {
-            loadMaterials(materialId, true).catch((error) => {
-                showToast(error.message || '打开目录失败', 'error');
-            });
-        } else if (item.preview_supported) {
-            window.open(withClassroomLearningContext(`/materials/view/${materialId}`), '_blank', 'noopener');
-        }
-    });
-
-    let directoryLoaded = false;
     const loadDirectory = () => {
-        if (directoryLoaded) return;
-        directoryLoaded = true;
-        loadMaterials().catch((error) => {
-            directoryLoaded = false;
-            dom.list.innerHTML = `<div class="materials-empty">加载材料失败：${escapeHtml(error.message || '未知错误')}。请点击刷新重试。</div>`;
-        });
+        if (!state.directoryReady && !state.directoryPending) loadMaterials().catch(showDirectoryError);
     };
+    const tabRoot = document.getElementById('classroom-primary-tabs');
+    if (tabRoot) {
+        const primaryTabs = tabs(tabRoot);
+        tabRoot.addEventListener('lq:tab-change', event => {
+            if (event.target === tabRoot && event.detail?.key === 'materials') loadDirectory();
+        });
+        const handleMaterialsLink = () => {
+            if (['#materials-panel', '#classroom-primary-tabs--lq-panel-materials'].includes(window.location.hash)) {
+                primaryTabs.select('materials');
+                loadDirectory();
+            }
+        };
+        window.addEventListener('hashchange', handleMaterialsLink);
+        handleMaterialsLink();
+        if (primaryTabs.value === 'materials') loadDirectory();
+        document.querySelector('[data-workspace-nav][href="#assignment-panel"]')?.addEventListener('click', () => primaryTabs.select('tasks'));
+    }
     if (document.body.classList.contains('classroom-workspace-v2')) {
         document.addEventListener('classroom:workspace-surface-visible', event => {
+            if (event.detail?.panel !== 'material-detail' && state.detailItem) clearMaterialDetail();
             if (event.detail?.panel === 'materials') loadDirectory();
         });
+        document.addEventListener('classroom:workspace-closed', clearMaterialDetail);
         if (dom.list.closest('.cw-dialog')) loadDirectory();
     } else loadDirectory();
     openInitialFinalMaterialModalIfRequested(dom);
@@ -1811,5 +1783,12 @@ export function init(appConfig) {
 export async function refresh() {
     if (!config) return;
     document.dispatchEvent(new CustomEvent('classroom:materials-changed'));
-    await loadMaterials(state.currentParentId);
+    const parentId = state.currentParentId;
+    try {
+        await loadMaterials(parentId);
+    } catch (error) {
+        if (!parentId || ![403, 404].includes(error.status)) throw error;
+        state.history = [];
+        await loadMaterials();
+    }
 }

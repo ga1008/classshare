@@ -401,7 +401,7 @@ export function createMaterialsExplorer(options = {}) {
         const assignments = Array.isArray(detail.assignments) ? detail.assignments : [];
         const isRepo = Boolean(detail.is_git_repository);
         const summary = detail.ai_parse_result?.summary || detail.summary || '';
-        const scopeOptions = [['private', '私有'], ['department', '本系部公开'], ['college', '本院级公开'], ['school', '全校公开'], ['public', '完全公开']];
+        const scopeOptions = [['private', '私有'], ['classroom', '课堂可见'], ['department', '本系部公开'], ['college', '本院级公开'], ['school', '全校公开'], ['public', '完全公开']];
         const isScopeRoot = detail.parent_id === null || detail.parent_id === undefined;
         dom.details.innerHTML = `
             <div class="mx__pane-head"><span>${kindIcon('info')} 详细信息</span>${canManage ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--prominent" data-detail-action="save-properties">保存</button>' : ''}</div>
@@ -418,9 +418,15 @@ export function createMaterialsExplorer(options = {}) {
                 <label class="mx__field">
                     <span>开放范围</span>
                     <select data-lq-dropdown data-lq-component="select" class="lq-select" data-property-scope>
-                        ${scopeOptions.map(([value, label]) => `<option value="${value}" ${detail.scope_level === value ? 'selected' : ''}>${label}</option>`).join('')}
+                        ${scopeOptions.filter(([value]) => value !== 'classroom' || detail.can_publish_to_classroom !== false || detail.scope_level === value)
+                            .map(([value, label]) => `<option value="${value}" ${detail.scope_level === value ? 'selected' : ''}>${label}</option>`).join('')}
                     </select>
-                </label>` : `<div class="mx__field mx__field--readonly"><span>开放范围</span><strong>${escapeHtml(detail.scope_label || '私有')}${isScopeRoot ? '' : ' · 随最外层'}</strong></div>`}
+                </label>
+                <label class="mx__student-scope" data-property-student-scope hidden>
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-property-student-visible ${detail.student_visible === true ? 'checked' : ''}>
+                    <span>所选范围内的学生也可查看</span>
+                </label>
+                <p class="mx__scope-hint" data-property-scope-hint></p>` : `<div class="mx__field mx__field--readonly"><span>开放范围</span><strong>${escapeHtml(detail.scope_label || '私有')}${isScopeRoot ? '' : ' · 随最外层'}</strong></div>`}
                 <dl class="mx__props">
                     <div><dt>路径</dt><dd title="${escapeHtml(detail.material_path || '')}">${escapeHtml(detail.material_path || '/')}</dd></div>
                     <div><dt>大小 / 子项</dt><dd>${escapeHtml(nodeMeta(detail))}</dd></div>
@@ -435,11 +441,26 @@ export function createMaterialsExplorer(options = {}) {
                 ${isRepo ? renderGitPanel(detail) : ''}
             </div>
         `;
+        updateStudentScopeControl();
         if (isRepo) {
             renderSyncProgress(dom.details.querySelector('[data-mx-git-progress]'), state.git.progress);
             renderSyncReport(dom.details.querySelector('[data-mx-git-report]'), state.git.result, { compact: false });
             if (state.git.plan) renderBindingPlan(dom.details.querySelector('[data-mx-git-plan]'), state.git.plan);
         }
+    }
+
+    function updateStudentScopeControl() {
+        const scope = dom.details.querySelector('[data-property-scope]')?.value;
+        if (!scope) return;
+        const broadScope = scope !== 'private' && scope !== 'classroom' && state.detail.can_publish_to_classroom !== false;
+        const checkbox = dom.details.querySelector('[data-property-student-visible]');
+        checkbox.disabled = !broadScope;
+        checkbox.closest('[data-property-student-scope]').hidden = !broadScope;
+        const hint = dom.details.querySelector('[data-property-scope-hint]');
+        hint.textContent = scope === 'classroom'
+            ? '请使用“分配课堂”选择课堂。已发布课堂的学生自动获得查看权限。'
+            : state.detail.classroom_student_visible ? '已发布课堂的学生始终可查看。' : '';
+        hint.hidden = !hint.textContent;
     }
 
     function renderGitPanel(detail) {
@@ -664,6 +685,9 @@ export function createMaterialsExplorer(options = {}) {
     /* ---------- events ---------- */
 
     function bindShell() {
+        dom.details.addEventListener('change', (event) => {
+            if (event.target.matches('[data-property-scope]')) updateStudentScopeControl();
+        });
         dom.root.addEventListener('click', async (event) => {
             const more = event.target.closest('[data-mx-menu-trigger]');
             if (more) { openContextMenu(more, state.nodes.get(Number(more.dataset.mxMenuTrigger))); return; }

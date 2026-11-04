@@ -378,16 +378,20 @@ async def get_material_subtree(
                 raise
             root_row = material
         rows = [dict(row) for row in _collect_subtree_rows(conn, root_row, include_internal=False)]
-        visible_rows = []
-        for row in rows:
-            try:
-                ensure_user_material_access(conn, int(row['id']), user, material_row=row)
-            except HTTPException as exc:
-                if exc.status_code not in {403, 404}:
-                    raise
-                continue
-            visible_rows.append(row)
-        rows = visible_rows
+        if user["role"] == "student":
+            readable = _student_readable_material_ids(conn, rows, user)
+            rows = [row for row in rows if int(row["id"]) in readable]
+        else:
+            visible_rows = []
+            for row in rows:
+                try:
+                    ensure_user_material_access(conn, int(row['id']), user, material_row=row)
+                except HTTPException as exc:
+                    if exc.status_code not in {403, 404}:
+                        raise
+                    continue
+                visible_rows.append(row)
+            rows = visible_rows
 
     nodes: dict[int, dict[str, Any]] = {}
     for row in rows:

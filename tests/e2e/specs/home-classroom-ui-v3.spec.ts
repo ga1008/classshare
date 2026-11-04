@@ -348,6 +348,7 @@ test('student API scope and concurrent read latency are measured on the isolated
     '/api/dashboard/course-schedule/overview',
     '/api/dashboard/workspace?limit=20',
     `/api/classrooms/${f.classOfferingId}/learning-materials?session_id=${f.visualSessionIds[2]}&generate_blurbs=false`,
+    `/api/classrooms/${f.classOfferingId}/materials`,
     '/api/profile/ui-preferences',
   ]) {
     const samples: number[] = [];
@@ -364,4 +365,74 @@ test('student API scope and concurrent read latency are measured on the isolated
     results.push({ endpoint, samples: samples.length, concurrent: 4, p50_ms: Math.round(samples[9]), p95_ms: Math.round(samples[18]), max_ms: Math.round(samples[19]), errors: 0 });
   }
   await testInfo.attach('isolated-http-read-latency', { body: JSON.stringify({ scope: 'local synthetic fixture; not production capacity or INP', results }, null, 2), contentType: 'application/json' });
+});
+
+test('classroom document library preserves task selection and previews a handout on a narrow screen', async ({ page }, testInfo) => {
+  const f = fixture();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await loginStudent(page, f);
+  await page.goto(`/classroom/${f.classOfferingId}`);
+  const tasks = page.getByRole('tab', { name: '作业与考试', exact: true });
+  const documents = page.getByRole('tab', { name: '材料与文档', exact: true });
+  await expect(tasks).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('button', { name: '历史作业与考试' })).toBeVisible();
+  const taskList = await page.locator('#cw-tasks-preview .cw-task-title').allTextContents();
+  await tasks.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(documents).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(documents).toHaveAttribute('aria-selected', 'true');
+  const library = page.locator('#classroom-material-collection');
+  const card = library.locator(`.mcard[data-id="${f.visualMaterialIds[0]}"]`);
+  await expect(card).toContainText('协议分层学习讲义');
+  await expect(library.locator('#classroom-materials-upload')).toHaveCount(0);
+  expect(await library.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1);
+  await testInfo.attach('classroom-documents-mobile', { body: await library.screenshot(), contentType: 'image/png' });
+  const opened = page.waitForEvent('popup');
+  await card.getByRole('link', { name: '预览' }).click();
+  const reader = await opened;
+  await expect(reader.getByText('这是第三版真实阅读验证使用的合成材料。', { exact: false }).first()).toBeVisible();
+  const closed = reader.waitForEvent('close');
+  await reader.getByRole('button', { name: '返回课堂文档' }).click();
+  await closed;
+  await expect(documents).toHaveAttribute('aria-selected', 'true');
+  await tasks.click();
+  await expect(page.getByRole('button', { name: '历史作业与考试' })).toBeVisible();
+  expect(await page.locator('#cw-tasks-preview .cw-task-title').allTextContents()).toEqual(taskList);
+});
+
+test('classroom document library publishes a teacher upload only to this class and withdraws direct reading', async ({ page, browser }) => {
+  const f = fixture();
+  await loginTeacher(page, f);
+  await page.goto(`/classroom/${f.classOfferingId}`);
+  const documents = page.getByRole('tab', { name: '材料与文档', exact: true });
+  await documents.click();
+  await expect(documents).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#classroom-materials-upload')).toBeVisible();
+  const filename = `课堂上传验证-${Date.now()}.md`;
+  await page.locator('#classroom-materials-files').setInputFiles({
+    name: filename, mimeType: 'text/markdown', buffer: Buffer.from('# 课堂授权验证\n\n合成文档。'),
+  });
+  const uploaded = page.waitForResponse(response => response.url().endsWith('/api/materials/upload') && response.request().method() === 'POST');
+  await page.locator('#classroom-materials-upload-submit').click();
+  expect((await uploaded).ok()).toBe(true);
+  const teacherCard = page.locator('#classroom-materials-list .mcard').filter({ hasText: filename });
+  await expect(teacherCard).toHaveCount(1);
+  const materialId = await teacherCard.getAttribute('data-id');
+  const context = await browser.newContext({ baseURL: new URL(page.url()).origin });
+  try {
+    const student = await context.newPage();
+    await loginStudent(student, f);
+    await student.goto(`/classroom/${f.classOfferingId}`);
+    await student.getByRole('tab', { name: '材料与文档', exact: true }).click();
+    const card = student.locator(`#classroom-materials-list .mcard[data-id="${materialId}"]`);
+    await expect(card).toContainText(filename);
+    expect((await context.request.get(`/materials/download/${materialId}`)).status()).toBe(200);
+    expect((await context.request.get(`/api/classrooms/${f.otherClassOfferingId}/materials`)).status()).toBe(403);
+    const withdrawn = await page.request.post(`/api/materials/${materialId}/assign`, { data: { class_offering_ids: [] } });
+    expect(withdrawn.status()).toBe(200);
+    await student.locator('#classroom-materials-refresh-btn').click();
+    await expect(card).toHaveCount(0);
+    expect((await context.request.get(`/materials/download/${materialId}`, { maxRedirects: 0 })).status()).toBe(303);
+  } finally { await context.close(); }
 });

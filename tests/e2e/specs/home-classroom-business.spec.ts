@@ -129,20 +129,20 @@ test('material selection, select all and cancel keep one count and survive detai
   await loginTeacher(page, fixture);
   await page.goto(`/classroom/${fixture.classOfferingId}`);
   await page.getByRole('button', { name: '全部课堂材料', exact: true }).click();
-  const rows = page.locator('#classroom-materials-list .materials-row');
+  const rows = page.locator('#classroom-materials-list .mcard--classroom');
   await expect(rows.first()).toBeVisible();
   const count = await rows.count();
   const checks = rows.locator('[data-role="select-item"]');
   for (const row of await rows.all()) {
-    const materialName = (await row.locator('.materials-name-copy strong').innerText()).trim();
+    const materialName = (await row.locator('.mcard__title').innerText()).trim();
     await expect(row.getByRole('checkbox', { name: `选择材料：${materialName}`, exact: true })).toHaveCount(1);
   }
   const all = page.getByRole('checkbox', { name: '选择本页全部材料' });
   await expect(page.locator('#classroom-materials-selection')).toBeHidden();
   await checks.first().check();
   await expect(page.locator('#classroom-materials-selection-count')).toHaveText('1');
-  await rows.first().locator('.materials-name-copy strong').click();
-  await expect(page.getByRole('dialog', { name: '材料详情' }).locator('#classroom-material-detail-title')).toBeVisible();
+  await rows.first().locator('button[data-action="details"]').click();
+  await expect(page.locator('#classroom-material-detail-title')).toBeVisible();
   await page.getByRole('button', { name: '← 返回列表' }).click();
   await expect(checks.first()).toBeChecked();
   await expect(page.locator('#classroom-materials-selection-count')).toHaveText('1');
@@ -275,8 +275,8 @@ test('restricted materials block both the mobile batch control and a direct down
   await loginStudent(page, fixture);
   await page.goto(`/classroom/${fixture.classOfferingId}`);
   await page.getByRole('button', { name: '全部课堂材料', exact: true }).click();
-  const rows = page.locator('#classroom-materials-list .materials-row');
-  const restricted = page.locator('#classroom-materials-list .materials-row[data-material-download-allowed="false"]').first();
+  const rows = page.locator('#classroom-materials-list .mcard--classroom');
+  const restricted = page.locator('#classroom-materials-list .mcard--classroom[data-material-download-allowed="false"]').first();
   await expect(restricted).toBeVisible();
   const id = Number(await restricted.getAttribute('data-id'));
   const all = page.getByRole('checkbox', { name: '选择本页全部材料' });

@@ -4,7 +4,7 @@ from inspect import signature
 
 from urllib.parse import quote
 
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 
 from .common import *
 from .generation_helpers import *
@@ -13,6 +13,7 @@ from .final_material_helpers import *
 from .rewrite_helpers import *
 from ...services.learning_progress_service import get_material_mastery_check_context
 from ...services.html_package_service import find_html_package_root, lesson_number_from_entry_name
+from ...services.material_render_grants import issue_material_render_grant, resolve_material_render_grant
 from ...services.material_render_service import attach_render_metadata, resolve_render_file, resolve_render_target
 from ...services.document_render_service import DocumentRenderError, document_render_service
 from ...services.academic_final_material_source_service import NativeAcademicSourceError
@@ -25,6 +26,23 @@ _DYNAMIC_DOCUMENT_HEADERS = {
     "Pragma": "no-cache",
     "Expires": "0",
 }
+_MATERIAL_DOCUMENT_ISOLATION = {
+    "Content-Security-Policy": "sandbox allow-scripts allow-popups allow-downloads; form-action 'none'; object-src 'none'",
+    "Referrer-Policy": "no-referrer",
+}
+_MATERIAL_FRAME_SCRIPT = b'<script src="/static/js/material_render_frame.js" defer></script>'
+
+
+def _scoped_render_base(material_id: int, user: dict) -> str:
+    grant = issue_material_render_grant(material_id, user)
+    return f"/materials/render-content/{grant}/" if grant else f"/materials/render/{material_id}/"
+
+
+def _material_frame_document(content: bytes) -> bytes:
+    head = re.search(rb"<head(?:\s[^>]*)?>", content[:8192], flags=re.IGNORECASE)
+    doctype = re.match(rb"(?:\xef\xbb\xbf)?\s*<!doctype[^>]*>", content[:8192], flags=re.IGNORECASE)
+    offset = head.end() if head else doctype.end() if doctype else 3 if content.startswith(b"\xef\xbb\xbf") else 0
+    return content[:offset] + _MATERIAL_FRAME_SCRIPT + content[offset:]
 
 
 def _build_material_export_for_response(payload: dict, *, fallback_filename: str, requested_format: str):
@@ -46,9 +64,10 @@ def _build_material_export_for_response(payload: dict, *, fallback_filename: str
         raise
 
 
-def _validated_reader_return_source(conn, user: dict, class_offering_id, session_id) -> dict | None:
+def _validated_reader_return_source(conn, user: dict, class_offering_id, session_id, reader_section=None) -> dict | None:
     """A query parameter identifies context, never grants access to it."""
-    if user.get("role") != "student" or not class_offering_id or int(class_offering_id) <= 0:
+    from_library = reader_section == "materials" and session_id is None
+    if (user.get("role") != "student" and not from_library) or not class_offering_id or int(class_offering_id) <= 0:
         return None
     if session_id is not None and int(session_id) < 0:
         return None
@@ -67,8 +86,8 @@ def _validated_reader_return_source(conn, user: dict, class_offering_id, session
         if not session:
             return None
     return {
-        "url": f"/classroom/{int(class_offering_id)}",
-        "label": "返回课次详情" if session else "返回课堂",
+        "url": f"/classroom/{int(class_offering_id)}" + ("#materials-panel" if from_library else ""),
+        "label": "返回课堂文档" if from_library else "返回课次详情" if session else "返回课堂",
         "course_name": str(offering["course_name"] or "当前课堂"),
         "session_title": str(session["title"] or "原课次") if session else "",
     }
@@ -90,11 +109,11 @@ def _with_reader_return_on_unavailable(operation):
                 raise
             kwargs = signature(operation).bind(*args, **kwargs).arguments
             user = kwargs.get("user") or {}
-            if user.get("role") != "student" or not kwargs.get("class_offering_id"):
+            if not kwargs.get("class_offering_id"):
                 raise
             with get_db_connection() as conn:
                 source = _validated_reader_return_source(
-                    conn, user, kwargs.get("class_offering_id"), kwargs.get("session_id"),
+                    conn, user, kwargs.get("class_offering_id"), kwargs.get("session_id"), kwargs.get("reader_section"),
                 )
             if not source:
                 raise
@@ -293,13 +312,14 @@ async def material_viewer_page(
     class_offering_id: int | None = Query(default=None),
     session_id: int | None = Query(default=None),
     classroom_reader_tab: int = Query(default=0, ge=0, le=1),
+    reader_section: str | None = Query(default=None),
     user: dict = Depends(get_current_user),
 ):
     reader_return = None
     with get_db_connection() as conn:
         material = ensure_user_material_access(conn, material_id, user)
         if classroom_reader_tab == 1:
-            reader_return = _validated_reader_return_source(conn, user, class_offering_id, session_id)
+            reader_return = _validated_reader_return_source(conn, user, class_offering_id, session_id, reader_section)
             if reader_return:
                 reader_return["close_tab"] = True
         allowed_rows = _resolve_allowed_scope_rows(conn, material, user)
@@ -341,13 +361,22 @@ async def material_viewer_page(
                 "is_text": material["preview_type"] in {"markdown", "text"},
                 "can_edit_source": can_edit_source,
                 "optimized_available": bool(material["ai_optimized_markdown"]),
-                "ai_parse_result": json.loads(material["ai_parse_result_json"]) if material["ai_parse_result_json"] else None,
+                "ai_parse_result": json.loads(material["ai_parse_result_json"])
+                if user["role"] == "teacher" and material["ai_parse_result_json"] else None,
                 "ai_import_record": ai_import_record,
                 "mastery_check": mastery_check,
             },
         )
         preview_payload = _decorate_material_download_policy(preview_payload)
         attach_render_metadata(conn, [preview_payload])
+        if user["role"] == "student":
+            reader_fields = (
+                "id", "name", "material_path", "node_type", "download_url", "raw_url", "viewer_url",
+                "download_allowed", "download_blocked_reason", "preview_variant", "path_index",
+                "is_image", "is_markdown", "is_text", "optimized_available", "mastery_check",
+                "is_renderable", "render_label", "render_shell_url", "render_url",
+            )
+            preview_payload = {field: preview_payload.get(field) for field in reader_fields}
 
     if material["preview_type"] in {"markdown", "text"}:
         preview_payload["content"], preview_payload["content_encoding"] = await _load_material_text_content(
@@ -371,6 +400,7 @@ async def material_viewer_page(
                 "session_id": session_id,
             },
         },
+        headers=_DYNAMIC_DOCUMENT_HEADERS,
     )
 
 
@@ -388,11 +418,13 @@ async def get_material_raw(material_id: int, user: dict = Depends(get_current_us
     media_type = str(material["mime_type"] or "")
     if not media_type.startswith("image/"):
         media_type = mimetypes.guess_type(material["name"] or "")[0] or "application/octet-stream"
-    return FileResponse(file_path, media_type=media_type, headers={"X-Content-Type-Options": "nosniff"})
+    return FileResponse(file_path, media_type=media_type, headers={
+        "X-Content-Type-Options": "nosniff", **_MATERIAL_DOCUMENT_ISOLATION, **_DYNAMIC_DOCUMENT_HEADERS,
+    })
 
 
 async def _serve_rendered_material(
-    material_id: int, subpath: str, user: dict, *, request: Request | None = None,
+    material_id: int, subpath: str, user: dict, *, request: Request | None = None, isolated_frame: bool = False,
 ) -> Response:
     with get_db_connection() as conn:
         node = ensure_user_material_access(conn, material_id, user)
@@ -402,22 +434,35 @@ async def _serve_rendered_material(
         if not target_row:
             raise HTTPException(404, "未找到要渲染的文件")
         # 复用统一鉴权：确保子资源（css/js/图片等）同样在可访问范围内。
-        ensure_user_material_access(conn, int(target_row["id"]), user)
+        if int(target_row["id"]) != int(node["id"]):
+            ensure_user_material_access(conn, int(target_row["id"]), user)
         target = dict(target_row)
 
     file_path = _load_material_storage_path(target)
     media_type = str(target.get("mime_type") or "") or mimetypes.guess_type(target.get("name") or "")[0] or "application/octet-stream"
-    is_html = media_type.lower().startswith("text/html")
+    is_html = media_type.split(";", 1)[0].lower() == "text/html"
     headers = {
         "X-Content-Type-Options": "nosniff",
+        **_MATERIAL_DOCUMENT_ISOLATION,
         # The URL stays fixed when Git replaces an asset. Validate against its
         # content hash, not FileResponse's storage-file mtime/size ETag.
         "ETag": f'"{target["file_hash"]}"',
         "Cache-Control": "private, no-cache, max-age=0, must-revalidate",
     }
+    if isolated_frame:
+        # The path grant is the credential. Modules/fetch inside the opaque origin
+        # can read this renderer's assets without CORS access to the platform API.
+        headers["Access-Control-Allow-Origin"] = "null"
     if is_html:
         # Keep the existing HTML no-store and release-invalidation flow.
         headers.update(_DYNAMIC_DOCUMENT_HEADERS)
+        if isolated_frame:
+            content = await asyncio.to_thread(file_path.read_bytes)
+            return Response(_material_frame_document(content), media_type=media_type, headers=headers)
+        if request and request.headers.get("sec-fetch-dest") in {"document", "iframe"}:
+            base = _scoped_render_base(material_id, user)
+            if base.startswith("/materials/render-content/"):
+                return RedirectResponse(f"{base}{quote(subpath)}", headers=_DYNAMIC_DOCUMENT_HEADERS)
     elif request is not None and request.method in {"GET", "HEAD"}:
         validators = request.headers.get("if-none-match", "").split(",")
         if any(tag.strip().removeprefix("W/") in {"*", headers["ETag"]} for tag in validators):
@@ -441,6 +486,7 @@ async def material_render_shell_page(
     class_offering_id: int | None = Query(default=None),
     session_id: int | None = Query(default=None),
     classroom_reader_tab: int = Query(default=0, ge=0, le=1),
+    reader_section: str | None = Query(default=None),
     user: dict = Depends(get_current_user),
 ):
     """HTML 材料的全屏渲染壳页：iframe 直渲 + 浮动工具栏（返回/白板）+ AI 助手。
@@ -459,7 +505,7 @@ async def material_render_shell_page(
             raise HTTPException(404, "未找到要渲染的入口文件")
         ensure_user_material_access(conn, int(target_row["id"]), user)
         if classroom_reader_tab == 1:
-            reader_return = _validated_reader_return_source(conn, user, class_offering_id, session_id)
+            reader_return = _validated_reader_return_source(conn, user, class_offering_id, session_id, reader_section)
             if reader_return:
                 reader_return["close_tab"] = True
 
@@ -472,11 +518,8 @@ async def material_render_shell_page(
             lesson_count = len(package.get("lessons") or [])
             lesson_number = lesson_number_from_entry_name(str(target_row["name"] or ""))
 
-    iframe_src = (
-        f"/materials/render/{material_id}/{quote(subpath)}"
-        if subpath
-        else f"/materials/render/{material_id}/"
-    )
+    iframe_base = _scoped_render_base(material_id, user)
+    home_src = _scoped_render_base(int(package["root_node_id"]), user) if package else iframe_base
     return templates.TemplateResponse(
         request,
         "material_render_shell.html",
@@ -491,7 +534,9 @@ async def material_render_shell_page(
                 "entry_name": str(target_row["name"] or ""),
                 "material_name": str(node["name"] or ""),
                 "material_path": str(node["material_path"] or ""),
-                "iframe_src": iframe_src,
+                "iframe_src": f"{iframe_base}{quote(subpath)}",
+                "iframe_base": iframe_base,
+                "home_src": home_src,
                 "subpath": subpath,
                 "lesson_number": lesson_number,
                 "lesson_count": lesson_count,
@@ -502,6 +547,7 @@ async def material_render_shell_page(
                 "session_id": session_id,
             },
         },
+        headers={"Referrer-Policy": "no-referrer"},
     )
 
 
@@ -513,6 +559,20 @@ async def render_material_entry(material_id: int, request: Request, user: dict =
 @router.get("/materials/render/{material_id}/{subpath:path}", response_class=FileResponse)
 async def render_material_asset(material_id: int, request: Request, subpath: str = "", user: dict = Depends(get_current_user)):
     return await _serve_rendered_material(material_id, subpath, user, request=request)
+
+
+@router.get("/materials/render-content/{grant}/", response_class=FileResponse)
+@router.get("/materials/render-content/{grant}/{subpath:path}", response_class=FileResponse)
+async def render_isolated_material(grant: str, request: Request, subpath: str = ""):
+    scope = resolve_material_render_grant(grant)
+    if not scope:
+        return Response(status_code=403, headers=_DYNAMIC_DOCUMENT_HEADERS)
+    material_id, user = scope
+    try:
+        return await _serve_rendered_material(material_id, subpath, user, request=request, isolated_frame=True)
+    except HTTPException as exc:
+        # Avoid login redirects that would place an opaque-frame grant in a URL.
+        return Response(status_code=exc.status_code, headers=_DYNAMIC_DOCUMENT_HEADERS)
 
 
 @router.get("/materials/download/{material_id}", response_class=FileResponse)
@@ -527,6 +587,7 @@ async def download_material(material_id: int, user: dict = Depends(get_current_u
         file_path,
         media_type=material["mime_type"] or "application/octet-stream",
         filename=material["name"],
+        headers=_DYNAMIC_DOCUMENT_HEADERS,
     )
 
 
@@ -552,6 +613,7 @@ async def inline_material(material_id: int, user: dict = Depends(get_current_use
         file_path,
         media_type=media_type,
         headers={
+            **_MATERIAL_DOCUMENT_ISOLATION,
             "Content-Disposition": f"inline; filename*=UTF-8''{quote(str(material['name'] or 'material'))}",
             "X-Content-Type-Options": "nosniff",
             "ETag": f'"{material["file_hash"]}"',
@@ -563,16 +625,24 @@ async def inline_material(material_id: int, user: dict = Depends(get_current_use
 @router.get("/materials/document-preview/{material_id}", response_class=HTMLResponse)
 @_with_reader_return_on_unavailable
 async def material_document_preview_page(
+    request: Request,
     material_id: int,
     class_offering_id: int | None = Query(default=None),
     session_id: int | None = Query(default=None),
+    classroom_reader_tab: int = Query(default=0, ge=0, le=1),
+    reader_section: str | None = Query(default=None),
     user: dict = Depends(get_current_user),
 ):
     """PDF / Word / Excel 材料的页面图预览（复用过程材料的文档真实预览渲染器）。"""
     from ...services.material_preview_service import supports_document_preview
 
+    reader_return = None
     with get_db_connection() as conn:
         material = dict(ensure_user_material_access(conn, material_id, user))
+        if classroom_reader_tab == 1:
+            reader_return = _validated_reader_return_source(conn, user, class_offering_id, session_id, reader_section)
+            if reader_return:
+                reader_return["close_tab"] = True
     if material.get("node_type") != "file":
         raise HTTPException(400, "文件夹不能直接预览")
     if not supports_document_preview(material):
@@ -603,6 +673,8 @@ async def material_document_preview_page(
             eyebrow="课程材料 · 文档预览",
             download_label="下载原文件",
             download_disabled_reason="" if policy.get("download_allowed", True) else str(policy.get("download_blocked_reason") or ""),
+            material_id=material_id,
+            reader_return=reader_return,
         ),
         headers=_DYNAMIC_DOCUMENT_HEADERS,
     )
@@ -626,14 +698,20 @@ async def batch_download_materials(payload: MaterialBatchDownloadRequest, user: 
         for material_id in unique_ids:
             selected_rows.append(dict(ensure_user_material_access(conn, int(material_id), user)))
 
-        archive_source_size = _estimate_material_archive_size(conn, selected_rows)
+        subtrees = [(row, [dict(child) for child in _collect_subtree_rows(conn, row, include_internal=False)]) for row in selected_rows]
+        if user["role"] == "student":
+            unique_children = {int(row["id"]): row for _, children in subtrees for row in children}
+            readable = _student_readable_material_ids(conn, list(unique_children.values()), user)
+            subtrees = [(root, [row for row in children if int(row["id"]) in readable]) for root, children in subtrees]
+        archive_source_size = _estimate_material_archive_size(subtrees)
         ensure_download_allowed(archive_source_size, resource_label="所选课堂材料压缩包")
-        temp_path = _create_material_zip(conn, selected_rows)
+    temp_path = await asyncio.to_thread(_create_material_zip, subtrees)
 
     archive_title = f"course-materials-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
     return FileResponse(
         temp_path,
         media_type="application/zip",
         filename=archive_title,
+        headers=_DYNAMIC_DOCUMENT_HEADERS,
         background=BackgroundTask(_cleanup_temp_file, temp_path),
     )

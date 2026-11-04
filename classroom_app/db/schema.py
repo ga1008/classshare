@@ -108,6 +108,10 @@ def _init_database_unlocked():
             ensure_signature_workflow_schema(conn)
             ensure_user_ui_preferences_schema(conn)
             ensure_git_learning_bindings_schema(conn)
+            if "publication_mode" in runtime_column_report["added_columns"].get("course_material_assignments", ()):
+                from ..services.material_publication_service import mark_legacy_binding_publications
+
+                mark_legacy_binding_publications(conn)
             conn.commit()
             report = validate_postgres_schema(conn)
             report["runtime_tables"] = runtime_table_report

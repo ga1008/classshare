@@ -10,6 +10,42 @@ import { adoptDomainControl } from './lq/domain-controls.js';
 const shellConfig = window.MATERIAL_RENDER_SHELL || {};
 const viewerContext = window.MATERIAL_VIEWER_CONTEXT || {};
 const viewerAssets = window.MATERIAL_VIEWER_ASSETS || {};
+const renderFrame = document.getElementById('render-shell-frame');
+let frameLocation = null;
+
+function initFrameLocation() {
+    if (!renderFrame) return;
+    const bases = [
+        [shellConfig.iframeBase, shellConfig.nodeId],
+        [shellConfig.homeSrc, shellConfig.packageRootId],
+    ];
+    window.addEventListener('message', event => {
+        if (event.source !== renderFrame.contentWindow || event.origin !== 'null') return;
+        const data = event.data;
+        if (data?.type !== 'lanshare:material-frame-location' || typeof data.path !== 'string') return;
+        const match = bases.find(([base]) => base && data.path.startsWith(base));
+        if (!match) return;
+        const [base, nodeId] = match;
+        try {
+            const frameUrl = new URL(data.path, location.origin);
+            if (frameUrl.origin !== location.origin || !frameUrl.pathname.startsWith(base)) return;
+            frameUrl.hash = String(data.hash || '').slice(0, 128);
+            frameLocation = {
+                nodeId,
+                subpath: decodeURIComponent(frameUrl.pathname.slice(base.length)),
+                title: String(data.title || '').slice(0, 160),
+                article: data.article === true,
+                slideId: String(data.slideId || '').slice(0, 128),
+                hash: frameUrl.hash,
+            };
+            renderFrame.dataset.materialFrameUrl = frameUrl.href;
+        } catch { return; }
+        renderFrame.dispatchEvent(new Event('lanshare:material-location'));
+    });
+    const ready = () => renderFrame.contentWindow?.postMessage({ type: 'lanshare:material-frame-ready' }, '*');
+    renderFrame.addEventListener('load', ready);
+    ready();
+}
 
 function initTopbar() {
     const topbar = document.getElementById('render-shell-topbar');
@@ -33,20 +69,7 @@ function initTopbar() {
         window.history.forward();
     });
     homeBtn?.addEventListener('click', () => {
-        const nodeId = Number(shellConfig.packageRootId || shellConfig.nodeId || 0);
-        if (!frameEl || !nodeId) return;
-        // 包默认入口（main.html）；已在首页时改为强制刷新。
-        const homeSrc = `/materials/render/${nodeId}/`;
-        try {
-            const currentPath = String(frameEl.contentWindow?.location?.pathname || '');
-            if (currentPath === homeSrc) {
-                frameEl.contentWindow?.location?.reload();
-                return;
-            }
-        } catch {
-            /* 读取失败则直接重设 src。 */
-        }
-        frameEl.src = homeSrc;
+        if (frameEl && shellConfig.homeSrc) frameEl.src = shellConfig.homeSrc;
     });
     collapseBtn?.addEventListener('click', () => {
         if (topbar) topbar.hidden = true;
@@ -59,21 +82,13 @@ function initTopbar() {
 }
 
 function initPackageBadgeSync() {
-    // HTML 包内部导航（首页↔课次）时，同步壳页徽章与文档标题（iframe 同源可读）。
     if (!shellConfig.isHtmlPackage) return;
     const badge = document.getElementById('render-shell-badge');
-    const frameEl = document.getElementById('render-shell-frame');
-    if (!badge || !frameEl) return;
-    frameEl.addEventListener('load', () => {
-        try {
-            const framePath = String(frameEl.contentWindow?.location?.pathname || '');
-            const match = framePath.match(/lesson[_-]?0*(\d{1,3})\.html?$/i);
-            badge.textContent = match ? `第 ${Number(match[1])} 次课` : '课程首页';
-            const frameTitle = frameEl.contentDocument?.title;
-            if (frameTitle) document.title = frameTitle;
-        } catch {
-            /* 跨源或未就绪时保持原徽章。 */
-        }
+    if (!badge || !renderFrame) return;
+    renderFrame.addEventListener('lanshare:material-location', () => {
+        const match = frameLocation.subpath.match(/lesson[_-]?0*(\d{1,3})\.html?$/i);
+        badge.textContent = match ? `第 ${Number(match[1])} 次课` : '课程首页';
+        if (frameLocation.title) document.title = frameLocation.title;
     });
 }
 
@@ -85,25 +100,27 @@ async function initSlideRewriteEntry() {
     edit.className=ai.className='btn btn-ghost btn-sm';edit.textContent='编辑学习文档';edit.id='render-shell-edit';ai.textContent='AI 改页';ai.type='button';ai.id='render-shell-slide-rewrite';notice.setAttribute('role','status');
     adoptDomainControl(edit,{kind:'button',variant:'ghost'});adoptDomainControl(ai,{variant:'ghost'});
     edit.hidden=ai.hidden=true;topbar.insertBefore(edit,collapse);topbar.insertBefore(ai,collapse);topbar.insertBefore(notice,collapse);
-    let target=null,sequence=0;
+    let target=null,sequence=0,lastLocation='';
     const editorUrl=(withAi=false)=>{
         if(!target?.editable)return '';
         const url=new URL(target.editor_url,location.origin);url.searchParams.set('return_to',location.pathname+location.search);
-        const doc=frame.contentDocument,win=frame.contentWindow;
-        if(!doc?.body.classList.contains('article-page')){
-            const active=doc?.querySelector('.slide.active'),id=active?.dataset.ldSlideId;
-            const page=String(win?.location.hash||'').match(/^#\/(\d+)/);
+        if(!frameLocation?.article){
+            const id=frameLocation?.slideId;
+            const page=String(frameLocation?.hash||'').match(/^#\/(\d+)/);
             if(id)url.searchParams.set('slide_id',id);else if(page)url.searchParams.set('slide',page[1]);
             else if(withAi)throw new Error('尚未定位当前页，请先切换到具体幻灯片。');
         }else if(withAi)throw new Error('文章模式下请先切换到幻灯片，再选择要改进的页面。');
         if(withAi)url.searchParams.set('ai','page');return url.pathname+url.search;
     };
     async function refresh(){
+        if (!frameLocation) return;
+        const {nodeId,subpath}=frameLocation;
+        const locationKey=`${nodeId}/${subpath}`;
+        if(locationKey===lastLocation)return;
+        lastLocation=locationKey;
         const current=++sequence;target=null;edit.hidden=ai.hidden=true;notice.textContent='';
         try{
-            const url=new URL(frame.contentWindow.location.href),match=url.pathname.match(/^\/materials\/render\/(\d+)\/(.*)$/);
-            if(url.origin!==location.origin||!match)return;
-            const response=await fetch('/api/lessondoc/editor/editability/'+match[1]+'?path='+encodeURIComponent(decodeURIComponent(match[2])),{credentials:'same-origin'});
+            const response=await fetch('/api/lessondoc/editor/editability/'+nodeId+'?path='+encodeURIComponent(subpath),{credentials:'same-origin'});
             if(!response.ok||current!==sequence)return;target=(await response.json()).result;
             if(target.editable){edit.textContent='编辑学习文档';edit.href=editorUrl();edit.hidden=false;ai.hidden=!target.lesson_no;}
             else if(target.legacy_convertible){edit.textContent='转换并编辑';edit.href='#';edit.hidden=false;}
@@ -116,54 +133,23 @@ async function initSlideRewriteEntry() {
         }catch(e){notice.textContent=e.message;}
     });
     ai.addEventListener('click',()=>{try{location.href=editorUrl(true);}catch(e){notice.textContent=e.message;}});
-    frame.addEventListener('load',refresh);await refresh();
+    frame.addEventListener('lanshare:material-location',refresh);await refresh();
 }
 
 /**
  * 白板打开时让文档侧降级。
  *
  * 白板是覆盖在这张 iframe 之上的半透明层：白板每重绘一帧，浏览器都要把 iframe 里
- * 整棵文档树重新合成一次。iframe 与壳页同源，所以可以直接往里注入一小段样式，
- * 白板打开期间暂停文档的动效与毛玻璃；背景调到完全不透明时（文档已经看不见了）
- * 干脆把 iframe 从合成里摘掉。
+ * 整棵文档树重新合成一次。通过消息暂停课件动画，完全遮挡时将 iframe 从合成里摘掉。
  */
-const DOC_QUIET_STYLE_ID = 'render-shell-quiet-style';
-const DOC_QUIET_CSS = `
-.ld-quiet *, .ld-quiet *::before, .ld-quiet *::after {
-    animation-play-state: paused !important;
-    transition-duration: 0s !important;
-}
-.ld-quiet .stat { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
-`;
-
 function initWhiteboardDocQuiet() {
     if (viewerContext.userRole !== 'teacher') return;
     const frameEl = document.getElementById('render-shell-frame');
     if (!frameEl) return;
     let state = { open: false, backgroundOpacity: 1 };
 
-    const frameDocument = () => {
-        try {
-            return frameEl.contentDocument;
-        } catch {
-            return null; // 跨源（理论上不会发生）时安静放弃
-        }
-    };
-
-    const ensureStyle = (doc) => {
-        if (!doc?.head || doc.getElementById(DOC_QUIET_STYLE_ID)) return;
-        const style = doc.createElement('style');
-        style.id = DOC_QUIET_STYLE_ID;
-        style.textContent = DOC_QUIET_CSS;
-        doc.head.appendChild(style);
-    };
-
     const apply = () => {
-        const doc = frameDocument();
-        if (doc) {
-            ensureStyle(doc);
-            doc.documentElement?.classList.toggle('ld-quiet', state.open);
-        }
+        frameEl.contentWindow?.postMessage({ type: 'lanshare:material-frame-quiet', open: state.open }, '*');
         // 背景不透明时文档完全被盖住，隐藏 iframe 可以整棵树退出合成。
         frameEl.style.visibility = state.open && state.backgroundOpacity >= 0.98 ? 'hidden' : '';
     };
@@ -261,5 +247,6 @@ initTopbar();
 initPackageBadgeSync();
 initSlideRewriteEntry();
 initWhiteboardDocQuiet();
+initFrameLocation();
 loadTeacherWhiteboardWhenIdle();
 initLearningProgressHeartbeat();

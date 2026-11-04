@@ -20,6 +20,7 @@ import re
 from typing import Any
 
 from .file_service import resolve_global_file_path
+from .material_publication_service import get_classroom_publication_nodes
 
 # 检索与拼装的规模上限：控制 token 成本与请求路径上的文件 IO。
 MAX_CANDIDATE_MATERIALS = 40
@@ -76,22 +77,13 @@ def _decode_text_bytes(raw: bytes) -> str:
 
 
 def _load_bound_text_materials(conn: Any, class_offering_id: int) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT m.id, m.name, m.file_ext, m.file_hash, m.file_size,
-               m.preview_type, m.ai_optimized_markdown
-        FROM course_material_assignments a
-        JOIN course_materials m ON m.id = a.material_id
-        WHERE a.class_offering_id = ?
-          AND m.node_type = 'file'
-        ORDER BY a.created_at DESC, m.updated_at DESC, m.id DESC
-        LIMIT ?
-        """,
-        (int(class_offering_id), MAX_CANDIDATE_MATERIALS),
-    ).fetchall()
+    rows = sorted(
+        (row for row in get_classroom_publication_nodes(conn, class_offering_id) if row["node_type"] == "file"),
+        key=lambda row: (str(row.get("assigned_at") or ""), str(row.get("updated_at") or ""), row["id"]),
+        reverse=True,
+    )[:MAX_CANDIDATE_MATERIALS]
     materials = []
-    for row in rows:
-        item = dict(row)
+    for item in rows:
         ext = str(item.get("file_ext") or "").lower().lstrip(".")
         is_text = (
             bool(str(item.get("ai_optimized_markdown") or "").strip())

@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-01",
+ "generatedAt": "2026-11-04",
  "generator": "python tools/ui/lq_module_registry.py",
  "modules": {
   "materials": {
@@ -28,11 +28,11 @@
     "rules": "玻璃上的文字只读 `--lq-material-ink/muted/accent`，禁用随主题翻转的灰阶；普通内容面板与重复行不得各自开 backdrop-filter；真源 docs/lq-scene-ink-2026-09-26.md。"
    },
    "consumers": {
-    "count": 180,
+    "count": 182,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
-      "hits": 41
+      "hits": 40
      },
      {
       "path": "templates/assignment_detail_teacher.html",
@@ -535,6 +535,10 @@
       "hits": 1
      },
      {
+      "path": "static/js/classroom_materials.js",
+      "hits": 1
+     },
+     {
       "path": "static/js/classroom_polls.js",
       "hits": 1
      },
@@ -704,6 +708,10 @@
      },
      {
       "path": "templates/partials/classroom_group_qr.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/classroom_material_library.html",
       "hits": 1
      },
      {
@@ -884,11 +892,11 @@
     "rules": "禁止 div 模拟按钮；颜色只来自变体不传任意色；固定宽度长标签用 overflow-label。"
    },
    "consumers": {
-    "count": 278,
+    "count": 280,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
-      "hits": 371
+      "hits": 351
      },
      {
       "path": "templates/assignment_detail_teacher.html",
@@ -904,7 +912,7 @@
      },
      {
       "path": "static/js/materials_manage.js",
-      "hits": 158
+      "hits": 154
      },
      {
       "path": "templates/exam_editor.html",
@@ -1067,11 +1075,15 @@
       "hits": 49
      },
      {
+      "path": "classroom_app/services/document_render_service.py",
+      "hits": 48
+     },
+     {
       "path": "templates/manage/offerings.html",
       "hits": 48
      },
      {
-      "path": "static/js/classroom_materials.js",
+      "path": "static/js/materials_library_cards.js",
       "hits": 47
      },
      {
@@ -1081,10 +1093,6 @@
      {
       "path": "static/js/attendance_reports.js",
       "hits": 45
-     },
-     {
-      "path": "classroom_app/services/document_render_service.py",
-      "hits": 44
      },
      {
       "path": "static/js/signature_multi_select.js",
@@ -1187,6 +1195,10 @@
       "hits": 32
      },
      {
+      "path": "static/js/classroom_materials.js",
+      "hits": 31
+     },
+     {
       "path": "templates/partials/lq_navbar_topbar.html",
       "hits": 31
      },
@@ -1228,10 +1240,6 @@
      },
      {
       "path": "static/js/cultivation_panel.js",
-      "hits": 27
-     },
-     {
-      "path": "static/js/materials_library_cards.js",
       "hits": 27
      },
      {
@@ -1691,6 +1699,10 @@
       "hits": 7
      },
      {
+      "path": "templates/partials/classroom_material_library.html",
+      "hits": 7
+     },
+     {
       "path": "static/js/learning_progress.js",
       "hits": 6
      },
@@ -1768,6 +1780,10 @@
      },
      {
       "path": "static/js/lesson_plan_editor.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/materials_common.js",
       "hits": 4
      },
      {
@@ -2453,11 +2469,11 @@
     "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。"
    },
    "consumers": {
-    "count": 174,
+    "count": 176,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
-      "hits": 40
+      "hits": 39
      },
      {
       "path": "static/js/blog_studio.js",
@@ -2940,6 +2956,10 @@
       "hits": 1
      },
      {
+      "path": "static/js/classroom_materials.js",
+      "hits": 1
+     },
+     {
       "path": "static/js/classroom_polls.js",
       "hits": 1
      },
@@ -3093,6 +3113,10 @@
      },
      {
       "path": "templates/partials/classroom_group_qr.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/partials/classroom_material_library.html",
       "hits": 1
      },
      {
@@ -3298,7 +3322,7 @@
     "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface=\"embedded\"`，否则声明的 `!important` 底色会铺回来，形成\"有底无边距\"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。 `lq-domain-choice[data-lq-shape=\"surface\"]` 退出胶囊后高度即内容高度（2026-10-26），在滚动列里不会被压缩；需要固定格高的网格单元（学期日历）在 domain-controls.css 以更高特异性自设 min-height。 2026-10-27材料资源管理器工具栏/窗格头/状态栏用embedded Surface，不各自采样模糊；树节点/文件选择和卡片主入口为原生button+Choice，菜单按钮为兄弟节点。"
    },
    "consumers": {
-    "count": 153,
+    "count": 154,
     "files": [
      {
       "path": "templates/assignment_detail_teacher.html",
@@ -3306,7 +3330,7 @@
      },
      {
       "path": "templates/classroom_main_v4.html",
-      "hits": 33
+      "hits": 31
      },
      {
       "path": "templates/dashboard.html",
@@ -3762,6 +3786,10 @@
      },
      {
       "path": "templates/partials/classroom_group_qr.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/partials/classroom_material_library.html",
       "hits": 2
      },
      {
@@ -4439,11 +4467,11 @@
     "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。"
    },
    "consumers": {
-    "count": 178,
+    "count": 179,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
-      "hits": 115
+      "hits": 113
      },
      {
       "path": "templates/partials/profile/email.html",
@@ -4758,6 +4786,10 @@
       "hits": 8
      },
      {
+      "path": "static/js/materials_explorer.js",
+      "hits": 8
+     },
+     {
       "path": "static/js/materials_manage.js",
       "hits": 8
      },
@@ -4823,10 +4855,6 @@
      },
      {
       "path": "static/js/manage_offering_merge.js",
-      "hits": 6
-     },
-     {
-      "path": "static/js/materials_explorer.js",
       "hits": 6
      },
      {
@@ -4906,10 +4934,6 @@
       "hits": 4
      },
      {
-      "path": "static/js/classroom_materials.js",
-      "hits": 4
-     },
-     {
       "path": "static/js/course_schedule_deck.js",
       "hits": 4
      },
@@ -4959,6 +4983,10 @@
      },
      {
       "path": "templates/partials/classroom_group_qr.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/partials/classroom_material_library.html",
       "hits": 4
      },
      {
@@ -5015,6 +5043,10 @@
      },
      {
       "path": "static/js/blog_moderation_ui.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/classroom_materials.js",
       "hits": 2
      },
      {
@@ -5751,10 +5783,10 @@
     "summary": "`lq-tabs`（可滚动、键盘漫游、aria-selected）与 `lq-segment`（分段控件）；路由与选中项由领域持有。 横向标签列表被相邻高元素拉伸时，标签保持自身高度并垂直居中，胶囊不会被撑成圆球（2026-10-24）。",
     "params": "",
     "states": "",
-    "rules": ""
+    "rules": "课堂作业与文档共用手动激活的 LQ Tabs。切换保留作业筛选状态。文档列表按需读取，顶部入口和标签使用同一个文档库节点，沿用 LQ.layer 的焦点归还。"
    },
    "consumers": {
-    "count": 20,
+    "count": 21,
     "files": [
      {
       "path": "templates/manage/system/wanderers.html",
@@ -5765,15 +5797,15 @@
       "hits": 6
      },
      {
+      "path": "templates/classroom_main_v4.html",
+      "hits": 5
+     },
+     {
       "path": "static/js/classroom_interactions.js",
       "hits": 4
      },
      {
       "path": "templates/assignment_wrong_summary.html",
-      "hits": 4
-     },
-     {
-      "path": "templates/classroom_main_v4.html",
       "hits": 4
      },
      {
@@ -5791,6 +5823,10 @@
      {
       "path": "templates/partials/profile/appearance.html",
       "hits": 3
+     },
+     {
+      "path": "static/js/classroom_materials.js",
+      "hits": 2
      },
      {
       "path": "static/js/dashboard.js",
@@ -6709,7 +6745,7 @@
     "summary": "上传队列呈现：拖放区、文件芯片与 FILE_STATES；队列、413 恢复、提交由业务控制器持有。",
     "params": "",
     "states": "",
-    "rules": ""
+    "rules": "课堂文档库和教师管理库复用上传表单数据构造。课堂表单保留原生文件选择、忙碌禁重和失败重试，是否可上传及发布到哪个课堂由服务端验证。"
    },
    "consumers": {
     "count": 1,
@@ -7099,9 +7135,12 @@
   ],
   "static/js/classroom_materials.js": [
    "button",
+   "content",
    "declarative",
    "forms",
-   "layers"
+   "layers",
+   "materials",
+   "navigation"
   ],
   "static/js/classroom_members.js": [
    "button",
@@ -7537,6 +7576,9 @@
    "domain-controls",
    "forms",
    "materials"
+  ],
+  "static/js/materials_common.js": [
+   "button"
   ],
   "static/js/materials_explorer.js": [
    "button",
@@ -8518,6 +8560,13 @@
    "forms"
   ],
   "templates/partials/classroom_group_qr.html": [
+   "button",
+   "content",
+   "declarative",
+   "forms",
+   "materials"
+  ],
+  "templates/partials/classroom_material_library.html": [
    "button",
    "content",
    "declarative",

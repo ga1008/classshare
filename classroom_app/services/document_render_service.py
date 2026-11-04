@@ -172,7 +172,11 @@ def is_valid_render_key(key: str) -> bool:
     return len(text) == 64 and all(ch in "0123456789abcdef" for ch in text.lower())
 
 
-def issue_render_token(key: str, *, user: dict[str, Any], ttl_seconds: int | None = None, signature_request_id: int | None = None) -> str:
+def issue_render_token(
+    key: str, *, user: dict[str, Any], ttl_seconds: int | None = None,
+    signature_request_id: int | None = None, material_id: int | None = None,
+    classroom_textbook: tuple[int, int] | None = None,
+) -> str:
     if not is_valid_render_key(key):
         raise DocumentRenderError("预览缓存标识无效，请重新生成预览。")
     scope = _render_user_scope(user)
@@ -180,23 +184,41 @@ def issue_render_token(key: str, *, user: dict[str, Any], ttl_seconds: int | Non
         raise DocumentRenderError("预览需要有效的登录用户上下文。")
     ttl = max(60, min(int(ttl_seconds or DEFAULT_TOKEN_TTL_SECONDS), 24 * 60 * 60))
     payload = {
-        "v": 1,
+        "v": 2,
         "key": key,
         "scope": scope,
         "exp": int(time.time()) + ttl,
     }
     if signature_request_id is not None:
         payload["signature_request_id"] = int(signature_request_id)
+    if material_id is not None:
+        payload["material_id"] = int(material_id)
+    if classroom_textbook is not None:
+        payload["class_offering_id"], payload["textbook_id"] = classroom_textbook
     payload_b64 = _b64encode(_canonical_json(payload).encode("utf-8"))
     signature = hmac.new(_secret_key_bytes(), payload_b64.encode("ascii"), hashlib.sha256).digest()
     return RENDER_TOKEN_PREFIX + payload_b64 + "." + _b64encode(signature)
 
 
 def render_token_signature_request(token: str) -> int | None:
-    """Read the purpose only AFTER the caller verifies the token signature."""
+    return _render_token_resource_id(token, "signature_request_id")
+
+
+def render_token_material(token: str) -> int | None:
+    return _render_token_resource_id(token, "material_id")
+
+
+def render_token_classroom_textbook(token: str) -> tuple[int, int] | None:
+    offering_id = _render_token_resource_id(token, "class_offering_id")
+    textbook_id = _render_token_resource_id(token, "textbook_id")
+    return (offering_id, textbook_id) if offering_id and textbook_id else None
+
+
+def _render_token_resource_id(token: str, field: str) -> int | None:
+    """Read the purpose only after the caller verifies the token signature."""
     try:
         payload = json.loads(_b64decode(token[len(RENDER_TOKEN_PREFIX):].split(".", 1)[0]))
-        value = payload.get("signature_request_id")
+        value = payload.get(field)
         return int(value) if value is not None else None
     except (ValueError, TypeError, KeyError):
         return None
@@ -222,7 +244,7 @@ def verify_render_token(key: str, token: str | None, *, user: dict[str, Any] | N
         payload = json.loads(_b64decode(payload_b64).decode("utf-8"))
     except Exception:
         return False
-    if payload.get("key") != key:
+    if payload.get("v") != 2 or payload.get("key") != key:
         return False
     if int(payload.get("exp") or 0) < int(time.time()):
         return False
@@ -351,8 +373,14 @@ class DocumentRenderService:
         download_label: str = "下载文件",
         download_disabled_reason: str = "",
         signature_request_id: int | None = None,
+        material_id: int | None = None,
+        classroom_textbook: tuple[int, int] | None = None,
+        reader_return: dict | None = None,
     ) -> str:
-        token = issue_render_token(job.key, user=user, ttl_seconds=self.token_ttl_seconds, signature_request_id=signature_request_id)
+        token = issue_render_token(
+            job.key, user=user, ttl_seconds=self.token_ttl_seconds,
+            signature_request_id=signature_request_id, material_id=material_id, classroom_textbook=classroom_textbook,
+        )
         page_payload = []
         for page_number in range(1, job.page_count + 1):
             base = f"/api/document-renderer/jobs/{quote(job.key)}/pages/{page_number}?token={quote(token)}"
@@ -368,6 +396,17 @@ class DocumentRenderService:
         escaped_eyebrow = html.escape(eyebrow)
         escaped_download_label = html.escape(download_label)
         escaped_disabled_reason = html.escape(download_disabled_reason.strip())
+        return_head = return_action = ""
+        if reader_return:
+            source = json.dumps(reader_return, ensure_ascii=True).replace("<", "\\u003c")
+            return_head = (
+                f'<script>window.MATERIAL_READER_RETURN={source};</script>'
+                f'<script type="module" src="{html.escape(asset_url("js/material_reader_return.js"))}"></script>'
+            )
+            return_action = (
+                '<a class="lq-btn lq-btn--ghost lq-btn--sm" data-lq-component="button" data-classroom-reader-return '
+                f'href="{html.escape(reader_return["url"])}">{html.escape(reader_return["label"])}</a>'
+            )
         if escaped_disabled_reason:
             download_action = (
                 '<button class="doc-preview-download is-disabled lq-btn lq-btn--prominent lq-btn--sm" '
@@ -405,6 +444,7 @@ class DocumentRenderService:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escaped_title} · 预览</title>
 {_preview_theme_head()}
+{return_head}
 <style>
   :root {{
     --shadow: 0 26px 80px rgba(22, 32, 51, 0.16);
@@ -755,7 +795,7 @@ class DocumentRenderService:
     </div>
     <div class="doc-preview-actions">
       <span class="doc-preview-pill lq-badge" data-lq-component="badge" data-tone="info">共 {job.page_count} 页</span>
-      {download_action}
+      {return_action}{download_action}
     </div>
   </header>
   <section class="doc-preview-stage">

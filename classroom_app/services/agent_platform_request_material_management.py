@@ -27,7 +27,7 @@ def build_capabilities(Capability, spec, ID):
                 'unlink_references': spec('boolean', required=True),
                 'impact_token': spec('string', required=True, minLength=64, maxLength=64)}}),
         Capability('http.materials.upload', '上传任务文件到有管理权的普通材料目录（最多16个，共32MiB，暂不导入ZIP）', 'POST', '/api/materials/upload',
-            'materials_parts.library', 'upload_materials', '9d4e123ae71f5a3f7267a26fe8d3b3bc514506620eaf0d2274fdfc94bda5274d', {'body': {'parent_id': parent}},
+            'materials_parts.library', 'upload_materials', '545cc1e2f892920516112cea513890e1b4a742fc0acf6114bee00841573b2fed', {'body': {'parent_id': parent}},
             transport='form', allows_files=True, max_body_bytes=upload_limit, forbidden_file_suffixes=('.zip',)),
         Capability('http.course.file.upload', '上传一个课程文件，明确公开与教师资源标志并取得文件编号', 'POST', '/api/courses/{course_id}/files/upload',
             'files', 'upload_course_file', '1c4b206fce932b40916a394bd159aa3921cc4eb31fa687d878eeec772928f11b', {'path': {'course_id': ID}, 'body': {

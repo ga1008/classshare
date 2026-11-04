@@ -264,7 +264,7 @@ class MaterialPermissionServiceTests(unittest.TestCase):
         row = self.conn.execute("SELECT COUNT(*) AS count FROM course_material_assignments").fetchone()
         self.assertEqual(0, int(row["count"]))
 
-    def test_sync_assignments_inserts_nearest_folder_anchor_for_owned_markdown(self):
+    def test_sync_assignments_records_exact_anchor_for_owned_markdown(self):
         inserted = sync_classroom_learning_material_assignments(
             self.conn,
             class_offering_id=1001,
@@ -272,14 +272,14 @@ class MaterialPermissionServiceTests(unittest.TestCase):
             material_ids=[2],
         )
 
-        self.assertEqual([1], [int(item["id"]) for item in inserted])
+        self.assertEqual([2], [int(item["id"]) for item in inserted])
         row = self.conn.execute(
             """
             SELECT material_id, class_offering_id
             FROM course_material_assignments
             WHERE material_id = ? AND class_offering_id = ?
             """,
-            (1, 1001),
+            (2, 1001),
         ).fetchone()
         self.assertIsNotNone(row)
 

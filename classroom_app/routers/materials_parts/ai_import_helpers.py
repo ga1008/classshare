@@ -1,4 +1,5 @@
 from .common import *
+from ...services.material_publication_service import record_classroom_material_publication
 from ...db.connection import get_configured_db_engine
 from ...services.academic_final_material_source_service import (
     NativeAcademicSourceError,
@@ -701,25 +702,9 @@ async def _persist_material_ai_import_success(record_id: int, record: dict, pars
             ).fetchone()
             if not offering:
                 raise HTTPException(403, "导入关联课堂不存在或无权访问。")
-            if get_configured_db_engine() == "postgres":
-                conn.execute(
-                    """
-                    INSERT INTO course_material_assignments
-                    (material_id, class_offering_id, assigned_by_teacher_id, created_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT (material_id, class_offering_id) DO NOTHING
-                    """,
-                    (package_id, class_offering_id, teacher_id, now),
-                )
-            else:
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO course_material_assignments
-                    (material_id, class_offering_id, assigned_by_teacher_id, created_at)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (package_id, class_offering_id, teacher_id, now),
-                )
+            record_classroom_material_publication(
+                conn, package_id, class_offering_id, teacher_id, mode="archive", now=now,
+            )
         refresh_root_git_metadata(conn, package_root_id)
         conn.commit()
 
@@ -843,25 +828,9 @@ async def _persist_final_grade_transcript_import_success(
             ).fetchone()
             if not offering:
                 raise HTTPException(403, "导入关联课堂不存在或无权访问。")
-            if get_configured_db_engine() == "postgres":
-                conn.execute(
-                    """
-                    INSERT INTO course_material_assignments
-                    (material_id, class_offering_id, assigned_by_teacher_id, created_at)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT (material_id, class_offering_id) DO NOTHING
-                    """,
-                    (material_id, class_offering_id, teacher_id, now),
-                )
-            else:
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO course_material_assignments
-                    (material_id, class_offering_id, assigned_by_teacher_id, created_at)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (material_id, class_offering_id, teacher_id, now),
-                )
+            record_classroom_material_publication(
+                conn, material_id, class_offering_id, teacher_id, mode="archive", now=now,
+            )
         refresh_root_git_metadata(conn, material_root_id)
         conn.commit()
 

@@ -13,13 +13,15 @@ from ..services.document_render_service import (
     document_render_service,
     verify_render_token,
     render_token_signature_request,
+    render_token_material,
+    render_token_classroom_textbook,
 )
 
 
 router = APIRouter(prefix="/api/document-renderer")
 
 
-def _require_token(key: str, token: str | None, user: dict) -> None:
+def _require_token(key: str, token: str | None, user: dict, *, download: bool = False) -> bool:
     if not verify_render_token(key, token, user=user):
         raise HTTPException(status_code=403, detail="预览凭证无效，请刷新预览页面。")
     request_id = render_token_signature_request(token or "")
@@ -33,6 +35,32 @@ def _require_token(key: str, token: str | None, user: dict) -> None:
                 authorized_request(conn, user, request_id)
         except SignatureServiceError as exc:
             raise HTTPException(exc.status_code, exc.message) from exc
+    material_id = render_token_material(token or "")
+    if material_id is not None:
+        from ..database import get_db_connection
+        from ..services.download_policy import ensure_download_allowed
+        from ..services.materials_service import ensure_user_material_access
+
+        with get_db_connection() as conn:
+            material = ensure_user_material_access(conn, material_id, user)
+            if download:
+                ensure_download_allowed(material["file_size"], resource_label="课堂材料")
+    textbook_scope = render_token_classroom_textbook(token or "")
+    if textbook_scope is not None:
+        from ..database import get_db_connection
+        from ..services.download_policy import ensure_download_allowed
+        from ..services.resource_access_service import ensure_classroom_access
+        from .materials_parts.learning import _classroom_textbook
+
+        offering_id, textbook_id = textbook_scope
+        with get_db_connection() as conn:
+            offering = ensure_classroom_access(conn, offering_id, user)
+            textbook = _classroom_textbook(conn, offering)
+            if textbook is None or int(textbook["id"]) != textbook_id or not textbook["attachment_path"]:
+                raise HTTPException(404, "该教材附件已更换或不存在")
+            if download:
+                ensure_download_allowed(textbook["attachment_size"], resource_label="教材附件")
+    return material_id is not None or textbook_scope is not None
 
 
 def _map_render_error(exc: DocumentRenderError) -> HTTPException:
@@ -49,7 +77,7 @@ async def get_rendered_document_page(
     token: str = Query(default=""),
     user: dict = Depends(get_current_user),
 ):
-    _require_token(key, token, user)
+    is_material = _require_token(key, token, user)
     if size not in {"medium", "large"}:
         raise HTTPException(status_code=400, detail="预览图片尺寸参数无效。")
     try:
@@ -60,7 +88,7 @@ async def get_rendered_document_page(
         image_path,
         media_type=PNG_MEDIA_TYPE,
         headers={
-            "Cache-Control": "private, max-age=900",
+            "Cache-Control": "private, no-store" if is_material else "private, max-age=900",
             "X-Content-Type-Options": "nosniff",
         },
     )
@@ -72,7 +100,7 @@ async def download_rendered_document(
     token: str = Query(default=""),
     user: dict = Depends(get_current_user),
 ):
-    _require_token(key, token, user)
+    _require_token(key, token, user, download=True)
     try:
         document_path, filename, media_type = document_render_service.get_download_path(key)
     except DocumentRenderError as exc:

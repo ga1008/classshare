@@ -9,7 +9,7 @@ def _normalize_uploaded_filename(filename: str | None, fallback: str = "material
     return name or fallback
 
 
-MATERIAL_SCOPE_LEVELS = {"private", "department", "college", "school", "public"}
+MATERIAL_SCOPE_LEVELS = {"private", "department", "college", "school", "classroom", "public"}
 
 
 def _normalize_material_scope_level(value: str | None) -> str:

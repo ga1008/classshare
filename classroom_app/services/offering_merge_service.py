@@ -687,6 +687,42 @@ def _session_id_map(conn: Any, target_id: int, source_ids: list[int]) -> dict[in
     return mapping
 
 
+def _merge_duplicate_material_publications(conn: Any, source_id: int, target_id: int) -> None:
+    rows = conn.execute(
+        """
+        SELECT target.id, target.publication_mode AS target_mode, source.publication_mode AS source_mode,
+               target.assigned_by_teacher_id AS target_actor, source.assigned_by_teacher_id AS source_actor,
+               m.teacher_id AS material_owner
+        FROM course_material_assignments target
+        JOIN course_material_assignments source ON source.material_id = target.material_id
+        JOIN course_materials m ON m.id = target.material_id
+        WHERE source.class_offering_id = ? AND target.class_offering_id = ?
+        """,
+        (source_id, target_id),
+    ).fetchall()
+    explicit_modes = {"explicit", "explicit_archive"}
+    archive_modes = {"archive", "explicit_archive"}
+    for row in rows:
+        source_mode, target_mode = row["source_mode"], row["target_mode"]
+        modes = {source_mode, target_mode}
+        if modes & explicit_modes:
+            merged_mode = "explicit_archive" if modes & archive_modes else "explicit"
+            actor = row["target_actor"] if target_mode in explicit_modes else row["source_actor"]
+        elif modes & archive_modes:
+            merged_mode = "archive"
+            actor = row["target_actor"] if target_mode in archive_modes else row["source_actor"]
+        elif source_mode is None and target_mode == "binding" and row["source_actor"] == row["material_owner"]:
+            # Carry the existing legacy share forward without inferring how it was created.
+            merged_mode, actor = None, row["source_actor"]
+        else:
+            continue
+        if (merged_mode, actor) != (target_mode, row["target_actor"]):
+            conn.execute(
+                "UPDATE course_material_assignments SET publication_mode = ?, assigned_by_teacher_id = ? WHERE id = ?",
+                (merged_mode, actor, row["id"]),
+            )
+
+
 def execute_offering_merge(
     conn: Any,
     *,
@@ -857,6 +893,8 @@ def execute_offering_merge(
         moved = 0
         for source_id in source_ids:
             if rule.strategy == STRATEGY_DEDUP_SKIP and rule.conflict_key:
+                if table == "course_material_assignments":
+                    _merge_duplicate_material_publications(conn, source_id, int(target["id"]))
                 join_clause = " AND ".join(
                     f"a.{col} = b.{col}" for col in rule.conflict_key
                 )

@@ -72,6 +72,13 @@
 .mcard__actions .lq-btn { flex: 1 1 auto; justify-content: center; gap: 4px; }
 .mcard__actions .lq-btn--icon { flex: 0 0 auto; }
 .mcard .materials-generated-badge { position: absolute; top: 46px; right: 14px; }
+.cw-material-library .mcard-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 185px), 1fr)); gap: 12px; }
+.mcard--classroom .mcard__paper { aspect-ratio: auto; flex: 1; }
+.mcard--classroom .mcard__body { min-height: 4.5rem; }
+.mcard--classroom .mcard__actions { align-items: center; }
+.mx__student-scope { display: flex; align-items: center; gap: 8px; }
+.mx__student-scope[hidden] { display: none; }
+.mx__scope-hint { margin: 0; font-size: 0.78rem; }
 @media (max-width: 760px) { .mcard-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); } .materials-control-row.primary { grid-template-columns: 1fr; } }
 /* ---------- 资源管理器浮窗 ---------- */
 .materials-detail-dialog { width: min(1560px, calc(100vw - 2rem)); max-width: min(1560px, calc(100vw - 2rem)); }

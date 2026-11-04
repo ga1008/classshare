@@ -7,6 +7,12 @@ from fastapi import HTTPException
 
 from classroom_app.db import schema_session_learning_materials as _schema
 from classroom_app.services import session_learning_materials_service as svc
+from classroom_app.services.material_publication_service import (
+    get_classroom_publication_nodes,
+    record_classroom_material_publication,
+    remove_classroom_material_publication,
+)
+from classroom_app.services.materials_service import ensure_user_material_access
 
 
 class SessionMaterialPreviewRouteTests(unittest.IsolatedAsyncioTestCase):
@@ -88,9 +94,13 @@ def _make_conn():
         CREATE TABLE course_materials (id INTEGER PRIMARY KEY, teacher_id INTEGER, parent_id INTEGER, root_id INTEGER,
             name TEXT, material_path TEXT, node_type TEXT, preview_type TEXT DEFAULT '', file_ext TEXT DEFAULT '',
             mime_type TEXT DEFAULT '', file_hash TEXT DEFAULT '', scope_level TEXT DEFAULT 'private', owner_role TEXT DEFAULT 'teacher',
-            owner_user_pk INTEGER, school_code TEXT, school_name TEXT, college TEXT, department TEXT);
+            owner_user_pk INTEGER, school_code TEXT, school_name TEXT, college TEXT, department TEXT,
+            student_visible INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE course_material_assignments (material_id INTEGER, class_offering_id INTEGER,
-            assigned_by_teacher_id INTEGER, created_at TEXT, UNIQUE(material_id, class_offering_id));
+            assigned_by_teacher_id INTEGER, created_at TEXT, publication_mode TEXT, UNIQUE(material_id, class_offering_id));
+        CREATE TABLE material_ai_import_records (
+            id INTEGER PRIMARY KEY, document_group TEXT, package_material_id INTEGER, source_material_id INTEGER,
+            parsed_material_id INTEGER);
         """
     )
     conn.execute("INSERT INTO teachers (id) VALUES (1)")
@@ -147,8 +157,8 @@ class SessionLearningMaterialsServiceTests(unittest.TestCase):
             return [entry['material_id'] for entry in entries]
         self.assertEqual(read(), [100, 200])
         self.conn.execute('DELETE FROM course_material_assignments WHERE material_id=200')
-        self.assertEqual(read(), [100])
-        self.conn.execute('DELETE FROM course_material_assignments WHERE material_id=100')
+        self.assertEqual(read(), [100, 200])
+        self.conn.execute("UPDATE students SET enrollment_status='inactive' WHERE id=9")
         self.assertEqual(read(), [])
         self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM class_offering_learning_materials').fetchone()[0], 2)
 
@@ -161,7 +171,7 @@ class SessionLearningMaterialsServiceTests(unittest.TestCase):
         with patch.object(svc, 'resolve_render_target', return_value=target):
             entries = svc.build_material_entries(self.conn, 5, 10, teacher_id=1, persist_legacy=False, user={'role': 'student', 'id': 9})
             self.assertEqual(entries, [])
-            self.conn.execute('INSERT INTO course_material_assignments (material_id,class_offering_id) VALUES (200,5)')
+            record_classroom_material_publication(self.conn, 200, 5, 1)
             entries = svc.build_material_entries(self.conn, 5, 10, teacher_id=1, persist_legacy=False, user={'role': 'student', 'id': 9})
             self.assertEqual(len(entries), 1)
             self.assertEqual(entries[0]['open_url'], target['shell_url'])
@@ -184,10 +194,69 @@ class SessionLearningMaterialsServiceTests(unittest.TestCase):
             self.assertEqual(len(svc.build_material_entries(self.conn, 5, 10, **args)), 2)
             self.assertEqual([call.args[1] for call in access.call_args_list], [200, 201])
             access.reset_mock()
-            self.conn.execute('DELETE FROM course_material_assignments')
-            self.conn.execute('INSERT INTO course_material_assignments (material_id,class_offering_id) VALUES (201,5)')
+            self.conn.execute("UPDATE students SET enrollment_status='inactive' WHERE id=9")
             self.assertEqual(svc.build_material_entries(self.conn, 5, 10, **args), [])
             self.assertEqual([call.args[1] for call in access.call_args_list], [200, 201])
+
+    def test_binding_publishes_markdown_only_and_last_unbind_revokes_legacy_grant(self):
+        self.conn.execute(
+            """
+            INSERT INTO course_materials (id,teacher_id,parent_id,root_id,name,material_path,node_type,preview_type)
+            VALUES (202,1,200,200,'lesson.md','site/lesson.md','file','markdown')
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO course_material_assignments (material_id,class_offering_id,assigned_by_teacher_id) VALUES (200,5,1)"
+        )
+        self.conn.execute("UPDATE class_offering_sessions SET learning_material_id=202 WHERE id=10")
+        student = {'role': 'student', 'id': 9}
+        self.assertEqual([202], [item["id"] for item in get_classroom_publication_nodes(self.conn, 5)])
+        self.assertEqual(202, ensure_user_material_access(self.conn, 202, student)["id"])
+        with self.assertRaises(HTTPException):
+            ensure_user_material_access(self.conn, 201, student)
+        svc.remove_material(self.conn, 5, 10, 202, 1)
+        self.assertEqual([], get_classroom_publication_nodes(self.conn, 5))
+        with self.assertRaises(HTTPException):
+            ensure_user_material_access(self.conn, 202, student)
+
+    def test_explicit_grant_survives_unbind_and_archive_survives_withdrawal(self):
+        student = {'role': 'student', 'id': 9}
+        record_classroom_material_publication(self.conn, 100, 5, 1)
+        record_classroom_material_publication(self.conn, 100, 5, 1, mode="archive")
+        svc.add_material(self.conn, 5, 10, 100, 1)
+        svc.remove_material(self.conn, 5, 10, 100, 1)
+        self.assertEqual(100, ensure_user_material_access(self.conn, 100, student)["id"])
+        remove_classroom_material_publication(self.conn, 100, 5)
+        self.assertEqual("archive", self.conn.execute(
+            "SELECT publication_mode FROM course_material_assignments WHERE material_id=100 AND class_offering_id=5"
+        ).fetchone()[0])
+        with self.assertRaises(HTTPException):
+            ensure_user_material_access(self.conn, 100, student)
+
+    def test_process_material_is_protected_under_published_folder_and_public_scope(self):
+        record_classroom_material_publication(self.conn, 200, 5, 1)
+        self.conn.execute("UPDATE course_materials SET scope_level='public', student_visible=1 WHERE id=200")
+        self.conn.execute(
+            "INSERT INTO material_ai_import_records (document_group,source_material_id) VALUES ('final_material',201)"
+        )
+        student = {'role': 'student', 'id': 9}
+        self.assertEqual([200], [item["id"] for item in get_classroom_publication_nodes(self.conn, 5)])
+        with self.assertRaises(HTTPException):
+            ensure_user_material_access(self.conn, 201, student)
+        with self.assertRaises(HTTPException):
+            record_classroom_material_publication(self.conn, 201, 5, 1)
+        self.assertEqual(201, ensure_user_material_access(self.conn, 201, {'role': 'teacher', 'id': 1})["id"])
+
+    def test_public_student_opt_in_follows_root_and_active_enrollment(self):
+        student = {'role': 'student', 'id': 9}
+        self.conn.execute("UPDATE course_materials SET scope_level='public' WHERE id=200")
+        with self.assertRaises(HTTPException):
+            ensure_user_material_access(self.conn, 201, student)
+        self.conn.execute("UPDATE course_materials SET student_visible=1 WHERE id=200")
+        self.assertEqual(201, ensure_user_material_access(self.conn, 201, student)["id"])
+        self.conn.execute("UPDATE students SET enrollment_status='inactive' WHERE id=9")
+        with self.assertRaises(HTTPException):
+            ensure_user_material_access(self.conn, 201, student)
 
     def test_first_add_mirrors_primary(self):
         svc.add_material(self.conn, 5, 10, 100, 1)

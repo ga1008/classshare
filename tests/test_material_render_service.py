@@ -75,6 +75,19 @@ class MaterialRenderServiceTests(unittest.TestCase):
         self.assertIsNotNone(target)
         self.assertEqual(target["entry_id"], 4)
 
+    def test_nested_folder_requires_exact_path_and_accepts_legacy_html_extension(self):
+        for node_id, name in enumerate(("unitA1", "unit_1", "unit%1", "UnitA1"), start=6):
+            _insert(self.conn, id=node_id, teacher_id=1, parent_id=1, root_id=1, name=name,
+                    material_path=f"project/{name}", node_type="folder", preview_type="folder")
+        _insert(self.conn, id=10, teacher_id=1, parent_id=6, root_id=1, name="Index.HTM",
+                material_path="project/unitA1/Index.HTM", node_type="file", preview_type="text")
+
+        folders = self.conn.execute("SELECT * FROM course_materials WHERE id BETWEEN 6 AND 9 ORDER BY id").fetchall()
+        self.assertEqual(10, resolve_render_target(self.conn, folders[0])["entry_id"])
+        for folder in folders[1:]:
+            with self.subTest(name=folder["name"]):
+                self.assertIsNone(resolve_render_target(self.conn, folder))
+
     def test_markdown_is_not_renderable(self):
         row = dict(self.conn.execute("SELECT * FROM course_materials WHERE id=5").fetchone())
         self.assertIsNone(resolve_render_target(self.conn, row))

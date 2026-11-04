@@ -90,6 +90,8 @@ class MaterialMasteryCheckTests(unittest.TestCase):
             CREATE TABLE course_materials (
                 id INTEGER PRIMARY KEY,
                 teacher_id INTEGER,
+                root_id INTEGER,
+                parent_id INTEGER,
                 material_path TEXT,
                 name TEXT,
                 node_type TEXT DEFAULT 'file',
@@ -109,7 +111,9 @@ class MaterialMasteryCheckTests(unittest.TestCase):
             CREATE TABLE course_material_assignments (
                 id INTEGER PRIMARY KEY,
                 class_offering_id INTEGER,
-                material_id INTEGER
+                material_id INTEGER,
+                assigned_by_teacher_id INTEGER,
+                created_at TEXT
             );
             CREATE TABLE assignments (
                 id INTEGER PRIMARY KEY,
@@ -261,10 +265,10 @@ class MaterialMasteryCheckTests(unittest.TestCase):
         self.conn.execute(
             """
             INSERT INTO course_materials (
-                id, teacher_id, material_path, name, node_type, preview_type,
+                id, teacher_id, root_id, material_path, name, node_type, preview_type,
                 check_questions_json, check_questions_status
             )
-            VALUES (3, 30, 'array.md', '数组边界', 'file', 'markdown', ?, 'ready')
+            VALUES (3, 30, 3, 'array.md', '数组边界', 'file', 'markdown', ?, 'ready')
             """,
             (_ready_check_payload(),),
         )

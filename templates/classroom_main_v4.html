@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/app_topbar.html" import app_topbar_icon %}
 {% from "macros/lq/button.html" import lq_btn %}
+{% from "macros/lq/navigation.html" import lq_tabs %}
 {% from "macros/classroom_menus.html" import classroom_more_menu, classroom_personal_menu %}
 {% from "macros/ui_explanation.html" import explain_attrs %}
 {% from "partials/social_entry.html" import social_entry %}
@@ -16,6 +17,7 @@
 <link rel="stylesheet" href="{{ asset_url('css/attendance_reports.css') }}">
 {% endif %}
 <link rel="stylesheet" href="{{ asset_url('css/classroom_extras.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/materials_library.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/classroom_workspace.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/session_knowledge_tree.css') }}">
 {% endblock %}
@@ -332,7 +334,15 @@
         {% endif %}
 
         <div class="cw-primary-flow" aria-label="课堂任务主线">
-        <section data-lq-material="content" class="cw-primary-section" id="assignment-panel" data-workspace-section><div id="cw-tasks-preview">{% include 'partials/classroom_task_preview.html' %}</div></section>
+        <section data-lq-material="content" class="cw-primary-section" id="assignment-panel" data-workspace-section>
+            {% call(key) lq_tabs('classroom-primary-tabs', '课堂学习', [{'key': 'tasks', 'label': '作业与考试'}, {'key': 'materials', 'label': '材料与文档'}], activation='manual') %}
+                {% if key == 'tasks' %}
+                    <div id="cw-tasks-preview">{% include 'partials/classroom_task_preview.html' %}</div>
+                {% else %}
+                    {% include 'partials/classroom_material_library.html' %}
+                {% endif %}
+            {% endcall %}
+        </section>
         <section data-lq-component="surface" data-lq-padding="md" class="lq-surface workspace-panel assignment-panel cw-collection" id="classroom-task-collection" data-cw-source="tasks" hidden>
             <div class="section-header">
                 <div class="section-heading">
@@ -600,7 +610,6 @@
         </section>
         </div>
 
-        {% set classroom_materials_collapsed = user_info.role == 'student' and (classroom_page.assigned_material_count | default(0)) == 0 %}
         {% set activity_counts = classroom_page.activity_sidebar.initial_counts %}
         <div class="cw-primary-flow" aria-label="课堂活动">
     <aside class="cw-activity-section" id="classroom-activity-sidebar" data-workspace-section data-classroom-activity-shell aria-label="课堂活动">
@@ -952,62 +961,6 @@
             </div>
         </div>
     </aside>
-        <section data-lq-component="surface" data-lq-padding="md" class="lq-surface workspace-panel cw-collection" id="classroom-material-collection" data-cw-source="materials" hidden>
-            <div class="section-header">
-                <div class="section-heading">
-                    {% if sections.materials.eyebrow %}<span class="section-eyebrow">{{ sections.materials.eyebrow }}</span>{% endif %}
-                    <h2 class="section-title">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path><path d="M9 7h6"></path><path d="M9 11h6"></path><path d="M9 15h4"></path></svg>
-                        {{ sections.materials.title }}
-                    </h2>
-                    {% if not classroom_materials_collapsed %}<p class="section-subtitle">{{ sections.materials.subtitle }}</p>{% endif %}
-                </div>
-                <div class="header-actions materials-toolbar-group classroom-materials-conditional"{% if classroom_materials_collapsed %} hidden{% endif %}>
-                    {% if user_info.role == 'teacher' %}
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" id="classroom-final-material-generate-btn" data-cw-external-modal>AI生成期末材料</button>
-                    {% endif %}
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="classroom-materials-refresh-btn">刷新</button>
-                </div>
-            </div>
-            {% if classroom_materials_collapsed %}
-            <div class="materials-empty classroom-materials-empty-state">当前课堂还没有分配课程材料。</div>
-            {% else %}
-            {% endif %}
-
-            <div data-lq-component="toolbar" class="lq-domain-toolbar materials-toolbar classroom-materials-toolbar classroom-materials-conditional"{% if classroom_materials_collapsed %} hidden{% endif %}>
-                <div class="materials-path-actions" aria-label="材料导航">
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="classroom-materials-back-btn">返回</button>
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" id="classroom-materials-up-btn">上一级</button>
-                    <label class="classroom-materials-select-all"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" id="classroom-materials-select-all" aria-label="选择本页全部材料" disabled>全选本页</label>
-                </div>
-                <div class="materials-breadcrumbs" id="classroom-materials-breadcrumbs">
-                    <span class="text-muted">已分配材料</span>
-                </div>
-            </div>
-
-            <div class="materials-selection-bar classroom-materials-conditional" id="classroom-materials-selection" hidden>
-                <div>
-                    已选择 <strong id="classroom-materials-selection-count">0</strong> 项
-                </div>
-                <div class="materials-toolbar-group">
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="classroom-materials-download-btn">下载选中</button>
-                </div>
-            </div>
-
-            <div class="materials-list classroom-materials-conditional"{% if classroom_materials_collapsed %} hidden{% endif %}>
-                <div class="materials-list-header">
-                    <div></div>
-                    <div>名称</div>
-                    <div>类型</div>
-                    <div>大小 / 子项</div>
-                    <div>操作</div>
-                </div>
-                <div id="classroom-materials-list">
-                    <div class="materials-empty">正在加载课程材料...</div>
-                </div>
-            </div>
-        </section>
-
         </div>
     </div>
 
@@ -1047,7 +1000,7 @@
                     <div>
                         <p class="modal-subtitle">期末材料</p>
                         <h3 class="modal-title">AI生成教务文档</h3>
-                        <p class="classroom-material-detail-path">生成后会保存到当前材料目录，并可继续预览、优化和导出。</p>
+                        <p class="classroom-material-detail-path">生成后可在教师归档中继续预览、优化和导出。</p>
                     </div>
                     <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass modal-close" type="button" data-classroom-final-material-close aria-label="关闭">&times;</button>
                 </div>
@@ -1767,6 +1720,11 @@
 {% endblock %}
 
 {% block scripts %}
+<script type="module">
+    import { tabs } from {{ asset_url('js/lq/navigation.js') | tojson }};
+    const root = document.getElementById('classroom-primary-tabs');
+    if (root) tabs(root);
+</script>
 <script type="module" fetchpriority="low" src="{{ asset_url('js/classroom_group_qr.js') }}"></script>
 <script src="{{ asset_url('js/behavior_tracker.js') }}"></script>
 <script type="module" fetchpriority="low" src="{{ asset_url('js/feedback.js') }}"></script>

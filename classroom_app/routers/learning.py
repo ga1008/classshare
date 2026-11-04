@@ -159,29 +159,6 @@ def _ensure_teacher_account_todo(user: dict) -> None:
 
 def _ensure_material_in_classroom(conn, class_offering_id: int, material_id: int, user: dict) -> None:
     material = ensure_user_material_access(conn, material_id, user)
-    row = conn.execute(
-        """
-        SELECT 1
-        FROM (
-            SELECT learning_material_id AS material_id
-            FROM class_offering_sessions
-            WHERE class_offering_id = ? AND learning_material_id IS NOT NULL
-            UNION
-            SELECT home_learning_material_id AS material_id
-            FROM class_offerings
-            WHERE id = ? AND home_learning_material_id IS NOT NULL
-            UNION
-            SELECT material_id
-            FROM course_material_assignments
-            WHERE class_offering_id = ?
-        ) material_scope
-        WHERE material_id = ?
-        LIMIT 1
-        """,
-        (class_offering_id, class_offering_id, class_offering_id, material_id),
-    ).fetchone()
-    if row:
-        return
     if get_nearest_assignment_anchor(conn, class_offering_id, material):
         return
     raise HTTPException(403, "该材料不属于当前课堂学习范围")

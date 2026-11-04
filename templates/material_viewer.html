@@ -143,7 +143,7 @@
     <main class="materials-viewer-main">
         <div data-lq-component="toolbar" class="lq-domain-toolbar materials-viewer-topbar">
             <div class="materials-toolbar-group">
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost"{% if reader_return %} data-classroom-reader-return{% endif %} onclick="history.length > 1 ? history.back() : (window.location.href='/dashboard')">返回</button>
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost"{% if reader_return %} data-classroom-reader-return aria-label="{{ reader_return.label }}"{% endif %} onclick="history.length > 1 ? history.back() : (window.location.href='/dashboard')">返回</button>
                 <div>
                     <div class="text-muted text-sm">课程材料预览</div>
                     <strong>{{ material.name }}</strong>

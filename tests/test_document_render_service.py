@@ -2,9 +2,13 @@ import asyncio
 import json
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 import re
 from urllib.parse import parse_qs, urlsplit
+from unittest.mock import patch
+
+from fastapi import HTTPException
 
 from classroom_app.frontend_assets import asset_url
 from classroom_app.routers import document_renderer as document_renderer_router
@@ -72,6 +76,23 @@ class DocumentRenderServiceTests(unittest.TestCase):
         self.assertFalse(verify_render_token(key, token, user=None))
         self.assertFalse(verify_render_token(key, "wrong-token"))
         self.assertFalse(verify_render_token("b" * 64, token, user=owner))
+
+    def test_material_cache_token_rechecks_read_access_after_withdrawal(self):
+        key = "a" * 64
+        student = {"id": 7, "role": "student"}
+        token = issue_render_token(key, user=student, material_id=23)
+
+        @contextmanager
+        def fake_db():
+            yield "synthetic-connection"
+
+        with patch("classroom_app.database.get_db_connection", fake_db), patch(
+            "classroom_app.services.materials_service.ensure_user_material_access", side_effect=HTTPException(403),
+        ) as check:
+            with self.assertRaises(HTTPException) as caught:
+                document_renderer_router._require_token(key, token, student)
+        self.assertEqual(caught.exception.status_code, 403)
+        check.assert_called_once_with("synthetic-connection", 23, student)
 
     def test_preview_html_uses_3d_deck_and_wheel_navigation(self):
         with tempfile.TemporaryDirectory(prefix="lanshare-render-test-") as temp_dir:

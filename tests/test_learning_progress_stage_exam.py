@@ -245,16 +245,29 @@ class StageExamRetreatPlanTests(unittest.TestCase):
             CREATE TABLE course_materials (
                 id INTEGER PRIMARY KEY,
                 teacher_id INTEGER,
+                root_id INTEGER,
+                parent_id INTEGER,
                 material_path TEXT,
                 name TEXT,
                 node_type TEXT DEFAULT 'file',
+                preview_type TEXT DEFAULT 'markdown',
                 ai_parse_result_json TEXT,
                 ai_optimized_markdown TEXT
             );
             CREATE TABLE course_material_assignments (
                 id INTEGER PRIMARY KEY,
                 class_offering_id INTEGER,
-                material_id INTEGER
+                material_id INTEGER,
+                assigned_by_teacher_id INTEGER,
+                created_at TEXT,
+                publication_mode TEXT
+            );
+            CREATE TABLE material_ai_import_records (
+                id INTEGER PRIMARY KEY,
+                document_group TEXT,
+                package_material_id INTEGER,
+                source_material_id INTEGER,
+                parsed_material_id INTEGER
             );
             CREATE TABLE assignments (
                 id INTEGER PRIMARY KEY,
@@ -334,9 +347,9 @@ class StageExamRetreatPlanTests(unittest.TestCase):
         self.conn.execute(
             """
             INSERT INTO course_materials (
-                id, teacher_id, material_path, name, node_type, ai_parse_result_json, ai_optimized_markdown
+                id, teacher_id, root_id, material_path, name, node_type, ai_parse_result_json, ai_optimized_markdown
             )
-            VALUES (10, 30, 'array-pointer.md', '数组边界与指针', 'file', ?, '数组边界、指针运算、越界风险。')
+            VALUES (10, 30, 10, 'array-pointer.md', '数组边界与指针', 'file', ?, '数组边界、指针运算、越界风险。')
             """,
             (json.dumps({"summary": "数组边界与指针运算的常见混淆。"}, ensure_ascii=False),),
         )
@@ -386,6 +399,32 @@ class StageExamRetreatPlanTests(unittest.TestCase):
         self.assertIn("/materials/view/10?class_offering_id=1", first["href"])
         self.assertIn("数组边界", first["weak_point"])
         self.assertIn("用自己的话", first["reflection_prompt"])
+
+    def test_student_course_context_excludes_archived_grades_even_when_bound(self):
+        self.conn.execute(
+            """
+            INSERT INTO course_materials (id, teacher_id, root_id, material_path, name, ai_optimized_markdown)
+            VALUES (11, 30, 11, 'class-grades.md', '课堂成绩汇总', 'synthetic confidential scores')
+            """
+        )
+        self.conn.execute(
+            "INSERT INTO material_ai_import_records (document_group, package_material_id) VALUES ('final_material', 11)"
+        )
+        self.conn.execute(
+            "INSERT INTO course_material_assignments (class_offering_id, material_id, assigned_by_teacher_id) VALUES (1, 11, 30)"
+        )
+        self.conn.execute(
+            "INSERT INTO class_offering_sessions (id, class_offering_id, order_index, title, learning_material_id) "
+            "VALUES (1001, 1, 2, '第二课', 11)"
+        )
+        level = service.LEARNING_LEVELS[-1]
+        with patch.object(service, "_load_offering", return_value={}):
+            snapshot = service._build_course_knowledge_snapshot(self.conn, 1, level=level)
+        self.assertIn("数组边界", snapshot)
+        self.assertNotIn("课堂成绩汇总", snapshot)
+        self.assertNotIn("synthetic confidential scores", snapshot)
+        candidates = service._load_stage_retreat_material_candidates(self.conn, 1, level=level)
+        self.assertNotIn(11, {item["material_id"] for item in candidates})
 
     def test_retreat_plan_falls_back_to_text_only_without_material_match(self):
         level = service.LEARNING_LEVELS[-1]

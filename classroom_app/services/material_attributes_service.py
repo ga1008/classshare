@@ -92,16 +92,24 @@ def update_material_attributes(conn, *, material_id: int, teacher_id: int, paylo
     scope = None
     if "scope_level" in payload:
         scope = str(payload.get("scope_level") or "private").strip().lower()
-        if scope not in {"private", "school", "college", "department", "public"}:
+        if scope not in {"private", "school", "college", "department", "classroom", "public"}:
             raise HTTPException(400, "Invalid material scope")
+    student_visible = payload.get("student_visible")
+    if student_visible is not None and not isinstance(student_visible, bool):
+        raise HTTPException(400, "学生可见必须为布尔值")
     material = ensure_teacher_material_owner(conn, material_id, teacher_id)
     from .material_tree_service import lock_material_trees, ensure_plain_tree_operation, touch_material_nodes, ensure_subtree_owner
     material = lock_material_trees(conn, teacher_id=teacher_id, material_ids=(material_id,))[material_id]
     ensure_subtree_owner(conn, material)
     if expected_updated_at is not None and expected_updated_at != str(dict(material).get("updated_at") or "legacy"):
         raise HTTPException(409, "材料已被修改，请重新读取属性后再提交。")
-    if scope is not None and material["parent_id"] is not None:
+    if (scope is not None or student_visible is not None) and material["parent_id"] is not None:
         raise HTTPException(400, "开放范围由最外层文件夹统一决定，请在最外层文件夹上设置")
+    if student_visible:
+        from .material_publication_service import get_restricted_material_paths, is_restricted_material
+
+        if is_restricted_material(material, get_restricted_material_paths(conn, [material["root_id"]])):
+            raise HTTPException(403, "过程材料仅供教师归档")
     if "name" in payload:
         ensure_plain_tree_operation(conn, material, action='rename')
         rename_material_subtree(conn, material, str(payload.get("name") or ""))
@@ -116,6 +124,11 @@ def update_material_attributes(conn, *, material_id: int, teacher_id: int, paylo
                WHERE root_id=? AND (material_path=? OR material_path LIKE ? ESCAPE '!')""",
             (scope, int(material["teacher_id"]), owner["school_code"], owner["school_name"], owner["college"], owner["department"],
              scope, now, now, int(material["root_id"]), material["material_path"], subtree_pattern(str(material["material_path"]))),
+        )
+    if student_visible is not None:
+        conn.execute(
+            "UPDATE course_materials SET student_visible=?, updated_at=? WHERE id=?",
+            (int(student_visible), datetime.now().isoformat(), material_id),
         )
     touch_material_nodes(conn, (material['root_id'], material['parent_id']), datetime.now().isoformat())
     return ensure_teacher_material_owner(conn, material_id, teacher_id)

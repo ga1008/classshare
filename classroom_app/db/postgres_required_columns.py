@@ -720,6 +720,7 @@ REQUIRED_POSTGRES_COLUMNS = {
         "department",
         "wanderer_min_tier",
         "wanderer_max_tier",
+        "student_visible",
         "created_at",
         "updated_at",
     ),
@@ -729,6 +730,7 @@ REQUIRED_POSTGRES_COLUMNS = {
         "class_offering_id",
         "assigned_by_teacher_id",
         "created_at",
+        "publication_mode",
     ),
     "session_material_generation_tasks": (
         "id",

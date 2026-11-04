@@ -28,6 +28,8 @@
         packageRootId: {{ shell.package_root_id | tojson }},
         entryMaterialId: {{ shell.entry_material_id | tojson }},
         iframeSrc: {{ shell.iframe_src | tojson }},
+        iframeBase: {{ shell.iframe_base | tojson }},
+        homeSrc: {{ shell.home_src | tojson }},
         isHtmlPackage: {{ shell.is_html_package | tojson }},
         lessonNumber: {{ shell.lesson_number | tojson }},
         classOfferingId: {{ learning_context.class_offering_id | tojson }},
@@ -63,6 +65,8 @@
             class="ls-render-shell-frame"
             src="{{ shell.iframe_src }}"
             title="{{ shell.material_name }}"
+            sandbox="allow-scripts allow-popups allow-downloads"
+            referrerpolicy="no-referrer"
             allowfullscreen></iframe>
 </div>
 {% endblock %}

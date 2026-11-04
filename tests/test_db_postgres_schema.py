@@ -105,6 +105,8 @@ class FakePostgresConnection:
             return FakeCursor([])
         if normalized.startswith("UPDATE learning_material_progress"):
             return FakeCursor([])
+        if normalized.startswith("WITH bindings AS (") and "UPDATE course_material_assignments" in normalized:
+            return FakeCursor([])
         if normalized in {
             "UPDATE agent_tasks SET actor_id=teacher_id WHERE actor_id IS NULL AND actor_role='teacher'",
             "UPDATE agent_task_composers SET actor_id=teacher_id WHERE actor_id IS NULL AND actor_role='teacher'",

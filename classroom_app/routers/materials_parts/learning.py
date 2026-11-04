@@ -3,9 +3,21 @@ from .generation_helpers import *
 from .ai_import_helpers import *
 from .final_material_helpers import *
 from .rewrite_helpers import *
+from fastapi import Response
 from ...services.html_package_service import apply_package_session_bindings, parse_html_package
-from ...services.material_render_service import attach_render_metadata
+from ...config import TEXTBOOK_ATTACHMENT_DIR, TEXTBOOK_ATTACHMENT_LEGACY_DIRS
+from ...services.base_resource_modes_service import ensure_teacher_can_view_textbook_attributes
+from ...services.document_render_service import DocumentRenderError, document_render_service
+from ...services.material_preview_service import supports_document_preview
+from ...services.material_render_service import resolve_render_target
+from ...services.material_publication_service import (
+    get_classroom_publication_nodes,
+    get_restricted_material_paths,
+    is_restricted_material,
+    mark_legacy_binding_publications,
+)
 from ...services.materials_service import is_bindable_learning_material
+from ...storage_paths import resolve_migrated_file_path
 from ...services.session_material_generation_jobs import create_scheduled_generation_task
 from ...db.schema_session_learning_materials import ensure_session_learning_materials_schema
 from ...services.session_learning_materials_service import (
@@ -507,6 +519,8 @@ async def ai_assign_material_to_sessions(
     with get_db_connection() as conn:
         from ...services.session_learning_materials_service import lock_unchanged_material_targets
         lock_unchanged_material_targets(conn, int(user["id"]), all_sessions_by_offering, home_materials=home_materials)
+        for offering_id in sorted(all_sessions_by_offering):
+            mark_legacy_binding_publications(conn, offering_id)
         for offering_id, home_item in home_assignments_by_offering.items():
             mat_id = int(home_item.get("material_id") or 0)
             if offering_id not in allowed_ids or mat_id not in file_id_map:
@@ -885,6 +899,161 @@ async def create_classroom_session_ai_material_task(
     }
 
 
+_CLASSROOM_MATERIAL_FIELDS = (
+    "id", "parent_id", "name", "node_type", "material_path", "file_size", "file_ext",
+    "mime_type", "preview_type", "preview_supported", "is_folder", "is_markdown", "is_text", "is_image",
+    "document_kind", "kind_label", "kind_short", "kind_tone", "kind_color", "child_count",
+    "document_readme_id", "document_viewer_url", "has_document_view", "is_learning_document_dir",
+    "is_renderable", "render_kind", "render_url", "render_shell_url", "shell_url",
+    "preview_mode", "preview_url", "preview_frame_url", "preview_media_url", "preview_image_url",
+    "download_url", "download_allowed", "download_blocked_reason", "can_manage", "updated_at",
+)
+
+_CLASSROOM_DOCUMENT_HEADERS = {"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
+_TEXTBOOK_INLINE_MIMES = {"application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"}
+
+
+def _classroom_material_capabilities(conn, offering, user, *, parent_id=None):
+    is_teacher = user["role"] == "teacher"
+    is_owner = is_teacher and int(offering["teacher_id"]) == int(user["id"])
+    can_manage = is_owner or (is_teacher and is_super_admin_teacher(conn, int(user["id"])))
+    return {"can_upload": is_owner and parent_id is None, "can_manage": can_manage}
+
+
+def _classroom_material_row(conn, class_offering_id, material_id, *, publication_nodes=None, restricted_paths=None):
+    row = conn.execute("SELECT * FROM course_materials WHERE id = ?", (material_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "材料不存在")
+    anchor = get_nearest_assignment_anchor(
+        conn, class_offering_id, row, publication_nodes=publication_nodes, restricted_paths=restricted_paths,
+    )
+    if not anchor:
+        raise HTTPException(403, "当前课堂无权访问该材料")
+    return row, anchor
+
+
+def _classroom_preview_context(url, class_offering_id):
+    if not url.startswith(("/materials/view/", "/materials/render-view/", "/materials/document-preview/")):
+        return url
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}class_offering_id={class_offering_id}&classroom_reader_tab=1&reader_section=materials"
+
+
+def _serialize_classroom_materials(conn, class_offering_id, rows, user, *, publication_nodes, restricted_paths):
+    items = [serialize_material_row(row) for row in rows]
+    folder_ids = [int(item["id"]) for item in items if item["node_type"] == "folder"]
+    child_counts = {}
+    if folder_ids:
+        placeholders = ",".join("?" for _ in folder_ids)
+        child_rows = conn.execute(
+            f"""SELECT parent_id, root_id, material_path FROM course_materials
+                WHERE parent_id IN ({placeholders}) AND LOWER(name) != '.git'""",
+            folder_ids,
+        ).fetchall()
+        for child in child_rows:
+            if _visible_classroom_material_path(child, restricted_paths):
+                parent_id = int(child["parent_id"])
+                child_counts[parent_id] = child_counts.get(parent_id, 0) + 1
+
+    items = attach_learning_document_metadata(conn, items)
+    targets = {}
+    referenced_ids = set()
+    for item in items:
+        item_id = int(item["id"])
+        target = resolve_render_target(conn, item)
+        targets[item_id] = target
+        if target:
+            referenced_ids.update((int(target["node_id"]), int(target["entry_id"])))
+        if item.get("document_readme_id"):
+            referenced_ids.add(int(item["document_readme_id"]))
+
+    allowed_references = set()
+    if referenced_ids:
+        placeholders = ",".join("?" for _ in referenced_ids)
+        for row in conn.execute(
+            f"SELECT id, root_id, material_path, node_type FROM course_materials WHERE id IN ({placeholders})",
+            tuple(sorted(referenced_ids)),
+        ).fetchall():
+            if get_nearest_assignment_anchor(
+                conn, class_offering_id, row, publication_nodes=publication_nodes, restricted_paths=restricted_paths,
+            ):
+                allowed_references.add(int(row["id"]))
+
+    is_teacher = user["role"] == "teacher"
+    is_admin = is_teacher and is_super_admin_teacher(conn, int(user["id"]))
+    for item in items:
+        item_id = int(item["id"])
+        target = targets[item_id]
+        if target and {int(target["node_id"]), int(target["entry_id"])} <= allowed_references:
+            item.update(is_renderable=True, render_kind=target["kind"], render_url=target["render_url"],
+                        render_shell_url=target["shell_url"], shell_url=target["shell_url"])
+        else:
+            item.update(is_renderable=False, render_kind="", render_url="", render_shell_url="", shell_url="")
+        if item.get("document_readme_id") not in allowed_references:
+            item.update(document_readme_id=None, has_document_view=False, is_learning_document_dir=False)
+        _decorate_learning_document_item(item)
+        _decorate_material_download_policy(item)
+        item["child_count"] = child_counts.get(item_id, 0)
+        item["can_manage"] = is_teacher and (int(item["teacher_id"]) == int(user["id"]) or is_admin)
+        item["download_url"] = (
+            f"/materials/download/{item_id}"
+            if item["node_type"] == "file" and item.get("download_allowed") else ""
+        )
+    attach_material_preview_metadata(attach_material_document_kinds(items))
+    for item in items:
+        for field in ("preview_url", "document_viewer_url", "render_shell_url", "shell_url"):
+            item[field] = _classroom_preview_context(item[field], class_offering_id)
+    return [{key: item[key] for key in _CLASSROOM_MATERIAL_FIELDS if key in item} for item in items]
+
+
+def _visible_classroom_material_path(row, restricted_paths):
+    return not is_git_internal_material_path(row["material_path"]) and not is_restricted_material(row, restricted_paths)
+
+
+def _classroom_textbook(conn, offering):
+    textbook_id = dict(offering).get("textbook_id")
+    if not textbook_id:
+        return None
+    try:
+        textbook = ensure_teacher_can_view_textbook_attributes(conn, int(textbook_id), int(offering["teacher_id"]))
+    except HTTPException as exc:
+        if exc.status_code not in (403, 404):
+            raise
+        return None
+    return None if dict(textbook).get("deleted_at") else textbook
+
+
+def _classroom_textbook_payload(textbook, class_offering_id):
+    if textbook is None:
+        return None
+    textbook = dict(textbook)
+    textbook_id = int(textbook["id"])
+    title = str(textbook["title"])
+    try:
+        authors = json.loads(textbook.get("authors_json") or "[]")
+    except (ValueError, TypeError):
+        authors = []
+    authors = [author for author in authors if isinstance(author, str)] if isinstance(authors, list) else []
+    filename = str(textbook.get("attachment_name") or "")
+    mimetype = str(textbook.get("attachment_mime_type") or "").strip().lower()
+    can_preview = mimetype in _TEXTBOOK_INLINE_MIMES or supports_document_preview({"node_type": "file", "name": filename})
+    base_url = f"/api/classrooms/{class_offering_id}/textbook/{textbook_id}/attachment"
+    attachment = apply_download_policy({"file_size": textbook.get("attachment_size") or 0}, resource_label="教材附件")
+    has_attachment = bool(textbook.get("attachment_path")) and attachment["download_allowed"]
+    return {
+        "id": textbook_id,
+        "name": title,
+        "title": title,
+        "author": "、".join(authors),
+        "authors": authors,
+        "publisher": str(textbook.get("publisher") or ""),
+        "publication_date": str(textbook.get("publication_date") or ""),
+        "attachment_name": filename,
+        "preview_url": f"{base_url}?preview=true" if has_attachment and can_preview else "",
+        "download_url": base_url if has_attachment else "",
+    }
+
+
 @router.get(
     "/api/classrooms/{class_offering_id}/materials",
     response_class=JSONResponse,
@@ -895,67 +1064,123 @@ async def get_classroom_materials(
     class_offering_id: int,
     parent_id: int | None = Query(default=None),
     user: dict = Depends(get_current_user),
+    response: Response = None,
 ):
+    if response is not None:
+        response.headers.update(_CLASSROOM_DOCUMENT_HEADERS)
     with get_db_connection() as conn:
-        ensure_classroom_access(conn, class_offering_id, user)
-
+        offering = ensure_classroom_access(conn, class_offering_id, user)
+        publication_nodes = get_classroom_publication_nodes(conn, class_offering_id)
+        restricted_paths = get_restricted_material_paths(conn, {int(row["root_id"]) for row in publication_nodes})
+        capabilities = _classroom_material_capabilities(conn, offering, user, parent_id=parent_id)
         if parent_id is None:
-            rows = get_effective_assignment_nodes(conn, class_offering_id)
-            items = []
-            for row in rows:
-                child_count = conn.execute(
-                    "SELECT COUNT(*) FROM course_materials WHERE parent_id = ? AND name != '.git'",
-                    (row["id"],),
-                ).fetchone()[0]
-                row_dict = dict(row)
-                row_dict["child_count"] = int(child_count)
-                items.append(_decorate_material_download_policy(serialize_material_row(row_dict)))
-            items = attach_git_repository_metadata(conn, items)
-            items = attach_render_metadata(conn, items)
-            items = [_decorate_learning_document_item(item) for item in attach_learning_document_metadata(conn, items)]
-            return {
-                "status": "success",
-                "current_folder": None,
-                "breadcrumbs": [],
-                "items": items,
-            }
-
-        folder = ensure_user_material_access(conn, parent_id, user)
-        if folder["node_type"] != "folder":
-            raise HTTPException(400, "只能打开文件夹")
-
-        anchor = get_nearest_assignment_anchor(conn, class_offering_id, folder)
-        if not anchor:
-            raise HTTPException(403, "当前课堂无权访问该文件夹")
-
-        child_rows = conn.execute(
-            """
-            SELECT m.*,
-                   (SELECT COUNT(*) FROM course_materials child WHERE child.parent_id = m.id AND child.name != '.git') AS child_count,
-                   0 AS assignment_count
-            FROM course_materials m
-            WHERE m.parent_id = ?
-            ORDER BY CASE WHEN m.node_type = 'folder' THEN 0 ELSE 1 END, m.name COLLATE NOCASE
-            """,
-            (parent_id,),
-        ).fetchall()
-
-        items = []
-        for row in child_rows:
-            row_dict = dict(row)
-            if is_git_internal_material_path(row_dict["material_path"]):
-                continue
-            if is_descendant_path(row_dict["material_path"], anchor["material_path"]):
-                items.append(_decorate_material_download_policy(serialize_material_row(row_dict)))
-        items = attach_git_repository_metadata(conn, items)
-        items = [_decorate_learning_document_item(item) for item in attach_learning_document_metadata(conn, items)]
-
-        breadcrumbs = _slice_breadcrumbs_from_anchor(get_material_breadcrumbs(conn, parent_id), anchor["id"])
+            rows = get_effective_assignment_nodes(conn, class_offering_id, publication_nodes=publication_nodes)
+            current_folder = None
+            breadcrumbs = []
+        else:
+            folder, anchor = _classroom_material_row(
+                conn, class_offering_id, parent_id, publication_nodes=publication_nodes, restricted_paths=restricted_paths,
+            )
+            if folder["node_type"] != "folder":
+                raise HTTPException(400, "只能打开文件夹")
+            children = conn.execute(
+                """SELECT * FROM course_materials WHERE parent_id = ?
+                   ORDER BY CASE WHEN node_type = 'folder' THEN 0 ELSE 1 END, name COLLATE NOCASE""",
+                (parent_id,),
+            ).fetchall()
+            rows = [
+                row for row in children if int(row["root_id"]) == int(anchor["root_id"])
+                and is_descendant_path(row["material_path"], anchor["material_path"])
+                and _visible_classroom_material_path(row, restricted_paths)
+            ]
+            current_folder = _serialize_classroom_materials(
+                conn, class_offering_id, [folder], user, publication_nodes=publication_nodes, restricted_paths=restricted_paths,
+            )[0]
+            trail_root = next(
+                row for row in publication_nodes if row["root_id"] == anchor["root_id"]
+                and is_descendant_path(folder["material_path"], row["material_path"])
+            )
+            breadcrumbs = _slice_breadcrumbs_from_anchor(get_material_breadcrumbs(conn, parent_id), trail_root["id"])
+        items = _serialize_classroom_materials(
+            conn, class_offering_id, rows, user, publication_nodes=publication_nodes, restricted_paths=restricted_paths,
+        )
         return {
             "status": "success",
-            "current_folder": _decorate_material_download_policy(
-                attach_git_repository_metadata(conn, [serialize_material_row(folder)])[0]
-            ),
+            "current_folder": current_folder,
             "breadcrumbs": breadcrumbs,
             "items": items,
+            "capabilities": capabilities,
+            "textbook": _classroom_textbook_payload(_classroom_textbook(conn, offering), class_offering_id)
+            if parent_id is None else None,
         }
+
+
+@router.get("/api/classrooms/{class_offering_id}/materials/{material_id}", response_class=JSONResponse)
+async def get_classroom_material_detail(
+    class_offering_id: int, material_id: int, user: dict = Depends(get_current_user), response: Response = None,
+):
+    if response is not None:
+        response.headers.update(_CLASSROOM_DOCUMENT_HEADERS)
+    with get_db_connection() as conn:
+        offering = ensure_classroom_access(conn, class_offering_id, user)
+        row, _ = _classroom_material_row(conn, class_offering_id, material_id)
+        nodes = get_classroom_publication_nodes(conn, class_offering_id)
+        material = _serialize_classroom_materials(
+            conn, class_offering_id, [row], user, publication_nodes=nodes,
+            restricted_paths=get_restricted_material_paths(conn, {int(row["root_id"])}),
+        )[0]
+        return {
+            "status": "success",
+            "material": material,
+            "capabilities": _classroom_material_capabilities(conn, offering, user, parent_id=material_id),
+        }
+
+
+@router.get("/api/classrooms/{class_offering_id}/textbook/{textbook_id}/attachment")
+async def get_classroom_textbook_attachment(
+    class_offering_id: int,
+    textbook_id: int,
+    preview: bool = Query(default=False),
+    user: dict = Depends(get_current_user),
+):
+    with get_db_connection() as conn:
+        offering = ensure_classroom_access(conn, class_offering_id, user)
+        textbook = _classroom_textbook(conn, offering)
+        if textbook is None or int(textbook["id"]) != textbook_id or not textbook["attachment_path"]:
+            raise HTTPException(404, "该教材附件已更换或不存在")
+        textbook = dict(textbook)
+
+    ensure_download_allowed(textbook.get("attachment_size"), resource_label="教材附件")
+    path = resolve_migrated_file_path(
+        textbook["attachment_path"],
+        active_root=TEXTBOOK_ATTACHMENT_DIR,
+        legacy_roots=TEXTBOOK_ATTACHMENT_LEGACY_DIRS,
+        markers=("storage/textbook_attachments", "files/textbook_attachments", "textbook_attachments"),
+    )
+    roots = (TEXTBOOK_ATTACHMENT_DIR, *TEXTBOOK_ATTACHMENT_LEGACY_DIRS)
+    if not path or not any(path.resolve().is_relative_to(root.resolve()) for root in roots):
+        raise HTTPException(404, "教材附件不存在或已丢失")
+    filename = str(textbook["attachment_name"] or path.name)
+    mimetype = str(textbook["attachment_mime_type"] or "application/octet-stream").strip().lower()
+    if not preview or mimetype in _TEXTBOOK_INLINE_MIMES:
+        return FileResponse(
+            path, filename=filename, media_type=mimetype, headers=_CLASSROOM_DOCUMENT_HEADERS,
+            content_disposition_type="inline" if preview else "attachment",
+        )
+    if not supports_document_preview({"node_type": "file", "name": filename}):
+        raise HTTPException(400, "该教材附件暂不支持预览")
+    try:
+        content = await asyncio.to_thread(path.read_bytes)
+        job = await asyncio.to_thread(document_render_service.render_artifact, content, filename=filename, media_type=mimetype)
+    except (RuntimeError, DocumentRenderError, OSError) as exc:
+        return HTMLResponse(
+            document_render_service.render_error_html(title=filename, message=str(exc)),
+            status_code=503, headers=_CLASSROOM_DOCUMENT_HEADERS,
+        )
+    return HTMLResponse(
+        document_render_service.render_preview_html(
+            job, title=filename, user=user, eyebrow="课程教材 · 文档预览", download_label="下载原文件",
+            classroom_textbook=(class_offering_id, textbook_id),
+        ),
+        headers=_CLASSROOM_DOCUMENT_HEADERS,
+    )

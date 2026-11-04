@@ -23,6 +23,8 @@ from .material_mastery_check_service import (
     normalize_material_mastery_check_payload,
     public_material_mastery_check_payload,
 )
+from .material_publication_service import get_classroom_publication_nodes, get_restricted_material_paths
+from .materials_service import get_nearest_assignment_anchor
 from .message_center_service import (
     AI_ASSISTANT_LABEL,
     AI_ASSISTANT_ROLE,
@@ -572,6 +574,7 @@ def _load_required_materials(conn, class_offering_id: int) -> list[dict[str, Any
         """
         SELECT DISTINCT m.id,
                m.name,
+               m.root_id,
                m.material_path,
                m.preview_type,
                m.check_questions_json,
@@ -593,12 +596,57 @@ def _load_required_materials(conn, class_offering_id: int) -> list[dict[str, Any
             WHERE cma.class_offering_id = ?
         ) s ON s.material_id = m.id
         WHERE m.node_type = 'file'
-        GROUP BY m.id, m.name, m.material_path, m.preview_type, m.check_questions_json, m.check_questions_status
+        GROUP BY m.id, m.name, m.root_id, m.material_path, m.preview_type, m.check_questions_json, m.check_questions_status
         ORDER BY order_index, m.name COLLATE NOCASE
         """,
         (class_offering_id, class_offering_id, class_offering_id),
     ).fetchall()
-    return [dict(row) for row in rows]
+    if not rows:
+        return []
+    publications, restricted = _learning_publication_context(conn, class_offering_id, rows)
+    return [
+        dict(row) for row in rows
+        if get_nearest_assignment_anchor(
+            conn, class_offering_id, row, publication_nodes=publications, restricted_paths=restricted,
+        )
+    ]
+
+
+def _learning_publication_context(conn, class_offering_id, rows):
+    publications = get_classroom_publication_nodes(conn, class_offering_id)
+    restricted = get_restricted_material_paths(conn, (row["root_id"] for row in rows))
+    return publications, restricted
+
+
+def _published_learning_context_files(conn, publications, *, excluded_ids, limit):
+    ids = sorted({row["id"] for row in publications if row["node_type"] == "file"} - excluded_ids)
+    if not ids:
+        return []
+    placeholders = ",".join("?" for _ in ids)
+    return conn.execute(
+        f"""
+        SELECT id, name, material_path, ai_parse_result_json, ai_optimized_markdown
+        FROM course_materials
+        WHERE id IN ({placeholders})
+        ORDER BY name COLLATE NOCASE
+        LIMIT ?
+        """,
+        (*ids, limit),
+    ).fetchall()
+
+
+def _strip_unpublished_lesson_material(conn, class_offering_id, item, publications, restricted):
+    if item.get("material_path") and get_nearest_assignment_anchor(
+        conn, class_offering_id, item, publication_nodes=publications, restricted_paths=restricted,
+    ):
+        return item
+    return {
+        **item,
+        **dict.fromkeys((
+            "material_id", "learning_material_id", "material_name", "material_path",
+            "ai_parse_result_json", "ai_optimized_markdown",
+        )),
+    }
 
 
 def _load_progress_rows(conn, class_offering_id: int, student_id: int) -> dict[int, dict[str, Any]]:
@@ -4223,7 +4271,7 @@ def _build_course_knowledge_snapshot(
     sessions = conn.execute(
         """
         SELECT s.order_index, s.title, s.content, s.learning_material_id,
-               m.name AS material_name, m.ai_parse_result_json, m.ai_optimized_markdown
+               m.root_id, m.material_path, m.name AS material_name, m.ai_parse_result_json, m.ai_optimized_markdown
         FROM class_offering_sessions s
         LEFT JOIN course_materials m ON m.id = s.learning_material_id
         WHERE s.class_offering_id = ?
@@ -4237,6 +4285,7 @@ def _build_course_knowledge_snapshot(
     ]
     scoped_count = _stage_scope_count(len(sessions), level)
     scoped_sessions = sessions[:scoped_count] if scoped_count else sessions
+    publications, restricted = _learning_publication_context(conn, class_offering_id, scoped_sessions)
     if level and sessions:
         lines.append(
             f"当前破境范围：{level['name']}，按境界累计覆盖前 {scoped_count} / {len(sessions)} 个课堂节点。"
@@ -4244,7 +4293,7 @@ def _build_course_knowledge_snapshot(
     lines.append("范围内课堂章节与学习文档摘要：")
     scoped_material_ids: set[int] = set()
     for row in scoped_sessions:
-        item = dict(row)
+        item = _strip_unpublished_lesson_material(conn, class_offering_id, dict(row), publications, restricted)
         material_id = safe_int(item.get("learning_material_id"))
         if material_id:
             scoped_material_ids.add(material_id)
@@ -4253,35 +4302,13 @@ def _build_course_knowledge_snapshot(
             f"{item.get('order_index')}. {item.get('title') or '未命名章节'}"
             f"；材料：{item.get('material_name') or '无'}；要点：{truncate_text(summary, 420)}"
         )
-    supplemental_rows = conn.execute(
-        """
-        SELECT DISTINCT m.id, m.name, m.material_path, m.ai_parse_result_json, m.ai_optimized_markdown, '' AS content
-        FROM course_materials m
-        JOIN (
-            SELECT home_learning_material_id AS material_id
-            FROM class_offerings
-            WHERE id = ? AND home_learning_material_id IS NOT NULL
-            UNION
-            SELECT material_id
-            FROM course_material_assignments
-            WHERE class_offering_id = ?
-        ) scoped ON scoped.material_id = m.id
-        WHERE m.node_type = 'file'
-        ORDER BY m.name COLLATE NOCASE
-        """,
-        (class_offering_id, class_offering_id),
-    ).fetchall()
+    supplemental_rows = _published_learning_context_files(conn, publications, excluded_ids=scoped_material_ids, limit=8)
     supplemental_added = 0
     for row in supplemental_rows:
         item = dict(row)
-        material_id = safe_int(item.get("id"))
-        if material_id in scoped_material_ids:
-            continue
         if supplemental_added == 0:
             lines.append("范围内补充学习文档：")
         supplemental_added += 1
-        if supplemental_added > 8:
-            break
         lines.append(
             f"- {item.get('name') or item.get('material_path') or '未命名材料'}："
             f"{truncate_text(_material_summary_text(item), 360)}"
@@ -4441,6 +4468,7 @@ def _load_stage_retreat_material_candidates(
                    s.content AS session_content,
                    s.learning_material_id,
                    m.id AS material_id,
+                   m.root_id,
                    m.name AS material_name,
                    m.material_path,
                    m.ai_parse_result_json,
@@ -4455,9 +4483,11 @@ def _load_stage_retreat_material_candidates(
     ]
     scoped_count = _stage_scope_count(len(sessions), level)
     scoped_sessions = sessions[:scoped_count] if scoped_count else sessions
+    publications, restricted = _learning_publication_context(conn, class_offering_id, scoped_sessions)
     candidates: list[dict[str, Any]] = []
     seen_material_ids: set[int] = set()
     for item in scoped_sessions:
+        item = _strip_unpublished_lesson_material(conn, class_offering_id, item, publications, restricted)
         material_id = safe_int(item.get("material_id") or item.get("learning_material_id"))
         title = str(item.get("material_name") or item.get("session_title") or "").strip()
         if not title:
@@ -4481,37 +4511,11 @@ def _load_stage_retreat_material_candidates(
         if material_id:
             seen_material_ids.add(material_id)
 
-    supplemental_rows = conn.execute(
-        """
-        SELECT DISTINCT m.id AS material_id,
-               m.name AS material_name,
-               m.material_path,
-               m.ai_parse_result_json,
-               m.ai_optimized_markdown,
-               '' AS session_title,
-               '' AS session_content
-        FROM course_materials m
-        JOIN (
-            SELECT home_learning_material_id AS material_id
-            FROM class_offerings
-            WHERE id = ? AND home_learning_material_id IS NOT NULL
-            UNION
-            SELECT material_id
-            FROM course_material_assignments
-            WHERE class_offering_id = ?
-        ) scoped ON scoped.material_id = m.id
-        WHERE m.node_type = 'file'
-        ORDER BY m.name COLLATE NOCASE
-        LIMIT 12
-        """,
-        (int(class_offering_id), int(class_offering_id)),
-    ).fetchall()
+    supplemental_rows = _published_learning_context_files(conn, publications, excluded_ids=seen_material_ids, limit=12)
     for row in supplemental_rows:
         item = dict(row)
-        material_id = safe_int(item.get("material_id"))
-        if material_id in seen_material_ids:
-            continue
-        title = str(item.get("material_name") or item.get("material_path") or "").strip()
+        material_id = safe_int(item.get("id"))
+        title = str(item.get("name") or item.get("material_path") or "").strip()
         if not title:
             continue
         summary = _material_summary_text(item)

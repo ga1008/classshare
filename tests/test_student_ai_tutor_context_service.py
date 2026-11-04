@@ -5,6 +5,7 @@ import unittest
 from datetime import datetime, timedelta
 
 from classroom_app.database import get_db_connection
+from classroom_app.services.academic_service import _safe_fetch_recent_material_names
 from tests.sqlite_database_fixture import isolated_sqlite_database
 from classroom_app.services.student_ai_tutor_context_service import (
     build_tutor_context_block,
@@ -32,6 +33,7 @@ EXAM_QUESTION = "请结合抓包结果，详细分析 TCP 三次握手过程中�
 
 def _cleanup(conn):
     for sql, params in (
+        ("DELETE FROM material_ai_import_records WHERE package_material_id = ?", (MATERIAL_TCP,)),
         ("DELETE FROM course_material_assignments WHERE class_offering_id = ?", (OFFERING_ID,)),
         ("DELETE FROM course_materials WHERE id IN (?, ?)", (MATERIAL_TCP, MATERIAL_HTTP)),
         ("DELETE FROM assignments WHERE id = ?", (ASSIGNMENT_ID,)),
@@ -68,10 +70,10 @@ def _seed(conn):
     ):
         conn.execute(
             """
-            INSERT INTO course_materials (id, teacher_id, material_path, name, node_type, file_ext, ai_optimized_markdown)
-            VALUES (?, ?, ?, ?, 'file', 'md', ?)
+            INSERT INTO course_materials (id, root_id, teacher_id, material_path, name, node_type, file_ext, ai_optimized_markdown)
+            VALUES (?, ?, ?, ?, ?, 'file', 'md', ?)
             """,
-            (mid, TEACHER_ID, f"tutor-test/{mid}.md", name, content),
+            (mid, mid, TEACHER_ID, f"tutor-test/{mid}.md", name, content),
         )
         conn.execute(
             """
@@ -133,6 +135,21 @@ class TutorContextTests(unittest.TestCase):
                 conn, class_offering_id=OFFERING_ID, query="食堂晚饭吃啥"
             )
         self.assertEqual(snippets, [])
+
+    def test_student_tutor_omits_archival_text_with_legacy_assignment(self):
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO material_ai_import_records (teacher_id, package_material_id, document_group, document_type) "
+                "VALUES (?, ?, 'final_material', 'ordinary_grade_record')",
+                (TEACHER_ID, MATERIAL_TCP),
+            )
+            snippets = retrieve_material_snippets(conn, class_offering_id=OFFERING_ID, query="三次握手")
+            tutor = build_tutor_context_block(
+                conn, class_offering_id=OFFERING_ID, query="三次握手", user_role="student"
+            )
+            self.assertEqual(["HTTP 基础"], _safe_fetch_recent_material_names(conn, OFFERING_ID))
+        self.assertEqual(snippets, [])
+        self.assertNotIn("三次握手精讲", tutor)
 
     def test_detects_pasted_exam_question(self):
         with get_db_connection() as conn:

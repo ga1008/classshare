@@ -372,17 +372,18 @@ class DashboardContinueMaterialTests(unittest.TestCase):
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript("""
-            CREATE TABLE class_offerings(id INTEGER,course_id INTEGER,class_id INTEGER,home_learning_material_id INTEGER);
+            CREATE TABLE class_offerings(id INTEGER,course_id INTEGER,class_id INTEGER,home_learning_material_id INTEGER,teacher_id INTEGER);
             CREATE TABLE courses(id INTEGER,name TEXT);
             CREATE TABLE classes(id INTEGER,name TEXT);
-            CREATE TABLE course_materials(id INTEGER,name TEXT,node_type TEXT);
+            CREATE TABLE course_materials(id INTEGER,name TEXT,node_type TEXT,teacher_id INTEGER,root_id INTEGER,material_path TEXT,parent_id INTEGER,preview_type TEXT,file_ext TEXT);
             CREATE TABLE class_offering_sessions(id INTEGER,class_offering_id INTEGER,order_index INTEGER,learning_material_id INTEGER);
-            CREATE TABLE course_material_assignments(class_offering_id INTEGER,material_id INTEGER);
+            CREATE TABLE course_material_assignments(class_offering_id INTEGER,material_id INTEGER,assigned_by_teacher_id INTEGER,created_at TEXT);
             CREATE TABLE learning_material_progress(class_offering_id INTEGER,material_id INTEGER,student_id INTEGER,completed INTEGER,max_scroll_ratio REAL,active_seconds INTEGER,accumulated_seconds INTEGER,last_viewed_at TEXT,updated_at TEXT);
-            INSERT INTO class_offerings VALUES(1,11,1,NULL),(2,22,2,NULL);
+            INSERT INTO class_offerings VALUES(1,11,1,NULL,1),(2,22,2,NULL,1);
             INSERT INTO courses VALUES(11,'网络'),(22,'其他课程');
             INSERT INTO classes VALUES(1,'一班'),(2,'二班');
-            INSERT INTO course_materials VALUES(1,'尚未读过的主材料','file'),(2,'本人读过的次材料','file'),(3,'其他课程材料','file');
+            INSERT INTO course_materials VALUES(1,'尚未读过的主材料','file',1,1,'primary.md',NULL,'markdown','md'),
+                (2,'本人读过的次材料','file',1,2,'secondary.md',NULL,'markdown','md'),(3,'其他课程材料','file',1,3,'other.md',NULL,'markdown','md');
             INSERT INTO class_offering_sessions VALUES(1,1,1,1),(2,2,1,3);
             INSERT INTO learning_material_progress VALUES(1,2,7,0,0.4,80,90,'2026-09-04T10:00','2026-09-04T10:00'),
                 (1,1,8,0,0.5,90,90,'2026-09-05T10:00','2026-09-05T10:00'),
@@ -403,7 +404,7 @@ class DashboardContinueMaterialTests(unittest.TestCase):
         item = _load_student_continue_material(self.conn, student_id=7, offering_ids=[1], include_multiple=True, require_read=True)
         self.assertEqual(2, item["material_id"])
         self.assertEqual("/materials/view/2?class_offering_id=1&session_id=1", item["href"])
-        self.assertTrue(all(sql.lstrip().upper().startswith(("SELECT", "WITH")) for sql in statements))
+        self.assertTrue(all(sql.lstrip().upper().startswith(("SELECT", "WITH", "-- PRAGMA TABLE_INFO=")) for sql in statements))
 
     def test_old_schema_falls_back_without_ddl_or_unread_resume(self):
         from classroom_app.services.dashboard_service import _load_student_continue_material

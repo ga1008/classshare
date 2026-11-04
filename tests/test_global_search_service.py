@@ -30,6 +30,7 @@ TEACHER_USER = {"id": TEACHER_MINE, "role": "teacher", "name": "李老师"}
 def _cleanup(conn):
     for sql, params in (
         ("DELETE FROM blog_posts WHERE id IN (?, ?)", (BLOG_PUBLIC, BLOG_DRAFT)),
+        ("DELETE FROM material_ai_import_records WHERE package_material_id = ?", (MATERIAL_ID,)),
         ("DELETE FROM course_material_assignments WHERE class_offering_id IN (?, ?)", (OFFERING_MINE, OFFERING_OTHER)),
         ("DELETE FROM course_materials WHERE id = ?", (MATERIAL_ID,)),
         ("DELETE FROM assignments WHERE id IN (?, ?, ?)", (ASSIGNMENT_PUBLISHED, ASSIGNMENT_DRAFT, ASSIGNMENT_OTHER)),
@@ -73,10 +74,10 @@ def _seed(conn):
     )
     conn.execute(
         """
-        INSERT INTO course_materials (id, teacher_id, material_path, name, node_type, file_ext)
-        VALUES (?, ?, ?, ?, 'file', 'md')
+        INSERT INTO course_materials (id, root_id, teacher_id, material_path, name, node_type, file_ext)
+        VALUES (?, ?, ?, ?, ?, 'file', 'md')
         """,
-        (MATERIAL_ID, TEACHER_MINE, "search-test/tcp.md", "TCP网络握手精讲"),
+        (MATERIAL_ID, MATERIAL_ID, TEACHER_MINE, "search-test/tcp.md", "TCP网络握手精讲"),
     )
     conn.execute(
         """
@@ -154,6 +155,17 @@ class GlobalSearchTests(unittest.TestCase):
         assignments = self._titles(payload, "assignment")
         self.assertIn("网络草稿作业", assignments)
         self.assertNotIn("网络别班作业", assignments)
+
+    def test_student_search_omits_archive_even_with_legacy_classroom_assignment(self):
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO material_ai_import_records (teacher_id, package_material_id, document_group, document_type) "
+                "VALUES (?, ?, 'final_material', 'ordinary_grade_record')",
+                (TEACHER_MINE, MATERIAL_ID),
+            )
+            payload = search_everything(conn, STUDENT_USER, "网络")
+        self.assertIn("计算机网络原理", self._titles(payload, "classroom"))
+        self.assertNotIn("TCP网络握手精讲", self._titles(payload, "material"))
 
     def test_wildcards_are_escaped(self):
         with get_db_connection() as conn:

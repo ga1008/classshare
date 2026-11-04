@@ -17,6 +17,8 @@ import {
     hasLearningDocument,
     isGitRepository,
     isRenderable,
+    buildMaterialUploadForm,
+    renderMaterialBreadcrumbs,
 } from './materials_common.js';
 import { MATERIAL_KINDS, MATERIAL_KIND_GROUPS } from './materials_kinds.js';
 import { createMaterialsExplorer } from './materials_explorer.js';
@@ -96,7 +98,7 @@ function normalizeSortOrder(value, sortBy = 'name') {
 
 function normalizeScopeFilter(value) {
     const scope = String(value || 'all').trim().toLowerCase();
-    return ['all', 'owned', 'shared', 'private', 'department', 'college', 'school', 'public'].includes(scope) ? scope : 'all';
+    return ['all', 'owned', 'shared', 'private', 'classroom', 'department', 'college', 'school', 'public'].includes(scope) ? scope : 'all';
 }
 
 function normalizeDocumentTypeFilter(value) {
@@ -2268,15 +2270,7 @@ function updateSelectionBar() {
 function renderBreadcrumbs(breadcrumbs) {
     const resultCount = Math.max(0, Number(state.overview?.result_count ?? state.items.length ?? 0));
     const countMarkup = `<span class="materials-breadcrumb-count">${resultCount} 项</span>`;
-    if (!breadcrumbs || breadcrumbs.length === 0) {
-        refs.breadcrumbs.innerHTML = `<span class="text-muted">材料库根目录</span>${countMarkup}`;
-        return;
-    }
-
-    refs.breadcrumbs.innerHTML = `${breadcrumbs.map((crumb, index) => `
-        ${index > 0 ? '<span class="separator">/</span>' : ''}
-        <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" type="button" data-crumb-id="${crumb.id}">${escapeHtml(crumb.name)}</button>
-    `).join('')}${countMarkup}`;
+    refs.breadcrumbs.innerHTML = renderMaterialBreadcrumbs(breadcrumbs || [], '材料库根目录') + countMarkup;
 }
 
 function renderRepositoryToolbar() {
@@ -2669,7 +2663,7 @@ function renderExplorerActions(detail) {
         isFolder && canManage ? button('create-folder', '新建文件夹') : '',
         isFolder && canManage ? button('create-file', '新建文档') : '',
         detail.lessondoc_pack && canManage ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass" data-detail-action="lessondoc-manage" data-pack-id="${Number(detail.lessondoc_pack.pack_id)}">管理课次</button>` : '',
-        button('assign', '分配课堂', { prominent: true, disabled: !config.canAssign }),
+        detail.can_publish_to_classroom === false ? '' : button('assign', '分配课堂', { prominent: true, disabled: !config.canAssign }),
         isBindable && canManage && config.canAssign ? button('bind', '绑定课次 / 首页') : '',
         canManage ? button('move', '移动') : '',
         canManage && detail.can_ai_parse ? button('ai-parse', 'AI 解析') : '',
@@ -3190,24 +3184,9 @@ async function downloadByIds(materialIds) {
 
 async function uploadFiles(fileList) {
     if (!fileList || !fileList.length) return;
-
-    const formData = new FormData();
-    const manifest = [];
-    Array.from(fileList).forEach((file) => {
-        formData.append('files', file, file.name);
-        manifest.push({
-            relative_path: file.webkitRelativePath || file.name,
-            content_type: file.type || '',
-        });
-    });
-    formData.append('manifest', JSON.stringify(manifest));
-    if (state.currentParentId) {
-        formData.append('parent_id', String(state.currentParentId));
-    }
-
     const result = await apiFetch('/api/materials/upload', {
         method: 'POST',
-        body: formData,
+        body: buildMaterialUploadForm(fileList, { parentId: state.currentParentId }),
     });
     showToast(result.message || '材料上传成功', 'success');
     await loadLibrary(state.currentParentId);
@@ -4493,12 +4472,13 @@ function getSelectedMaterialIds() {
 }
 
 async function openAssignModal() {
-    if (!state.activeDetail || !config.canAssign) return;
+    if (!state.activeDetail || state.activeDetail.can_publish_to_classroom === false || !config.canAssign) return;
     refs.assignName.textContent = state.activeDetail.name;
 
     refs.assignOptions?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
         checkbox.checked = (state.activeDetail.assignments || []).some(
-            (item) => Number(item.class_offering_id) === Number(checkbox.value),
+            (item) => [null, undefined, 'explicit', 'explicit_archive'].includes(item.publication_mode)
+                && Number(item.class_offering_id) === Number(checkbox.value),
         );
     });
 
@@ -4633,10 +4613,10 @@ async function runAiParse() {
 
 async function updateActiveMaterialScope(scopeLevel) {
     if (!state.activeDetail || state.activeDetail.can_manage === false) return;
-    const normalizedScope = ['private', 'department', 'college', 'school', 'public'].includes(scopeLevel) ? scopeLevel : 'private';
+    const normalizedScope = ['private', 'classroom', 'department', 'college', 'school', 'public'].includes(scopeLevel) ? scopeLevel : 'private';
     const result = await apiFetch(`/api/materials/${state.activeDetail.id}/scope`, {
         method: 'PATCH',
-        body: { scope_level: normalizedScope },
+        body: { scope_level: normalizedScope, expected_updated_at: state.activeDetail.updated_at || 'legacy' },
     });
     showToast(result.message || '材料开放范围已更新', 'success');
     await loadLibrary(state.currentParentId);
@@ -4656,26 +4636,40 @@ async function refreshActiveWorkspace(materialId) {
 
 async function saveActiveMaterialProperties() {
     if (!state.activeDetail || state.activeDetail.can_manage === false) return;
+    const material = state.activeDetail;
+    const saveButton = refs.detail?.querySelector('[data-detail-action="save-properties"]');
+    if (saveButton?.disabled) return;
     const nameInput = refs.detail?.querySelector('[data-property-name]');
     const scopeSelect = refs.detail?.querySelector('[data-property-scope]');
+    const studentVisible = refs.detail?.querySelector('[data-property-student-visible]');
     const payload = {};
     const nextName = String(nameInput?.value || '').trim();
-    if (nextName && nextName !== String(state.activeDetail.name || '')) {
+    if (nextName && nextName !== String(material.name || '')) {
         payload.name = nextName;
     }
-    if (scopeSelect && scopeSelect.value !== String(state.activeDetail.scope_level || 'private')) {
+    if (scopeSelect && scopeSelect.value !== String(material.scope_level || 'private')) {
         payload.scope_level = scopeSelect.value;
+    }
+    if (studentVisible && !studentVisible.disabled && studentVisible.checked !== (material.student_visible === true)) {
+        payload.student_visible = studentVisible.checked;
     }
     if (!Object.keys(payload).length) {
         showToast('属性没有变化', 'info');
         return;
     }
-    const result = await apiFetch(`/api/materials/${state.activeDetail.id}/attributes`, {
-        method: 'PATCH',
-        body: payload,
-    });
-    showToast(result.message || '材料属性已保存', 'success');
-    await refreshActiveWorkspace(state.activeDetail.id);
+    payload.expected_updated_at = material.updated_at || 'legacy';
+    if (saveButton) saveButton.disabled = true;
+    try {
+        const result = await apiFetch(`/api/materials/${material.id}/attributes`, {
+            method: 'PATCH',
+            body: payload,
+        });
+        showToast(result.message || '材料属性已保存', 'success');
+        if (state.activeDetail?.id === material.id) await refreshActiveWorkspace(material.id);
+        else await loadLibrary(state.currentParentId, false);
+    } finally {
+        if (saveButton) saveButton.disabled = false;
+    }
 }
 
 async function saveActiveMaterialContent() {
@@ -5081,7 +5075,7 @@ function openCardMenu(item, anchor, { focus = 'first' } = {}) {
         item.preview_url ? { action: 'open-external', label: '新标签打开', href: item.preview_url, target: '_blank' } : null,
         isGitRepository(item) && canManage ? { action: 'repository', label: 'Git 仓库控制台' } : null,
         item.lessondoc_pack && canManage ? { action: 'lessondoc-manage', label: '管理课次' } : null,
-        config.canAssign ? { action: 'assign-card', label: '分配课堂' } : null,
+        config.canAssign && item.can_publish_to_classroom !== false ? { action: 'assign-card', label: '分配课堂' } : null,
         canManage && config.canAssign && (item.is_markdown || isRenderable(item)) ? { action: 'bind-card', label: '绑定课次 / 首页' } : null,
         canManage ? { action: 'move-card', label: '移动到…' } : null,
         item.node_type === 'file' && item.download_allowed !== false ? { action: 'download', label: '下载', href: `/materials/download/${Number(item.id)}`, target: '_blank' } : null,
@@ -6337,7 +6331,7 @@ function bindSecondaryEvents() {
     refs.breadcrumbs?.addEventListener('click', (event) => {
         const button = event.target.closest('[data-crumb-id]');
         if (!button) return;
-        loadLibrary(Number(button.dataset.crumbId), true).catch((error) => {
+        loadLibrary(Number(button.dataset.crumbId) || null, true).catch((error) => {
             showToast(error.message || '打开目录失败', 'error');
         });
     });

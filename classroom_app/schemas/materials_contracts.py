@@ -53,4 +53,6 @@ class ClassroomMaterialsResponse(ApiSuccessResponse):
     current_folder: dict[str, Any] | None = None
     breadcrumbs: list[dict[str, Any]] = Field(default_factory=list)
     items: list[dict[str, Any]] = Field(default_factory=list)
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+    textbook: dict[str, Any] | None = None
 

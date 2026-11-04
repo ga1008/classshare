@@ -142,7 +142,7 @@ class FinalGradeTranscriptMaterialPersistenceTests(unittest.TestCase):
             )
         )
         self.assertTrue(
-            any("INSERT OR IGNORE INTO course_material_assignments" in sql for sql, _ in conn.calls)
+            any("INSERT INTO course_material_assignments" in sql and params[-1] == "archive" for sql, params in conn.calls)
         )
         self.assertTrue(conn.committed)
 

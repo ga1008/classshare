@@ -610,6 +610,8 @@ def _ensure_resource_scope_schema(conn: sqlite3.Connection) -> None:
             # 散修阅读段位：NULL 表示不按段位开放；两列都为空时沿用 scope_level。
             "wanderer_min_tier": "INTEGER",
             "wanderer_max_tier": "INTEGER",
+            # 组织/公开范围内学生的读取开关，课堂发布单独授权。
+            "student_visible": "INTEGER NOT NULL DEFAULT 0",
         }.items():
             _add_column_if_missing(conn, "course_materials", column_name, column_def)
         conn.execute(

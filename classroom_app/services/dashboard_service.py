@@ -1877,6 +1877,13 @@ def _load_student_continue_material(
 ) -> dict[str, Any] | None:
     if not offering_ids:
         return None
+    from .material_publication_service import get_classroom_publication_nodes_for_offerings, get_restricted_material_paths
+    from .materials_service import get_nearest_assignment_anchor
+
+    publications = get_classroom_publication_nodes_for_offerings(conn, offering_ids)
+    if not publications:
+        return None
+    restricted = get_restricted_material_paths(conn, {row["root_id"] for nodes in publications.values() for row in nodes})
     if include_multiple:
         from .session_learning_materials_service import has_material_bindings_table
         include_multiple = has_material_bindings_table(conn)
@@ -1947,7 +1954,7 @@ def _load_student_continue_material(
               AND m.node_type = 'file'
             {multiple_bindings_sql}
         )
-        SELECT assigned_materials.*,
+        SELECT assigned_materials.*, m.root_id, m.material_path,
                lmp.completed,
                lmp.max_scroll_ratio,
                lmp.active_seconds,
@@ -1955,6 +1962,7 @@ def _load_student_continue_material(
                lmp.last_viewed_at,
                lmp.updated_at
         FROM assigned_materials
+        JOIN course_materials m ON m.id = assigned_materials.material_id
         LEFT JOIN learning_material_progress lmp
                ON lmp.class_offering_id = assigned_materials.class_offering_id
               AND lmp.material_id = assigned_materials.material_id
@@ -1967,16 +1975,21 @@ def _load_student_continue_material(
             assigned_materials.source_rank ASC,
             assigned_materials.order_index ASC,
             assigned_materials.material_name COLLATE NOCASE
-        LIMIT 1
         """,
         (*offering_ids, *offering_ids, *offering_ids, *(offering_ids if include_multiple else []), int(student_id)),
     ).fetchall()
-    if not rows:
-        return None
-    item = dict(rows[0])
-    item["progress_percent"] = _student_material_progress_percent(item)
-    item["href"] = _student_material_viewer_href(item)
-    return item
+    for row in rows:
+        offering_id = int(row["class_offering_id"])
+        if get_nearest_assignment_anchor(
+            conn, offering_id, row, publication_nodes=publications.get(offering_id, ()), restricted_paths=restricted,
+        ):
+            item = dict(row)
+            item.pop("root_id")
+            item.pop("material_path")
+            item["progress_percent"] = _student_material_progress_percent(item)
+            item["href"] = _student_material_viewer_href(item)
+            return item
+    return None
 
 
 def _load_student_dashboard_todo_overviews(

@@ -66,8 +66,8 @@ INSERT INTO poll_participants VALUES(2,11),(3,7);
 CREATE TABLE teacher_calendar_events(id INTEGER,teacher_id INTEGER,source_type TEXT,status TEXT,deleted_at TEXT,title TEXT,
     starts_at TEXT,due_at TEXT,ends_at TEXT);
 CREATE TABLE student_password_reset_requests(id INTEGER,class_id INTEGER,teacher_id INTEGER,status TEXT);
-CREATE TABLE course_materials(id INTEGER,name TEXT,node_type TEXT);
-CREATE TABLE course_material_assignments(class_offering_id INTEGER,material_id INTEGER);
+CREATE TABLE course_materials(id INTEGER,name TEXT,node_type TEXT,teacher_id INTEGER,root_id INTEGER,material_path TEXT,parent_id INTEGER,preview_type TEXT,file_ext TEXT);
+CREATE TABLE course_material_assignments(class_offering_id INTEGER,material_id INTEGER,assigned_by_teacher_id INTEGER,created_at TEXT);
 CREATE TABLE learning_material_progress(class_offering_id INTEGER,material_id INTEGER,student_id INTEGER,completed INTEGER,
     max_scroll_ratio REAL,active_seconds INTEGER,accumulated_seconds INTEGER,last_viewed_at TEXT,updated_at TEXT);
 """
@@ -228,7 +228,7 @@ class DashboardWorkspaceAPITests(unittest.TestCase):
         with patch("classroom_app.routers.ui_parts.dashboard.build_dashboard_context", side_effect=AssertionError("full builder must not run")):
             self.get()
         self.assertTrue(statements)
-        self.assertTrue(all(sql.lstrip().upper().startswith(("SELECT", "WITH")) for sql in statements))
+        self.assertTrue(all(sql.lstrip().upper().startswith(("SELECT", "WITH", "-- PRAGMA TABLE_INFO=")) for sql in statements))
 
     def prepare_calendar(self):
         self.conn.executescript("""
@@ -293,7 +293,7 @@ class DashboardWorkspaceAPITests(unittest.TestCase):
         self.assertEqual(146, sum(i["is_manual"] for i in rows))
         self.assertEqual(len(rows), len({i["workspace_key"] for i in rows}))
         self.assertEqual(1, sum("SELECT * FROM classroom_todos WHERE owner_role" in sql for sql in trace))
-        self.assertTrue(all(sql.lstrip().upper().startswith(("SELECT", "WITH")) for sql in trace))
+        self.assertTrue(all(sql.lstrip().upper().startswith(("SELECT", "WITH", "-- PRAGMA TABLE_INFO=")) for sql in trace))
         self.assertNotIn("同学秘密", str(calendar))
         self.assertNotIn("他人私密投票", str(calendar))
 

@@ -10,6 +10,7 @@
  * `open-external`, `assign-card`, `card-menu`, `lessondoc-edit`, …).
  */
 import { escapeHtml, formatDate, formatSize } from './ui.js';
+import { hasInlineMaterialPreview } from './materials_common.js';
 import { getMaterialKind, kindIcon, providerLabel } from './materials_kinds.js';
 import { describeLastSync, describeSyncResult, renderSyncProgress } from './materials_sync_report.js';
 
@@ -79,6 +80,28 @@ function gitBlock(item, ctx) {
 }
 
 function primaryActions(item, ctx) {
+    if (ctx.classroom) {
+        const actions = [];
+        if (item.node_type === 'folder') {
+            actions.push(`<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass" data-action="explore">${kindIcon('tree', 13)} 打开文件夹</button>`);
+        }
+        if (item.preview_url) {
+            const label = item.is_renderable ? (item.render_label || '渲染') : '预览';
+            actions.push(`<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" data-action="open-external" href="${escapeHtml(item.preview_url)}" target="_blank" rel="noopener">${kindIcon('external', 13)} ${escapeHtml(label)}</a>`);
+        }
+        if (item.document_viewer_url && item.document_viewer_url !== item.preview_url) {
+            actions.push(`<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" href="${escapeHtml(item.document_viewer_url)}" target="_blank" rel="noopener">阅读文档</a>`);
+        }
+        if (item.node_type === 'file' && item.download_url && item.download_allowed !== false) {
+            actions.push(`<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--ghost" data-action="download" href="${escapeHtml(item.download_url)}">下载</a>`);
+        } else if (item.node_type === 'file' && item.download_allowed === false) {
+            actions.push(`<span class="mcard__structure" title="${escapeHtml(item.download_blocked_reason || '')}">已限制下载</span>`);
+        }
+        if (ctx.canViewDetails && item.can_manage) {
+            actions.push('<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--ghost" data-action="details">详情</button>');
+        }
+        return actions.join('');
+    }
     const buttons = [];
     buttons.push(`<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass" data-action="explore">${kindIcon('tree', 13)} 浏览</button>`);
     if (item.preview_url) {
@@ -88,7 +111,7 @@ function primaryActions(item, ctx) {
     if (item.lessondoc_pack && item.can_manage !== false) {
         buttons.push(`<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" data-action="lessondoc-edit" href="/materials/lessondoc-editor/${Number(item.lessondoc_pack.pack_id)}?lesson=0&return_to=${encodeURIComponent(`${location.pathname}${location.search}`)}">${kindIcon('pencil', 13)} 编辑</a>`);
     }
-    if (ctx.canAssign) {
+    if (ctx.canAssign && item.can_publish_to_classroom !== false) {
         buttons.push(`<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--ghost" data-action="assign-card">${kindIcon('users', 13)} 分配</button>`);
     }
     buttons.push(`<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--ghost lq-btn--icon" data-action="card-menu" aria-label="更多操作" aria-haspopup="menu">${kindIcon('more', 15)}</button>`);
@@ -103,28 +126,42 @@ export function renderMaterialCard(item, ctx = {}) {
     const generated = Number(ctx.recentGeneratedId) === id;
     const summary = String(item.summary || '').trim();
     const activity = item.latest_activity_at || item.updated_at || item.created_at;
+    const bodyContents = `
+        <span class="mcard__title" title="${escapeHtml(item.name || '')}">${highlight(item.name, ctx.keyword)}</span>
+        <span class="mcard__structure">${escapeHtml(structureLine(item, kind))}</span>
+        ${summary ? `<span class="mcard__summary">${escapeHtml(summary)}</span>` : `<span class="mcard__summary is-muted">${escapeHtml(item.material_path || '')}</span>`}
+        ${searchMatches(item, ctx.keyword)}
+        ${generated ? '<span class="materials-generated-badge">刚刚生成</span>' : ''}`;
+    const bodyClass = 'mcard__body lq-btn lq-btn--ghost lq-domain-choice';
+    const bodyAttrs = `class="${bodyClass}" data-lq-component="choice" data-lq-shape="surface"`;
+    const bodyUrl = ctx.classroom && item.node_type !== 'folder' && (item.preview_url || (item.download_allowed !== false && item.download_url));
+    const bodyLabel = escapeHtml(item.name || '材料');
+    let body;
+    if (ctx.classroom && hasInlineMaterialPreview(item)) {
+        body = `<button type="button" ${bodyAttrs} data-action="preview" aria-label="预览 ${bodyLabel}">${bodyContents}</button>`;
+    } else if (bodyUrl) {
+        body = `<a ${bodyAttrs} href="${escapeHtml(bodyUrl)}"${item.preview_url ? ' target="_blank" rel="noopener"' : ''} aria-label="打开 ${bodyLabel}">${bodyContents}</a>`;
+    } else if (ctx.classroom && item.node_type !== 'folder') {
+        body = `<div class="mcard__body">${bodyContents}</div>`;
+    } else {
+        body = `<button type="button" ${bodyAttrs} data-action="explore" aria-label="${ctx.classroom ? '打开' : '浏览'} ${bodyLabel}">${bodyContents}</button>`;
+    }
     return `
-        <article class="mcard${selected ? ' is-selected' : ''}${active ? ' is-active' : ''}${generated ? ' is-generated' : ''}" data-id="${id}" data-kind="${escapeHtml(kind.kind)}" style="--kind-color:${escapeHtml(kind.color)}" aria-label="${escapeHtml(item.name || '')}">
+        <article class="mcard${ctx.classroom ? ' mcard--classroom' : ''}${selected ? ' is-selected' : ''}${active ? ' is-active' : ''}${generated ? ' is-generated' : ''}" data-id="${id}" data-kind="${escapeHtml(kind.kind)}"${ctx.classroom ? ` data-material-download-allowed="${item.download_allowed === false ? 'false' : 'true'}"` : ''} style="--kind-color:${escapeHtml(kind.color)}" aria-label="${bodyLabel}">
             <div class="mcard__paper lq-surface" data-lq-component="surface" ${selected || active ? 'data-lq-selected="true"' : ''}>
                 <header class="mcard__head">
                     <span class="mcard__kind">${kindIcon(kind.icon, 16)}<span>${escapeHtml(kind.label)}</span></span>
                     <label class="mcard__check" title="选择">
-                        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" aria-label="选择 ${escapeHtml(item.name || '材料')}" data-role="select-item" data-id="${id}" ${selected ? 'checked' : ''}>
+                        <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" aria-label="${ctx.classroom ? '选择材料：' : '选择 '}${bodyLabel}" data-role="select-item" data-id="${id}" ${selected ? 'checked' : ''}>
                     </label>
                 </header>
-                <button type="button" class="mcard__body lq-btn lq-btn--ghost lq-domain-choice" data-lq-component="choice" data-lq-shape="surface" data-action="explore" aria-label="浏览 ${escapeHtml(item.name || '材料')}">
-                    <span class="mcard__title" title="${escapeHtml(item.name || '')}">${highlight(item.name, ctx.keyword)}</span>
-                    <span class="mcard__structure">${escapeHtml(structureLine(item, kind))}</span>
-                    ${summary ? `<span class="mcard__summary">${escapeHtml(summary)}</span>` : `<span class="mcard__summary is-muted">${escapeHtml(item.material_path || '')}</span>`}
-                    ${searchMatches(item, ctx.keyword)}
-                    ${generated ? '<span class="materials-generated-badge">刚刚生成</span>' : ''}
-                </button>
-                <div class="mcard__coverage">${coverageChips(item)}</div>
+                ${body}
+                ${ctx.classroom ? '' : `<div class="mcard__coverage">${coverageChips(item)}</div>
                 ${gitBlock(item, ctx)}
                 <footer class="mcard__foot">
                     <span class="mcard__time" title="最近活动">${kindIcon('clock', 12)} ${escapeHtml(formatDate(activity) || '暂无')}</span>
                     <span class="mcard__time" title="创建时间">建 ${escapeHtml((formatDate(item.created_at) || '').slice(0, 10) || '—')}</span>
-                </footer>
+                </footer>`}
             </div>
             <div class="mcard__actions">${primaryActions(item, ctx)}</div>
         </article>

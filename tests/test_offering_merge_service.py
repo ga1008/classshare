@@ -160,6 +160,43 @@ class OfferingMergeServiceTests(unittest.TestCase):
             target_offering_id=self.target_id, source_offering_ids=[self.source_id],
             confirm_class_name="软工2401班")
 
+    def test_duplicate_material_publications_keep_explicit_and_archive_modes(self):
+        with database.get_db_connection() as conn:
+            expected = {}
+            for index, (target_mode, source_mode, merged_mode) in enumerate((
+                ("binding", "explicit", "explicit"),
+                ("explicit", "archive", "explicit_archive"),
+                ("archive", "explicit", "explicit_archive"),
+                ("binding", None, None),
+                (None, "binding", None),
+            )):
+                material_id = execute_insert_returning_id(
+                    conn, "INSERT INTO course_materials (teacher_id, name, material_path) VALUES (?, ?, ?)",
+                    (self.teacher_id, f"Material {index}", f"{index}.md"),
+                )
+                conn.executemany(
+                    """INSERT INTO course_material_assignments
+                        (material_id, class_offering_id, assigned_by_teacher_id, publication_mode)
+                        VALUES (?, ?, ?, ?)""",
+                    [
+                        (material_id, self.target_id, self.teacher_id, target_mode),
+                        (material_id, self.source_id, self.teacher_id, source_mode),
+                    ],
+                )
+                expected[material_id] = merged_mode
+            conn.commit()
+            self._execute(conn)
+            conn.commit()
+            rows = conn.execute(
+                "SELECT material_id, class_offering_id, publication_mode FROM course_material_assignments"
+            ).fetchall()
+            self.assertEqual({self.target_id}, {row["class_offering_id"] for row in rows})
+            self.assertEqual(expected, {row["material_id"]: row["publication_mode"] for row in rows})
+            self.assertEqual(self.target_session, conn.execute(
+                "SELECT session_id FROM class_offering_learning_materials WHERE material_id = ?",
+                (self.material_id,),
+            ).fetchone()["session_id"])
+
     def test_publication_versions_and_classification_history_survive_merge(self):
         with database.get_db_connection() as conn:
             target_publication = self._insert_publication(conn, self.target_id, 1, "withdrawn", self.student_a)
