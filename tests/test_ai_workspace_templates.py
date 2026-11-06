@@ -112,7 +112,8 @@ class AiWorkspaceTemplateTests(unittest.TestCase):
 
     def test_material_shell_preserves_context_and_dependency_order_for_both_roles(self):
         shell = dict(entry_name='lesson.html', material_name='课程', entry_material_id=9, material_path='lesson.html',
-                     is_html_package=True, node_id=1, package_root_id=1, iframe_src='/fixture-lesson', lesson_number=5)
+                     is_html_package=True, node_id=1, package_root_id=1, iframe_src='/fixture-lesson',
+                     iframe_base='/fixture-package/', home_src='/fixture-package/index.html', lesson_number=5)
         for role in ('teacher', 'student'):
             html = self.render('material_render_shell.html', role=role, path='/materials/9/render', shell=shell,
                                learning_context={'class_offering_id': 42, 'session_id': 5}, reader_return=None)

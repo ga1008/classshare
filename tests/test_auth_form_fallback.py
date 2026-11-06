@@ -61,6 +61,7 @@ class AuthFormFallbackTests(unittest.TestCase):
                        "classroom_app.db.connection.get_db_connection", "classroom_app.db.connection.connect_postgres"):
             self.stack.enter_context(patch(target, side_effect=AssertionError("Connection outside auth in-memory fixture")))
         self.stack.enter_context(patch.dict(dependencies.active_sessions, {}, clear=True))
+        self.stack.enter_context(patch.dict(dependencies._session_cache_versions, {}, clear=True))
         self.stack.enter_context(patch.dict(dependencies._identity_validation_cache, {}, clear=True))
         # The real templates are rendered; unauthenticated theme rendering and
         # decorative login tips must not contact unrelated application tables.
@@ -68,7 +69,7 @@ class AuthFormFallbackTests(unittest.TestCase):
             "resolve_user_ui_preferences": lambda *_: {"enabled": False},
         }))
         self.stack.enter_context(patch.object(common, "build_student_global_cultivation_profile", return_value=None))
-        self.stack.enter_context(patch.object(common, "build_login_tip_payload_for_student", return_value=None))
+        self.stack.enter_context(patch.object(common, "build_committed_login_tip_payload", return_value=None))
         self.perform = self.stack.enter_context(patch.object(auth, "_perform_student_password_login", wraps=common._perform_student_password_login))
         self.session_save = self.stack.enter_context(patch.object(dependencies, "save_user_session", wraps=dependencies.save_user_session))
         self.app = FastAPI()
@@ -283,12 +284,15 @@ class AuthFormFallbackTests(unittest.TestCase):
             self.assertEqual(expected, response.status_code)
             self.assertIn("detail", response.json())
             self.assertEqual("no-store", response.headers["cache-control"])
-        # Preserve the global handler's API403 -> unauthenticated401 behavior.
+        # An explicit account-status refusal stays on the login form and keeps
+        # its useful explanation instead of navigating back to the same form.
         self.conn.execute("UPDATE students SET enrollment_status='suspended'")
         self.conn.commit()
         response = self.post_student("/api/student/login/password")
-        self.assertEqual(401, response.status_code)
-        self.assertIn("redirect_to", response.json())
+        self.assertEqual(403, response.status_code)
+        self.assertEqual("permission_denied", response.json()["error"]["code"])
+        self.assertIn("休学", response.json()["detail"])
+        self.assertNotIn("redirect_to", response.json())
         self.assertEqual("no-store", response.headers["cache-control"])
 
     def test_auth_post_validation_and_token_errors_are_uncached_without_changing_json(self):

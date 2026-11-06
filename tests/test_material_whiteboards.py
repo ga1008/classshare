@@ -36,6 +36,7 @@ CREATE TABLE course_materials (
     node_type TEXT NOT NULL DEFAULT 'file',
     scope_level TEXT NOT NULL DEFAULT 'private'
 );
+CREATE TABLE class_offerings (id INTEGER PRIMARY KEY, teacher_id INTEGER NOT NULL);
 """
 
 TEACHER_OWNER = {"id": 11, "role": "teacher", "name": "李老师"}
@@ -190,8 +191,8 @@ class MaterialWhiteboardApiTests(unittest.TestCase):
     def test_other_teacher_cannot_touch_private_material(self):
         self._login(TEACHER_OTHER)
         resp = self.client.get(f"/api/materials/{MATERIAL_PRIVATE}/whiteboards")
-        # 服务抛 403；app.py 的 403 处理器对无 cookie 的 API 请求重写为 401。
-        self.assertEqual(resp.status_code, 401, resp.text)
+        self.assertEqual(resp.status_code, 403, resp.text)
+        self.assertNotIn("redirect_to", resp.json())
 
     def test_same_key_is_isolated_between_teachers_and_materials(self):
         self.client.put(f"{BASE}/shared-key", json=_payload(name="拥有者"))
@@ -225,7 +226,8 @@ class MaterialWhiteboardApiTests(unittest.TestCase):
         for method, url, kwargs in requests:
             with self.subTest(method=method, url=url):
                 response = getattr(self.client, method)(url, **kwargs)
-                self.assertEqual(response.status_code, 401, response.text)
+                self.assertEqual(response.status_code, 403, response.text)
+                self.assertNotIn("redirect_to", response.json())
         row = self.conn.execute("SELECT name, version, deleted_at FROM material_whiteboards").fetchone()
         self.assertEqual(row["name"], "板一")
         self.assertEqual(row["version"], 1)
@@ -355,10 +357,10 @@ class MaterialWhiteboardApiTests(unittest.TestCase):
     def test_student_role_is_rejected(self):
         self._login(STUDENT)
         resp = self.client.get(BASE)
-        # 服务抛 HTTPException(403)；app.py 对无 cookie 的 API 请求把 403 重写为 401。
-        self.assertEqual(resp.status_code, 401, resp.text)
+        self.assertEqual(resp.status_code, 403, resp.text)
+        self.assertNotIn("redirect_to", resp.json())
         put = self.client.put(f"{BASE}/b-1", json=_payload())
-        self.assertEqual(put.status_code, 401)
+        self.assertEqual(put.status_code, 403)
 
     # ---------------------------------------------------------------- soft delete
     def test_soft_deleted_board_absent_from_list(self):

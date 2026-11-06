@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { createMessageBellTargets, type MessageBellTargetResolver } from '../../../static/js/message_center_bell_dom.js';
 import { isSocialChatNotification } from '../../../static/js/message_notification_policy.js';
+import { createAmbientPoll } from '../../../static/js/ambient_poll.js';
 
 import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
 import {
@@ -30,13 +31,16 @@ const POLL_INTERVAL_MS = 15_000;
 const TOAST_VISIBLE_MS = 5_000;
 const TOAST_EXIT_MS = 180;
 
-async function fetchMessageCenterSummary(): Promise<MessageCenterResponse> {
+async function fetchMessageCenterSummary(signal: AbortSignal): Promise<MessageCenterResponse> {
   const response = await fetch(SUMMARY_URL, {
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
+    signal,
   });
   if (!response.ok) {
-    throw new Error(`Message center summary failed: ${response.status}`);
+    throw Object.assign(new Error(`Message center summary failed: ${response.status}`), {
+      retryAfterSeconds: Number(response.headers.get('retry-after')) || 0,
+    });
   }
   return normalizeMessageCenterResponse(await response.json());
 }
@@ -171,20 +175,27 @@ function useMessageCenterBellSync() {
     const getTargets = createMessageBellTargets();
     const bellElements = shells.map(shell => getTargets(shell).bell).filter((node): node is HTMLElement => node !== null);
     let disposed = false;
+    let revision = 0;
+    let allowPopup = false;
 
     for (const shell of shells) {
       shell.dataset.messageCenterBellManaged = 'react';
     }
 
-    const refreshBell = async (options: RefreshOptions = {}) => {
+    const poll = createAmbientPoll(async signal => {
+      const requestedRevision = revision;
       try {
-        const response = await fetchMessageCenterSummary();
-        if (disposed) return;
+        const response = await fetchMessageCenterSummary(signal);
+        if (disposed || signal.aborted || requestedRevision !== revision) return;
         updateShells(shells, response.summary, getTargets);
-        syncBellState(shells, stateRef.current, response.summary, response.latestUnread, options);
-      } catch {
-        // Keep the topbar calm during transient polling or auth-refresh failures.
+        syncBellState(shells, stateRef.current, response.summary, response.latestUnread, { allowPopup });
+      } finally {
+        allowPopup = true;
       }
+    }, { intervalMs: POLL_INTERVAL_MS });
+    const refreshBell = (options: RefreshOptions = {}) => {
+      allowPopup = poll.inFlight ? allowPopup && options.allowPopup !== false : options.allowPopup !== false;
+      return poll.refresh();
     };
 
     const handleBellClick = () => hideBellToast(shells, stateRef.current, true);
@@ -194,6 +205,7 @@ function useMessageCenterBellSync() {
       }
     };
     const handleSummaryUpdated = (event: Event) => {
+      revision++;
       const detail = event instanceof CustomEvent ? event.detail : {};
       const summary = normalizeMessageSummary(detail);
       updateShells(shells, summary, getTargets);
@@ -204,23 +216,23 @@ function useMessageCenterBellSync() {
         hideBellToast(shells, stateRef.current, true);
       }
     };
+    const handleRefreshRequested = (event: Event) => {
+      const detail = event instanceof CustomEvent ? event.detail || {} : {};
+      void refreshBell({ allowPopup: detail.allowPopup !== false });
+    };
 
     for (const bell of bellElements) bell.addEventListener('click', handleBellClick);
 
     const previousRefresh = window.refreshMessageCenterBell;
     window.refreshMessageCenterBell = refreshBell;
     void refreshBell({ allowPopup: false });
-    const intervalId = window.setInterval(() => {
-      if (!document.hidden) {
-        void refreshBell({ allowPopup: true });
-      }
-    }, POLL_INTERVAL_MS);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('message-center:summary-updated', handleSummaryUpdated);
+    window.addEventListener('message-center:refresh-requested', handleRefreshRequested);
 
     return () => {
       disposed = true;
-      window.clearInterval(intervalId);
+      poll.dispose();
       for (const shell of shells) {
         delete shell.dataset.messageCenterBellManaged;
       }
@@ -228,6 +240,7 @@ function useMessageCenterBellSync() {
       if (window.refreshMessageCenterBell === refreshBell) window.refreshMessageCenterBell = previousRefresh;
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('message-center:summary-updated', handleSummaryUpdated);
+      window.removeEventListener('message-center:refresh-requested', handleRefreshRequested);
       if (stateRef.current.hideTimer !== null) {
         window.clearTimeout(stateRef.current.hideTimer);
         stateRef.current.hideTimer = null;

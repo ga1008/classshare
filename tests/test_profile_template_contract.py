@@ -247,14 +247,30 @@ class ProfileTemplateContractTests(unittest.TestCase):
                     self.assertEqual(1, len(doc.by_id('message-center-attachment-preview')))
 
     def test_signature_placeholder_styles_and_scripts_stay_conditional(self):
+        stylesheet = (ROOT / 'static/css/lq/pages/profile-signatures.css').read_text(encoding='utf-8')
+        self.assertRegex(stylesheet, r'\.psig-shell\s*\{[^}]*display:\s*grid\s*;')
+        self.assertRegex(stylesheet, r'\.psig-shell\s*\{[^}]*gap:\s*var\(--ls-s-4\)\s*;')
+        assets = {
+            'link': ('href', ('/static/css/signature_scope_fields.css', '/static/css/lq/pages/profile-signatures.css')),
+            'script': ('src', ('/static/js/profile_signatures.js',)),
+        }
         for role in ('student', 'teacher'):
             html, doc, _ = self.render(role, 'signatures')
             self.assertEqual(1, len(doc.with_attr('data-signature-app')))
             self.assertIn('正在读取签名数据', html)
-            self.assertEqual(1, html.count('.psig-shell{display:grid;gap:16px}'))
-            self.assertEqual(1, sum(attrs.get('href') == '/static/css/signature_scope_fields.css' for _, attrs in doc.tags))
-            other, _, _ = self.render(role, 'overview')
-            self.assertNotIn('.psig-shell{display:grid;gap:16px}', other)
+            for tag, (attribute, paths) in assets.items():
+                for path in paths:
+                    matches = [attrs for actual_tag, attrs in doc.tags if actual_tag == tag and attrs.get(attribute) == path]
+                    self.assertEqual(1, len(matches), (role, path))
+                    self.assertEqual('stylesheet' if tag == 'link' else 'module', matches[0].get('rel' if tag == 'link' else 'type'))
+            for section in SECTIONS:
+                if section == 'signatures':
+                    continue
+                _, other_doc, _ = self.render(role, section)
+                self.assertFalse(other_doc.with_attr('data-signature-app'), (role, section))
+                for tag, (attribute, paths) in assets.items():
+                    for path in paths:
+                        self.assertFalse(any(actual_tag == tag and attrs.get(attribute) == path for actual_tag, attrs in other_doc.tags), (role, section, path))
 
     def test_partial_dispatch_is_fixed_and_shells_have_literal_parents(self):
         # Structural assertions complement real rendered contracts above; they

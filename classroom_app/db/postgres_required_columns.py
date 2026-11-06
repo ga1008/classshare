@@ -15,9 +15,11 @@ from .schema_attendance_reports import ATTENDANCE_REPORT_REQUIRED_COLUMNS
 from .schema_feedback_conversations import FEEDBACK_CONVERSATION_REQUIRED_COLUMNS
 from .schema_ai_workspace import AI_WORKSPACE_REQUIRED_COLUMNS
 from .schema_ai_search import AI_SEARCH_REQUIRED_COLUMNS
+from .schema_behavior_inbox import BEHAVIOR_INBOX_REQUIRED_COLUMNS
 
 REQUIRED_POSTGRES_COLUMNS = {
     **AI_SEARCH_REQUIRED_COLUMNS,
+    **BEHAVIOR_INBOX_REQUIRED_COLUMNS,
     **ACADEMIC_TEACHER_TIMETABLE_REQUIRED_COLUMNS,
     **AI_WORKSPACE_REQUIRED_COLUMNS,
     **ACADEMIC_SCHEDULE_PREDICTION_REQUIRED_COLUMNS,
@@ -2181,6 +2183,8 @@ REQUIRED_POSTGRES_COLUMNS = {
         "calculated_at",
         "dirty",
         "dirty_at",
+        "dirty_version",
+        "calculated_version",
         "metadata_json",
     ),
     "cultivation_score_events": (

@@ -3043,7 +3043,7 @@ async def handle_ai_chat(
         conn.commit()
 
     try:
-        record_behavior_event(
+        await asyncio.to_thread(record_behavior_event,
             class_offering_id=class_offering_id,
             user_pk=user_pk,
             user_role=user_role,

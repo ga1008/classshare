@@ -730,11 +730,16 @@ async def api_update_student_support_note(
 
 
 @router.delete("/students/{student_id}", response_class=JSONResponse)
-async def api_delete_class_student(student_id: int, user: dict = Depends(get_current_teacher)):
+def api_delete_class_student(student_id: int, user: dict = Depends(get_current_teacher)):
     """从班级名册中删除单个学生及其关联课堂数据。"""
     with get_db_connection() as conn:
         student_row = _ensure_teacher_owned_student(conn, student_id=student_id, teacher_id=user["id"])
         student_name = str(student_row["name"] or "学生")
+        from ...services.behavior_inbox_service import prepare_behavior_deletion, BehaviorDeletionPending
+        try:
+            prepare_behavior_deletion(conn, user_role="student", user_pk=int(student_id))
+        except BehaviorDeletionPending as exc:
+            raise HTTPException(409, str(exc)) from exc
         try:
             conn.execute("DELETE FROM students WHERE id = ?", (int(student_id),))
             conn.commit()

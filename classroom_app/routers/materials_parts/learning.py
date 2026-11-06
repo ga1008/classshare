@@ -9,9 +9,10 @@ from ...config import TEXTBOOK_ATTACHMENT_DIR, TEXTBOOK_ATTACHMENT_LEGACY_DIRS
 from ...services.base_resource_modes_service import ensure_teacher_can_view_textbook_attributes
 from ...services.document_render_service import DocumentRenderError, document_render_service
 from ...services.material_preview_service import supports_document_preview
-from ...services.material_render_service import resolve_render_target
+from ...services.material_render_service import resolve_render_targets
 from ...services.material_publication_service import (
     get_classroom_publication_nodes,
+    get_classroom_publication_context,
     get_restricted_material_paths,
     is_restricted_material,
     mark_legacy_binding_publications,
@@ -956,12 +957,11 @@ def _serialize_classroom_materials(conn, class_offering_id, rows, user, *, publi
                 child_counts[parent_id] = child_counts.get(parent_id, 0) + 1
 
     items = attach_learning_document_metadata(conn, items)
-    targets = {}
+    targets = resolve_render_targets(conn, items)
     referenced_ids = set()
     for item in items:
         item_id = int(item["id"])
-        target = resolve_render_target(conn, item)
-        targets[item_id] = target
+        target = targets[item_id]
         if target:
             referenced_ids.update((int(target["node_id"]), int(target["entry_id"])))
         if item.get("document_readme_id"):
@@ -1060,7 +1060,7 @@ def _classroom_textbook_payload(textbook, class_offering_id):
     response_model=ClassroomMaterialsResponse,
     response_model_exclude_unset=True,
 )
-async def get_classroom_materials(
+def get_classroom_materials(
     class_offering_id: int,
     parent_id: int | None = Query(default=None),
     user: dict = Depends(get_current_user),
@@ -1070,8 +1070,7 @@ async def get_classroom_materials(
         response.headers.update(_CLASSROOM_DOCUMENT_HEADERS)
     with get_db_connection() as conn:
         offering = ensure_classroom_access(conn, class_offering_id, user)
-        publication_nodes = get_classroom_publication_nodes(conn, class_offering_id)
-        restricted_paths = get_restricted_material_paths(conn, {int(row["root_id"]) for row in publication_nodes})
+        publication_nodes, restricted_paths = get_classroom_publication_context(conn, class_offering_id)
         capabilities = _classroom_material_capabilities(conn, offering, user, parent_id=parent_id)
         if parent_id is None:
             rows = get_effective_assignment_nodes(conn, class_offering_id, publication_nodes=publication_nodes)
@@ -1093,17 +1092,17 @@ async def get_classroom_materials(
                 and is_descendant_path(row["material_path"], anchor["material_path"])
                 and _visible_classroom_material_path(row, restricted_paths)
             ]
-            current_folder = _serialize_classroom_materials(
-                conn, class_offering_id, [folder], user, publication_nodes=publication_nodes, restricted_paths=restricted_paths,
-            )[0]
             trail_root = next(
                 row for row in publication_nodes if row["root_id"] == anchor["root_id"]
                 and is_descendant_path(folder["material_path"], row["material_path"])
             )
             breadcrumbs = _slice_breadcrumbs_from_anchor(get_material_breadcrumbs(conn, parent_id), trail_root["id"])
         items = _serialize_classroom_materials(
-            conn, class_offering_id, rows, user, publication_nodes=publication_nodes, restricted_paths=restricted_paths,
+            conn, class_offering_id, [folder, *rows] if parent_id is not None else rows, user,
+            publication_nodes=publication_nodes, restricted_paths=restricted_paths,
         )
+        if parent_id is not None:
+            current_folder = items.pop(0)
         return {
             "status": "success",
             "current_folder": current_folder,
@@ -1116,18 +1115,20 @@ async def get_classroom_materials(
 
 
 @router.get("/api/classrooms/{class_offering_id}/materials/{material_id}", response_class=JSONResponse)
-async def get_classroom_material_detail(
+def get_classroom_material_detail(
     class_offering_id: int, material_id: int, user: dict = Depends(get_current_user), response: Response = None,
 ):
     if response is not None:
         response.headers.update(_CLASSROOM_DOCUMENT_HEADERS)
     with get_db_connection() as conn:
         offering = ensure_classroom_access(conn, class_offering_id, user)
-        row, _ = _classroom_material_row(conn, class_offering_id, material_id)
-        nodes = get_classroom_publication_nodes(conn, class_offering_id)
+        nodes, restricted_paths = get_classroom_publication_context(conn, class_offering_id)
+        row, _ = _classroom_material_row(
+            conn, class_offering_id, material_id, publication_nodes=nodes, restricted_paths=restricted_paths,
+        )
         material = _serialize_classroom_materials(
             conn, class_offering_id, [row], user, publication_nodes=nodes,
-            restricted_paths=get_restricted_material_paths(conn, {int(row["root_id"])}),
+            restricted_paths=restricted_paths,
         )[0]
         return {
             "status": "success",

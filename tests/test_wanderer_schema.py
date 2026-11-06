@@ -35,9 +35,16 @@ class WandererSchemaSqliteTest(WandererDbTestCase):
 
     def test_ensure_is_idempotent(self):
         with self.connect() as conn, patch.object(schema_wanderers, "_SCHEMA_READY", False):
+            statements = []
+            conn.set_trace_callback(statements.append)
             ensure_wanderer_schema(conn, engine="sqlite")
             ensure_wanderer_schema(conn, engine="sqlite")
-            self.assertTrue(schema_wanderers._SCHEMA_READY)
+            conn.set_trace_callback(None)
+            self.assertFalse(schema_wanderers._SCHEMA_READY)
+            # SQLite's table-valued PRAGMA also produces internal trace lines.
+            statements = [statement for statement in statements if not statement.lstrip().startswith("--")]
+            self.assertEqual(len(statements), 2)
+            self.assertTrue(all(statement.lstrip().startswith("WITH expected_tables") for statement in statements))
 
     def test_knowledge_unique_per_wanderer_and_source(self):
         with self.connect() as conn:

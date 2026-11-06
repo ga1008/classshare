@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createAmbientPoll } from '../../../static/js/ambient_poll.js';
 
 import {
   blogAriaLabel,
@@ -15,13 +16,16 @@ import { mountReactIslandsWhenReady } from '@/lib/mount-react-island';
 const BLOG_SUMMARY_URL = '/api/blog/summary';
 const POLL_INTERVAL_MS = 60_000;
 
-async function fetchBlogTopbarSummary(): Promise<BlogTopbarSummary> {
+async function fetchBlogTopbarSummary(signal: AbortSignal): Promise<BlogTopbarSummary> {
   const response = await fetch(BLOG_SUMMARY_URL, {
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
+    signal,
   });
   if (!response.ok) {
-    throw new Error(`Blog summary failed: ${response.status}`);
+    throw Object.assign(new Error(`Blog summary failed: ${response.status}`), {
+      retryAfterSeconds: Number(response.headers.get('retry-after')) || 0,
+    });
   }
   return normalizeBlogTopbarResponse(await response.json()).summary;
 }
@@ -63,41 +67,30 @@ function useBlogTopbarSync() {
       node.dataset.blogTopbarManaged = 'react';
     }
 
-    // Callers asking while a request is in flight share it (one /api/blog/summary, plan P7).
-    let inFlight: Promise<void> | null = null;
-    const refreshBlogTopbar = () => {
-      if (inFlight) return inFlight;
+    let disposed = false;
+    const poll = createAmbientPoll(async signal => {
       const requestedAt = Date.now();
-      inFlight = (async () => {
-        try {
-          const summary = await fetchBlogTopbarSummary();
-          updateBlogTopbar(entries, countNodes, captionNodes, summary);
-          publishBlogSummary(summary, requestedAt);
-        } catch {
-          // Blog badges are ambient status; keep navigation usable if polling fails.
-        } finally {
-          inFlight = null;
-        }
-      })();
-      return inFlight;
-    };
+      const summary = await fetchBlogTopbarSummary(signal);
+      if (disposed || signal.aborted) return;
+      updateBlogTopbar(entries, countNodes, captionNodes, summary);
+      publishBlogSummary(summary, requestedAt);
+    }, { intervalMs: POLL_INTERVAL_MS });
+    const refreshBlogTopbar = () => poll.refresh();
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         void refreshBlogTopbar();
       }
     };
 
+    const previousRefresh = window.refreshBlogTopbar;
     window.refreshBlogTopbar = refreshBlogTopbar;
     void refreshBlogTopbar();
-    const intervalId = window.setInterval(() => {
-      if (!document.hidden) {
-        void refreshBlogTopbar();
-      }
-    }, POLL_INTERVAL_MS);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      window.clearInterval(intervalId);
+      disposed = true;
+      poll.dispose();
+      if (window.refreshBlogTopbar === refreshBlogTopbar) window.refreshBlogTopbar = previousRefresh;
       for (const node of [...entries, ...countNodes, ...captionNodes]) {
         delete node.dataset.blogTopbarManaged;
       }

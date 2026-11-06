@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from datetime import datetime
 import json
 import re
+from starlette.concurrency import run_in_threadpool
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request, Form, HTTPException, Depends, status, UploadFile, File, BackgroundTasks
@@ -33,6 +34,8 @@ from ...database import get_db_connection
 from ...dependencies import build_login_url, sanitize_next_path
 from ...dependencies import infer_required_role_from_path, get_role_label
 from ...dependencies import apply_access_token_cookie, clear_access_token_cookie, invalidate_session_for_user
+from ...services.password_verification_service import verify_login_password
+from ...services.account_credentials_service import lock_actor_authorization_transition
 from ...services.behavior_tracking_service import record_behavior_event
 from ...services.discussion_mood_service import schedule_discussion_mood_refresh_soon
 from ...services.submission_assets import decode_allowed_file_types_json, summarize_allowed_file_types
@@ -83,7 +86,7 @@ from ...services.class_kind_service import class_kind_label, is_custom_class_kin
 from ...services.offering_membership_service import count_offering_active_students
 from ...services.organization_scope_service import load_teacher_org_memberships, load_teacher_org_scope, normalize_school_code, organization_label
 from ...services.materials_service import attach_home_learning_material_briefs, attach_learning_material_briefs
-from ...services.life_tip_service import build_login_tip_payload_for_student
+from ...services.life_tip_service import build_committed_login_tip_payload, build_login_tip_payload_for_student
 from ...services.learning_progress_service import (
     build_class_learning_overview,
     build_student_global_cultivation_profile,
@@ -475,7 +478,7 @@ def _serialize_submission_file_rows(rows) -> list[dict]:
     return files
 
 
-def _build_student_login_token(student_row, client_ip: str) -> tuple[str, dict]:
+def _build_student_login_token(student_row, client_ip: str, *, conn=None, cache_generation=None) -> tuple[str, dict]:
     student_data = dict(student_row)
     login_time = datetime.now().isoformat()
     token_data = {
@@ -485,7 +488,7 @@ def _build_student_login_token(student_row, client_ip: str) -> tuple[str, dict]:
         "role": "student",
         "login_time": login_time,
     }
-    access_token = create_access_token(token_data, client_ip)
+    access_token = create_access_token(token_data, client_ip, conn=conn, cache_generation=cache_generation)
     return access_token, token_data
 
 
@@ -510,9 +513,11 @@ def _build_student_login_json_response(
     login_count: int,
     request: Optional[Request] = None,
     remember: bool = False,
+    access_token: str | None = None,
 ) -> JSONResponse:
     _ensure_student_can_login(student_row)
-    access_token, _ = _build_student_login_token(student_row, client_ip)
+    if access_token is None:
+        access_token, _ = _build_student_login_token(student_row, client_ip)
     cultivation_profile = None
     login_tip = None
     try:
@@ -521,13 +526,10 @@ def _build_student_login_json_response(
                 profile_conn,
                 int(student_row["id"]),
             )
-            login_tip = build_login_tip_payload_for_student(
-                profile_conn,
-                int(student_row["id"]),
-            )
             profile_conn.commit()
     except Exception as exc:
         print(f"[LEARNING_PROGRESS] 登录境界信息加载失败: {exc}")
+    login_tip = build_committed_login_tip_payload(user_id=int(student_row["id"]), role="student")
     response = JSONResponse({
         "status": "success",
         "message": "登录成功。",
@@ -543,14 +545,7 @@ def _build_student_login_json_response(
     return response
 
 
-def _perform_student_password_login(
-    conn,
-    *,
-    identifier: str,
-    password: str,
-    client_ip: str,
-    user_agent: Optional[str],
-):
+def _student_password_login_candidate(conn, identifier):
     try:
         student_row, identifier_type = get_student_auth_record_for_password_login(conn, identifier)
     except ValueError as exc:
@@ -569,19 +564,40 @@ def _perform_student_password_login(
             status_code=400,
             detail="该账号尚未设置密码，请使用姓名和学号完成首次登录。",
         )
-    if not verify_password(password, student_row["hashed_password"]):
+    return student_row, identifier_type
+
+
+async def _perform_student_password_login(
+    *, identifier: str, password: str, client_ip: str, user_agent: Optional[str],
+):
+    def read_candidate():
+        with get_db_connection() as conn:
+            row, identifier_type = _student_password_login_candidate(conn, identifier)
+            return dict(row), identifier_type
+
+    candidate, _ = await run_in_threadpool(read_candidate)
+    if not await verify_login_password(password, candidate["hashed_password"]):
         raise HTTPException(status_code=400, detail="登录失败：账号或密码错误。")
 
-    login_count = record_student_login(
-        conn,
-        student_row=student_row,
-        login_method="password",
-        identifier_type=identifier_type,
-        identifier_value=identifier,
-        client_ip=client_ip,
-        user_agent=user_agent,
-    )
-    return student_row, login_count
+    def finish_login():
+        with get_db_connection() as conn:
+            lock_actor_authorization_transition(conn, role="student", user_id=int(candidate["id"]))
+            student_row, identifier_type = _student_password_login_candidate(conn, identifier)
+            if (student_row["id"] != candidate["id"]
+                    or student_row["hashed_password"] != candidate["hashed_password"]):
+                raise HTTPException(409, "登录期间账号信息已更新，请重新输入密码。")
+            login_count = record_student_login(
+                conn, student_row=student_row, login_method="password", identifier_type=identifier_type,
+                identifier_value=identifier, client_ip=client_ip, user_agent=user_agent,
+            )
+            from ...dependencies import _begin_session_cache_write, _publish_committed_access_token
+            generation = _begin_session_cache_write(str(candidate["id"]), "student")
+            access_token, _ = _build_student_login_token(student_row, client_ip, conn=conn, cache_generation=generation)
+            conn.commit()
+        _publish_committed_access_token(access_token, generation)
+        return student_row, login_count, access_token
+
+    return await run_in_threadpool(finish_login)
 
 
 # ============================

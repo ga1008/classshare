@@ -11,6 +11,7 @@ import { groupDetail as conditionalDetail, socialApi, errorText } from './social
 import { lanStore } from './social_lan.js';
 import { createChatComposer } from './chat_composer.js';
 import { createChatSidebar } from './chat_sidebar.js';
+import { recoverMessageWindow } from './message_recovery.js';
 import { daySeparator, isMine, joinsPrevious, renderMessage } from './chat_messages.js';
 import {
     createSocialDialog, dayKey, debounce, el, emptyState, ensureMarkdown, formatRelative, lqAvatar, lqBadge, lqButton, notify,
@@ -354,7 +355,7 @@ export function createChatModal(client, { openFriends }) {
     }
 
     const markReadSoon = debounce(async () => {
-        if (!active || !isVisible() || document.hidden || !active.messages.length) return;
+        if (!active || active.loading || active.dirty || !isVisible() || document.hidden || !active.messages.length) return;
         const current = active;
         const last = current.messages.at(-1).id;
         if (last <= (current.readSent || 0)) return;
@@ -377,6 +378,7 @@ export function createChatModal(client, { openFriends }) {
                 key, type, peer: type === 'dm' ? peerOf(key, client.me) : null, groupId: type === 'group' ? Number(key.slice(6)) : null,
                 messages: [], hasMore: false, peerRead: 0, detail: null, readSent: 0, muted: Boolean(item.muted), mentionQuota: null,
                 loadedAt: 0, dirty: false,
+                syncCursor: 0, revalidateHistory: false,
             };
             messageNodes.clear();
             dayNodes.clear();
@@ -410,6 +412,8 @@ export function createChatModal(client, { openFriends }) {
         }
         const version = windowVersion;
         if (current.loading && current.loadingVersion === version) return current.loading;
+        const revalidateHistory = Boolean(current.revalidateHistory);
+        current.revalidateHistory = false;
         const stick = !same || pinned;
         composer.setConversation({ key, type, writable: false, readOnlyReason: same ? '正在同步会话…' : '正在读取会话…' });
         if (!same) scroller.replaceChildren(el('p', { class: 'social-hint', text: '正在读取消息…' }));
@@ -439,27 +443,37 @@ export function createChatModal(client, { openFriends }) {
         async function readConversation() {
         let completed = false;
         try {
-            const [page, detail] = await Promise.all([
+            const [page, detail, previousPage] = await Promise.all([
                 socialApi.messages(key, 0, PAGE),
                 type === 'group' ? groupDetailFor(current.groupId) : null,
+                revalidateHistory && current.syncCursor > 0 ? socialApi.messages(key, current.syncCursor + 1, 100) : null,
             ]);
             if (active !== current || version !== windowVersion || !isVisible()) return;
-            const latest = page.items || [];
-            // Keep previously loaded older pages and media elements on a refresh.
-            const oldest = latest[0]?.id;
-            const older = oldest ? current.messages.filter((message) => message.id < oldest) : [];
-            const merged = new Map([...older, ...latest].map((message) => [message.id, message]));
+            const recovered = await recoverMessageWindow({
+                cached: previousPage ? previousPage.items || [] : current.messages,
+                page, afterId: current.syncCursor || 0,
+                hasMore: previousPage ? previousPage.has_more : current.hasMore,
+                fetchAfter: (after, through, size) => socialApi.messagesAfter(key, after, through, size),
+                isCurrent: () => active === current && version === windowVersion && isVisible(),
+            });
+            if (!recovered) return;
+            const merged = new Map(recovered.items.map((message) => [message.id, message]));
             // Socket changes received after this HTTP snapshot was requested win,
             // including recalls/backfills of rows that already existed in it.
-            for (const [id, message] of pushed) merged.set(id, message);
+            for (const [id, message] of pushed) {
+                if (!recovered.historySince || Date.parse(message.created_at) >= Date.parse(recovered.historySince)) merged.set(id, message);
+            }
             for (const id of recalled) if (merged.has(id)) merged.set(id, { ...merged.get(id), recalled: true, body: '', media: [] });
+            const retired = previousPage?.has_more && current.messages.some(message => message.id < (previousPage.items?.[0]?.id || Infinity));
             current.messages = [...merged.values()].sort((a, b) => a.id - b.id);
-            if (!older.length) current.hasMore = Boolean(page.has_more);
+            current.hasMore = recovered.hasMore;
+            current.syncCursor = recovered.cursor;
             current.peerRead = Number(page.peer_read_message_id) || 0;
             if (detailVersion === groupVersion) current.detail = detail;
             current.muted = Boolean(page.muted);
             current.mentionQuota = page.mention_quota || null;
             current.loadedAt = Date.now();
+            if (recovered.reset || retired) notify('已重新同步最近消息，较早记录可向上加载。', 'info');
             client.setMuted(key, current.muted);
             if (current.detail) setHeading(current.detail.display_name || current.detail.name);
             renderMessages();
@@ -473,6 +487,7 @@ export function createChatModal(client, { openFriends }) {
         } catch (failure) {
             if (active !== current || version !== windowVersion || !isVisible()) return;
             current.dirty = true;
+            current.revalidateHistory ||= revalidateHistory;
             if (!current.messages.length) scroller.replaceChildren(emptyState('消息加载失败', errorText(failure), 'error'));
             else notify(errorText(failure, '消息同步失败，已有记录已保留。'), 'danger');
             composer.setConversation({ key, type, writable: false, readOnlyReason: errorText(failure) });
@@ -678,11 +693,25 @@ export function createChatModal(client, { openFriends }) {
             else {
                 listLoadedAt = 0;
                 listVersion++;
-                if (active?.key === message.conversation_key) active.dirty = true;
+                if (active?.key === message.conversation_key) {
+                    const index = active.messages.findIndex(item => item.id === message.id);
+                    if (index >= 0) active.messages[index] = message;
+                    active.pendingUpdates?.set(message.id, message);
+                    active.dirty = true;
+                }
             }
         }),
         client.on('message_recalled', ({ id, conversation_key: key }) => {
-            if (!isVisible()) { listLoadedAt = 0; listVersion++; if (active?.key === key) active.dirty = true; return; }
+            if (!isVisible()) {
+                listLoadedAt = 0; listVersion++;
+                if (active?.key === key) {
+                    const message = active.messages.find(item => item.id === id);
+                    if (message) Object.assign(message, { recalled: true, body: '', media: [] });
+                    active.pendingRecalls?.add(id);
+                    active.dirty = true;
+                }
+                return;
+            }
             if (active?.key === key) active.pendingRecalls?.add(id);
             const message = active?.key === key ? active.messages.find((item) => item.id === id) : null;
             if (message) upsert({ ...message, recalled: true, body: '', media: [] });
@@ -763,7 +792,11 @@ export function createChatModal(client, { openFriends }) {
             friendsLoadedAt = 0;
             listVersion++;
             friendsVersion++;
-            if (active) { active.dirty = true; if (active.loading) active.invalidatedWhileLoading = true; }
+            if (active) {
+                active.dirty = true;
+                if (status === 'offline' || status === 'online') active.revalidateHistory = true;
+                if (active.loading) active.invalidatedWhileLoading = true;
+            }
             if (status === 'online' && isVisible()) void refreshSession();
         }),
         client.on('visible', () => {

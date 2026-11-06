@@ -594,7 +594,7 @@ async def api_create_class_offering(
 
 
 @router.delete("/class_offerings/{offering_id}", response_class=JSONResponse)
-async def api_delete_class_offering(offering_id: int, user: dict = Depends(get_current_teacher)):
+def api_delete_class_offering(offering_id: int, user: dict = Depends(get_current_teacher)):
     """删除一个课堂 (及其AI配置和聊天记录)"""
     try:
         with get_db_connection() as conn:
@@ -608,6 +608,11 @@ async def api_delete_class_offering(offering_id: int, user: dict = Depends(get_c
 
             # Serialize with publication, which locks the same classroom row.
             conn.execute("UPDATE class_offerings SET id = id WHERE id = ? AND teacher_id = ?", (offering_id, user["id"]))
+            from ...services.behavior_inbox_service import prepare_behavior_deletion, BehaviorDeletionPending
+            try:
+                prepare_behavior_deletion(conn, class_offering_id=int(offering_id))
+            except BehaviorDeletionPending as exc:
+                raise HTTPException(409, str(exc)) from exc
             if conn.execute("SELECT 1 FROM grade_publications WHERE class_offering_id = ? AND status = 'active' LIMIT 1",
                             (offering_id,)).fetchone():
                 raise HTTPException(409, "本课堂仍有正在公布的课程成绩。请先在成绩材料中撤回公布，再删除课堂；历史公布快照会保留。")

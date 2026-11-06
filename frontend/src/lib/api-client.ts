@@ -8,6 +8,7 @@ export class ApiError extends Error {
   readonly code?: ApiErrorCode;
   readonly details?: Record<string, unknown>;
   readonly requestId?: string | null;
+  readonly retryAfterSeconds?: number;
 
   constructor(
     message: string,
@@ -17,6 +18,7 @@ export class ApiError extends Error {
       code?: ApiErrorCode;
       details?: Record<string, unknown>;
       requestId?: string | null;
+      retryAfterSeconds?: number;
     } = {},
   ) {
     super(message);
@@ -26,6 +28,7 @@ export class ApiError extends Error {
     this.code = options.code;
     this.details = options.details;
     this.requestId = options.requestId;
+    this.retryAfterSeconds = options.retryAfterSeconds;
   }
 }
 
@@ -107,6 +110,7 @@ export async function apiRequest<T>(
 
   if (!response.ok) {
     const structured = parseApiErrorPayload(payload);
+    const retryAfter = response.headers.get('retry-after');
     throw new ApiError(
       errorMessageFromPayload(payload, `Request failed (${response.status})`),
       response.status,
@@ -115,6 +119,7 @@ export async function apiRequest<T>(
         code: structured.code,
         details: structured.details,
         requestId: structured.requestId,
+        retryAfterSeconds: retryAfter !== null && /^\d+$/.test(retryAfter) ? Number(retryAfter) : undefined,
       },
     );
   }

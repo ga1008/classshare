@@ -37,7 +37,9 @@ services:
   ai:
     <<: *lanshare-service
     command: ["ai"]
+    cpu_shares: ${LANSHARE_AI_CPU_SHARES:-1024}
     environment:
+      POSTGRES_APPLICATION_NAME: lanshare-ai
       <<: *lanshare-timezone
       AI_HOST: 0.0.0.0
       AI_PORT: "8001"
@@ -58,13 +60,18 @@ services:
   app:
     <<: *lanshare-service
     command: ["main"]
+    # Relative weight under CPU contention. Compose interpolation reads the
+    # shell/project .env; service env_file values do not configure this field.
+    cpu_shares: ${LANSHARE_APP_CPU_SHARES:-2048}
     depends_on:
       ai:
         condition: service_healthy
     environment:
+      POSTGRES_APPLICATION_NAME: lanshare-app
       <<: *lanshare-timezone
       MAIN_HOST: 0.0.0.0
       MAIN_PORT: "8000"
+      MAIN_LIMIT_CONCURRENCY: ${LANSHARE_APP_MAX_CONNECTIONS:-1024}
       AI_ASSISTANT_URL: http://ai:8001
       MAIN_APP_CALLBACK_URL: http://app:8000/api/internal/grading-complete
       # Bound DB fan-out on the shared 2c/4G host. HTTP concurrency is much
@@ -91,7 +98,7 @@ services:
         - CMD
         - python
         - -c
-        - import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/internal/health', timeout=5).status == 200 else 1)
+        - import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/internal/live', timeout=5).status == 200 else 1)
       interval: 30s
       timeout: 10s
       retries: 5
@@ -100,7 +107,9 @@ services:
   mailer:
     <<: *lanshare-service
     command: ["mailer"]
+    cpu_shares: ${LANSHARE_MAILER_CPU_SHARES:-256}
     environment:
+      POSTGRES_APPLICATION_NAME: lanshare-mailer
       <<: *lanshare-timezone
       EMAIL_WORKER_ID: mailer-compose
     healthcheck:
@@ -117,12 +126,14 @@ services:
   blog-crawler:
     <<: *lanshare-service
     command: ["blog-crawler"]
+    cpu_shares: ${LANSHARE_CRAWLER_CPU_SHARES:-128}
     depends_on:
       ai:
         condition: service_healthy
       app:
         condition: service_healthy
     environment:
+      POSTGRES_APPLICATION_NAME: lanshare-blog-crawler
       <<: *lanshare-timezone
       BLOG_NEWS_CRAWLER_WORKER_ID: blog-crawler-compose
       BLOG_NEWS_CRAWLER_POLL_SECONDS: "60"
@@ -131,13 +142,17 @@ services:
   scheduler:
     <<: *lanshare-service
     command: ["scheduler"]
+    stop_grace_period: 5m
+    cpu_shares: ${LANSHARE_SCHEDULER_CPU_SHARES:-512}
     depends_on:
       app:
         condition: service_healthy
     environment:
+      POSTGRES_APPLICATION_NAME: lanshare-scheduler
       <<: *lanshare-timezone
       SCHEDULER_WORKER_ID: scheduler-compose
-      SCHEDULER_POLL_SECONDS: "20"
+      # Projection/poll knobs come from shared docker.env, then code defaults.
+      # Compose interpolation here would override env_file during deployment.
       AI_ASSISTANT_URL: http://ai:8001
       MAIN_APP_INTERNAL_URL: http://app:8000
     healthcheck:
@@ -154,6 +169,7 @@ services:
   agent-worker:
     <<: *lanshare-service
     command: ["agent-worker"]
+    cpu_shares: ${LANSHARE_AGENT_CPU_SHARES:-512}
     depends_on:
       app:
         condition: service_healthy
@@ -167,6 +183,7 @@ services:
       - *lanshare-shared
       - *lanshare-storage
     environment:
+      POSTGRES_APPLICATION_NAME: lanshare-agent-worker
       <<: *lanshare-timezone
       AGENT_TASK_WORKER_ID: agent-worker-compose
       # The Agents-SDK runtime runs in this container; platform tools go through
@@ -176,6 +193,7 @@ services:
 
   nginx:
     image: nginx:1.27-alpine
+    cpu_shares: ${LANSHARE_NGINX_CPU_SHARES:-1024}
     restart: unless-stopped
     depends_on:
       app:
@@ -192,7 +210,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - wget -qO- http://127.0.0.1/api/internal/health >/dev/null 2>&1 || exit 1
+        - wget -qO- http://127.0.0.1/api/internal/live >/dev/null 2>&1 || exit 1
       interval: 30s
       timeout: 5s
       retries: 5

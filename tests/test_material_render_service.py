@@ -5,6 +5,7 @@ from classroom_app.services.material_render_service import (
     attach_render_metadata,
     resolve_render_file,
     resolve_render_target,
+    resolve_render_targets,
 )
 
 
@@ -87,6 +88,10 @@ class MaterialRenderServiceTests(unittest.TestCase):
         for folder in folders[1:]:
             with self.subTest(name=folder["name"]):
                 self.assertIsNone(resolve_render_target(self.conn, folder))
+        self.assertEqual(
+            {int(row["id"]): resolve_render_target(self.conn, row) for row in folders},
+            resolve_render_targets(self.conn, folders),
+        )
 
     def test_markdown_is_not_renderable(self):
         row = dict(self.conn.execute("SELECT * FROM course_materials WHERE id=5").fetchone())
@@ -96,6 +101,15 @@ class MaterialRenderServiceTests(unittest.TestCase):
         folder = self.conn.execute("SELECT * FROM course_materials WHERE id=1").fetchone()
         served = resolve_render_file(self.conn, folder, "")
         self.assertEqual(int(served["id"]), 2)  # index.html
+
+    def test_resolve_entry_reuses_the_current_request_target(self):
+        folder = self.conn.execute("SELECT * FROM course_materials WHERE id=1").fetchone()
+        target = resolve_render_target(self.conn, folder)
+        queries = []
+        self.conn.set_trace_callback(queries.append)
+        self.assertEqual(2, resolve_render_file(self.conn, folder, render_target=target)["id"])
+        self.conn.set_trace_callback(None)
+        self.assertEqual(1, len(queries))
 
     def test_resolve_subpath_asset(self):
         folder = self.conn.execute("SELECT * FROM course_materials WHERE id=1").fetchone()
@@ -118,6 +132,68 @@ class MaterialRenderServiceTests(unittest.TestCase):
         attach_render_metadata(self.conn, items)
         self.assertTrue(items[0]["is_renderable"])
         self.assertEqual(items[0]["render_url"], "/materials/render/1/")
+
+    def test_bulk_folder_render_metadata_has_bounded_queries(self):
+        for index in range(200):
+            folder_id = 1000 + index * 2
+            path = f"project/unit_{index}"
+            _insert(self.conn, id=folder_id, teacher_id=1, parent_id=1, root_id=1,
+                    name=f"unit_{index}", material_path=path, node_type="folder")
+            _insert(self.conn, id=folder_id+1, teacher_id=1, parent_id=folder_id, root_id=1,
+                    name="index.html", material_path=f"{path}/index.html", node_type="file", file_ext="html")
+        items = [dict(row) for row in self.conn.execute("SELECT * FROM course_materials WHERE id>=1000 AND node_type='folder'")]
+        queries = []
+        self.conn.set_trace_callback(queries.append)
+        attach_render_metadata(self.conn, items)
+        self.conn.set_trace_callback(None)
+        self.assertTrue(all(item["is_renderable"] for item in items))
+        self.assertLessEqual(len(queries), 4, f"200 folders issued {len(queries)} SQL statements")
+
+    def test_explicit_assets_do_not_search_for_default_html_entry(self):
+        folder = self.conn.execute("SELECT * FROM course_materials WHERE id=1").fetchone()
+        queries = []
+        self.conn.set_trace_callback(queries.append)
+        for _ in range(20):
+            self.assertEqual(3, resolve_render_file(self.conn, folder, "style.css")["id"])
+        self.conn.set_trace_callback(None)
+        self.assertEqual(20, len(queries), "Every explicit asset needs only its exact-path lookup")
+
+    def test_package_batch_matches_single_resolution_and_reads_current_versions(self):
+        for index in range(1, 201):
+            folder_id = 1000 + index * 2
+            path = f"project/lesson_{index}"
+            _insert(self.conn, id=folder_id, teacher_id=1, parent_id=1, root_id=1,
+                    name=f"lesson_{index}", material_path=path, node_type="folder")
+            _insert(self.conn, id=folder_id+1, teacher_id=1, parent_id=folder_id, root_id=1,
+                    name=f"lesson_{index}.html", material_path=f"{path}/lesson_{index}.html",
+                    node_type="file", file_ext="html", file_hash=f"h-lesson-{index}")
+        folders = self.conn.execute("SELECT * FROM course_materials WHERE id>=1000 AND node_type='folder' ORDER BY id").fetchall()
+        queries = []
+        self.conn.set_trace_callback(queries.append)
+        expected = {int(row["id"]): resolve_render_target(self.conn, row) for row in folders}
+        single_queries = len(queries)
+        queries.clear()
+        actual = resolve_render_targets(self.conn, folders)
+        batch_queries = len(queries)
+        self.conn.set_trace_callback(None)
+        self.assertEqual(expected, actual)
+        self.assertEqual(800, single_queries)
+        self.assertLessEqual(batch_queries, 3)
+        self.assertTrue(all(target["node_id"] == 1 for target in actual.values()))
+        self.conn.execute("DELETE FROM course_materials WHERE id=1003")
+        current = resolve_render_targets(self.conn, folders[:1])
+        self.assertIsNone(current[1002], "A new request cannot reuse a deleted entry from an older structural index")
+
+    def test_batch_preserves_package_name_fallback_for_legacy_extension_metadata(self):
+        self.conn.execute("UPDATE course_materials SET file_ext='txt' WHERE id=2")
+        _insert(self.conn, id=20, teacher_id=1, parent_id=1, root_id=1, name="lesson_1",
+                material_path="project/lesson_1", node_type="folder")
+        _insert(self.conn, id=21, teacher_id=1, parent_id=20, root_id=1, name="lesson_1.html",
+                material_path="project/lesson_1/lesson_1.html", node_type="file", file_ext="html")
+        lesson = self.conn.execute("SELECT * FROM course_materials WHERE id=20").fetchone()
+        expected = resolve_render_target(self.conn, lesson)
+        self.assertEqual(1, expected["node_id"])
+        self.assertEqual(expected, resolve_render_targets(self.conn, [lesson])[20])
 
 
 if __name__ == "__main__":

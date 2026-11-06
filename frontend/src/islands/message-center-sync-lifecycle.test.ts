@@ -78,4 +78,22 @@ describe('React message bell portal ownership', () => {
     expect(count.textContent).toBe('0');
     expect(app.win.refreshMessageCenterBell).toBe(newerRefresh);
   });
+
+  it('coalesces refresh bursts and keeps a newer read/push summary over an old HTTP result', async () => {
+    const { shell, count } = bellFixture();
+    let finish: (value: unknown) => void = () => {};
+    const response = new Promise(resolve => { finish = resolve; });
+    const fetcher = vi.fn().mockReturnValue(response);
+    const app = await mount([shell], fetcher);
+    const refresh = app.win.refreshMessageCenterBell as () => Promise<void>;
+    const pending = Array.from({ length: 12 }, () => refresh());
+    await Promise.resolve();
+    expect(fetcher).toHaveBeenCalledOnce();
+    app.win.dispatchEvent(new CustomEvent('message-center:summary-updated', { detail: { unread_total: 7 } }));
+    expect(count.textContent).toBe('7');
+    finish({ ok: true, json: async () => ({ summary: { unread_total: 1 } }) });
+    await Promise.all(pending);
+    expect(count.textContent).toBe('7');
+    app.cleanup();
+  });
 });

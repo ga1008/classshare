@@ -69,7 +69,7 @@ class WandererSupportPostgresTest(unittest.TestCase):
             conn.commit()
         for _ in range(2):
             with patch.object(schema_wanderers, "_SCHEMA_READY", False), self.connect() as conn:
-                schema_wanderers.ensure_wanderer_schema(conn, engine="postgres")
+                schema_wanderers.ensure_wanderer_schema(conn, engine="postgres", allow_schema_changes=True)
                 conn.commit()
         with self.connect() as conn:
             after = [dict(r) for r in conn.execute("SELECT * FROM wanderer_social_inbox ORDER BY id")]

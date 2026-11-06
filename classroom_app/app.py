@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 from urllib.parse import urlsplit
 import anyio.to_thread
@@ -8,6 +9,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 import sys
+import uuid
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from starlette.middleware.gzip import GZipMiddleware
@@ -27,7 +29,7 @@ from .config import (
 )
 from .database import init_database
 from .db.connection import database_backend_state
-from .db.errors import DatabaseBusyError
+from .db.errors import DatabaseBusyError, DatabaseConnectionError
 from .db.postgres import close_connection_pool, get_pool_stats
 from .dependencies import build_login_redirect_url, build_permission_warning_url
 from .dependencies import clear_access_token_cookie, get_active_user_from_request
@@ -68,6 +70,7 @@ from .services.student_career_job_worker import (
 from .services.email_notification_service import email_worker_health_snapshot
 from .services.message_center_service import schedule_pending_private_ai_reply_jobs
 from .services.runtime_metrics_service import begin_http_request, finish_http_request, get_runtime_metrics_snapshot
+from .services.runtime_health_service import RuntimeHealthSnapshots
 from .services.smart_attendance_advice_service import (
     start_smart_attendance_advice_worker,
     stop_smart_attendance_advice_worker,
@@ -131,6 +134,21 @@ from .routers import wanderer_internal
 from .routers import social as social_router
 from .routers import social_ws as social_ws_router
 from .services import social_push_service
+
+
+def _probe_database():
+    with get_db_connection() as conn:
+        conn.execute("SELECT 1").fetchone()
+    return {"ok": True}
+
+
+_health_snapshots = RuntimeHealthSnapshots({
+    "database_probe": _probe_database,
+    "background_tasks": build_background_task_health_summary,
+    "email_worker": email_worker_health_snapshot,
+    "document_renderer": document_render_service.cache_stats,
+    "career_worker": student_career_worker_snapshot,
+})
 
 
 class CacheControlStaticFiles(StaticFiles):
@@ -218,6 +236,13 @@ async def startup_event():
     # （尽管 uvicorn reload 模式下可能不需要，但这是个好习惯）
     ensure_runtime_directories()
     init_database()
+    from .services.life_tip_service import warm_life_tip_runtime
+
+    try:
+        await anyio.to_thread.run_sync(warm_life_tip_runtime, abandon_on_cancel=False,
+                                       limiter=anyio.CapacityLimiter(1))
+    except Exception as exc:
+        print(f"[LIFE_TIP] Startup warmup deferred: {type(exc).__name__}")
     from .services.system_review_signature_service import ensure_standard_review_signatures
 
     with get_db_connection() as signature_conn:
@@ -268,6 +293,7 @@ async def startup_event():
         print(f"[AI JOB STORAGE] cleanup failed (non-fatal): {exc}")
     start_behavior_write_pipeline()
     start_behavior_profile_scheduler()
+    _health_snapshots.start()
 
     # Auto-repair stale stored_path entries (e.g. wrong drive letter after migration)
     try:
@@ -354,6 +380,10 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时执行"""
+    await anyio.to_thread.run_sync(_health_snapshots.stop)
+    from .services.password_verification_service import stop_password_verifier
+    await anyio.to_thread.run_sync(stop_password_verifier)
+    await social_push_service.stop_outbound_writers()
     await stop_discussion_mood_refresh_tasks()
     await stop_smart_attendance_advice_worker()
     await stop_durable_process_job_workers()
@@ -373,11 +403,13 @@ async def shutdown_event():
 def _resolve_request_route_template(request: Request) -> str:
     route = request.scope.get("route")
     route_path = getattr(route, "path", None)
-    return str(route_path or request.url.path or "/")
+    return str(route_path or "<unmatched>")
 
 
 @app.middleware("http")
 async def runtime_metrics_middleware(request: Request, call_next):
+    incoming_id = request.headers.get("x-request-id", "")
+    request.state.request_id = incoming_id if re.fullmatch(r"[a-f0-9]{32}", incoming_id) else uuid.uuid4().hex
     started_at = begin_http_request()
     try:
         response = await call_next(request)
@@ -399,14 +431,20 @@ async def runtime_metrics_middleware(request: Request, call_next):
         fallback_path=request.url.path,
         status_code=response.status_code,
     )
+    response.headers["X-Request-ID"] = request.state.request_id
     return response
 
 @app.get("/api/internal/health")
 async def internal_health():
     behavior_stats = get_behavior_write_pipeline_stats()
+    snapshot = _health_snapshots.snapshot()
+    diagnostics = snapshot["diagnostics"]
+    degraded = (not behavior_stats["alive"] or bool(behavior_stats.get("last_error"))
+                or bool(behavior_stats.get("quarantined_count")) or bool(diagnostics["errors"])
+                or bool(diagnostics["stale"]) or bool(diagnostics["pending"]))
     thread_limiter = anyio.to_thread.current_default_thread_limiter()
     return {
-        "status": "ok",
+        "status": "degraded" if degraded else "ok",
         "service": "main",
         "release_id": get_deployment_release_id(),
         "ai_assistant_url": AI_ASSISTANT_URL,
@@ -419,11 +457,32 @@ async def internal_health():
         "behavior_write_worker_alive": behavior_stats["alive"],
         "behavior_write_queue_depth": behavior_stats["queue_depth"],
         "behavior_write_queue_capacity": behavior_stats["queue_capacity"],
-        "email_worker": email_worker_health_snapshot(),
-        "background_tasks": build_background_task_health_summary(),
-        "document_renderer": document_render_service.cache_stats(),
-        "career_worker": student_career_worker_snapshot(),
+        "behavior_write_pipeline": behavior_stats,
+        "social_outbound": social_push_service.outbound_snapshot(),
+        "email_worker": snapshot.get("email_worker"),
+        "background_tasks": snapshot.get("background_tasks"),
+        "document_renderer": snapshot.get("document_renderer"),
+        "career_worker": snapshot.get("career_worker"),
+        "diagnostics": diagnostics,
     }
+
+
+@app.get("/api/internal/live")
+async def internal_liveness():
+    return {"status": "ok", "service": "main", "release_id": get_deployment_release_id()}
+
+
+@app.get("/api/internal/ready")
+async def internal_readiness():
+    snapshot = _health_snapshots.snapshot()
+    diagnostic = snapshot["diagnostics"]
+    ready = (snapshot.get("database_probe", {}).get("ok") is True
+             and "database_probe" not in diagnostic["errors"]
+             and diagnostic["age_seconds"].get("database_probe", float("inf")) <= 90)
+    return JSONResponse({"status": "ok" if ready else "unavailable",
+                         "release_id": get_deployment_release_id(), "diagnostics": diagnostic},
+                        status_code=200 if ready else 503,
+                        headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/internal/metrics")
@@ -439,7 +498,8 @@ async def internal_metrics():
         "database_path": str(DB_PATH),
         "database_backend": asdict(database_backend_state()),
         "runtime": get_runtime_metrics_snapshot(),
-        "background_tasks": build_background_task_health_summary(),
+        "social_outbound": social_push_service.outbound_snapshot(),
+        "background_tasks": _health_snapshots.snapshot().get("background_tasks"),
         "discussion_runtime": {
             "room_count": len(manager.rooms),
             "active_socket_count": int(room_connection_total),
@@ -459,7 +519,8 @@ async def internal_metrics():
 async def internal_background_tasks():
     return {
         "status": "ok",
-        "background_tasks": build_background_task_health_summary(),
+        "background_tasks": _health_snapshots.snapshot().get("background_tasks"),
+        "diagnostics": _health_snapshots.snapshot()["diagnostics"],
     }
 
 
@@ -468,6 +529,8 @@ def _is_api_request(request: Request) -> bool:
 
 
 def _request_id_from_request(request: Request) -> str | None:
+    if value := getattr(request.state, "request_id", None):
+        return value
     for header_name in ("x-request-id", "x-correlation-id"):
         value = request.headers.get(header_name)
         if value and value.strip():
@@ -526,22 +589,24 @@ async def unauthorized_exception_handler(request: Request, exc: HTTPException):
     detail = exc.detail if isinstance(exc.detail, str) else "登录状态已失效，请重新登录。"
 
     if _is_api_request(request):
-        response = _api_error_response(
+        # A provider/internal credential failure is not a browser-session loss.
+        browser_auth = (not request.url.path.startswith("/api/internal/")
+                        and ((exc.headers or {}).get("X-Auth-Error") == "login_required"
+                             or not getattr(request.state, "auth_user", None)))
+        return _api_error_response(
             request,
             status_code=401,
             detail=detail,
-            code=ApiErrorCode.LOGIN_REQUIRED,
-            details={"redirect_to": login_url},
-            legacy_fields={"redirect_to": login_url},
+            code=ApiErrorCode.LOGIN_REQUIRED if browser_auth else ApiErrorCode.UPSTREAM_ERROR,
+            details={"redirect_to": login_url} if browser_auth else None,
+            legacy_fields={"redirect_to": login_url} if browser_auth else None,
         )
-        clear_access_token_cookie(response)
-        return response
 
     # A missing cookie still goes straight to login. Only an unusable browser
     # session gets this recovery page; never invalidate another device's session.
     if (_is_html_navigation(request)
             and "access_token" in request.cookies and lq_family_enabled("centered")
-            and not get_active_user_from_request(request)):
+            and not getattr(request.state, "auth_user", None)):
         next_path = sanitize_next_path(get_auth_redirect_target(request))
         required_role = (infer_required_role_from_path(urlsplit(next_path).path)
                          or infer_required_role_from_path(request.url.path))
@@ -566,49 +631,35 @@ async def unauthorized_exception_handler(request: Request, exc: HTTPException):
 
 @app.exception_handler(403)
 async def forbidden_exception_handler(request: Request, exc: HTTPException):
-    user_hint = get_active_user_from_request(request)
+    headers = exc.headers or {}
+    invalidated = headers.get("X-Auth-Session-Invalidated") == "1"
+    if _is_api_request(request):
+        if invalidated:
+            return await unauthorized_exception_handler(request, HTTPException(
+                401, "登录状态已失效，请重新登录。", headers={"X-Auth-Error": "login_required"}))
+        required_role = headers.get("X-Required-Role") or infer_required_role_from_path(request.url.path)
+        return _api_error_response(
+            request, status_code=403, detail=exc.detail,
+            code=ApiErrorCode.PERMISSION_DENIED,
+            details={"required_role": required_role},
+            legacy_fields={"required_role": required_role},
+        )
+    user_hint = getattr(request.state, "auth_user", None)
+    if user_hint is None and not invalidated:
+        user_hint = await anyio.to_thread.run_sync(get_active_user_from_request, request)
     required_role = None
     if exc.headers:
         required_role = exc.headers.get("X-Required-Role")
     required_role = required_role or infer_required_role_from_path(request.url.path)
 
-    if not user_hint:
+    if invalidated or not user_hint:
         login_url = build_login_redirect_url(request)
-        if _is_api_request(request):
-            detail = "登录状态已失效，请重新登录。"
-            response = _api_error_response(
-                request,
-                status_code=401,
-                detail=detail,
-                code=ApiErrorCode.LOGIN_REQUIRED,
-                details={"redirect_to": login_url},
-                legacy_fields={"redirect_to": login_url},
-            )
-            clear_access_token_cookie(response)
-            return response
-
         response = RedirectResponse(url=login_url, status_code=303)
         clear_access_token_cookie(response)
         return response
 
     warning_url = build_permission_warning_url(request, required_role=required_role)
     detail = exc.detail if isinstance(exc.detail, str) else "当前账号没有访问该页面或资源的权限。"
-
-    if _is_api_request(request):
-        return _api_error_response(
-            request,
-            status_code=403,
-            detail=detail,
-            code=ApiErrorCode.PERMISSION_DENIED,
-            details={
-                "required_role": required_role,
-                "redirect_to": warning_url,
-            },
-            legacy_fields={
-                "required_role": required_role,
-                "redirect_to": warning_url,
-            },
-        )
 
     return RedirectResponse(url=warning_url, status_code=303)
 
@@ -674,13 +725,15 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 
 @app.exception_handler(DatabaseBusyError)
-async def database_busy_exception_handler(request: Request, exc: DatabaseBusyError):
+@app.exception_handler(DatabaseConnectionError)
+async def database_busy_exception_handler(request: Request, exc: DatabaseBusyError | DatabaseConnectionError):
     """连接池在高峰被占满（PoolTimeout）时，优雅返回 503 + Retry-After，而非 500。
 
     这是高并发下的优雅降级：客户端/浏览器可据 Retry-After 退避重试，体验远好于直接报错。
     """
     headers = {"Retry-After": "3"}
-    detail = "服务器繁忙，请稍候重试。"
+    logout_pending = request.url.path == "/logout"
+    detail = "退出尚未完成，服务器暂时繁忙，请稍后重试。" if logout_pending else "服务器繁忙，请稍候重试。"
     if _is_api_request(request):
         return _api_error_response(
             request,
@@ -693,10 +746,23 @@ async def database_busy_exception_handler(request: Request, exc: DatabaseBusyErr
     return templates.TemplateResponse(request, "error.html", {
         "request": request,
         "error_code": 503,
-        "error_title": "服务器繁忙",
-        "error_message": "当前访问人数较多，请稍候几秒后刷新重试。",
+        "error_title": "退出尚未完成" if logout_pending else "服务器繁忙",
+        "error_message": detail if logout_pending else "当前访问人数较多，请稍候几秒后刷新重试。",
         "back_url": "/",
     }, status_code=503, headers=headers)
+
+
+# Keep native PostgreSQL lock/statement failures recoverable without hiding
+# schema/programming errors. Callers still decide whether a write is replayable.
+try:
+    from psycopg import errors as _pg_errors
+except ImportError:  # SQLite-only installations do not need the PG driver.
+    pass
+else:
+    for _transient_error in (_pg_errors.QueryCanceled, _pg_errors.LockNotAvailable,
+                             _pg_errors.DeadlockDetected, _pg_errors.SerializationFailure,
+                             _pg_errors.ConnectionException):
+        app.add_exception_handler(_transient_error, database_busy_exception_handler)
 
 
 @app.exception_handler(Exception)

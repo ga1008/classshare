@@ -130,14 +130,16 @@ def count_offering_active_students(conn: Any, offering_id: int) -> int:
     return int(row["n"])
 
 
-def offering_class_ids(conn: Any, offering_id: int) -> list[int]:
+def offering_class_ids(conn: Any, offering_id: int, *, ensure_schema: bool = True) -> list[int]:
     """All linked class ids, primary first; falls back to the legacy column.
 
     Read path is self-healing: if the link table is unreachable on this
     connection (e.g. hand-rolled test schemas), resolution degrades to the
-    legacy primary class instead of failing.
+    legacy primary class instead of failing. Projection reads pass
+    ``ensure_schema=False`` after startup and propagate storage failures.
     """
-    ensure_offering_class_links_schema(conn)
+    if ensure_schema:
+        ensure_offering_class_links_schema(conn)
     try:
         rows = conn.execute(
             """
@@ -149,6 +151,8 @@ def offering_class_ids(conn: Any, offering_id: int) -> list[int]:
             (int(offering_id),),
         ).fetchall()
     except Exception:
+        if not ensure_schema:
+            raise
         rows = []
     class_ids = [int(row["class_id"]) for row in rows]
     if class_ids:

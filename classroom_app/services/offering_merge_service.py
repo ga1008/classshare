@@ -37,6 +37,7 @@ STRATEGY_SESSION_STRUCTURE = "session_structure"  # 课次结构：映射引用�
 STRATEGY_ASSIGNMENT_COEXIST = "assignment_coexist"
 STRATEGY_GRADE_PUBLICATIONS = "grade_publications"  # 保留快照，迁入目标版本序列
 STRATEGY_KEEP_BILLING_SCOPE = "keep_billing_scope"  # 账单范围不随课堂归并变化
+STRATEGY_BEHAVIOR_RECEIPTS = "immutable_behavior_receipts"
 STRATEGY_SCOPE_REVIEW = "scope_review"  # 读者/参与者范围尚无安全迁移规则，预检阻断
 STRATEGY_SCHEDULE_REVIEW = "schedule_review"  # 教务课次身份不可按本地序号猜测重绑
 STRATEGY_LINKS = "links"                      # 收尾统一处理
@@ -107,6 +108,7 @@ def _rules() -> dict[str, MergeRule]:
     rules["assignments"] = MergeRule(STRATEGY_ASSIGNMENT_COEXIST)
     rules["grade_publications"] = MergeRule(STRATEGY_GRADE_PUBLICATIONS)
     rules["ai_review_reservations"] = MergeRule(STRATEGY_KEEP_BILLING_SCOPE)
+    rules["behavior_write_inbox"] = MergeRule(STRATEGY_BEHAVIOR_RECEIPTS)
     rules["class_offering_sessions"] = MergeRule(STRATEGY_SESSION_STRUCTURE)
     rules["class_offering_class_links"] = MergeRule(STRATEGY_LINKS, offering_column="offering_id")
     # 课次引用列（这三张的 offering 列策略见各自条目）
@@ -129,6 +131,10 @@ def _rules() -> dict[str, MergeRule]:
     rules["blog_posts"] = MergeRule(STRATEGY_SCOPE_REVIEW, offering_column="visible_class_offering_id")
     rules["polls"] = MergeRule(STRATEGY_SCOPE_REVIEW, offering_column="origin_class_offering_id")
     rules["poll_assignments"] = MergeRule(STRATEGY_SCOPE_REVIEW)
+    # These scopes have no reviewed remapping rule yet. Empty tables permit a
+    # normal merge, populated source scopes keep the existing fail-closed rule.
+    for table in ("session_knowledge_trees", "wanderer_action_log", "wanderer_social_inbox"):
+        rules[table] = MergeRule(STRATEGY_SCOPE_REVIEW)
     # These identities drive future approved schedule writes. Unlike attendance
     # history, mapping by order_index (or nearest session) can change the wrong
     # lesson, and multiple source bindings may collide on teacher/semester/session.
@@ -143,6 +149,10 @@ MERGE_RULES: dict[str, MergeRule] = _rules()
 
 MERGE_TABLE_LABELS = {
     "ai_chat_sessions": "AI课堂对话", "ai_psychology_profiles": "AI学习分析", "ai_usage_log": "AI用量历史",
+    "behavior_write_inbox": "行为写入回执",
+    "session_knowledge_trees": "课堂知识树",
+    "wanderer_action_log": "散修课堂行为历史",
+    "wanderer_social_inbox": "散修课堂消息任务",
     "assessment_plans": "考核计划", "assignment_group_bindings": "作业分组", "assignment_classification_revisions": "作业分类历史",
     "chat_logs": "课堂讨论", "chunked_uploads": "分块上传", "classroom_behavior_events": "课堂行为记录",
     "classroom_behavior_profiles": "课堂学习画像", "classroom_live_activities": "现场互动", "classroom_live_help_signals": "课堂求助",
@@ -479,6 +489,17 @@ def build_merge_preview(
                 f"{label}：{source_rows} 条记录仍使用原课堂作为读者或参与者范围。"
                 "请先在对应业务核对并调整范围；合班不能替作者扩大可见范围。"
             )
+        if rule.strategy == STRATEGY_BEHAVIOR_RECEIPTS:
+            participant_ids = [int(target["id"]), *source_ids]
+            placeholders = ",".join("?" for _ in participant_ids)
+            pending = int(conn.execute(
+                f"SELECT COUNT(*) AS n FROM behavior_write_inbox WHERE class_offering_id IN ({placeholders}) AND state IN ('pending','quarantined')",
+                tuple(participant_ids),
+            ).fetchone()["n"])
+            if pending:
+                blockers.append(f"行为记录还有 {pending} 批等待落库或已隔离待修复，请等待后台完成或由管理员处理隔离批次后重新预览合班。")
+            if source_rows:
+                warnings.append(f"行为写入回执：{source_rows} 批保留原课堂编号和去重标识；已落库的行为记录随课堂迁移。")
         if source_rows and rule.strategy == STRATEGY_SCHEDULE_REVIEW:
             blockers.append(
                 f"{label}：被并课堂有 {source_rows} 条教务课次关联，暂不支持自动迁移。"
@@ -840,6 +861,11 @@ def execute_offering_merge(
         if not _table_exists(conn, table):
             continue
         column = rule.offering_column
+        if rule.strategy == STRATEGY_BEHAVIOR_RECEIPTS:
+            # Tombstones have no offering FK. Their original scope participates
+            # in the immutable client batch key throughout the retry horizon.
+            summary[f"{table}.receipt_scope_preserved"] = _count_rows(conn, table, column, source_ids)
+            continue
         if rule.strategy == STRATEGY_KEEP_BILLING_SCOPE:
             count = _count_rows(conn, table, column, source_ids)
             if count:

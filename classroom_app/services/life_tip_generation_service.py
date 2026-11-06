@@ -147,7 +147,7 @@ async def _mine_document(doc: dict[str, Any]) -> int:
     """对单篇公文跑提取并入库，返回新增条数。"""
     from ..core import ai_client
     from .ai_gateway_service import ai_gateway_post
-    from .life_tip_service import insert_life_tip
+    from .life_tip_service import insert_life_tip, invalidate_pool_cache
 
     prompt = _PROMPT_TEMPLATE.format(
         categories="、".join(ALLOWED_CATEGORIES),
@@ -204,6 +204,7 @@ async def _mine_document(doc: dict[str, Any]) -> int:
                 created += 1
         _mark_mined(conn, int(doc["id"]), created)
         conn.commit()
+        invalidate_pool_cache()
     return created
 
 

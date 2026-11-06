@@ -3,7 +3,7 @@
 
 设计目标是**登录路径零额外压力**（生产 2c/4GB 服 ~200 并发）：
 
-- 表结构懒建 + 种子包幂等入库，每进程只跑一次；
+- 启动期自有事务幂等补种，提交并归还连接后才发布进程就绪；
 - 生效池（global ∪ school ∪ department，见 ``schema_life_tips``）按
   ``(school_code, department, audience)`` 做进程内 TTL 缓存，命中时选句
   是纯内存操作，不查库；
@@ -42,9 +42,15 @@ IMAGE_DIR_URL = "/static/img/life_tips"
 
 _seed_lock = threading.Lock()
 _seeded = False
+_ready_db_key: tuple[str, str] | None = None
+_SEED_TRANSACTION_LOCK = 742819036119
+_SCHEMA_OBJECTS = ("life_tips", "life_tip_source_ledger", "life_tip_feedback", "personal_greetings",
+                   "idx_life_tips_scope_lookup", "idx_life_tip_feedback_tip")
 
 _pool_lock = threading.Lock()
-_pool_cache: dict[tuple[str, str, str], tuple[float, list[dict[str, Any]]]] = {}
+_pool_fill_lock = threading.Lock()
+_pool_generation = 0
+_pool_cache: dict[tuple[Any, ...], tuple[float, list[dict[str, Any]]]] = {}
 
 _manifest_lock = threading.Lock()
 _manifest_cache: tuple[float, list[dict[str, Any]]] | None = None
@@ -59,16 +65,83 @@ def tip_content_hash(text: str) -> str:
 
 
 def ensure_life_tip_runtime(conn: Any) -> None:
-    """建表 + 种子包入库，进程内只做一次（幂等，可安全并发调用）。"""
-    global _seeded
-    if _seeded:
+    """Prepare the supplied transaction without committing or sharing its data.
+
+    The physical witness also works for independent SQLite :memory: databases.
+    A successful call is not evidence of its caller's later commit.
+    """
+    if _schema_exists(conn) and _seed_witness(conn):
         return
-    with _seed_lock:
-        if _seeded:
-            return
+    if get_configured_db_engine() == "postgres":
+        conn.execute("SELECT pg_advisory_xact_lock(?)", (_SEED_TRANSACTION_LOCK,))
+    elif not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+    if not _schema_exists(conn):
         ensure_life_tip_schema(conn)
+    if not _seed_witness(conn):
         _seed_life_tips(conn)
-        _seeded = True
+
+
+def _schema_exists(conn: Any) -> bool:
+    marks = ",".join("?" for _ in _SCHEMA_OBJECTS)
+    if get_configured_db_engine() == "postgres":
+        rows = conn.execute(f"SELECT c.relname AS name FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=current_schema() AND c.relname IN ({marks}) AND c.relkind IN ('r','p','i')", _SCHEMA_OBJECTS).fetchall()
+    else:
+        rows = conn.execute(f"SELECT name FROM sqlite_master WHERE name IN ({marks}) AND type IN ('table','index')", _SCHEMA_OBJECTS).fetchall()
+    return {row["name"] for row in rows} == set(_SCHEMA_OBJECTS)
+
+
+def _seed_witness(conn: Any) -> bool:
+    hashes = {tip_content_hash(text) for _, text in (*LIFE_TIP_SEED_PACK, *TEACHER_TIP_SEED_PACK)}
+    marks = ",".join("?" for _ in hashes)
+    rows = conn.execute(f"SELECT content_hash,source_kind,status FROM life_tips WHERE content_hash IN ({marks}) OR (source_kind='seed' AND status='active')", tuple(sorted(hashes))).fetchall()
+    found = {row["content_hash"] for row in rows}
+    return hashes <= found and not any(row["source_kind"] == "seed" and row["status"] == "active" and row["content_hash"] not in hashes for row in rows)
+
+
+def _runtime_db_key() -> tuple[str, str]:
+    from .. import config
+    engine = get_configured_db_engine()
+    target = str(config.DB_PATH.resolve()) if engine == "sqlite" else str(config.DATABASE_URL)
+    return engine, hashlib.sha256(target.encode()).hexdigest()
+
+
+def _close_owned_connection(conn: Any, work) -> Any:
+    """Publish nothing until both commit and close have actually succeeded."""
+    try:
+        result = work(conn)
+        conn.commit()
+    except BaseException as primary:
+        for operation in ("rollback", "close"):
+            try:
+                getattr(conn, operation)()
+            except BaseException as cleanup:
+                primary.add_note(f"Life-tip {operation} cleanup also failed: {type(cleanup).__name__}")
+        raise
+    conn.close()
+    return result
+
+
+def warm_life_tip_runtime(*, blocking: bool = True) -> bool:
+    """Own one short seed transaction before accepting requests or claims."""
+    global _seeded, _ready_db_key
+    key = _runtime_db_key()
+    if _seeded and _ready_db_key == key:
+        return True
+    if not _seed_lock.acquire(blocking=blocking):
+        return False
+    try:
+        if _seeded and _ready_db_key == key:
+            return True
+        from ..database import get_db_connection
+        _close_owned_connection(get_db_connection(), ensure_life_tip_runtime)
+        if _runtime_db_key() != key:
+            return False
+        invalidate_pool_cache()
+        _ready_db_key, _seeded = key, True
+        return True
+    finally:
+        _seed_lock.release()
 
 
 def _tip_insert_ignore_sql() -> str:
@@ -161,7 +234,9 @@ def insert_life_tip(
 
 
 def invalidate_pool_cache() -> None:
+    global _pool_generation
     with _pool_lock:
+        _pool_generation += 1
         _pool_cache.clear()
 
 
@@ -206,21 +281,63 @@ def _get_pool(
     department: str,
     audience_role: str,
 ) -> list[dict[str, Any]]:
-    key = (school_code, department, audience_role)
-    now = time.monotonic()
-    with _pool_lock:
-        cached = _pool_cache.get(key)
-        if cached and cached[0] > now:
-            return cached[1]
-    pool = _load_pool_from_db(
+    # A supplied connection may contain pending writes. Its snapshot must
+    # never become another request's process cache, even after a later rollback.
+    return _load_pool_from_db(
         conn,
         school_code=school_code,
         department=department,
         audience_role=audience_role,
     )
+
+
+def _get_committed_pool(*, school_code: str, department: str, audience_role: str) -> list[dict[str, Any]]:
+    if not warm_life_tip_runtime(blocking=False):
+        return []
+    key = (_runtime_db_key(), school_code, department, audience_role)
     with _pool_lock:
-        _pool_cache[key] = (now + POOL_CACHE_TTL_SECONDS, pool)
-    return pool
+        cached = _pool_cache.get(key)
+        if cached and cached[0] > time.monotonic():
+            return cached[1]
+    # Cold scopes wait before borrowing a connection; hot scopes stay in memory.
+    with _pool_fill_lock:
+        with _pool_lock:
+            cached = _pool_cache.get(key)
+            if cached and cached[0] > time.monotonic():
+                return cached[1]
+            generation = _pool_generation
+        from ..database import get_db_connection
+        pool = _close_owned_connection(get_db_connection(), lambda conn: _load_pool_from_db(
+            conn, school_code=school_code, department=department, audience_role=audience_role))
+        with _pool_lock:
+            if pool and generation == _pool_generation and key[0] == _runtime_db_key():
+                _pool_cache[key] = (time.monotonic() + POOL_CACHE_TTL_SECONDS, pool)
+        return pool
+
+
+def build_committed_login_tip_payload(*, user_id: int, role: str = "student") -> Optional[dict[str, Any]]:
+    """Read current scope and cache only our own successfully committed pool.
+
+    Call outside every caller-owned DB unit. Failed warmup keeps the existing
+    optional-tip degradation; cold retries never hold a pool slot while waiting.
+    """
+    if role not in {"student", "teacher"}:
+        return None
+    try:
+        if not warm_life_tip_runtime(blocking=False):
+            return None
+        from ..database import get_db_connection
+        table = "students" if role == "student" else "teachers"
+        row = _close_owned_connection(get_db_connection(), lambda conn: conn.execute(
+            f"SELECT school_code,department FROM {table} WHERE id=?", (int(user_id),)).fetchone())
+        if not row:
+            return None
+        pool = _get_committed_pool(school_code=str(row["school_code"] or "").strip(),
+            department=str(row["department"] or "").strip(), audience_role=role)
+        return _payload_from_pool(pool)
+    except Exception as exc:
+        print(f"[LIFE_TIP] Committed login tips unavailable: {type(exc).__name__}")
+        return None
 
 
 def _load_image_manifest() -> list[dict[str, Any]]:
@@ -295,6 +412,10 @@ def build_login_tip_payload(
         # 提示语永远是锦上添花，任何失败都不能影响登录。
         print(f"[LIFE_TIP] 登录提示加载失败: {exc}")
         return None
+    return _payload_from_pool(pool)
+
+
+def _payload_from_pool(pool: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
     if not pool:
         return None
     candidates = _weighted_sample(pool, min(TIP_CANDIDATE_COUNT, len(pool)))

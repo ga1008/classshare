@@ -49,7 +49,7 @@ class WandererInboxPostgresTest(unittest.TestCase):
         self.enterContext(patch("classroom_app.config.DATA_DIR", Path(folder)))
         with self.connect() as conn:
             conn.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
-            schema_wanderers.ensure_wanderer_schema(conn)
+            schema_wanderers.ensure_wanderer_schema(conn, allow_schema_changes=True)
             conn.commit()
 
     def race(self, count, fn):
@@ -66,6 +66,77 @@ class WandererInboxPostgresTest(unittest.TestCase):
                 inbox.enqueue(conn, 1, "social", f"dm:{index}", f"student:{index + 100}", index + 1)
             conn.execute("UPDATE wanderer_social_inbox SET run_at='2000-01-01'")
             conn.commit()
+
+    def test_complete_startup_does_not_take_schema_locks_while_a_tick_is_open(self):
+        # Reproduces the original lock order: the tick owns action_log first,
+        # then reads relationships after a new process prepares its schema.
+        with self.connect() as tick:
+            tick.execute("INSERT INTO wanderer_action_log (wanderer_id,action_kind,created_at) VALUES (1,'live-tick','now')")
+            started = threading.Event()
+
+            def new_process_startup():
+                with self.connect() as conn:
+                    conn.execute("SET LOCAL statement_timeout='2s'")
+                    calls = []
+                    execute = conn.execute
+
+                    def observed(sql, params=()):
+                        calls.append(sql)
+                        return execute(sql, params)
+
+                    with patch.object(conn, "execute", observed), patch.object(schema_wanderers, "_SCHEMA_READY", False):
+                        started.set()
+                        schema_wanderers.ensure_wanderer_schema(conn, allow_schema_changes=True)
+                    conn.commit()
+                    return calls
+
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(new_process_startup)
+                self.assertTrue(started.wait(2))
+                calls = future.result(timeout=4)
+            self.assertEqual(len(calls), 1)
+            self.assertTrue(calls[0].startswith("WITH expected_tables"))
+            tick.execute("SELECT peer_identity,affinity,last_reason FROM wanderer_relationships WHERE wanderer_id=1").fetchall()
+            tick.commit()
+
+    def test_default_missing_schema_error_keeps_business_transaction_usable(self):
+        with self.connect() as conn:
+            conn.execute("DROP INDEX idx_wanderer_todos_due")
+            conn.commit()
+        with self.connect() as conn:
+            conn.execute("INSERT INTO wanderer_runtime_settings VALUES ('business-tx','kept','now')")
+            with self.assertRaises(schema_wanderers.WandererSchemaUpgradeRequired) as caught:
+                schema_wanderers.ensure_wanderer_schema(conn)
+            self.assertEqual(caught.exception.missing, (("index", "wanderer_todos", "idx_wanderer_todos_due"),))
+            conn.commit()
+        with self.connect() as conn:
+            self.assertEqual(conn.execute("SELECT value FROM wanderer_runtime_settings WHERE key='business-tx'").fetchone()[0], 'kept')
+            schema_wanderers.ensure_wanderer_schema(conn, allow_schema_changes=True)
+            conn.commit()
+
+    def test_quiesced_additive_upgrade_preserves_rows_and_is_readonly_next_time(self):
+        with self.connect() as conn:
+            conn.execute("INSERT INTO wanderer_action_log (wanderer_id,action_kind,created_at) VALUES (1,'preserved','now')")
+            conn.execute("ALTER TABLE wanderer_action_log DROP COLUMN tick_id")
+            conn.execute("DROP INDEX idx_wanderer_todos_due")
+            conn.commit()
+        with self.connect() as conn:
+            schema_wanderers.ensure_wanderer_schema(conn, allow_schema_changes=True)
+            self.assertEqual(conn.execute("SELECT action_kind,tick_id FROM wanderer_action_log").fetchone()["action_kind"], 'preserved')
+            self.assertEqual(conn.execute("SELECT tick_id FROM wanderer_action_log").fetchone()[0], '')
+            conn.commit()
+        with self.connect() as conn:
+            calls = []
+            execute = conn.execute
+
+            def observed(sql, params=()):
+                calls.append(sql)
+                return execute(sql, params)
+
+            with patch.object(conn, "execute", observed):
+                schema_wanderers.ensure_wanderer_schema(conn, allow_schema_changes=True)
+            self.assertEqual(len(calls), 1)
+            self.assertTrue(calls[0].startswith("WITH expected_tables"))
 
     def test_parallel_workers_respect_global_two_slot_budget(self):
         self.seed(8)

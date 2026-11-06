@@ -29,7 +29,9 @@ class BehaviorPostgresWriteTests(unittest.TestCase):
             behavior_tracking_service,
             "execute_insert_returning_id",
             return_value=777,
-        ) as insert_helper:
+        ) as insert_helper, patch(
+            "classroom_app.services.learning_progress_service.mark_student_learning_progress_dirty"
+        ), patch("classroom_app.services.student_streak_service.record_student_activity", return_value={"is_new_day": False}):
             result = behavior_tracking_service._record_behavior_batch_in_connection(
                 conn,
                 class_offering_id=20,

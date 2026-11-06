@@ -31,6 +31,7 @@ import os
 import secrets
 import threading
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -38,6 +39,7 @@ from typing import Any, Optional
 from ..database import get_db_connection
 from ..db.connection import get_configured_db_engine
 from ..db.savepoint import best_effort
+from ..db.errors import DatabaseBusyError
 
 REMEMBER_COOKIE = "ls_remember"
 NOTICE_COOKIE = "ls_remember_notice"
@@ -341,6 +343,16 @@ def update_remember_after_login(request: Any, response: Any, access_token: str, 
         return  # the common case: nothing remembered, nothing to remember
     payload = _payload_from_access_token(access_token)
     with get_db_connection() as conn:
+        if remember and payload.get("id") is not None:
+            from .account_credentials_service import lock_actor_authorization_transition
+            from ..db.sessions import get_user_session
+            from ..dependencies import build_session_user_key
+            role = str(payload.get("role") or "")
+            lock_actor_authorization_transition(conn, role=role, user_id=int(payload["id"]))
+            current = get_user_session(build_session_user_key(payload["id"], role) or "", conn=conn)
+            if not current or current["session_id"] != payload.get("session_id"):
+                conn.rollback()
+                return  # A credential change or newer login won before this response.
         ensure_remember_schema(conn)
         if previous:
             revoke_remember_selector(conn, previous[0], "replaced_by_login")
@@ -358,7 +370,7 @@ def update_remember_after_login(request: Any, response: Any, access_token: str, 
         clear_remember_cookie(response)
 
 
-def current_device_remembered(request: Any, user: dict[str, Any]) -> Optional[str]:
+def current_device_remembered(request: Any, user: dict[str, Any], *, conn=None) -> Optional[str]:
     """This device's absolute expiry if it is validly remembered for ``user``.
 
     Read it before a credential change (which revokes every device) so the
@@ -368,10 +380,10 @@ def current_device_remembered(request: Any, user: dict[str, Any]) -> Optional[st
     if not parsed or not remember_enabled():
         return None
     selector, validator = parsed
-    with get_db_connection() as conn:
-        ensure_remember_schema(conn)
-        row = conn.execute(
-            "SELECT user_id, role, validator_hash, revoked_at, absolute_expires_at FROM remember_login_tokens "
+    with (nullcontext(conn) if conn is not None else get_db_connection()) as active_conn:
+        ensure_remember_schema(active_conn)
+        row = active_conn.execute(
+            "SELECT user_id, role, validator_hash, revoked_at, expires_at, absolute_expires_at FROM remember_login_tokens "
             "WHERE selector = ? LIMIT 1",
             (selector,),
         ).fetchone()
@@ -381,21 +393,92 @@ def current_device_remembered(request: Any, user: dict[str, Any]) -> Optional[st
         return None
     if not hmac.compare_digest(str(row["validator_hash"]), _hash_validator(validator)):
         return None
+    now = _iso(_utc_now())
+    if str(row["expires_at"] or "") <= now or str(row["absolute_expires_at"] or "") <= now:
+        return None
     return str(row["absolute_expires_at"] or "") or None
 
 
-def reissue_for_current_device(request: Any, response: Any, user: dict[str, Any], absolute_expires_at: str) -> None:
-    """After a self password change: keep the device the user is using remembered."""
-    from ..dependencies import decode_token_payload
+def end_remembered_session_for_logout(conn: Any, cookie_value: Any) -> Optional[dict]:
+    """End only this valid device's session when its access cookie is unusable.
+
+    Rotation and logout share the actor lock. A rotation which won the lock
+    first is observed by the fresh read; one which lost sees the revocation.
+    A different device's newer canonical session is never deleted.
+    """
+    parsed = parse_remember_cookie(cookie_value)
+    if not parsed:
+        return None
+    selector, validator = parsed
+    presented = _hash_validator(validator)
+    ensure_remember_schema(conn)
+
+    def valid(row):
+        if row is None or str(row["revoked_at"] or ""):
+            return False
+        now = _utc_now()
+        if str(row["expires_at"]) <= _iso(now) or str(row["absolute_expires_at"]) <= _iso(now):
+            return False
+        if hmac.compare_digest(str(row["validator_hash"]), presented):
+            return True
+        try:
+            recent = (now - datetime.fromisoformat(str(row["rotated_at"]))).total_seconds() <= ROTATION_GRACE_SECONDS
+        except ValueError:
+            return False
+        return recent and hmac.compare_digest(str(row["prev_validator_hash"] or ""), presented)
+
+    row = conn.execute("SELECT * FROM remember_login_tokens WHERE selector = ? LIMIT 1", (selector,)).fetchone()
+    if not valid(row):
+        return None
+    from .account_credentials_service import lock_actor_authorization_transition
+    from ..dependencies import build_session_user_key, _drop_cached_sessions_for_user, _drop_identity_cache_for_user
+    user_id, role = str(row["user_id"]), str(row["role"])
+    lock_actor_authorization_transition(conn, role=role, user_id=int(user_id))
+    row = conn.execute("SELECT * FROM remember_login_tokens WHERE selector = ? LIMIT 1", (selector,)).fetchone()
+    if not valid(row) or (str(row["user_id"]), str(row["role"])) != (user_id, role):
+        return None
+    deleted = conn.execute("DELETE FROM user_sessions WHERE session_user_key = ? AND session_id = ?",
+                           (build_session_user_key(user_id, role), str(row["last_session_id"] or "")))
+    if deleted.rowcount:
+        _drop_cached_sessions_for_user(user_id, role, block=True)
+        _drop_identity_cache_for_user(user_id, role)
+    revoke_remember_selector(conn, selector, "logout")
+    return {"id": int(user_id), "role": role}
+
+
+def reissue_for_current_device(request: Any, response: Any, user: dict[str, Any], absolute_expires_at: str,
+                               *, conn=None) -> None:
+    """Keep this device only while its authorizing session is still canonical.
+
+    Password-change callers supply their actor-locked credential transaction;
+    standalone callers take the same lock and fresh-read account/session state.
+    Merely possessing a stale authenticated request never creates a new grant.
+    """
+    from ..dependencies import build_session_user_key, decode_token_payload
+    from ..db.sessions import get_user_session
+    from .account_credentials_service import lock_actor_authorization_transition
     payload = decode_token_payload(request.cookies.get("access_token")) or {}
-    with get_db_connection() as conn:
+    role, user_id = str(user.get("role") or ""), str(user.get("id") or "")
+    if (role not in VALID_ROLES or not user_id.isdigit()
+            or (str(payload.get("id")), payload.get("role")) != (user_id, role)
+            or not payload.get("session_id")
+            or (user.get("session_id") and payload["session_id"] != user["session_id"])):
+        return
+    with (nullcontext(conn) if conn is not None else get_db_connection()) as active_conn:
+        lock_actor_authorization_transition(active_conn, role=role, user_id=int(user_id))
+        current = get_user_session(build_session_user_key(user_id, role), conn=active_conn)
+        if (not current or current["session_id"] != payload["session_id"]
+                or _account_token_data(active_conn, user_id, role) is None
+                or absolute_expires_at <= _iso(_utc_now())):
+            return
         cookie_value = issue_remember_token(
-            conn, user_id=user.get("id"), role=str(user.get("role") or ""),
+            active_conn, user_id=user_id, role=role,
             session_id=str(payload.get("session_id") or ""),
             user_agent=str(request.headers.get("user-agent") or ""), ip=str(payload.get("ip") or ""),
             absolute_expires_at=absolute_expires_at,
         )
-        conn.commit()
+        if conn is None:
+            active_conn.commit()
     apply_remember_cookie(response, cookie_value, secure=is_https_request(request))
 
 
@@ -403,7 +486,7 @@ def reissue_for_current_device(request: Any, response: Any, user: dict[str, Any]
 
 @dataclass(frozen=True)
 class RememberOutcome:
-    kind: str  # ok | clear | conflict | security | skip
+    kind: str  # ok | clear | conflict | security | unavailable
     access_token: str = ""
     cookie_value: str = ""
 
@@ -435,19 +518,19 @@ def _account_token_data(conn: Any, user_id: str, role: str) -> Optional[dict[str
             "role": "student", "login_time": login_time, "auth_method": "remember"}
 
 
-def _another_device_is_live(user_id: str, role: str, last_session_id: str) -> bool:
+def _another_device_is_live(conn: Any, user_id: str, role: str, last_session_id: str) -> bool:
     from ..db.sessions import get_user_session
     from ..dependencies import build_session_user_key
-    current = get_user_session(build_session_user_key(user_id, role) or "")
+    current = get_user_session(build_session_user_key(user_id, role) or "", conn=conn)
     return bool(current) and str(current.get("session_id") or "") != str(last_session_id or "")
 
 
 def _theft_detected(conn: Any, row: Any) -> RememberOutcome:
     user_id, role = str(row["user_id"]), str(row["role"])
     revoke_remember_tokens(conn, user_id, role, "reuse_detected")
-    conn.commit()
     from ..dependencies import invalidate_session_for_user
-    invalidate_session_for_user(user_id, role, revoke_remembered=False)
+    invalidate_session_for_user(user_id, role, conn=conn, revoke_remembered=False)
+    conn.commit()
     print(f"[REMEMBER] reused remember token for {role}:{user_id}; all remembered devices revoked")
     return RememberOutcome(NOTICE_SECURITY)
 
@@ -459,20 +542,23 @@ def _validator_mismatch(conn: Any, row: Any, presented_hash: str, now: datetime)
     except ValueError:
         rotated_recently = False
     if rotated_recently and hmac.compare_digest(str(row["prev_validator_hash"] or ""), presented_hash):
-        return RememberOutcome("skip")  # a parallel request already rotated; let this one pass
+        # Another process or a restart may have lost the local result cache.
+        # Keep the existing cookies so the successful rotation can reach the browser.
+        return RememberOutcome("unavailable")
     return _theft_detected(conn, row)
 
 
 def _rotate(conn: Any, row: Any, selector: str, client_ip: str, user_agent: str,
-            token_data: dict[str, Any], now: datetime) -> tuple[str, str]:
-    from ..dependencies import create_access_token, decode_token_payload
-    access_token = create_access_token(token_data, client_ip)
+            token_data: dict[str, Any], now: datetime) -> tuple[str, str, int]:
+    from ..dependencies import create_access_token, decode_token_payload, _begin_session_cache_write
+    generation = _begin_session_cache_write(str(token_data["id"]), str(token_data["role"]))
+    access_token = create_access_token(token_data, client_ip, conn=conn, cache_generation=generation)
     session_id = str((decode_token_payload(access_token) or {}).get("session_id") or "")
     new_validator = secrets.token_urlsafe(VALIDATOR_BYTES)
     new_expiry = min(now + timedelta(days=remember_idle_days()),
                      datetime.fromisoformat(str(row["absolute_expires_at"])))
     now_iso = _iso(now)
-    conn.execute(
+    cursor = conn.execute(
         """
         UPDATE remember_login_tokens
         SET prev_validator_hash = validator_hash, validator_hash = ?, rotated_at = ?, last_used_at = ?,
@@ -482,8 +568,10 @@ def _rotate(conn: Any, row: Any, selector: str, client_ip: str, user_agent: str,
         (_hash_validator(new_validator), now_iso, now_iso, _iso(new_expiry), session_id,
          str(client_ip or "")[:64], _device_label(user_agent) or str(row["device_label"] or ""), selector),
     )
+    if cursor.rowcount != 1:
+        raise DatabaseBusyError("保持登录状态已变化，请稍后重试。")
     conn.commit()
-    return access_token, f"{selector}.{new_validator}"
+    return access_token, f"{selector}.{new_validator}", generation
 
 
 def _refresh_locked(selector: str, validator: str, client_ip: str, user_agent: str) -> RememberOutcome:
@@ -497,6 +585,10 @@ def _refresh_locked(selector: str, validator: str, client_ip: str, user_agent: s
     with get_db_connection() as conn:
         ensure_remember_schema(conn)
         row = conn.execute("SELECT * FROM remember_login_tokens WHERE selector = ? LIMIT 1", (selector,)).fetchone()
+        if row is not None:
+            from .account_credentials_service import lock_actor_authorization_transition
+            lock_actor_authorization_transition(conn, role=str(row["role"]), user_id=int(row["user_id"]))
+            row = conn.execute("SELECT * FROM remember_login_tokens WHERE selector = ? LIMIT 1", (selector,)).fetchone()
         if row is None or str(row["revoked_at"] or ""):
             return RememberOutcome("clear")
         if str(row["expires_at"]) <= now_iso or str(row["absolute_expires_at"]) <= now_iso:
@@ -511,9 +603,13 @@ def _refresh_locked(selector: str, validator: str, client_ip: str, user_agent: s
             revoke_remember_tokens(conn, user_id, role, "account_unavailable")
             conn.commit()
             return RememberOutcome("clear")
-        if _another_device_is_live(user_id, role, str(row["last_session_id"] or "")):
+        if _another_device_is_live(conn, user_id, role, str(row["last_session_id"] or "")):
             return RememberOutcome(NOTICE_CONFLICT)
-        access_token, cookie_value = _rotate(conn, row, selector, client_ip, user_agent, token_data, now)
+        access_token, cookie_value, generation = _rotate(conn, row, selector, client_ip, user_agent, token_data, now)
+    # The session and validator are now committed together. Publishing earlier
+    # could make an undelivered session valid after a failed credential update.
+    from ..dependencies import _publish_committed_access_token
+    _publish_committed_access_token(access_token, generation)
     _RECENT_REFRESHES[selector] = (presented_hash, cookie_value, access_token, time.monotonic())
     if len(_RECENT_REFRESHES) > 2000:
         _RECENT_REFRESHES.clear()
@@ -530,7 +626,7 @@ def refresh_from_remember_cookie(cookie_value: Any, client_ip: str, user_agent: 
             return _refresh_locked(parsed[0], parsed[1], client_ip, user_agent)
         except Exception as exc:  # noqa: BLE001 - never break the request because of remember-me
             print(f"[REMEMBER] refresh failed: {exc}")
-            return RememberOutcome("skip")
+            return RememberOutcome("unavailable")
 
 
 # ---------------------------------------------------------------- device management

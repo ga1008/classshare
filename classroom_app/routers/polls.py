@@ -6,9 +6,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from ..database import get_db_connection
 from ..dependencies import get_current_user
+from ..db.savepoint import best_effort
 from ..services import poll_service
 from ..services.runtime_metrics_service import record_websocket_sent
 
@@ -70,26 +72,24 @@ def _notify_if_active(conn, poll: dict) -> None:
     the message-center layer, so calling on every activation is safe."""
     if not poll or str(poll.get("status")) != "active":
         return
-    try:
+    with best_effort(conn, "poll_publish_notification", log_prefix="[POLL]"):
         from ..services.message_center_service import create_poll_published_notifications
 
         create_poll_published_notifications(conn, int(poll["id"]))
-    except Exception:
-        pass
 
 
 # --------------------------------------------------------------------------- #
 # classroom-scoped endpoints
 # --------------------------------------------------------------------------- #
 @router.get("/classrooms/{class_offering_id}/snapshot", response_class=JSONResponse)
-async def classroom_poll_snapshot(class_offering_id: int, user: dict = Depends(get_current_user)):
+def classroom_poll_snapshot(class_offering_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         snapshot = poll_service.load_classroom_snapshot(conn, class_offering_id, user)
     return {"status": "ok", "snapshot": snapshot}
 
 
 @router.get("/classrooms/{class_offering_id}/candidates", response_class=JSONResponse)
-async def classroom_poll_candidates(class_offering_id: int, user: dict = Depends(get_current_user)):
+def classroom_poll_candidates(class_offering_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         candidates = poll_service.list_class_candidates(conn, class_offering_id, user)
     return {"status": "ok", "candidates": candidates}
@@ -98,13 +98,16 @@ async def classroom_poll_candidates(class_offering_id: int, user: dict = Depends
 @router.post("/classrooms/{class_offering_id}/polls", response_class=JSONResponse)
 async def create_classroom_poll(class_offering_id: int, request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request)
-    with get_db_connection() as conn:
-        poll = poll_service.create_poll(
-            conn, user, payload, origin=poll_service.ORIGIN_CLASSROOM, class_offering_id=class_offering_id
-        )
-        _notify_if_active(conn, poll)
-        snapshot = poll_service.load_classroom_snapshot(conn, class_offering_id, user)
-        conn.commit()
+    def persist():
+        with get_db_connection() as conn:
+            poll = poll_service.create_poll(
+                conn, user, payload, origin=poll_service.ORIGIN_CLASSROOM, class_offering_id=class_offering_id
+            )
+            _notify_if_active(conn, poll)
+            snapshot = poll_service.load_classroom_snapshot(conn, class_offering_id, user)
+            conn.commit()
+        return poll, snapshot
+    poll, snapshot = await run_in_threadpool(persist)
     await _broadcast_poll_changed([class_offering_id], reason="poll_created", poll_id=poll["id"])
     return {"status": "ok", "message": "投票活动已创建", "poll": poll, "snapshot": snapshot}
 
@@ -113,14 +116,14 @@ async def create_classroom_poll(class_offering_id: int, request: Request, user: 
 # management endpoints
 # --------------------------------------------------------------------------- #
 @router.get("/manage/list", response_class=JSONResponse)
-async def management_poll_list(user: dict = Depends(get_current_user)):
+def management_poll_list(user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         data = poll_service.load_management_list(conn, user)
     return {"status": "ok", **data}
 
 
 @router.get("/manage/offerings", response_class=JSONResponse)
-async def management_offerings(user: dict = Depends(get_current_user)):
+def management_offerings(user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         offerings = poll_service.list_teacher_offerings(conn, user)
     return {"status": "ok", "offerings": offerings}
@@ -129,12 +132,15 @@ async def management_offerings(user: dict = Depends(get_current_user)):
 @router.post("/manage/polls", response_class=JSONResponse)
 async def create_management_poll(request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request)
-    with get_db_connection() as conn:
-        poll = poll_service.create_poll(conn, user, payload, origin=poll_service.ORIGIN_MANAGEMENT)
-        _notify_if_active(conn, poll)
-        data = poll_service.load_management_list(conn, user)
-        class_ids = _poll_class_ids(conn, poll["id"])
-        conn.commit()
+    def persist():
+        with get_db_connection() as conn:
+            poll = poll_service.create_poll(conn, user, payload, origin=poll_service.ORIGIN_MANAGEMENT)
+            _notify_if_active(conn, poll)
+            data = poll_service.load_management_list(conn, user)
+            class_ids = _poll_class_ids(conn, poll["id"])
+            conn.commit()
+        return poll, data, class_ids
+    poll, data, class_ids = await run_in_threadpool(persist)
     await _broadcast_poll_changed(class_ids, reason="poll_created", poll_id=poll["id"])
     return {"status": "ok", "message": "投票活动已创建", "poll": poll, **data}
 
@@ -143,7 +149,7 @@ async def create_management_poll(request: Request, user: dict = Depends(get_curr
 # shared poll endpoints (detail / vote / edit / status / assign / delete)
 # --------------------------------------------------------------------------- #
 @router.get("/{poll_id}", response_class=JSONResponse)
-async def poll_detail(poll_id: int, user: dict = Depends(get_current_user)):
+def poll_detail(poll_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         poll = poll_service.load_poll_detail(conn, poll_id, user)
     return {"status": "ok", "poll": poll}
@@ -155,10 +161,13 @@ async def poll_vote(poll_id: int, request: Request, user: dict = Depends(get_cur
     option_ids = payload.get("option_ids")
     if option_ids is None and payload.get("option_id") is not None:
         option_ids = [payload.get("option_id")]
-    with get_db_connection() as conn:
-        poll = poll_service.vote(conn, poll_id, user, option_ids)
-        class_ids = _poll_class_ids(conn, poll_id)
-        conn.commit()
+    def persist():
+        with get_db_connection() as conn:
+            poll = poll_service.vote(conn, poll_id, user, option_ids)
+            class_ids = _poll_class_ids(conn, poll_id)
+            conn.commit()
+        return poll, class_ids
+    poll, class_ids = await run_in_threadpool(persist)
     await _broadcast_poll_changed(class_ids, reason="poll_vote", poll_id=poll_id)
     return {"status": "ok", "message": "投票已提交", "poll": poll}
 
@@ -166,10 +175,13 @@ async def poll_vote(poll_id: int, request: Request, user: dict = Depends(get_cur
 @router.put("/{poll_id}", response_class=JSONResponse)
 async def poll_update(poll_id: int, request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request)
-    with get_db_connection() as conn:
-        poll = poll_service.update_poll(conn, poll_id, user, payload)
-        class_ids = _poll_class_ids(conn, poll_id)
-        conn.commit()
+    def persist():
+        with get_db_connection() as conn:
+            poll = poll_service.update_poll(conn, poll_id, user, payload)
+            class_ids = _poll_class_ids(conn, poll_id)
+            conn.commit()
+        return poll, class_ids
+    poll, class_ids = await run_in_threadpool(persist)
     await _broadcast_poll_changed(class_ids, reason="poll_updated", poll_id=poll_id)
     return {"status": "ok", "message": "投票活动已更新", "poll": poll}
 
@@ -177,11 +189,14 @@ async def poll_update(poll_id: int, request: Request, user: dict = Depends(get_c
 @router.post("/{poll_id}/status", response_class=JSONResponse)
 async def poll_set_status(poll_id: int, request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request)
-    with get_db_connection() as conn:
-        poll = poll_service.set_poll_status(conn, poll_id, user, payload.get("status"))
-        _notify_if_active(conn, poll)
-        class_ids = _poll_class_ids(conn, poll_id)
-        conn.commit()
+    def persist():
+        with get_db_connection() as conn:
+            poll = poll_service.set_poll_status(conn, poll_id, user, payload.get("status"))
+            _notify_if_active(conn, poll)
+            class_ids = _poll_class_ids(conn, poll_id)
+            conn.commit()
+        return poll, class_ids
+    poll, class_ids = await run_in_threadpool(persist)
     await _broadcast_poll_changed(class_ids, reason="poll_status", poll_id=poll_id)
     return {"status": "ok", "message": "投票状态已更新", "poll": poll}
 
@@ -190,20 +205,30 @@ async def poll_set_status(poll_id: int, request: Request, user: dict = Depends(g
 async def poll_set_assignments(poll_id: int, request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request)
     class_offering_ids = payload.get("class_offering_ids") or []
-    with get_db_connection() as conn:
-        old_class_ids = _poll_class_ids(conn, poll_id)
-        poll = poll_service.set_poll_assignments(conn, poll_id, user, class_offering_ids)
-        new_class_ids = _poll_class_ids(conn, poll_id)
-        conn.commit()
+    def persist():
+        with get_db_connection() as conn:
+            # Capture the old notification audience under the mutation's
+            # parent lock, including a concurrent reassignment that won first.
+            poll_service._load_poll(conn, poll_id, lock="owner")
+            old_class_ids = _poll_class_ids(conn, poll_id)
+            poll = poll_service.set_poll_assignments(conn, poll_id, user, class_offering_ids)
+            new_class_ids = _poll_class_ids(conn, poll_id)
+            conn.commit()
+        return poll, old_class_ids, new_class_ids
+    poll, old_class_ids, new_class_ids = await run_in_threadpool(persist)
     await _broadcast_poll_changed(list({*old_class_ids, *new_class_ids}), reason="poll_assigned", poll_id=poll_id)
     return {"status": "ok", "message": "分配已更新", "poll": poll}
 
 
 @router.delete("/{poll_id}", response_class=JSONResponse)
 async def poll_delete(poll_id: int, user: dict = Depends(get_current_user)):
-    with get_db_connection() as conn:
-        class_ids = _poll_class_ids(conn, poll_id)
-        poll_service.delete_poll(conn, poll_id, user)
-        conn.commit()
+    def persist():
+        with get_db_connection() as conn:
+            poll_service._load_poll(conn, poll_id, lock="owner")
+            class_ids = _poll_class_ids(conn, poll_id)
+            poll_service.delete_poll(conn, poll_id, user)
+            conn.commit()
+        return class_ids
+    class_ids = await run_in_threadpool(persist)
     await _broadcast_poll_changed(class_ids, reason="poll_deleted", poll_id=poll_id)
     return {"status": "ok", "message": "投票活动已删除"}

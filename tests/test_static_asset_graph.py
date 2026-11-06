@@ -96,6 +96,62 @@ class StaticAssetGraphTests(unittest.TestCase):
                 self.assertNotEqual(before, after)
                 self.assertIn(frontend_assets.static_asset_revision(), after)
 
+    def test_warmed_release_graph_never_stats_original_sources_for_aliases_or_paths(self):
+        with patch.object(frontend_assets, "STATIC_DIR", self.root), patch.object(
+            frontend_assets, "ASSET_MANIFEST_PATH", self.root / "vendor/manifest.json"
+        ), patch.dict(os.environ, {"LANSHARE_RELEASE_ID": "immutable-release"}):
+            alias = frontend_assets.asset_url("tailwind_app")
+            script = frontend_assets.asset_url("js/ui.js")
+            with patch.object(Path, "stat", side_effect=AssertionError("a validated release URL needs no stat")):
+                self.assertEqual(alias, frontend_assets.asset_url("tailwind_app"))
+                self.assertEqual(alias, frontend_assets.asset_url("css/tailwind-app.css"))
+                self.assertEqual(script, frontend_assets.asset_url("static/js/ui.js"))
+
+    def test_invalid_source_paths_still_fail_before_asset_resolution(self):
+        with patch.object(frontend_assets, "STATIC_DIR", self.root), patch.object(
+            frontend_assets, "ASSET_MANIFEST_PATH", self.root / "vendor/manifest.json"
+        ):
+            for value in ("../secret.js", "js/../../secret.js", "static/../secret.js"):
+                with self.subTest(path=value), self.assertRaisesRegex(ValueError, "Invalid static asset path"):
+                    frontend_assets.asset_url(value)
+
+    def test_missing_or_escaping_hashed_target_never_falls_back_to_original_source(self):
+        manifest = self.build()
+        (self.root / manifest["entries"]["js/ui.js"]).unlink()
+        with patch.object(frontend_assets, "STATIC_DIR", self.root), patch.object(
+            frontend_assets, "ASSET_MANIFEST_PATH", self.root / "vendor/manifest.json"
+        ):
+            with self.assertRaisesRegex(FileNotFoundError, "dependency missing"):
+                frontend_assets.asset_url("js/ui.js")
+            manifest["entries"]["js/ui.js"] = "assets/escape.js"
+            (self.root / "assets/manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            frontend_assets.load_static_asset_graph.cache_clear()
+            with self.assertRaisesRegex(ValueError, "escapes its revision"):
+                frontend_assets.asset_url("js/ui.js")
+
+    def test_no_graph_fallback_keeps_live_file_revisions_and_missing_media_contract(self):
+        (self.root / "assets/manifest.json").unlink()
+        with patch.object(frontend_assets, "STATIC_DIR", self.root), patch.object(
+            frontend_assets, "ASSET_MANIFEST_PATH", self.root / "vendor/manifest.json"
+        ), patch.dict(os.environ, {"LANSHARE_RELEASE_ID": "dev"}):
+            source = self.root / "js/ui.js"
+            before = frontend_assets.asset_url("js/ui.js")
+            stamp = int(source.stat().st_mtime) + 5
+            os.utime(source, (stamp, stamp))
+            self.assertEqual(f"/static/js/ui.js?v={stamp}", frontend_assets.asset_url("js/ui.js"))
+            self.assertNotEqual(before, frontend_assets.asset_url("js/ui.js"))
+            self.assertEqual("/static/img/missing.png", frontend_assets.asset_url("img/missing.png"))
+
+    def test_dev_rebuild_rotates_graph_without_a_release_change(self):
+        with patch.object(frontend_assets, "STATIC_DIR", self.root), patch.object(
+            frontend_assets, "ASSET_MANIFEST_PATH", self.root / "vendor/manifest.json"
+        ), patch.dict(os.environ, {"LANSHARE_RELEASE_ID": "dev"}):
+            before = frontend_assets.asset_url("js/ui.js")
+            (self.root / "js/ui.js").write_text("export const toast = () => 'hot update';", encoding="utf-8")
+            manifest = self.build()
+            self.assertEqual("/static/" + manifest["entries"]["js/ui.js"], frontend_assets.asset_url("js/ui.js"))
+            self.assertNotEqual(before, frontend_assets.asset_url("js/ui.js"))
+
     def test_unbuilt_sources_revalidate_and_malformed_hashes_are_not_immutable(self):
         revision = self.build()["revision"]
         self.assertIn("immutable", static_asset_cache_control(f"assets/{revision}/js/ui.js"))

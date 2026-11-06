@@ -757,28 +757,6 @@ def _load_active_signals(conn: sqlite3.Connection, class_offering_id: int) -> li
     return [dict(row) for row in rows]
 
 
-def _load_my_signal(
-    conn: sqlite3.Connection,
-    class_offering_id: int,
-    user: dict[str, Any],
-) -> dict[str, Any] | None:
-    if not _is_student(user):
-        return None
-    row = conn.execute(
-        """
-        SELECT *
-        FROM classroom_live_help_signals
-        WHERE class_offering_id = ?
-          AND student_id = ?
-          AND status = 'active'
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        (int(class_offering_id), _user_pk(user)),
-    ).fetchone()
-    return dict(row) if row else None
-
-
 def _can_show_results(activity: dict[str, Any], *, is_teacher: bool, has_responded: bool) -> bool:
     if is_teacher:
         return True
@@ -990,7 +968,6 @@ def load_interaction_snapshot(
     my_responses = _load_my_responses(conn, activity_ids, user)
     questions = _load_questions(conn, activity_ids)
     signals = _load_active_signals(conn, int(class_offering_id))
-    my_signal = _load_my_signal(conn, int(class_offering_id), user)
 
     serialized_activities = []
     for activity in activities:
@@ -1011,9 +988,17 @@ def load_interaction_snapshot(
     recent_activities = [item for item in serialized_activities if item["status"] != ACTIVITY_STATUS_ACTIVE]
     unresolved_question_count = sum(item["open_question_count"] for item in serialized_activities)
     signal_counts: dict[str, int] = {}
+    student_id = _user_pk(user) if _is_student(user) else None
+    my_signal: dict[str, Any] | None = None
     for signal in signals:
         signal_type = str(signal.get("signal_type") or "")
         signal_counts[signal_type] = signal_counts.get(signal_type, 0) + 1
+        if (
+            student_id is not None
+            and signal["student_id"] == student_id
+            and (my_signal is None or signal["id"] > my_signal["id"])
+        ):
+            my_signal = signal
 
     return {
         "classroom": {

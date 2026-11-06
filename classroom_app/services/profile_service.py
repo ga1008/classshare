@@ -633,7 +633,9 @@ def _build_student_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
     activity_count = int(behavior_row["activity_count"] or 0) if behavior_row else 0
     focus_minutes = round(int(behavior_row["focus_seconds"] or 0) / 60) if behavior_row else 0
     notification_unread = _notification_unread_count(conn, role=role, user_id=student_id)
-    cultivation = build_student_global_cultivation_profile(conn, student_id)
+    cultivation = build_student_global_cultivation_profile(conn, student_id, include_rank=True)
+    cultivation_score = cultivation.get("score")
+    cultivation_score_text = cultivation_score if cultivation_score is not None else "生成中"
     cultivation_courses = cultivation.get("courses") or []
     breakthrough_count = sum(1 for item in cultivation_courses if item.get("eligible_stage"))
     cultivation_level = (cultivation.get("highest_level") or {}).get("level_name") or "凡阶"
@@ -648,13 +650,13 @@ def _build_student_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
                 "value": round(float(avg_score), 1) if avg_score is not None else "-",
                 "suffix": "",
             },
-            {"label": "当前修为", "value": cultivation.get("score", 0), "suffix": ""},
+            {"label": "当前修为", "value": cultivation_score_text, "suffix": ""},
         ],
         "metric_cards": [
             {"label": "待完成", "value": pending_count, "note": f"全部任务 {total} 项"},
             {"label": "已提交", "value": submitted_count, "note": f"批改中 {grading_count} 项"},
             {"label": "平均分", "value": round(float(avg_score), 1) if avg_score is not None else "-", "note": f"已批改 {graded_count} 项"},
-            {"label": "修炼进度", "value": cultivation.get("score", 0), "note": f"{cultivation_level} · 可破境 {breakthrough_count} 门"},
+            {"label": "修炼进度", "value": cultivation_score_text, "note": f"{cultivation_level} · 可破境 {breakthrough_count} 门"},
         ],
         "charts": [
             {

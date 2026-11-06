@@ -605,7 +605,7 @@ async def _process_discussion_chat_message(
         used_at=now.isoformat(),
     )
 
-    profile_trigger = record_message_activity(
+    profile_trigger = await asyncio.to_thread(record_message_activity,
         class_offering_id=class_offering_id,
         user_pk=user_pk,
         user_role=str(ws_user["role"]),
@@ -1747,7 +1747,7 @@ async def websocket_endpoint(websocket: WebSocket, class_offering_id: int):
             if command:
                 if command["action"] == "switch_alias":
                     switch_result = await manager.switch_temporary_name(class_offering_id, client_id)
-                    alias_trigger = record_alias_switch_activity(
+                    alias_trigger = await asyncio.to_thread(record_alias_switch_activity,
                         class_offering_id=class_offering_id,
                         user_pk=user_pk,
                         user_role=str(ws_user["role"]),

@@ -244,12 +244,8 @@ class DocumentRenderServiceTests(unittest.TestCase):
             original_service = document_renderer_router.document_render_service
             document_renderer_router.document_render_service = service
             try:
-                response = asyncio.run(
-                    document_renderer_router.get_rendered_document_metadata(
-                        job.key,
-                        token=token,
-                        user={"id": 7, "role": "teacher"},
-                    )
+                response = document_renderer_router.get_rendered_document_metadata(
+                    job.key, token=token, user={"id": 7, "role": "teacher"},
                 )
             finally:
                 document_renderer_router.document_render_service = original_service
@@ -280,12 +276,8 @@ class DocumentRenderServiceTests(unittest.TestCase):
             original_service = document_renderer_router.document_render_service
             document_renderer_router.document_render_service = service
             try:
-                response = asyncio.run(
-                    document_renderer_router.download_rendered_document(
-                        job.key,
-                        token=token,
-                        user={"id": 7, "role": "teacher"},
-                    )
+                response = document_renderer_router.download_rendered_document(
+                    job.key, token=token, user={"id": 7, "role": "teacher"},
                 )
             finally:
                 document_renderer_router.document_render_service = original_service

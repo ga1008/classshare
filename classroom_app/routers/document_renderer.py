@@ -70,7 +70,7 @@ def _map_render_error(exc: DocumentRenderError) -> HTTPException:
 
 
 @router.get("/jobs/{key}/pages/{page_number}", response_class=FileResponse)
-async def get_rendered_document_page(
+def get_rendered_document_page(
     key: str,
     page_number: int,
     size: str = Query(default="medium"),
@@ -95,7 +95,7 @@ async def get_rendered_document_page(
 
 
 @router.get("/jobs/{key}/download", response_class=FileResponse)
-async def download_rendered_document(
+def download_rendered_document(
     key: str,
     token: str = Query(default=""),
     user: dict = Depends(get_current_user),
@@ -120,7 +120,7 @@ async def download_rendered_document(
 
 
 @router.get("/jobs/{key}/metadata", response_class=JSONResponse)
-async def get_rendered_document_metadata(
+def get_rendered_document_metadata(
     key: str,
     token: str = Query(default=""),
     user: dict = Depends(get_current_user),

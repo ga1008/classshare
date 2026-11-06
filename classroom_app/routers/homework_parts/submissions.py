@@ -1,3 +1,4 @@
+import asyncio
 from .common import *
 from ...services.assessment_appeal_service import cancel_pending_appeals_for_answer
 
@@ -576,7 +577,7 @@ async def submit_assignment(assignment_id: str,
     if assignment["class_offering_id"]:
         try:
             user_dict = dict(user)
-            record_behavior_event(
+            await asyncio.to_thread(record_behavior_event,
                 class_offering_id=int(assignment["class_offering_id"]),
                 user_pk=int(user_dict["id"]),
                 user_role="student",
@@ -721,7 +722,7 @@ async def teacher_withdraw_submissions(
 
     if assignment.get("class_offering_id"):
         try:
-            record_behavior_event(
+            await asyncio.to_thread(record_behavior_event,
                 class_offering_id=int(assignment["class_offering_id"]),
                 user_pk=int(user["id"]),
                 user_role="teacher",
@@ -787,7 +788,7 @@ async def teacher_offline_submit_assignment(
 
     if assignment.get("class_offering_id"):
         try:
-            record_behavior_event(
+            await asyncio.to_thread(record_behavior_event,
                 class_offering_id=int(assignment["class_offering_id"]),
                 user_pk=int(user["id"]),
                 user_role="teacher",

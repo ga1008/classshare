@@ -54,6 +54,14 @@ class MaterialContentRequestFixture(PlatformRequestFixture):
                 result_payload_json TEXT,generated_material_id INTEGER,generated_material_path TEXT,error_message TEXT,created_at TEXT,
                 started_at TEXT,completed_at TEXT,updated_at TEXT);
               CREATE TABLE class_offering_sessions(id INTEGER PRIMARY KEY,class_offering_id INTEGER,order_index INTEGER,learning_material_id INTEGER);
+              CREATE TABLE course_material_assignments(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, material_id INTEGER NOT NULL,
+                class_offering_id INTEGER NOT NULL, assigned_by_teacher_id INTEGER NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP, publication_mode TEXT,
+                FOREIGN KEY(material_id) REFERENCES course_materials(id) ON DELETE CASCADE,
+                FOREIGN KEY(class_offering_id) REFERENCES class_offerings(id) ON DELETE CASCADE,
+                FOREIGN KEY(assigned_by_teacher_id) REFERENCES teachers(id),
+                UNIQUE(material_id,class_offering_id));
               ALTER TABLE class_offerings ADD COLUMN home_learning_material_id INTEGER;
             """)
             schema_course_doc_packs.ensure_course_doc_pack_schema(conn)

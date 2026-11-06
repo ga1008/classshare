@@ -100,9 +100,11 @@ async function initializeClassroomPage(app: HTMLElement) {
 
   const BehaviorTracker = window.BehaviorTracker;
   if (typeof BehaviorTracker === 'function') {
+    const behaviorUser = appConfig.userInfo as { role?: string; id?: number | string } | undefined;
     window.behaviorTracker = new BehaviorTracker({
       classOfferingId,
       pageKey: 'classroom_discussion',
+      userKey: behaviorUser?.role && behaviorUser?.id ? `${behaviorUser.role}:${behaviorUser.id}` : '',
     }).start();
   }
 

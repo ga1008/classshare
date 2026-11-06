@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 from ..core import templates
 from ..database import get_db_connection
-from ..dependencies import get_current_teacher, get_current_user, get_password_hash, verify_password
+from ..dependencies import get_current_teacher, get_current_user
 from ..lq_migration import lq_family_enabled
 from ..services.emoji_service import get_custom_emoji_path, validate_and_store_custom_emoji
 from ..services.profile_service import (
@@ -36,8 +36,6 @@ from ..services.email_notification_service import (
     test_teacher_email_config,
     update_teacher_email_config,
 )
-from ..services.student_auth_service import get_student_auth_record_by_pk, validate_student_password
-from ..services.teacher_account_service import TEACHER_PASSWORD_HINT, validate_teacher_password
 from ..services.teacher_identity_service import TeacherIdentityConflict
 
 router = APIRouter()
@@ -569,7 +567,7 @@ def api_profile_avatar(
 
 @router.put("/api/profile/password", response_class=JSONResponse)
 async def api_change_profile_password(request: Request, user: dict = Depends(get_current_user)):
-    from ..services.account_credentials_service import credentials_changed, prepare_credentials_change
+    from ..services.self_password_change_service import change_own_password
     data = await request.json()
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="密码格式不正确。")
@@ -577,65 +575,8 @@ async def api_change_profile_password(request: Request, user: dict = Depends(get
     current_password = str(data.get("current_password") or "")
     new_password = str(data.get("new_password") or "")
     confirm_password = str(data.get("confirm_password") or "")
-    if new_password != confirm_password:
-        raise HTTPException(status_code=400, detail="两次输入的新密码不一致。")
-    if current_password == new_password:
-        raise HTTPException(status_code=400, detail="新密码不能与当前密码相同。")
-
-    role = str(user.get("role") or "").strip().lower()
-    user_id = int(user["id"])
-    now_value = datetime.now().isoformat()
-    from ..services.remember_login_service import current_device_remembered, reissue_for_current_device
-    # A password change forgets every remembered device; keep the one in use.
-    remembered_until = current_device_remembered(request, user)
-
-    with get_db_connection() as conn:
-        prepare_credentials_change(conn, role=role, user_id=user_id)
-        if role == "student":
-            password_error = validate_student_password(new_password)
-            if password_error:
-                raise HTTPException(status_code=400, detail=password_error)
-            student_row = get_student_auth_record_by_pk(conn, user_id)
-            if not student_row:
-                raise HTTPException(status_code=404, detail="学生账号不存在。")
-            if student_row["password_reset_required"]:
-                raise HTTPException(status_code=400, detail="当前账号处于重置流程，请重新登录后设置密码。")
-            if not student_row["hashed_password"] or not verify_password(current_password, student_row["hashed_password"]):
-                raise HTTPException(status_code=400, detail="当前密码错误。")
-            credentials_changed(conn, role="student", user_id=user_id)
-            conn.execute(
-                """
-                UPDATE students
-                SET hashed_password = ?, password_updated_at = ?, password_reset_required = 0
-                WHERE id = ?
-                """,
-                (get_password_hash(new_password), now_value, user_id),
-            )
-        else:
-            try:
-                validate_teacher_password(new_password)
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc) or TEACHER_PASSWORD_HINT) from exc
-            teacher_row = conn.execute(
-                "SELECT id, hashed_password FROM teachers WHERE id = ? LIMIT 1",
-                (user_id,),
-            ).fetchone()
-            if not teacher_row:
-                raise HTTPException(status_code=404, detail="教师账号不存在。")
-            if not verify_password(current_password, teacher_row["hashed_password"]):
-                raise HTTPException(status_code=400, detail="当前密码错误。")
-            credentials_changed(conn, role="teacher", user_id=user_id)
-            conn.execute(
-                """
-                UPDATE teachers
-                SET hashed_password = ?, password_updated_at = ?
-                WHERE id = ?
-                """,
-                (get_password_hash(new_password), now_value, user_id),
-            )
-        conn.commit()
-
-    response = JSONResponse({"status": "success", "message": "密码已更新。其他设备的保持登录已失效。"})
-    if remembered_until:
-        reissue_for_current_device(request, response, user, remembered_until)
-    return response
+    return await change_own_password(
+        request, user, current_password, new_password, confirm_password,
+        connection_factory=get_db_connection,
+        success_message="密码已更新。其他设备的保持登录已失效。",
+    )

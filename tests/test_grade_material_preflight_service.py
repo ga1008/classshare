@@ -189,15 +189,17 @@ class PublishedMaterialRetentionTests(unittest.TestCase):
         self.assertEqual(publication_fixture.student_published_grades(self.conn, student_id=101), [])
 
     def test_active_publication_prevents_classroom_hard_delete_until_withdrawn(self):
+        from classroom_app.db.schema_behavior_inbox import ensure_behavior_inbox_schema
+        ensure_behavior_inbox_schema(self.conn, engine="sqlite")
         publication = self.fixture.publish()
         with patch.object(offerings, "get_db_connection", self.db):
             with self.assertRaises(HTTPException) as error:
-                asyncio.run(offerings.api_delete_class_offering(1, {"id": 1}))
+                offerings.api_delete_class_offering(1, {"id": 1})
             self.assertEqual(error.exception.status_code, 409)
             self.assertIsNotNone(self.conn.execute("SELECT 1 FROM class_offerings WHERE id=1").fetchone())
             publication_fixture.withdraw_grade_publication(self.conn, class_offering_id=1, teacher_id=1,
                 publication_id=publication["publication_id"], reason="撤回后删除")
-            result = asyncio.run(offerings.api_delete_class_offering(1, {"id": 1}))
+            result = offerings.api_delete_class_offering(1, {"id": 1})
         self.assertEqual(result["status"], "success")
         self.assertIsNotNone(self.conn.execute("SELECT 1 FROM grade_publications WHERE id=?", (publication["publication_id"],)).fetchone())
 

@@ -3201,11 +3201,27 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/internal/live",
+    "methods": [
+      "GET"
+    ],
+    "name": "internal_liveness",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/internal/metrics",
     "methods": [
       "GET"
     ],
     "name": "internal_metrics",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/internal/ready",
+    "methods": [
+      "GET"
+    ],
+    "name": "internal_readiness",
     "include_in_schema": true
   },
   {

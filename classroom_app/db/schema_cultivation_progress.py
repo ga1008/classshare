@@ -254,6 +254,22 @@ def ensure_cultivation_progress_schema(conn: Any, *, engine: str | None = None) 
             """
         )
 
+    # Existing installations receive these fields during schema startup, before
+    # requests or projection workers run. Versions distinguish events arriving
+    # during a calculation from the version that calculation actually observed.
+    version_columns = {
+        "dirty_version": "INTEGER NOT NULL DEFAULT 0",
+        "calculated_version": "INTEGER NOT NULL DEFAULT 0",
+    }
+    if db_engine == "postgres":
+        for name, definition in version_columns.items():
+            conn.execute(f"ALTER TABLE learning_progress_snapshots ADD COLUMN IF NOT EXISTS {name} {definition}")
+    else:
+        existing = {row["name"] if hasattr(row, "keys") else row[1] for row in conn.execute("PRAGMA table_info(learning_progress_snapshots)")}
+        for name, definition in version_columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE learning_progress_snapshots ADD COLUMN {name} {definition}")
+
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_learning_progress_snapshots_unique_student "
         "ON learning_progress_snapshots (class_offering_id, student_id)"

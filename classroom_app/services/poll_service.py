@@ -16,6 +16,7 @@ See ``classroom_app/db/schema_polls.py`` for the data model. Key invariants:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from datetime import datetime
@@ -23,7 +24,7 @@ from typing import Any, Optional
 
 from fastapi import HTTPException
 
-from ..db.connection import execute_insert_returning_id
+from ..db.connection import execute_insert_returning_id, begin_immediate_transaction, get_configured_db_engine
 from ..db.schema_polls import ensure_poll_schema
 from .resource_access_service import ensure_classroom_access, is_super_admin_teacher
 
@@ -164,8 +165,19 @@ def _deadline_passed(deadline_at: Any) -> bool:
 # --------------------------------------------------------------------------- #
 # loaders
 # --------------------------------------------------------------------------- #
-def _load_poll(conn: sqlite3.Connection, poll_id: int) -> dict[str, Any]:
-    row = conn.execute("SELECT * FROM polls WHERE id = ? LIMIT 1", (int(poll_id),)).fetchone()
+def _begin_poll_write(conn) -> None:
+    if isinstance(conn, sqlite3.Connection) and not conn.in_transaction:
+        begin_immediate_transaction(conn, engine="sqlite")
+
+
+def _load_poll(conn: sqlite3.Connection, poll_id: int, *, lock: str | None = None) -> dict[str, Any]:
+    clause = ""
+    if lock is not None:
+        ensure_poll_schema(conn)
+        _begin_poll_write(conn)
+        if get_configured_db_engine() == "postgres":
+            clause = " FOR SHARE" if lock == "vote" else " FOR UPDATE"
+    row = conn.execute("SELECT * FROM polls WHERE id = ? LIMIT 1" + clause, (int(poll_id),)).fetchone()
     if row is None:
         raise HTTPException(404, "投票活动不存在")
     return dict(row)
@@ -241,6 +253,24 @@ def _participant_ids(conn: sqlite3.Connection, poll: dict[str, Any]) -> set[int]
     return _class_student_ids(conn, _assigned_class_ids(conn, int(poll["id"])))
 
 
+def _confirmed_retake_voter(conn, poll_id: int, voter_id: int) -> bool:
+    # Retake administration owns this optional table's creation. A vote is a
+    # reader of confirmed decisions, never a concurrent schema initializer.
+    # No cached absence: a newly confirmed decision applies to the next vote.
+    if get_configured_db_engine() == "postgres":
+        exists = conn.execute("SELECT to_regclass('classroom_retake_students') AS name").fetchone()["name"]
+    else:
+        exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='classroom_retake_students'").fetchone()
+    if not exists:
+        return False
+    return conn.execute(
+        """SELECT 1 FROM classroom_retake_students r
+           JOIN poll_assignments pa ON pa.class_offering_id=r.class_offering_id
+           WHERE pa.poll_id=? AND r.student_id=? AND r.status='confirmed' LIMIT 1""",
+        (int(poll_id), int(voter_id)),
+    ).fetchone() is not None
+
+
 def _ballot(conn: sqlite3.Connection, poll_id: int, voter_id: int) -> Optional[dict[str, Any]]:
     row = conn.execute(
         "SELECT * FROM poll_ballots WHERE poll_id = ? AND voter_id = ? LIMIT 1",
@@ -250,16 +280,17 @@ def _ballot(conn: sqlite3.Connection, poll_id: int, voter_id: int) -> Optional[d
 
 
 def _vote_counts(conn: sqlite3.Connection, poll_id: int) -> tuple[int, dict[int, int]]:
-    total_row = conn.execute(
-        "SELECT COUNT(*) AS total FROM poll_ballots WHERE poll_id = ?",
-        (int(poll_id),),
-    ).fetchone()
-    total_voters = int(total_row["total"] if total_row else 0)
+    # One statement observes one committed snapshot. Parallel voters must not
+    # produce option counts newer than the separately read denominator.
     rows = conn.execute(
-        "SELECT option_id, COUNT(*) AS total FROM poll_votes WHERE poll_id = ? GROUP BY option_id",
-        (int(poll_id),),
+        """SELECT b.total_voters, v.option_id, COUNT(v.option_id) AS total
+           FROM (SELECT COUNT(*) AS total_voters FROM poll_ballots WHERE poll_id=?) b
+           LEFT JOIN poll_votes v ON v.poll_id=?
+           GROUP BY b.total_voters,v.option_id""",
+        (int(poll_id), int(poll_id)),
     ).fetchall()
-    by_option = {int(row["option_id"]): int(row["total"] or 0) for row in rows}
+    total_voters = int(rows[0]["total_voters"]) if rows else 0
+    by_option = {int(row["option_id"]): int(row["total"] or 0) for row in rows if row["option_id"] is not None}
     return total_voters, by_option
 
 
@@ -636,6 +667,7 @@ def create_poll(
     class_offering_id: Optional[int] = None,
 ) -> dict[str, Any]:
     ensure_poll_schema(conn)
+    _begin_poll_write(conn)
     fields = _common_poll_fields(payload)
     labels = _normalize_options(payload.get("options"))
     status = _normalize_create_status(payload.get("status"))
@@ -708,7 +740,7 @@ def create_poll(
 
 def update_poll(conn: sqlite3.Connection, poll_id: int, user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     ensure_poll_schema(conn)
-    poll = _load_poll(conn, int(poll_id))
+    poll = _load_poll(conn, int(poll_id), lock="owner")
     if not _can_manage(conn, poll, user):
         raise HTTPException(403, "无权编辑该投票活动")
 
@@ -784,7 +816,7 @@ def update_poll(conn: sqlite3.Connection, poll_id: int, user: dict[str, Any], pa
 
 def set_poll_status(conn: sqlite3.Connection, poll_id: int, user: dict[str, Any], status: Any) -> dict[str, Any]:
     ensure_poll_schema(conn)
-    poll = _load_poll(conn, int(poll_id))
+    poll = _load_poll(conn, int(poll_id), lock="owner")
     if not _can_manage(conn, poll, user):
         raise HTTPException(403, "无权变更该投票状态")
     new_status = str(status or "").strip().lower()
@@ -808,7 +840,7 @@ def set_poll_status(conn: sqlite3.Connection, poll_id: int, user: dict[str, Any]
 
 def delete_poll(conn: sqlite3.Connection, poll_id: int, user: dict[str, Any]) -> int:
     ensure_poll_schema(conn)
-    poll = _load_poll(conn, int(poll_id))
+    poll = _load_poll(conn, int(poll_id), lock="owner")
     if not _can_manage(conn, poll, user):
         raise HTTPException(403, "无权删除该投票活动")
     for table in ("poll_votes", "poll_ballots", "poll_participants", "poll_assignments", "poll_options"):
@@ -826,7 +858,7 @@ def set_poll_assignments(
     _reload: bool = True,
 ) -> dict[str, Any]:
     ensure_poll_schema(conn)
-    poll = _load_poll(conn, int(poll_id))
+    poll = _load_poll(conn, int(poll_id), lock="owner")
     if not _can_manage(conn, poll, user):
         raise HTTPException(403, "无权分配该投票活动")
     if str(poll.get("origin")) != ORIGIN_MANAGEMENT or str(poll.get("audience_scope")) != AUDIENCE_CLASS:
@@ -846,10 +878,16 @@ def set_poll_assignments(
 # --------------------------------------------------------------------------- #
 def vote(conn: sqlite3.Connection, poll_id: int, user: dict[str, Any], option_ids: Any) -> dict[str, Any]:
     ensure_poll_schema(conn)
-    poll = _load_poll(conn, int(poll_id))
+    # Shared parent locks allow different voters to proceed together while an
+    # owner close/edit/reassignment/deletion waits. Serialize only this actor's
+    # ballot before reading its prior state/change budget.
+    poll = _load_poll(conn, int(poll_id), lock="vote")
     if not _is_student(user):
         raise HTTPException(403, "只有学生可以参与投票")
     voter_id = _user_pk(user)
+    if get_configured_db_engine() == "postgres":
+        key = int.from_bytes(hashlib.sha256(f"poll-vote:{int(poll_id)}:{voter_id}".encode()).digest()[:8], "big", signed=True)
+        conn.execute("SELECT pg_advisory_xact_lock(?)", (key,))
     if voter_id not in _participant_ids(conn, poll):
         raise HTTPException(403, "你不在该投票活动的参与名单内")
     if _effective_status(poll) != POLL_STATUS_ACTIVE:
@@ -857,24 +895,7 @@ def vote(conn: sqlite3.Connection, poll_id: int, user: dict[str, Any], option_id
     if str(poll.get("audience_scope") or AUDIENCE_CLASS) == AUDIENCE_CLASS:
         # 班级范围投票：已确认的重修/免修学生默认不参与；
         # 老师/发起人通过自定义参与名单（custom）手动添加时不受限。
-        try:
-            from .classroom_retake_service import is_confirmed_retake_student
-
-            offering_rows = conn.execute(
-                "SELECT class_offering_id FROM poll_assignments WHERE poll_id = ?",
-                (int(poll_id),),
-            ).fetchall()
-            blocked = any(
-                is_confirmed_retake_student(
-                    conn,
-                    class_offering_id=int(row["class_offering_id"]),
-                    student_id=int(voter_id),
-                )
-                for row in offering_rows
-            )
-        except Exception:
-            blocked = False
-        if blocked:
+        if _confirmed_retake_voter(conn, int(poll_id), voter_id):
             raise HTTPException(
                 403,
                 "你在本课堂被登记为重修/免修学生，默认不参与投票；如需参与请联系老师把你加入参与名单。",

@@ -42,6 +42,8 @@ class FakePostgresConnection:
     def execute(self, sql, params=()):
         self.executed_sql.append((sql, params))
         normalized = " ".join(str(sql).split())
+        if "pg_get_constraintdef" in normalized and "behavior_write_inbox_state_check" in normalized:
+            return FakeCursor([{"definition": "CHECK(state IN ('pending','applied','quarantined','discarded'))"}])
         if normalized in ("SET LOCAL lock_timeout = '5s'", "SET LOCAL statement_timeout = '60s'"):
             return FakeCursor([])
         if "pg_advisory_xact_lock" in normalized:
@@ -859,6 +861,8 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             ) as cultivation_schema, patch(
                 "classroom_app.db.schema.ensure_signature_workflow_schema"
             ) as signature_workflow_schema, patch(
+                "classroom_app.services.cultivation_display_service.ensure_cultivation_display_schema"
+            ) as display_schema, patch(
                 "classroom_app.db.schema.ensure_ai_job_schema"
             ) as ai_jobs_schema, patch(
                 "classroom_app.db.schema.ensure_career_path_schema"
@@ -879,6 +883,7 @@ class PostgresSchemaValidationTests(unittest.TestCase):
         self.assertTrue(any('pg_advisory_unlock' in sql for sql, _ in guard_conn.executed_sql))
         cultivation_schema.assert_called_once_with(conn, engine="postgres")
         signature_workflow_schema.assert_called_once_with(conn)
+        display_schema.assert_called_once_with(conn)
         ai_jobs_schema.assert_called_once_with(conn, engine="postgres")
         career_schema.assert_called_once_with(conn)
         resume_schema.assert_called_once_with(conn)

@@ -6,17 +6,22 @@
 - 现在是什么时候：精确到分钟的当前时间（含星期 / 时段 / 时节提示）
 - 用户是谁：通过查库得到的全量画像（身份、课堂、统计、近况）
 
-所有查询只读、轻量（带 LIMIT），任何单项失败都静默降级，不影响主流程。
+查询只读。可选功能缺表时保留其余上下文；程序错误或数据库故障向调用者报告。
 """
 from __future__ import annotations
 
 from datetime import datetime
+import logging
+import re
+import sqlite3
 from typing import Any
 
 from .manage_nav_service import iter_platform_manage_routes
 from .prompt_utils import build_time_context_text
 
 PLATFORM_BASE_URL = "https://guardianangel.net.cn"
+logger = logging.getLogger(__name__)
+_READ_SAVEPOINT = "platform_knowledge_read"
 
 # 面向用户的路由表。AI 给跳转建议时直接使用这些路径（站内相对路径即可点击）。
 PLATFORM_ROUTES: list[dict[str, str]] = [
@@ -67,38 +72,94 @@ def build_platform_overview_block(user_role: str = "") -> str:
     )
 
 
-def _safe_scalar(conn, sql: str, params: tuple = ()) -> int:
+def _sqlstate(exc: BaseException) -> str:
     try:
-        row = conn.execute(sql, params).fetchone()
+        value = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None) or ""
+    except Exception:
+        return ""
+    return value if isinstance(value, str) and re.fullmatch(r"[0-9A-Z]{5}", value) else ""
+
+
+def _missing_optional_table(exc: BaseException) -> bool:
+    if _sqlstate(exc) == "42P01":
+        return True
+    return (isinstance(exc, sqlite3.OperationalError)
+            and getattr(exc, "sqlite_errorcode", sqlite3.SQLITE_ERROR) == sqlite3.SQLITE_ERROR
+            and str(exc).startswith("no such table:"))
+
+
+def _diagnostic(level, query_name, phase, exc):
+    # Query labels are fixed at the call sites. Never log SQL, bind values,
+    # profile text, connection strings or arbitrary exception messages.
+    logger.log(level, "Platform knowledge query=%s phase=%s error=%s sqlstate=%s",
+               query_name, phase, type(exc).__name__, _sqlstate(exc))
+
+
+def _read_query(conn, sql, params, read, default, *, query_name, optional_schema=False):
+    # Both SQLite and PostgreSQL target the newest savepoint with this name.
+    # Each synchronous read releases its own level; a caller's same-named
+    # level survives. Fixed SQL also preserves adapter/driver cache reuse.
+    savepoint = _READ_SAVEPOINT
+    try:
+        conn.execute("SAVEPOINT " + savepoint)
+    except BaseException as exc:
+        _diagnostic(logging.ERROR, query_name, "savepoint_failed", exc)
+        raise
+    try:
+        value = read(conn.execute(sql, params))
+    except BaseException as primary:
+        restored = True
+        for command, phase in (("ROLLBACK TO SAVEPOINT ", "rollback_failed"), ("RELEASE SAVEPOINT ", "release_failed")):
+            try:
+                conn.execute(command + savepoint)
+            except BaseException as cleanup:
+                restored = False
+                primary.add_note("Platform knowledge " + phase + ": " + type(cleanup).__name__)
+                _diagnostic(logging.ERROR, query_name, phase, cleanup)
+        if restored and optional_schema and _missing_optional_table(primary):
+            _diagnostic(logging.WARNING, query_name, "optional_table_unavailable", primary)
+            return default
+        _diagnostic(logging.ERROR, query_name, "query_failed", primary)
+        raise
+    try:
+        conn.execute("RELEASE SAVEPOINT " + savepoint)
+    except BaseException as exc:
+        _diagnostic(logging.ERROR, query_name, "release_failed", exc)
+        raise
+    return value
+
+
+def _safe_scalar(conn, sql: str, params: tuple = (), *, query_name="scalar", optional_schema=False) -> int:
+    def read(cursor):
+        row = cursor.fetchone()
         return int(row[0]) if row else 0
-    except Exception:
-        return 0
+    return _read_query(conn, sql, params, read, 0, query_name=query_name, optional_schema=optional_schema)
 
 
-def _safe_rows(conn, sql: str, params: tuple = ()) -> list[Any]:
-    try:
-        return conn.execute(sql, params).fetchall()
-    except Exception:
-        return []
+def _safe_rows(conn, sql: str, params: tuple = (), *, query_name="rows", optional_schema=False) -> list[Any]:
+    return _read_query(conn, sql, params, lambda cursor: cursor.fetchall(), [],
+                       query_name=query_name, optional_schema=optional_schema)
+
+
+def _safe_row(conn, sql: str, params: tuple = (), *, query_name):
+    return _read_query(conn, sql, params, lambda cursor: cursor.fetchone(), None, query_name=query_name)
 
 
 def build_teacher_knowledge_block(conn, teacher_id: int) -> str:
     """教师全量画像：基础信息 + 教学规模 + 近期动态（全部查库，只读）。"""
     lines = ["--- 当前用户全量画像（来自平台数据库，真实可信） ---"]
-    try:
-        info = conn.execute(
+    info = _safe_row(conn,
             "SELECT name, email, description FROM teachers WHERE id = ?",
             (teacher_id,),
-        ).fetchone()
-    except Exception:
-        info = None
+            query_name="teacher_identity",
+        )
     if info:
         lines.append(f"身份：教师 {info['name']}（ID {teacher_id}，邮箱 {info['email'] or '未填写'}）")
         if info["description"]:
             lines.append(f"画像摘要：{str(info['description'])[:400]}")
 
-    course_count = _safe_scalar(conn, "SELECT COUNT(*) FROM courses WHERE created_by_teacher_id = ?", (teacher_id,))
-    offering_count = _safe_scalar(conn, "SELECT COUNT(*) FROM class_offerings WHERE teacher_id = ?", (teacher_id,))
+    course_count = _safe_scalar(conn, "SELECT COUNT(*) FROM courses WHERE created_by_teacher_id = ?", (teacher_id,), query_name="teacher_courses")
+    offering_count = _safe_scalar(conn, "SELECT COUNT(*) FROM class_offerings WHERE teacher_id = ?", (teacher_id,), query_name="teacher_offerings")
     student_count = _safe_scalar(
         conn,
         """
@@ -108,6 +169,7 @@ def build_teacher_knowledge_block(conn, teacher_id: int) -> str:
         WHERE co.teacher_id = ?
         """,
         (teacher_id,),
+        query_name="teacher_students",
     )
     assignment_count = _safe_scalar(
         conn,
@@ -118,16 +180,19 @@ def build_teacher_knowledge_block(conn, teacher_id: int) -> str:
         WHERE co.teacher_id = ?
         """,
         (teacher_id,),
+        query_name="teacher_assignments",
     )
     gongwen_follow_hits = _safe_scalar(
         conn,
         "SELECT COUNT(*) FROM gongwen_follow_hits WHERE teacher_id = ?",
         (teacher_id,),
+        query_name="teacher_gongwen_hits", optional_schema=True,
     )
     agent_task_count = _safe_scalar(
         conn,
         "SELECT COUNT(*) FROM agent_tasks WHERE teacher_id = ?",
         (teacher_id,),
+        query_name="teacher_agent_tasks", optional_schema=True,
     )
     lines.append(
         f"教学规模：{course_count} 门课程模板、{offering_count} 个开课课堂、约 {student_count} 名学生、"
@@ -146,6 +211,7 @@ def build_teacher_knowledge_block(conn, teacher_id: int) -> str:
         LIMIT 8
         """,
         (teacher_id,),
+        query_name="teacher_recent_offerings",
     )
     if offerings:
         lines.append("在教课堂（课堂主页路径 /classroom/<ID>）：")
@@ -162,6 +228,7 @@ def build_teacher_knowledge_block(conn, teacher_id: int) -> str:
         LIMIT 6
         """,
         (teacher_id, datetime.now().strftime("%Y-%m-%d 00:00:00")),
+        query_name="teacher_calendar", optional_schema=True,
     )
     if upcoming:
         lines.append("近期日程：")
@@ -173,8 +240,7 @@ def build_teacher_knowledge_block(conn, teacher_id: int) -> str:
 def build_student_knowledge_block(conn, student_id: int) -> str:
     """学生全量画像：基础信息 + 班级 + 学习概况。"""
     lines = ["--- 当前用户全量画像（来自平台数据库，真实可信） ---"]
-    try:
-        info = conn.execute(
+    info = _safe_row(conn,
             """
             SELECT s.name, s.student_id_number, s.description, c.name AS class_name
             FROM students s
@@ -182,9 +248,8 @@ def build_student_knowledge_block(conn, student_id: int) -> str:
             WHERE s.id = ?
             """,
             (student_id,),
-        ).fetchone()
-    except Exception:
-        info = None
+            query_name="student_identity",
+        )
     if info:
         lines.append(
             f"身份：学生 {info['name']}（学号 {info['student_id_number'] or '未知'}，班级 {info['class_name'] or '未知'}）"
@@ -192,20 +257,18 @@ def build_student_knowledge_block(conn, student_id: int) -> str:
         if info["description"]:
             lines.append(f"画像摘要：{str(info['description'])[:400]}")
 
-    submission_count = _safe_scalar(conn, "SELECT COUNT(*) FROM submissions WHERE student_id = ?", (student_id,))
+    submission_count = _safe_scalar(conn, "SELECT COUNT(*) FROM submissions WHERE student_pk_id = ?", (student_id,), query_name="student_submissions")
     blog_count = _safe_scalar(
         conn,
         "SELECT COUNT(*) FROM blog_posts WHERE author_role = 'student' AND author_user_pk = ?",
         (student_id,),
+        query_name="student_blogs",
     )
     lines.append(f"学习概况：累计提交作业/考试 {submission_count} 次，发表博客 {blog_count} 篇。")
     return "\n".join(lines)
 
 
 def build_user_knowledge_block(conn, user_pk: int, user_role: str) -> str:
-    try:
-        if user_role == "teacher":
-            return build_teacher_knowledge_block(conn, int(user_pk))
-        return build_student_knowledge_block(conn, int(user_pk))
-    except Exception:
-        return ""
+    if user_role == "teacher":
+        return build_teacher_knowledge_block(conn, int(user_pk))
+    return build_student_knowledge_block(conn, int(user_pk))

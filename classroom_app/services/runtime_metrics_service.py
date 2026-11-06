@@ -22,8 +22,9 @@ def _normalize_route(route_path: str | None, fallback_path: str | None = None) -
     normalized = str(route_path or "").strip()
     if normalized:
         return normalized
-    fallback = str(fallback_path or "").strip()
-    return fallback or "/"
+    # Raw URLs include arbitrary paths and render grants. Unknown routes share
+    # one bucket; neither secrets nor scanner traffic should grow this mapping.
+    return "<unmatched>"
 
 
 def _percentile(samples: list[float], percentile: float) -> float:
@@ -70,6 +71,8 @@ class _RouteMetric:
             "error_count": int(self.error_count),
             "avg_duration_ms": round(self.total_duration_ms / self.count, 2) if self.count else 0.0,
             "p95_duration_ms": round(_percentile(sample_values, 95.0), 2),
+            "p99_duration_ms": round(_percentile(sample_values, 99.0), 2),
+            "latency_sample_count": len(sample_values),
             "max_duration_ms": round(self.max_duration_ms, 2),
             "last_duration_ms": round(self.last_duration_ms, 2),
             "last_status_code": int(self.last_status_code),
@@ -257,18 +260,14 @@ def record_websocket_error(room_id: int, error_message: str) -> None:
 
 def get_runtime_metrics_snapshot(*, top_routes: int = 20) -> dict[str, Any]:
     with _lock:
+        selected_routes = sorted(
+            _http_route_metrics.items(),
+            key=lambda item: (-item[1].count, -item[1].error_count, *item[0]),
+        )[:max(1, int(top_routes or 1))]
         route_entries = [
             metric.to_snapshot(method, route_path)
-            for (method, route_path), metric in _http_route_metrics.items()
+            for (method, route_path), metric in selected_routes
         ]
-        route_entries.sort(
-            key=lambda item: (
-                -int(item["count"]),
-                -int(item["error_count"]),
-                item["method"],
-                item["route_path"],
-            )
-        )
 
         ws_room_entries = [
             metric.to_snapshot(room_id)

@@ -62,7 +62,7 @@
     <nav class="cw-topbar-nav" aria-label="课堂快捷入口">
         {% if user_info.role == 'student' %}
         {% if classroom_page.learning_progress %}
-        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-nav-link cw-cultivation-entry" data-learning-modal-open data-cultivation-panel-open data-class-offering-id="{{ classroom.id }}" data-course-name="{{ classroom.course_name | default('') }}" aria-controls="cultivation-panel" aria-haspopup="dialog">本课修为 <strong>{{ classroom_page.learning_progress.score | round(1) }}</strong></button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-nav-link cw-cultivation-entry" data-learning-modal-open data-cultivation-panel-open data-class-offering-id="{{ classroom.id }}" data-course-name="{{ classroom.course_name | default('') }}" aria-controls="cultivation-panel" aria-haspopup="dialog">本课修为 <strong>{{ classroom_page.learning_progress.score | round(1) if classroom_page.learning_progress.score is not none else '生成中' }}</strong></button>
         {% elif classroom_page.learning_progress_error | default('') %}
         <span class="cw-topbar-error" role="alert">修为暂时无法读取</span>
         {% endif %}

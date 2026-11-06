@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import unittest
+import threading
 from unittest.mock import patch
 
 import anyio
@@ -105,6 +106,33 @@ class SocialWebSocketTest(SocialDbTestCase):
             # Nothing was relayed to a: its next frame is the reply to its own ping.
             ws_a.send_json({"type": "ping"})
             self.assertEqual(ws_a.receive_json()["type"], "pong")
+
+    def test_commit_during_hello_snapshot_is_buffered_after_hello(self):
+        from classroom_app.routers import social_ws
+
+        client = self.client_as(self.a)
+        snapshot_read, release = threading.Event(), threading.Event()
+        original = social_ws._hello_payload
+
+        def gated_hello(identity):
+            payload = original(identity)
+            snapshot_read.set()
+            if not release.wait(5):
+                raise RuntimeError("synthetic hello gate timed out")
+            return payload
+
+        with patch.object(social_ws, "_hello_payload", side_effect=gated_hello):
+            with self.connect_ws(client, self.b) as ws:
+                try:
+                    self.assertTrue(snapshot_read.wait(5))
+                    response = client.post(f"/api/social/conversations/{dm_key(self.a, self.b)}/messages",
+                                           json={"body": "hello加载期间提交的合成消息"})
+                    self.assertEqual(response.status_code, 200, response.text)
+                finally:
+                    release.set()
+                self.assertEqual(ws.receive_json()["type"], "hello")
+                message = receive_until(ws, "message")["message"]
+                self.assertEqual(message["id"], response.json()["id"])
 
     def test_internal_push_endpoint_requires_token(self):
         client = self.client_as(self.a)

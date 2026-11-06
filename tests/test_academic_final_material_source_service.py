@@ -5,7 +5,7 @@ import hashlib
 import json
 import sqlite3
 import unittest
-from contextlib import ExitStack, nullcontext
+from contextlib import ExitStack, closing, contextmanager, nullcontext
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -179,10 +179,32 @@ class AcademicFinalMaterialSourceTests(unittest.TestCase):
             return self.conn.execute(query, values)
 
         export_conn.execute.side_effect = execute
+        # The export's complete DB/file unit runs in a worker. Build that unit's
+        # SQLite connection there, retaining the same fixture facts without
+        # disabling SQLite's cross-thread ownership check.
+        database_dump = "\n".join(self.conn.iterdump())
+
+        @contextmanager
+        def export_database():
+            with closing(sqlite3.connect(":memory:")) as worker_conn:
+                worker_conn.row_factory = sqlite3.Row
+                worker_conn.executescript(database_dump)
+                worker_export = MagicMock()
+
+                def worker_execute(query, values):
+                    if "material_ai_import_records" in query:
+                        result = MagicMock()
+                        result.fetchone.return_value = self.record
+                        return result
+                    return worker_conn.execute(query, values)
+
+                worker_export.execute.side_effect = worker_execute
+                yield worker_export
+
         with ExitStack() as stack:
             self._mock_signature_resolution(stack)
             stack.enter_context(patch.object(exports, "ensure_user_material_access", return_value={"id": 11}))
-            stack.enter_context(patch.object(exports, "get_db_connection", return_value=nullcontext(export_conn)))
+            stack.enter_context(patch.object(exports, "get_db_connection", export_database))
             builder = stack.enter_context(patch.object(
                 exports, "build_material_export_artifact",
                 return_value=MaterialExportArtifact(content=b"DOCX", filename="analysis.docx", media_type="application/octet-stream"),

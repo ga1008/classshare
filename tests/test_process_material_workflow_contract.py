@@ -2,6 +2,7 @@ import json
 import re
 import sqlite3
 import unittest
+from html.parser import HTMLParser
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -47,6 +48,31 @@ def _materials_template_source() -> str:
     """materials.html 已拆为主模板 + partials/materials/*，契约测试读取合并后的源码。"""
     paths = [Path("templates/manage/materials.html"), *sorted(Path("templates/partials/materials").glob("*.html"))]
     return chr(10).join(path.read_text(encoding="utf-8") for path in paths)
+
+
+class _SelectContract(HTMLParser):
+    """Read native select semantics without depending on attribute order."""
+
+    def __init__(self, target_id):
+        super().__init__()
+        self.target_id = target_id
+        self.selects = []
+        self.options = []
+        self.in_target = False
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == "select":
+            self.in_target = attributes.get("id") == self.target_id
+            if self.in_target:
+                self.selects.append(attributes)
+        elif tag == "option" and self.in_target:
+            self.options.append(attributes)
+
+    def handle_endtag(self, tag):
+        if tag == "select":
+            self.in_target = False
+
 
 class ProcessMaterialWorkflowContractTests(unittest.TestCase):
     def test_final_material_academic_period_normalizes_local_and_jwxt_values(self):
@@ -299,18 +325,26 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertIn("data-pm-confirm-ok", modal_helper)
         self.assertIn("data-pm-confirm-cancel", modal_helper)
         self.assertIn("DEFAULT_CLOSE_SELECTOR", modal_helper)
-        self.assertIn("function trapModalFocus(event, overlay)", modal_helper)
+        # Focus trapping/return now belongs to the shared LQ stack. The process
+        # modal supplies its domain-specific initial target and close guard.
+        layer = Path("static/js/lq/layer.js").read_text(encoding="utf-8")
+        self.assertIn("import { getLayerSystem } from './lq/layer.js'", modal_helper)
+        self.assertIn("const layer = getLayerSystem(document);", modal_helper)
+        self.assertIn("layerHandle = layer.open(overlay, {", modal_helper)
+        self.assertIn("type: 'modal', surface: overlay.querySelector('.lp-modal')", modal_helper)
+        self.assertIn("trigger: previousFocus, parentLayer", modal_helper)
+        self.assertIn("initialFocus: () => pickInitialFocusTarget(overlay)", modal_helper)
+        self.assertIn("beforeClose: () => forceClose || typeof canClose !== 'function' || canClose() !== false", modal_helper)
         self.assertIn("function pickInitialFocusTarget(overlay)", modal_helper)
         self.assertIn("element.getClientRects().length > 0", modal_helper)
         self.assertIn("const autofocusTarget = focusable.find((element) => element.hasAttribute('autofocus'));", modal_helper)
         self.assertIn("const bodyTarget = focusable.find((element) => body?.contains(element));", modal_helper)
         self.assertIn("return focusable.find((element) => footer?.contains(element)) || focusable[0] || null;", modal_helper)
-        self.assertIn("event.key !== 'Tab'", modal_helper)
-        self.assertIn("last.focus({ preventScroll: true });", modal_helper)
-        self.assertIn("first.focus({ preventScroll: true });", modal_helper)
-        self.assertIn("if (e.key === 'Tab') trapModalFocus(e, overlay);", modal_helper)
-        self.assertIn("document.removeEventListener('keydown', onKeydown);", modal_helper)
-        self.assertIn("document.addEventListener('keydown', onKeydown);", modal_helper)
+        self.assertNotIn("document.addEventListener('keydown'", modal_helper)
+        self.assertIn("event.key === 'Tab' && modal()", layer)
+        self.assertIn("focus(event.shiftKey ? nodes.at(-1) : nodes[0])", layer)
+        self.assertIn("new view.Event('lq:return-focus', { cancelable: true })", layer)
+        self.assertIn("if (destination) focus(destination);", layer)
         self.assertIn("if (closed) return;", modal_helper)
         self.assertIn("canClose", modal_helper)
         self.assertIn("const force = Boolean(options?.force);", modal_helper)
@@ -322,12 +356,12 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
             modal_helper.index("const bodyTarget = focusable.find((element) => body?.contains(element));"),
             modal_helper.index("return focusable.find((element) => footer?.contains(element)) || focusable[0] || null;"),
         )
-        self.assertIn("const focusTarget = pickInitialFocusTarget(overlay);", modal_helper)
-        self.assertIn("focusTarget.focus({ preventScroll: true })", modal_helper)
         tree_confirm = tree_modal[tree_modal.index("async function handleConfirm"):tree_modal.index("treeEl.addEventListener")]
         self.assertIn("submitting: false", tree_modal)
         self.assertIn("const close = ({ force = false } = {}) =>", tree_modal)
-        self.assertIn("if (state.submitting && !force) return;", tree_modal)
+        self.assertIn("forceClose ||= force;", tree_modal)
+        self.assertIn("return layer.close(layerHandle, force ? 'confirmed' : 'programmatic')", tree_modal)
+        self.assertIn("beforeClose: () => forceClose || !state.submitting", tree_modal)
         self.assertIn("function setSubmitting(submitting, btn)", tree_modal)
         self.assertIn("overlay.classList.toggle('is-submitting', state.submitting);", tree_modal)
         self.assertIn("overlay.setAttribute('aria-busy'", tree_modal)
@@ -746,17 +780,18 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertGreater(int(overlay_z_index.group(1)), int(detail_z_index.group(1)))
 
     def test_manage_generic_generation_does_not_expose_grade_records(self):
-        html = _materials_template_source()
-        match = re.search(r'<select id="materials-ai-generate-type".*?</select>', html, re.S)
-        self.assertIsNotNone(match)
-        select_html = match.group(0)
-
-        self.assertIn('value="assessment_plan"', select_html)
-        self.assertIn('value="exam_paper"', select_html)
-        self.assertIn('value="grading_rubric"', select_html)
-        self.assertNotIn('value="ordinary_grade_record"', select_html)
-        self.assertNotIn('value="exam_grade_record"', select_html)
-        self.assertNotIn('value="final_grade_transcript"', select_html)
+        selector = _SelectContract("materials-ai-generate-type")
+        selector.feed(_materials_template_source())
+        self.assertEqual(1, len(selector.selects))
+        self.assertEqual("select", selector.selects[0].get("data-lq-component"))
+        self.assertIn("data-lq-dropdown", selector.selects[0])
+        self.assertEqual(4, len(selector.options))
+        self.assertEqual({
+            "teaching_document": "teaching_material",
+            "assessment_plan": "final_material",
+            "exam_paper": "final_material",
+            "grading_rubric": "final_material",
+        }, {option.get("value"): option.get("data-group") for option in selector.options})
 
     def test_grade_record_pages_preselect_import_and_block_generic_generation(self):
         for key in ("ordinary_grade_record", "exam_grade_record", "final_grade_transcript"):
@@ -1722,8 +1757,10 @@ class ProcessMaterialWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("throw error;", generate_submit_block)
         delegated_submit_block = script[
             script.index("function bindEvents()"):
-            script.index("const createTrigger = event.target.closest('#materials-create-menu-btn');")
+            script.index("refs.refreshBtn?.addEventListener('click'", script.index("function bindEvents()"))
         ]
+        self.assertIn("document.addEventListener('click', (event) => {", delegated_submit_block)
+        self.assertIn("}, true);", delegated_submit_block)
         self.assertIn("const aiExpandSubmit = event.target.closest('#materials-ai-expand-submit-btn');", delegated_submit_block)
         self.assertIn("submitAiExpand().catch", delegated_submit_block)
         self.assertIn("setModalStatus(refs.aiExpandStatus, error.message || 'AI 续写失败', 'error');", delegated_submit_block)

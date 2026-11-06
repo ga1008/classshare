@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
+import os
 import re
+import time
 import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -78,8 +81,22 @@ PEER_HELP_MENTOR_UNIT_MULTIPLIER = 2
 AI_EXAM_SOURCE_TYPE_STAGE = "manual"
 MAX_COURSE_SECT_NAME_LENGTH = 18
 SCORE_EVENT_DELTA_THRESHOLD = 0.1
+def _bounded_snapshot_setting(name: str, default: int | float, minimum, maximum):
+    """Keep the recurring read-model policy bounded, including rollback settings."""
+    try:
+        value = type(default)(os.getenv(name, str(default)))
+        return max(minimum, min(maximum, value)) if math.isfinite(value) else default
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
 CULTIVATION_SNAPSHOT_REFRESH_TASK_KIND = "cultivation_snapshot_refresh"
-CULTIVATION_SNAPSHOT_REFRESH_INTERVAL_SECONDS = 180
+CULTIVATION_SNAPSHOT_REFRESH_LIMIT = _bounded_snapshot_setting("CULTIVATION_SNAPSHOT_REFRESH_LIMIT", 25, 1, 100)
+CULTIVATION_SNAPSHOT_REFRESH_BUDGET_SECONDS = _bounded_snapshot_setting("CULTIVATION_SNAPSHOT_REFRESH_BUDGET_SECONDS", 0.75, 0.1, 3.0)
+CULTIVATION_SNAPSHOT_DISCOVERY_LIMIT = _bounded_snapshot_setting("CULTIVATION_SNAPSHOT_DISCOVERY_LIMIT", 25, 1, 100)
+CULTIVATION_SNAPSHOT_DISCOVERY_BUDGET_SECONDS = _bounded_snapshot_setting("CULTIVATION_SNAPSHOT_DISCOVERY_BUDGET_SECONDS", 0.1, 0.01, 0.5)
+CULTIVATION_SNAPSHOT_REFRESH_INTERVAL_SECONDS = _bounded_snapshot_setting("CULTIVATION_SNAPSHOT_REFRESH_INTERVAL_SECONDS", 3, 1, 60)
+CULTIVATION_SNAPSHOT_RECOVERY_COOLDOWN_SECONDS = 60
 CULTIVATION_WEEKLY_SNAPSHOT_TASK_KIND = "cultivation_weekly_snapshot"
 CULTIVATION_WEEKLY_SNAPSHOT_INTERVAL_SECONDS = 24 * 60 * 60
 CULTIVATION_WEEKLY_REPORT_TASK_KIND = "cultivation_weekly_report"
@@ -1626,18 +1643,19 @@ def _upsert_learning_progress_snapshot(
     student_id: int,
     state: dict[str, Any],
     calculated_at: str,
-) -> None:
+    expected_version: int | None = None,
+) -> bool:
     metrics = state.get("metrics") or {}
     current_level = public_level_payload(state.get("current_level"))
     next_stage = state.get("next_stage") or {}
-    conn.execute(
+    cursor = conn.execute(
         """
         INSERT INTO learning_progress_snapshots (
             class_offering_id, student_id, score, progress_percent,
             components_json, metrics_json, level_key, next_stage_key,
-            calculated_at, dirty, dirty_at, metadata_json
+            calculated_at, dirty, dirty_at, metadata_json, dirty_version, calculated_version
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)
         ON CONFLICT(class_offering_id, student_id)
         DO UPDATE SET
             score = excluded.score,
@@ -1649,7 +1667,9 @@ def _upsert_learning_progress_snapshot(
             calculated_at = excluded.calculated_at,
             dirty = 0,
             dirty_at = NULL,
-            metadata_json = excluded.metadata_json
+            metadata_json = excluded.metadata_json,
+            calculated_version = excluded.calculated_version
+        WHERE learning_progress_snapshots.dirty_version = excluded.calculated_version
         """,
         (
             int(class_offering_id),
@@ -1669,8 +1689,56 @@ def _upsert_learning_progress_snapshot(
                 },
                 ensure_ascii=False,
             ),
+            int(expected_version or 0),
+            int(expected_version or 0),
         ),
     )
+    return cursor.rowcount == 1
+
+
+def _publish_learning_metrics(conn, class_offering_id, student_id, metrics, *, expected_version, event_source_ref, require_dirty=True):
+    """Publish one version atomically, without waiting behind another publisher.
+
+    Domain writes may already hold stage locks before calling this hook. A
+    nonblocking advisory lock avoids introducing an advisory/stage lock cycle.
+    The CAS and savepoint undo every projection side effect on a stale result.
+    """
+    state = _build_learning_state_from_metrics(
+        conn, class_offering_id, student_id, metrics, persist_stage_status=False,
+    )
+    if get_configured_db_engine() == "postgres":
+        key = int.from_bytes(hashlib.sha256(f"cultivation:{class_offering_id}:{student_id}".encode()).digest()[:8], "big", signed=True)
+        owned = conn.execute("SELECT pg_try_advisory_xact_lock(?) AS owned", (key,)).fetchone()
+        if not owned["owned"]:
+            return state, False
+    timestamp = now_iso()
+    conn.execute("SAVEPOINT cultivation_projection")
+    try:
+        previous = _load_learning_progress_snapshot(conn, class_offering_id, student_id)
+        if previous and ((require_dirty and not safe_int(previous.get("dirty"))) or safe_int(previous.get("dirty_version")) != expected_version):
+            conn.execute("ROLLBACK TO SAVEPOINT cultivation_projection")
+            conn.execute("RELEASE SAVEPOINT cultivation_projection")
+            return state, False
+        state = _build_learning_state_from_metrics(
+            conn, class_offering_id, student_id, metrics, persist_stage_status=True, timestamp=timestamp,
+        )
+        _record_cultivation_score_events(
+            conn, class_offering_id=class_offering_id, student_id=student_id,
+            previous_components=_snapshot_components(previous), current_components=metrics.get("components") or {},
+            source_ref=event_source_ref, created_at=timestamp, metrics=metrics,
+        )
+        published = _upsert_learning_progress_snapshot(
+            conn, class_offering_id=class_offering_id, student_id=student_id,
+            state=state, calculated_at=timestamp, expected_version=expected_version,
+        )
+        if not published:
+            conn.execute("ROLLBACK TO SAVEPOINT cultivation_projection")
+        conn.execute("RELEASE SAVEPOINT cultivation_projection")
+        return state, published
+    except Exception:
+        conn.execute("ROLLBACK TO SAVEPOINT cultivation_projection")
+        conn.execute("RELEASE SAVEPOINT cultivation_projection")
+        raise
 
 
 def refresh_student_learning_state(
@@ -1680,35 +1748,18 @@ def refresh_student_learning_state(
     *,
     event_source_ref: str = "recalculation",
 ) -> dict[str, Any]:
+    # Explicit business writes still calculate current facts for eligibility.
+    # Normal page reads use get_student_learning_state without recalculation.
     previous_snapshot = _load_learning_progress_snapshot(conn, int(class_offering_id), int(student_id))
-    previous_components = _snapshot_components(previous_snapshot)
-    timestamp = now_iso()
     metrics = _build_learning_metrics(conn, class_offering_id, student_id)
-    state = _build_learning_state_from_metrics(
-        conn,
-        int(class_offering_id),
-        int(student_id),
-        metrics,
-        persist_stage_status=True,
-        timestamp=timestamp,
+    state, published = _publish_learning_metrics(
+        conn, int(class_offering_id), int(student_id), metrics,
+        expected_version=safe_int((previous_snapshot or {}).get("dirty_version")), event_source_ref=event_source_ref,
+        require_dirty=False,
     )
-    _record_cultivation_score_events(
-        conn,
-        class_offering_id=int(class_offering_id),
-        student_id=int(student_id),
-        previous_components=previous_components,
-            current_components=metrics.get("components") or {},
-            source_ref=event_source_ref,
-            created_at=timestamp,
-            metrics=metrics,
-        )
-    _upsert_learning_progress_snapshot(
-        conn,
-        class_offering_id=int(class_offering_id),
-        student_id=int(student_id),
-        state=state,
-        calculated_at=timestamp,
-    )
+    if not published:
+        mark_student_learning_progress_dirty(conn, class_offering_id, student_id, source_ref=event_source_ref)
+    state["snapshot_status"] = "ready" if published else "stale"
     return state
 
 
@@ -1725,13 +1776,14 @@ def mark_student_learning_progress_dirty(
         INSERT INTO learning_progress_snapshots (
             class_offering_id, student_id, score, progress_percent,
             components_json, metrics_json, level_key, calculated_at,
-            dirty, dirty_at, metadata_json
+            dirty, dirty_at, metadata_json, dirty_version
         )
-        VALUES (?, ?, 0, 0, '{}', '{}', 'mortal', ?, 1, ?, ?)
+        VALUES (?, ?, 0, 0, '{}', '{}', 'mortal', ?, 1, ?, ?, 1)
         ON CONFLICT(class_offering_id, student_id)
         DO UPDATE SET
             dirty = 1,
-            dirty_at = excluded.dirty_at,
+            dirty_at = COALESCE(learning_progress_snapshots.dirty_at, excluded.dirty_at),
+            dirty_version = learning_progress_snapshots.dirty_version + 1,
             metadata_json = excluded.metadata_json
         """,
         (
@@ -1915,41 +1967,115 @@ def get_student_learning_state(
     class_offering_id: int,
     student_id: int,
     *,
-    allow_recalculate: bool = True,
+    allow_recalculate: bool = False,
 ) -> dict[str, Any]:
     snapshot = _load_learning_progress_snapshot(conn, int(class_offering_id), int(student_id))
-    if not snapshot or safe_int(snapshot.get("dirty")):
-        if allow_recalculate:
-            source_ref = "snapshot:initial" if not snapshot else str(
-                (json_loads(snapshot.get("metadata_json"), {}) or {}).get("dirty_source_ref") or "snapshot:dirty"
-            )
-            return refresh_student_learning_state(
-                conn,
-                int(class_offering_id),
-                int(student_id),
-                event_source_ref=source_ref,
-            )
-        metrics = {"score": 0, "components": {}, "material": {}, "assignments": {}, "interactions": {}}
-    else:
-        metrics = json_loads(snapshot.get("metrics_json"), {})
-        legacy_model = isinstance(metrics, dict) and metrics.get("growth_exponent") is None
-        if not isinstance(metrics, dict) or not isinstance(metrics.get("components"), dict) or legacy_model:
-            if allow_recalculate:
-                return refresh_student_learning_state(
-                    conn,
-                    int(class_offering_id),
-                    int(student_id),
-                    event_source_ref="snapshot:model-upgrade" if legacy_model else "snapshot:repair",
-                )
-            metrics = {"score": safe_float(snapshot.get("score")), "components": {}, "material": {}, "assignments": {}, "interactions": {}}
-
-    return _build_learning_state_from_metrics(
+    metrics = json_loads(snapshot.get("metrics_json"), {}) if snapshot else {}
+    valid = isinstance(metrics, dict) and isinstance(metrics.get("components"), dict) and "score" in metrics
+    legacy = valid and metrics.get("growth_exponent") is None
+    stale = bool(snapshot and safe_int(snapshot.get("dirty"))) or legacy or not valid
+    if allow_recalculate and stale:
+        return refresh_student_learning_state(conn, class_offering_id, student_id, event_source_ref="snapshot:explicit-refresh")
+    if not valid:
+        metrics = {"score": safe_float(snapshot.get("score")) if snapshot else 0,
+                   "components": {}, "material": {}, "assignments": {}, "interactions": {}}
+    state = _build_learning_state_from_metrics(
         conn,
         int(class_offering_id),
         int(student_id),
         metrics,
         persist_stage_status=False,
+        timestamp=snapshot.get("calculated_at") if snapshot else None,
     )
+    # Dirty and old-model snapshots remain factual last-known values. A dirty
+    # placeholder created before the first calculation has no score to display.
+    known = valid or bool(snapshot and (safe_float(snapshot.get("score")) != 0 or snapshot.get("components_json") not in (None, "", "{}")))
+    state.update(snapshot_status="stale" if stale and known else "ready" if known else "building",
+                 calculated_at=snapshot.get("calculated_at") if known else None)
+    if not known:
+        state.update(score=None, progress_percent=None, eligible_stage=None, score_opportunities=[])
+        for stage in state["stages"]:
+            if stage["status"] not in {"passed", "generating", "in_exam"}:
+                stage.update(status="pending", progress_score=None, progress_percent=None)
+    return state
+
+
+def _pending_learning_snapshot_keys(conn, *, limit: int = 100) -> list:
+    """Discover initial/legacy projections outside page reads, in bounded work."""
+    rows = conn.execute(
+        """WITH members AS (
+               SELECT o.id AS class_offering_id, s.id AS student_id
+               FROM class_offerings o JOIN students s ON s.class_id=o.class_id
+               WHERE COALESCE(s.enrollment_status, 'active')='active'
+               UNION
+               SELECT o.id, s.id FROM class_offering_class_links cocl_m
+               JOIN class_offerings o ON o.id=cocl_m.offering_id
+               JOIN students s ON s.class_id=cocl_m.class_id
+               WHERE COALESCE(s.enrollment_status, 'active')='active'
+           ) SELECT members.class_offering_id, members.student_id FROM members
+           LEFT JOIN learning_progress_snapshots p
+             ON p.class_offering_id=members.class_offering_id AND p.student_id=members.student_id
+           WHERE p.id IS NULL OR (p.dirty=0 AND p.metrics_json NOT LIKE ?)
+           ORDER BY members.class_offering_id DESC, members.student_id LIMIT ?""",
+        ('%"growth_exponent"%', max(1, min(int(limit), 500))),
+    ).fetchall()
+    return rows
+
+
+def refresh_pending_learning_snapshots(
+    *, limit: int = 100, time_budget_seconds: float = 3.0,
+    discovery_limit: int | None = None, discovery_time_budget_seconds: float | None = None,
+) -> dict[str, int]:
+    """Publish short per-key transactions; optional policy leaves manual defaults intact.
+
+    Budgets are checked between keys. Never cancel a live SQL statement or split
+    publication to force a wall-clock limit. Discovery reserves at least three
+    quarters of this soft budget for the oldest dirty keys.
+    """
+    started = time.monotonic()
+    initial_limit = max(1, min(int(limit) // 4, 25)) if discovery_limit is None else max(1, min(int(discovery_limit), 500))
+    discovery_budget = min(0.5, time_budget_seconds / 4)
+    if discovery_time_budget_seconds is not None:
+        discovery_budget = min(discovery_budget, max(0.0, float(discovery_time_budget_seconds)))
+    with get_db_connection() as conn:
+        initial = _pending_learning_snapshot_keys(conn, limit=initial_limit)
+    seeded = 0
+    for row in initial:
+        if time.monotonic() - started >= discovery_budget:
+            break
+        with get_db_connection() as conn:
+            mark_student_learning_progress_dirty(conn, row["class_offering_id"], row["student_id"], source_ref="snapshot:initial-or-upgrade")
+        seeded += 1
+    with get_db_connection() as conn:
+        rows = conn.execute(
+            """SELECT class_offering_id, student_id FROM learning_progress_snapshots
+               WHERE dirty=1 ORDER BY dirty_at, class_offering_id, student_id LIMIT ?""",
+            (max(1, min(int(limit), 500)),),
+        ).fetchall()
+    refreshed = checked = failed = 0
+    for row in rows:
+        if time.monotonic() - started >= time_budget_seconds:
+            break
+        offering, student = int(row["class_offering_id"]), int(row["student_id"])
+        try:
+            with get_db_connection() as conn:
+                snapshot = _load_learning_progress_snapshot(conn, offering, student)
+                if not snapshot or not snapshot.get("dirty"):
+                    continue
+                version = safe_int(snapshot.get("dirty_version"))
+                metrics = _build_learning_metrics(conn, offering, student)
+            with get_db_connection() as conn:
+                _, published = _publish_learning_metrics(
+                    conn, offering, student, metrics, expected_version=version,
+                    event_source_ref=f"snapshot:version:{version}",
+                )
+        except Exception as exc:
+            failed += 1
+            print(f"[LEARNING_PROGRESS] projection {offering}/{student} deferred: {type(exc).__name__}")
+            continue
+        checked += 1
+        refreshed += int(published)
+    return {"seeded": seeded, "checked": checked, "refreshed": refreshed, "failed": failed}
 
 
 def recalculate_dirty_learning_progress_snapshots(conn, *, limit: int = 100) -> dict[str, int]:
@@ -1975,14 +2101,16 @@ def recalculate_dirty_learning_progress_snapshots(conn, *, limit: int = 100) -> 
     return {"checked": len(rows), "refreshed": refreshed}
 
 
-def ensure_cultivation_snapshot_refresh_task(conn) -> int:
+def ensure_cultivation_snapshot_refresh_task(conn, *, advance_pending: bool = True) -> int:
     from .scheduled_task_service import schedule_task
 
-    return schedule_task(
+    timestamp = datetime.now()
+    next_run = (timestamp + timedelta(seconds=5)).isoformat(timespec="seconds")
+    task_id = schedule_task(
         conn,
         task_kind=CULTIVATION_SNAPSHOT_REFRESH_TASK_KIND,
-        run_at=datetime.now() + timedelta(seconds=60),
-        payload={"limit": 100},
+        run_at=next_run,
+        payload={"limit": CULTIVATION_SNAPSHOT_REFRESH_LIMIT},
         dedupe_key="cultivation:snapshot-refresh",
         recurrence_seconds=CULTIVATION_SNAPSHOT_REFRESH_INTERVAL_SECONDS,
         title="修为快照脏行刷新",
@@ -1990,6 +2118,41 @@ def ensure_cultivation_snapshot_refresh_task(conn) -> int:
         max_attempts=3,
         replace=False,
     )
+    # This idempotent read-model task is required now that page reads never
+    # calculate snapshots. Recover its exhausted retry cycle after a cooldown;
+    # preserve explicit maintenance cancellation and every live claim token.
+    # Keep last_error until a successful execution clears it for diagnosis.
+    conn.execute(
+        """UPDATE scheduled_tasks SET status='pending', run_at=?, attempt_count=0,
+           next_attempt_at=NULL, locked_at=NULL, locked_by='', started_at=NULL,
+           finished_at=NULL, updated_at=?
+           WHERE id=? AND dedupe_key='cultivation:snapshot-refresh' AND task_kind=? AND status='failed'
+             AND COALESCE(NULLIF(finished_at,''), NULLIF(updated_at,''), '') <= ?""",
+        (next_run, timestamp.isoformat(timespec="seconds"), task_id, CULTIVATION_SNAPSHOT_REFRESH_TASK_KIND,
+         (timestamp-timedelta(seconds=CULTIVATION_SNAPSHOT_RECOVERY_COOLDOWN_SECONDS)).isoformat(timespec="seconds")),
+    )
+    if advance_pending:
+        # Startup keeps its historical acceleration of an old future timer.
+        conn.execute(
+            """UPDATE scheduled_tasks SET recurrence_seconds = ?,
+               run_at = CASE WHEN status='pending' AND run_at > ? THEN ? ELSE run_at END
+                WHERE id = ? AND dedupe_key='cultivation:snapshot-refresh' AND task_kind=?""",
+            (CULTIVATION_SNAPSHOT_REFRESH_INTERVAL_SECONDS, next_run, next_run,
+             task_id, CULTIVATION_SNAPSHOT_REFRESH_TASK_KIND),
+        )
+    else:
+        # Periodic maintenance is not another scheduling clock. Do not advance
+        # healthy timers/backoff, reset aging/cooldown, or touch a live claim.
+        conn.execute(
+            """UPDATE scheduled_tasks SET recurrence_seconds = ?
+               WHERE id=? AND dedupe_key='cultivation:snapshot-refresh' AND task_kind=?
+                 AND status IN ('pending','failed')
+                 AND COALESCE(locked_by,'')='' AND locked_at IS NULL
+                 AND (recurrence_seconds IS NULL OR recurrence_seconds<>?)""",
+            (CULTIVATION_SNAPSHOT_REFRESH_INTERVAL_SECONDS, task_id,
+             CULTIVATION_SNAPSHOT_REFRESH_TASK_KIND, CULTIVATION_SNAPSHOT_REFRESH_INTERVAL_SECONDS),
+        )
+    return task_id
 
 
 def _coerce_date(value: Any | None = None) -> date:
@@ -2815,7 +2978,9 @@ def _class_learning_score_rows(
     offering = _load_offering(conn, int(class_offering_id))
     if not offering:
         return []
-    score_class_ids = offering_class_ids(conn, int(class_offering_id)) or [offering["class_id"]]
+    # Membership tables are installed at startup. The general membership helper
+    # also runs compatibility DDL, which must not run in a rank read transaction.
+    score_class_ids = offering_class_ids(conn, int(class_offering_id), ensure_schema=False) or [offering["class_id"]]
     score_placeholders = ",".join("?" for _ in score_class_ids)
     rows = conn.execute(
         f"""
@@ -2839,23 +3004,19 @@ def _class_learning_score_rows(
     for row in rows:
         item = dict(row)
         item_student_id = int(item["id"])
-        if item_student_id == int(student_id) and current_score is not None:
+        if item.get("snapshot_score") is None or '"growth_exponent"' not in str(item.get("snapshot_metrics_json") or ""):
+            # A missing/different-model peer has no comparable rank yet. Discovery
+            # and model upgrades belong to the background worker.
+            score = None
+        elif item_student_id == int(student_id) and current_score is not None:
             score = safe_float(current_score)
-        elif item.get("snapshot_score") is None or safe_int(item.get("snapshot_dirty")):
-            state = get_student_learning_state(conn, int(class_offering_id), item_student_id)
-            score = safe_float(state.get("score"))
-        elif '"growth_exponent"' not in str(item.get("snapshot_metrics_json") or ""):
-            # Pre-growth-curve snapshot: its linear score is the raw score. Show it
-            # on the curve so ranks stay comparable and let the scheduler refresh it.
-            score = apply_growth_curve(safe_float(item.get("snapshot_score")))
-            mark_student_learning_progress_dirty(conn, int(class_offering_id), item_student_id, source_ref="snapshot:model-upgrade")
         else:
             score = safe_float(item.get("snapshot_score"))
         score_rows.append({
             "id": item_student_id,
             "name": item.get("name") or "同学",
             "student_id_number": item.get("student_id_number"),
-            "score": round(score, 1),
+            "score": round(score, 1) if score is not None else None,
             "is_self": item_student_id == int(student_id),
         })
     return score_rows
@@ -2899,7 +3060,7 @@ def build_student_class_position(
         int(student_id),
         current_score=current_score,
     )
-    if not score_rows:
+    if not score_rows or any(item["score"] is None for item in score_rows):
         return None
 
     ranked = sorted(
@@ -3054,13 +3215,15 @@ def read_student_learning_snapshot(conn, class_offering_id: int, student_id: int
             "calculated_at": snapshot.get("calculated_at"), "peer_rank_status": "not_recalculated_in_read_only_view"}
 
 
-def serialize_student_learning_progress(conn, class_offering_id: int, student_id: int) -> dict[str, Any]:
+def serialize_student_learning_progress(conn, class_offering_id: int, student_id: int, *, include_details: bool = True) -> dict[str, Any]:
     state = get_student_learning_state(conn, int(class_offering_id), int(student_id))
+    if not include_details:
+        return state
     state["class_position"] = build_student_class_position(
         conn,
         int(class_offering_id),
         int(student_id),
-        current_score=safe_float(state.get("score")),
+        current_score=state.get("score"),
     )
     state["recent_score_events"] = list_cultivation_score_events(
         conn,
@@ -3085,7 +3248,7 @@ def _notify_social_scope_unlock(conn, student_id: Any, certificate_id: Any) -> N
     on_certificate_issued(conn, int(student_id), int(certificate_id) if certificate_id else None)
 
 
-def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str, Any]:
+def build_student_global_cultivation_profile(conn, student_id: int, *, include_rank: bool = False) -> dict[str, Any]:
     student = _load_student(conn, int(student_id)) or {"id": int(student_id), "name": ""}
     rows = conn.execute(
         """
@@ -3147,6 +3310,8 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
             "teacher_name": offering.get("teacher_name") or "",
             "score": progress["score"],
             "progress_percent": progress["progress_percent"],
+            "snapshot_status": progress["snapshot_status"],
+            "calculated_at": progress["calculated_at"],
             "current_level": current_level,
             "next_stage": next_stage,
             "eligible_stage": progress.get("eligible_stage"),
@@ -3204,8 +3369,8 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
         reverse=True,
     )
     student_name = student.get("name") or ""
-    progress_percent = int(round(clamp(safe_float(selected.get("progress_percent")) / 100) * 100))
-    score = round(safe_float(selected.get("score")), 1)
+    progress_percent = int(round(clamp(safe_float(selected.get("progress_percent")) / 100) * 100)) if selected.get("progress_percent") is not None else None
+    score = round(safe_float(selected.get("score")), 1) if selected.get("score") is not None else None
     sect_name = normalize_course_sect_name(
         selected.get("sect_name"),
         course_name=selected.get("course_name"),
@@ -3218,7 +3383,7 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
             int(student_id),
             current_score=score,
         )
-        if selected.get("class_offering_id")
+        if include_rank and selected.get("class_offering_id") and score is not None
         else None
     )
     rank_notice = build_cultivation_rank_notice(class_position, sect_name=sect_name)
@@ -3244,7 +3409,7 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
         reveal_title = f"{current_level['aura_label']} · {current_level['level_name']}"
         reveal_subtitle = (
             f"{format_cultivation_address(student_name, current_level)}，"
-            f"{selected.get('course_name') or '课堂'} 修为 {score:g} / 100"
+            + (f"{selected.get('course_name') or '课堂'} 修为 {score:g} / 100" if score is not None else "学习进度正在生成")
         )
     return {
         "student_id": int(student_id),
@@ -3254,6 +3419,8 @@ def build_student_global_cultivation_profile(conn, student_id: int) -> dict[str,
         "avatar_theme": current_level["theme"],
         "score": score,
         "progress_percent": progress_percent,
+        "snapshot_status": selected.get("snapshot_status", "ready"),
+        "calculated_at": selected.get("calculated_at"),
         "course_count": len(course_items),
         "certificate_count": sum(safe_int(item.get("certificate_count")) for item in course_items),
         "breakthrough_course_count": sum(1 for item in course_items if item.get("eligible_stage")),
@@ -3316,7 +3483,7 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
     if not offering:
         return {"student_count": 0, "average_score": 0, "distribution": [], "students": []}
     weight_settings = get_class_cultivation_weight_settings(conn, int(class_offering_id))
-    overview_class_ids = offering_class_ids(conn, int(class_offering_id)) or [offering["class_id"]]
+    overview_class_ids = offering_class_ids(conn, int(class_offering_id), ensure_schema=False) or [offering["class_id"]]
     overview_placeholders = ",".join("?" for _ in overview_class_ids)
     rows = conn.execute(
         f"""
@@ -3497,6 +3664,7 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
             "class_name": student.get("class_name") or "",
             "score": progress["score"],
             "progress_percent": progress["progress_percent"],
+            "snapshot_status": progress["snapshot_status"],
             "current_level": progress["current_level"],
             "next_stage": progress["next_stage"],
             "certificate_count": len(progress.get("certificates") or []),
@@ -3555,7 +3723,8 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
     roster_class_names = list(dict.fromkeys(
         str(item.get("class_name") or "") for item in roster_students if item.get("class_name")
     ))
-    students.sort(key=lambda item: (item["score"], item["certificate_count"]), reverse=True)
+    students.sort(key=lambda item: (item["score"] is not None, safe_float(item["score"]), item["certificate_count"]), reverse=True)
+    pending_snapshot_count = sum(item["score"] is None for item in students)
     average_material_percent = round(material_percent_total / student_count) if student_count else 0
     average_material_mastery_percent = round(material_mastery_percent_total / student_count) if student_count else 0
     average_task_percent = round(task_percent_total / student_count) if student_count else 0
@@ -3583,7 +3752,7 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
     ]
     summary_cards = [
         {"label": "学生总数", "value": student_count, "suffix": "人", "note": f"活跃 {active_student_count} 人"},
-        {"label": "平均修为", "value": round(score_total / student_count, 1) if student_count else 0, "suffix": "", "note": f"高阶 {high_progress_count} 人"},
+        {"label": "平均修为", "value": "生成中" if pending_snapshot_count else round(score_total / student_count, 1) if student_count else 0, "suffix": "", "note": f"待生成 {pending_snapshot_count} 人" if pending_snapshot_count else f"高阶 {high_progress_count} 人"},
         {"label": "材料完成", "value": average_material_percent, "suffix": "%", "note": "班级均值"},
         {"label": "材料掌握", "value": average_material_mastery_percent, "suffix": "%", "note": "检验通过率"},
         {"label": "任务完成", "value": average_task_percent, "suffix": "%", "note": f"待关注 {need_attention_count} 人"},
@@ -3600,7 +3769,8 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
         summary_cards[1]["note"] = f"较上周 {trend_summary.get('average_delta_label')}"
     return {
         "student_count": student_count,
-        "average_score": round(score_total / student_count, 1) if student_count else 0,
+        "average_score": None if pending_snapshot_count else round(score_total / student_count, 1) if student_count else 0,
+        "pending_snapshot_count": pending_snapshot_count,
         "sect_name": normalize_course_sect_name(offering.get("course_sect_name"), course_name=offering.get("course_name")),
         "challenge_ready_count": challenge_ready_count,
         "certificate_count": certificate_count,

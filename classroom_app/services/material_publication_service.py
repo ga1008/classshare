@@ -86,17 +86,32 @@ def get_classroom_publication_nodes(conn, class_offering_id: int) -> list[dict]:
     return get_classroom_publication_nodes_for_offerings(conn, [class_offering_id]).get(class_offering_id, [])
 
 
+def get_classroom_publication_context(conn, class_offering_id: int) -> tuple[list[dict], dict[int, list[str]]]:
+    """Return publication nodes and the same request's archive exclusions."""
+    nodes, restricted_paths = _load_classroom_publication_nodes_for_offerings(conn, [class_offering_id])
+    return nodes.get(class_offering_id, []), restricted_paths
+
+
 def get_classroom_publication_nodes_for_offerings(
     conn, offering_ids, *, root_id=None, root_ids=None, restricted_paths=None,
 ) -> dict[int, list[dict]]:
+    nodes, _ = _load_classroom_publication_nodes_for_offerings(
+        conn, offering_ids, root_id=root_id, root_ids=root_ids, restricted_paths=restricted_paths,
+    )
+    return nodes
+
+
+def _load_classroom_publication_nodes_for_offerings(
+    conn, offering_ids, *, root_id=None, root_ids=None, restricted_paths=None,
+) -> tuple[dict[int, list[dict]], dict[int, list[str]]]:
     """Read the same published roots for every classroom member, including its teacher."""
     ids = sorted({int(value) for value in offering_ids if value})
     if not ids:
-        return {}
+        return {}, {}
     placeholders = ", ".join("?" for _ in ids)
     roots = [root_id] if root_id is not None else sorted({int(value) for value in (root_ids or ()) if value})
     if root_ids is not None and not roots:
-        return {}
+        return {}, {}
     root_filter = "AND m.root_id IN (" + ", ".join("?" for _ in roots) + ")" if roots else ""
     params = [*ids, *roots]
     mode = "a.publication_mode" if _has_publication_mode(conn) else "NULL"
@@ -128,6 +143,18 @@ def get_classroom_publication_nodes_for_offerings(
     by_offering: dict[int, dict[int, dict]] = {}
     bound_paths: dict[tuple[int, int], list[str]] = {}
     anchor_cache: dict[int, dict] = {}
+    # Resolve the same package root once for all lesson references in this
+    # request. This is structural data only; each row and resulting anchor
+    # still passes the archive exclusion checks below.
+    from .html_package_service import is_package_entry_candidate_name
+    from .material_render_service import MaterialRenderReadIndex
+
+    package_candidates = [row for row in bindings if row["parent_id"]
+                          and not (row["node_type"] == "file" and row["preview_type"] == "markdown")
+                          and is_package_entry_candidate_name(row["name"])
+                          and not is_git_internal_material_path(row["material_path"])
+                          and not is_restricted_material(row, restricted_paths)]
+    package_index = MaterialRenderReadIndex(conn, package_candidates) if package_candidates else None
     for row in bindings:
         offering_id = int(row["class_offering_id"])
         material_id = int(row["id"])
@@ -136,7 +163,7 @@ def get_classroom_publication_nodes_for_offerings(
         key = (offering_id, int(row["root_id"] or 0))
         bound_paths.setdefault(key, []).append(row["material_path"])
         if material_id not in anchor_cache:
-            anchor_cache[material_id] = dict(get_learning_material_assignment_anchor(conn, row))
+            anchor_cache[material_id] = dict(get_learning_material_assignment_anchor(conn, row, package_read_index=package_index))
         anchor = anchor_cache[material_id]
         if not is_restricted_material(anchor, restricted_paths):
             by_offering.setdefault(offering_id, {})[int(anchor["id"])] = anchor
@@ -159,7 +186,7 @@ def get_classroom_publication_nodes_for_offerings(
     return {
         offering_id: sorted(nodes.values(), key=lambda item: (item["root_id"] or 0, len(item["material_path"]), item["material_path"]))
         for offering_id, nodes in by_offering.items()
-    }
+    }, restricted_paths
 
 
 def mark_legacy_binding_publications(conn, class_offering_id=None) -> None:

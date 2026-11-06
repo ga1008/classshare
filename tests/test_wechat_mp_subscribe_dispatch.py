@@ -105,6 +105,18 @@ class DispatchTestBase(unittest.TestCase):
 
 
 class EnqueueTests(DispatchTestBase):
+    def test_first_scheduler_use_initializes_binding_dependency(self):
+        from classroom_app.db import schema_wechat_mp
+
+        with self.connection() as conn:
+            conn.execute("DROP TABLE wechat_bindings")
+            conn.commit()
+        # A newly installed scheduler may precede the first MP login.
+        with patch.object(schema_wechat_mp, "_SCHEMA_READY", False):
+            self.assertEqual("no_binding", self.enqueue())
+        self.assertEqual("no_binding", self.task()["state"])
+        self.assertEqual([], self.sent)
+
     def test_initial_state_reflects_binding_and_grant(self):
         self.assertEqual("no_binding", self.enqueue("deadline:1:99:stage24", pk=99))
         self.assertEqual("no_grant", self.enqueue())

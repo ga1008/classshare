@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
+import re
 import unittest
 from unittest.mock import patch
 
@@ -10,6 +11,8 @@ from fastapi.testclient import TestClient
 from jinja2 import Environment, FileSystemLoader
 
 from classroom_app.dependencies import get_current_user
+from classroom_app.frontend_assets import asset_url
+from classroom_app.lq import lq_props
 from classroom_app.db.schema_offering_class_links import ensure_offering_class_links_schema, _READY_KEYS
 from classroom_app.routers import learning
 from classroom_app.services.classroom_member_service import list_classroom_members
@@ -67,10 +70,11 @@ class ClassroomMemberWorkspaceTests(unittest.TestCase):
 
     def test_workspace_switch_hides_teacher_entry_and_shell_but_keeps_student_entry(self):
         env = Environment(loader=FileSystemLoader("templates"))
-        env.globals["app_topbar_icon"] = lambda _name: ""
+        env.globals.update(lq_props=lq_props, asset_url=asset_url)
         # Render the real classroom topbar without unrelated page data fixtures.
         source = Path("templates/classroom_main_v4.html").read_text(encoding="utf-8")
-        topbar = env.from_string(source.split('{% block body %}', 1)[1].split('</header>', 1)[0] + '</header>')
+        imports = '\n'.join(re.findall(r'{% from [^\n]+ %}', source.split('{% block body %}', 1)[0]))
+        topbar = env.from_string(imports + source.split('{% block body %}', 1)[1].split('</header>', 1)[0] + '</header>')
         context = {"classroom": {"id": 1, "course_name": "Course", "class_name": "Class"},
                    "classroom_page": {"learning_progress": {"score": 12}}, "classroom_members_workspace_enabled": False}
         disabled = topbar.render(**context, user_info={"role": "teacher"})

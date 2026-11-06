@@ -3,6 +3,7 @@ name: lanshare
 services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    cpu_shares: ${LANSHARE_POSTGRES_CPU_SHARES:-2048}
     restart: unless-stopped
     init: true
     shm_size: ${POSTGRES_SHM_SIZE:-256mb}

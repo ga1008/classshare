@@ -154,7 +154,10 @@ MAIN_APP_CALLBACK_URL = _read_url_env("MAIN_APP_CALLBACK_URL") or f"http://127.0
 MAIN_WORKERS = max(1, int(os.getenv("MAIN_WORKERS", 1)))
 MAIN_THREADPOOL_TOKENS = max(16, int(os.getenv("MAIN_THREADPOOL_TOKENS", 32)))
 MAIN_BACKLOG = max(128, int(os.getenv("MAIN_BACKLOG", 2048)))
-MAIN_LIMIT_CONCURRENCY = max(0, int(os.getenv("MAIN_LIMIT_CONCURRENCY", 512)))
+# Uvicorn counts established WebSockets as well as HTTP: 200 students can
+# hold 400 classroom/social sockets before a simultaneous HTTP action starts.
+# Execution remains bounded independently by DB/thread/AI/outbound budgets.
+MAIN_LIMIT_CONCURRENCY = max(0, int(os.getenv("MAIN_LIMIT_CONCURRENCY", 1024)))
 MAIN_TIMEOUT_KEEP_ALIVE = max(5, int(os.getenv("MAIN_TIMEOUT_KEEP_ALIVE", 30)))
 MAIN_WS_PING_INTERVAL = max(5.0, float(os.getenv("MAIN_WS_PING_INTERVAL", 20.0)))
 MAIN_WS_PING_TIMEOUT = max(5.0, float(os.getenv("MAIN_WS_PING_TIMEOUT", 20.0)))
@@ -278,6 +281,7 @@ SQLITE_WAL_AUTOCHECKPOINT_PAGES = int(os.getenv("SQLITE_WAL_AUTOCHECKPOINT_PAGES
 # (psycopg_pool) reuses connections. POSTGRES_POOL_ENABLED is a kill-switch:
 # set it false (+restart) to fall back to per-request connections without a redeploy.
 POSTGRES_POOL_ENABLED = _read_bool_env("POSTGRES_POOL_ENABLED", True)
+POSTGRES_APPLICATION_NAME = str(os.getenv("POSTGRES_APPLICATION_NAME", "lanshare-app"))[:63]
 POSTGRES_POOL_MIN = max(1, int(os.getenv("POSTGRES_POOL_MIN", 1)))
 POSTGRES_POOL_MAX = max(
     POSTGRES_POOL_MIN,

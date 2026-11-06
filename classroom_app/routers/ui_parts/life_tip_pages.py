@@ -4,6 +4,7 @@ from ...services.life_tip_service import (
     insert_life_tip,
     list_life_tips_for_manage,
     set_life_tip_status,
+    invalidate_pool_cache,
 )
 from ...services.life_tip_generation_service import ALLOWED_CATEGORIES
 
@@ -95,6 +96,7 @@ async def api_manage_life_tips_create(
             source_ref=f"手工录入·{user.get('name') or ''}",
         )
         conn.commit()
+        invalidate_pool_cache()
     if not created:
         raise HTTPException(status_code=409, detail="已存在内容相同的提示语。")
     return {"status": "success", "message": "提示语已入库并即刻生效。"}
@@ -111,6 +113,7 @@ async def api_manage_life_tips_status(
     with get_db_connection() as conn:
         changed = set_life_tip_status(conn, tip_id=int(tip_id), status=status_value)
         conn.commit()
+        invalidate_pool_cache()
     if not changed:
         raise HTTPException(status_code=404, detail="提示不存在。")
     return {"status": "success", "message": "状态已更新。"}

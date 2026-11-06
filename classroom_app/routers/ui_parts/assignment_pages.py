@@ -93,6 +93,7 @@ def assignment_detail_page(request: Request, assignment_id: str, user: dict = De
             if assignment.get("class_offering_id"):
                 try:
                     record_behavior_event(
+                        conn=conn,
                         class_offering_id=int(assignment["class_offering_id"]),
                         user_pk=int(user["id"]),
                         user_role=str(user["role"]),

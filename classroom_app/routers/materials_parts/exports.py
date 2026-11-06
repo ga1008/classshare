@@ -1,10 +1,12 @@
 import mimetypes
 from functools import wraps
-from inspect import signature
+from inspect import iscoroutinefunction, signature
+from threading import Lock
 
 from urllib.parse import quote
 
 from fastapi.responses import RedirectResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from .common import *
 from .generation_helpers import *
@@ -31,6 +33,60 @@ _MATERIAL_DOCUMENT_ISOLATION = {
     "Referrer-Policy": "no-referrer",
 }
 _MATERIAL_FRAME_SCRIPT = b'<script src="/static/js/material_render_frame.js" defer></script>'
+
+
+def _cleanup_abandoned_material_response(response):
+    # Only these explicit temporary exports belong to this unit. Never unlink
+    # stored material files or run an arbitrary response background callback.
+    background = getattr(response, "background", None)
+    if isinstance(response, FileResponse) and isinstance(background, BackgroundTask) and background.func is _cleanup_temp_file:
+        background.func(*background.args, **background.kwargs)
+
+
+async def _call_material_read(operation, *args, **kwargs):
+    ownership = Lock()
+    state = {"abandoned": False, "response": None}
+
+    def work():
+        response = operation(*args, **kwargs)
+        with ownership:
+            abandoned = state["abandoned"]
+            if not abandoned:
+                state["response"] = response
+        if abandoned:
+            _cleanup_abandoned_material_response(response)
+        return response
+
+    try:
+        return await run_in_threadpool(work)
+    except asyncio.CancelledError:
+        # Cancellation and worker completion can race in either order. Transfer
+        # cleanup ownership under one lock so each orphan export is removed once.
+        with ownership:
+            state["abandoned"] = True
+            response = state.pop("response", None)
+        if response is not None:
+            # Submit this filesystem-only cleanup before awaiting it. It must
+            # not be lost to a second cancellation while waiting for an AnyIO
+            # request token. The existing default executor also drains accepted
+            # work at loop shutdown; no DB connection enters this executor.
+            cleanup = asyncio.get_running_loop().run_in_executor(None, _cleanup_abandoned_material_response, response)
+            cleanup.add_done_callback(lambda future: None if future.cancelled() else future.exception())
+            await asyncio.shield(cleanup)
+        raise
+
+
+def _material_read_in_worker(operation):
+    """Expose an async endpoint while keeping its complete read unit together.
+
+    The bounded AnyIO runner leaves in-flight cleanup with the worker even if
+    its caller is cancelled. Connections are opened and returned in that unit.
+    FileResponse still performs its own asynchronous streaming/range handling.
+    """
+    @wraps(operation)
+    async def reader(*args, **kwargs):
+        return await _call_material_read(operation, *args, **kwargs)
+    return reader
 
 
 def _scoped_render_base(material_id: int, user: dict) -> str:
@@ -100,40 +156,60 @@ def _with_reader_return_on_unavailable(operation):
     existing account-scoped workspace state restores the originating detail on
     return. No arbitrary return URL is accepted, and 401 keeps the login flow.
     """
-    @wraps(operation)
-    async def reader(*args, **kwargs):
-        try:
-            return await operation(*args, **kwargs)
-        except HTTPException as exc:
-            if exc.status_code not in (403, 404):
-                raise
-            kwargs = signature(operation).bind(*args, **kwargs).arguments
-            user = kwargs.get("user") or {}
-            if not kwargs.get("class_offering_id"):
-                raise
-            with get_db_connection() as conn:
-                source = _validated_reader_return_source(
-                    conn, user, kwargs.get("class_offering_id"), kwargs.get("session_id"), kwargs.get("reader_section"),
-                )
-            if not source:
-                raise
-            source["close_tab"] = kwargs.get("classroom_reader_tab") == 1
-            unavailable = exc.status_code == 404
-            return templates.TemplateResponse(
-                kwargs["request"], "material_reader_unavailable.html",
-                {
-                    "request": kwargs["request"], "user_info": user, "source": source,
-                    "error_title": "学习材料已不可用" if unavailable else "当前无法访问这份材料",
-                    "error_message": (
-                        "材料可能已被删除或移动。可以返回原课次，重新查看可访问的材料。"
-                        if unavailable else
-                        "材料访问权限可能已变化。请返回课堂，重新查看当前可访问的材料。"
-                    ),
-                },
-                status_code=exc.status_code,
-                headers=_DYNAMIC_DOCUMENT_HEADERS,
+    def unavailable_response(exc, args, kwargs):
+        if exc.status_code not in (403, 404):
+            return None
+        values = signature(operation).bind(*args, **kwargs).arguments
+        user = values.get("user") or {}
+        if not values.get("class_offering_id"):
+            return None
+        with get_db_connection() as conn:
+            source = _validated_reader_return_source(
+                conn, user, values.get("class_offering_id"), values.get("session_id"), values.get("reader_section"),
             )
-    return reader
+        if not source:
+            return None
+        source["close_tab"] = values.get("classroom_reader_tab") == 1
+        unavailable = exc.status_code == 404
+        return templates.TemplateResponse(
+            values["request"], "material_reader_unavailable.html",
+            {
+                "request": values["request"], "user_info": user, "source": source,
+                "error_title": "学习材料已不可用" if unavailable else "当前无法访问这份材料",
+                "error_message": (
+                    "材料可能已被删除或移动。可以返回原课次，重新查看可访问的材料。"
+                    if unavailable else
+                    "材料访问权限可能已变化。请返回课堂，重新查看当前可访问的材料。"
+                ),
+            },
+            status_code=exc.status_code,
+            headers=_DYNAMIC_DOCUMENT_HEADERS,
+        )
+
+    if iscoroutinefunction(operation):
+        # Preserve the decorator's async-operation interface for other callers.
+        # Even in this mode the fallback's DB and template work stays off-loop.
+        @wraps(operation)
+        async def reader(*args, **kwargs):
+            try:
+                return await operation(*args, **kwargs)
+            except HTTPException as exc:
+                response = await run_in_threadpool(unavailable_response, exc, args, kwargs)
+                if response is None:
+                    raise
+                return response
+        return reader
+
+    @wraps(operation)
+    def reader(*args, **kwargs):
+        try:
+            return operation(*args, **kwargs)
+        except HTTPException as exc:
+            response = unavailable_response(exc, args, kwargs)
+            if response is None:
+                raise
+            return response
+    return _material_read_in_worker(reader)
 
 
 def _load_ai_import_record_preview_payload(conn, record_id: int, user: dict):
@@ -170,11 +246,10 @@ def _load_ai_import_record_preview_payload(conn, record_id: int, user: dict):
     return row, payload, fallback_filename
 
 
-@router.get("/api/materials/ai-import-records/{record_id}/export", response_class=FileResponse)
-async def export_ai_import_record(
+def _export_ai_import_record_response(
     record_id: int,
-    format: str = Query(default=""),
-    user: dict = Depends(get_current_teacher),
+    format: str,
+    user: dict,
 ):
     with get_db_connection() as conn:
         row = conn.execute(
@@ -226,8 +301,18 @@ async def export_ai_import_record(
     )
 
 
+@router.get("/api/materials/ai-import-records/{record_id}/export", response_class=FileResponse)
+async def export_ai_import_record(
+    record_id: int,
+    format: str = Query(default=""),
+    user: dict = Depends(get_current_teacher),
+):
+    return await _call_material_read(_export_ai_import_record_response, record_id, format, user)
+
+
 @router.get("/api/materials/ai-import-records/{record_id}/render-preview", response_class=HTMLResponse)
-async def preview_ai_import_record_export(
+@_material_read_in_worker
+def preview_ai_import_record_export(
     record_id: int,
     format: str = Query(default=""),
     user: dict = Depends(get_current_teacher),
@@ -276,7 +361,8 @@ async def preview_ai_import_record_export(
 
 
 @router.get("/api/materials/{material_id}/ai-import/export", response_class=FileResponse)
-async def export_ai_import_material(
+@_material_read_in_worker
+def export_ai_import_material(
     material_id: int,
     format: str = Query(default=""),
     user: dict = Depends(get_current_teacher),
@@ -300,12 +386,12 @@ async def export_ai_import_material(
         if not row:
             raise HTTPException(404, "该材料没有关联的 AI 解析导出记录")
         record_id = int(row["id"])
-    return await export_ai_import_record(record_id=record_id, format=format, user=user)
+    return _export_ai_import_record_response(record_id=record_id, format=format, user=user)
 
 
 @router.get("/materials/view/{material_id}", response_class=HTMLResponse)
 @_with_reader_return_on_unavailable
-async def material_viewer_page(
+def material_viewer_page(
     request: Request,
     material_id: int,
     variant: str = Query(default="original"),
@@ -379,7 +465,7 @@ async def material_viewer_page(
             preview_payload = {field: preview_payload.get(field) for field in reader_fields}
 
     if material["preview_type"] in {"markdown", "text"}:
-        preview_payload["content"], preview_payload["content_encoding"] = await _load_material_text_content(
+        preview_payload["content"], preview_payload["content_encoding"] = _load_material_text_content_sync(
             material,
             prefer_optimized=preview_variant == "optimized",
         )
@@ -405,7 +491,8 @@ async def material_viewer_page(
 
 
 @router.get("/materials/raw/{material_id}", response_class=FileResponse)
-async def get_material_raw(material_id: int, user: dict = Depends(get_current_user)):
+@_material_read_in_worker
+def get_material_raw(material_id: int, user: dict = Depends(get_current_user)):
     raw_preview_only = False
     with get_db_connection() as conn:
         material = ensure_user_material_access(conn, material_id, user)
@@ -423,21 +510,25 @@ async def get_material_raw(material_id: int, user: dict = Depends(get_current_us
     })
 
 
-async def _serve_rendered_material(
-    material_id: int, subpath: str, user: dict, *, request: Request | None = None, isolated_frame: bool = False,
-) -> Response:
+def _resolve_rendered_material(material_id: int, subpath: str, user: dict) -> dict:
     with get_db_connection() as conn:
         node = ensure_user_material_access(conn, material_id, user)
-        if not resolve_render_target(conn, node):
+        render_target = resolve_render_target(conn, node)
+        if not render_target:
             raise HTTPException(400, "当前材料不支持直接渲染")
-        target_row = resolve_render_file(conn, node, subpath)
+        target_row = resolve_render_file(conn, node, subpath, render_target=render_target)
         if not target_row:
             raise HTTPException(404, "未找到要渲染的文件")
         # 复用统一鉴权：确保子资源（css/js/图片等）同样在可访问范围内。
         if int(target_row["id"]) != int(node["id"]):
             ensure_user_material_access(conn, int(target_row["id"]), user)
-        target = dict(target_row)
+        return dict(target_row)
 
+
+def _serve_rendered_material_sync(
+    material_id: int, subpath: str, user: dict, *, request: Request | None = None, isolated_frame: bool = False,
+) -> Response:
+    target = _resolve_rendered_material(material_id, subpath, user)
     file_path = _load_material_storage_path(target)
     media_type = str(target.get("mime_type") or "") or mimetypes.guess_type(target.get("name") or "")[0] or "application/octet-stream"
     is_html = media_type.split(";", 1)[0].lower() == "text/html"
@@ -457,7 +548,7 @@ async def _serve_rendered_material(
         # Keep the existing HTML no-store and release-invalidation flow.
         headers.update(_DYNAMIC_DOCUMENT_HEADERS)
         if isolated_frame:
-            content = await asyncio.to_thread(file_path.read_bytes)
+            content = file_path.read_bytes()
             return Response(_material_frame_document(content), media_type=media_type, headers=headers)
         if request and request.headers.get("sec-fetch-dest") in {"document", "iframe"}:
             base = _scoped_render_base(material_id, user)
@@ -477,9 +568,17 @@ async def _serve_rendered_material(
     )
 
 
+async def _serve_rendered_material(
+    material_id: int, subpath: str, user: dict, *, request: Request | None = None, isolated_frame: bool = False,
+) -> Response:
+    return await _call_material_read(
+        _serve_rendered_material_sync, material_id, subpath, user, request=request, isolated_frame=isolated_frame,
+    )
+
+
 @router.get("/materials/render-view/{material_id}", response_class=HTMLResponse)
 @_with_reader_return_on_unavailable
-async def material_render_shell_page(
+def material_render_shell_page(
     request: Request,
     material_id: int,
     path: str = Query(default=""),
@@ -498,9 +597,10 @@ async def material_render_shell_page(
     reader_return = None
     with get_db_connection() as conn:
         node = ensure_user_material_access(conn, material_id, user)
-        if not resolve_render_target(conn, node):
+        render_target = resolve_render_target(conn, node)
+        if not render_target:
             raise HTTPException(400, "当前材料不支持直接渲染")
-        target_row = resolve_render_file(conn, node, subpath)
+        target_row = resolve_render_file(conn, node, subpath, render_target=render_target)
         if not target_row:
             raise HTTPException(404, "未找到要渲染的入口文件")
         ensure_user_material_access(conn, int(target_row["id"]), user)
@@ -563,20 +663,22 @@ async def render_material_asset(material_id: int, request: Request, subpath: str
 
 @router.get("/materials/render-content/{grant}/", response_class=FileResponse)
 @router.get("/materials/render-content/{grant}/{subpath:path}", response_class=FileResponse)
-async def render_isolated_material(grant: str, request: Request, subpath: str = ""):
+@_material_read_in_worker
+def render_isolated_material(grant: str, request: Request, subpath: str = ""):
     scope = resolve_material_render_grant(grant)
     if not scope:
         return Response(status_code=403, headers=_DYNAMIC_DOCUMENT_HEADERS)
     material_id, user = scope
     try:
-        return await _serve_rendered_material(material_id, subpath, user, request=request, isolated_frame=True)
+        return _serve_rendered_material_sync(material_id, subpath, user, request=request, isolated_frame=True)
     except HTTPException as exc:
         # Avoid login redirects that would place an opaque-frame grant in a URL.
         return Response(status_code=exc.status_code, headers=_DYNAMIC_DOCUMENT_HEADERS)
 
 
 @router.get("/materials/download/{material_id}", response_class=FileResponse)
-async def download_material(material_id: int, user: dict = Depends(get_current_user)):
+@_material_read_in_worker
+def download_material(material_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         material = ensure_user_material_access(conn, material_id, user)
     ensure_download_allowed(material["file_size"], resource_label="课堂材料")
@@ -595,7 +697,8 @@ _INLINE_PREVIEW_MIME_PREFIXES = ("application/pdf", "image/", "audio/", "video/"
 
 
 @router.get("/materials/inline/{material_id}", response_class=FileResponse)
-async def inline_material(material_id: int, user: dict = Depends(get_current_user)):
+@_material_read_in_worker
+def inline_material(material_id: int, user: dict = Depends(get_current_user)):
     """PDF / 图片 / 音视频按 inline 方式返回，供浏览器原生预览或 <video>/<audio> 播放。
 
     与下载同一道大小闸门：能预览的就能下载，不另开口子。
@@ -624,7 +727,7 @@ async def inline_material(material_id: int, user: dict = Depends(get_current_use
 
 @router.get("/materials/document-preview/{material_id}", response_class=HTMLResponse)
 @_with_reader_return_on_unavailable
-async def material_document_preview_page(
+def material_document_preview_page(
     request: Request,
     material_id: int,
     class_offering_id: int | None = Query(default=None),
@@ -651,9 +754,8 @@ async def material_document_preview_page(
     file_path = _load_material_storage_path(material)
     title = str(material.get("name") or "课程材料")
     try:
-        content = await asyncio.to_thread(file_path.read_bytes)
-        job = await asyncio.to_thread(
-            document_render_service.render_artifact,
+        content = file_path.read_bytes()
+        job = document_render_service.render_artifact(
             content,
             filename=title,
             media_type=material.get("mime_type") or None,
@@ -681,7 +783,8 @@ async def material_document_preview_page(
 
 
 @router.post("/api/materials/download", response_class=FileResponse)
-async def batch_download_materials(payload: MaterialBatchDownloadRequest, user: dict = Depends(get_current_user)):
+@_material_read_in_worker
+def batch_download_materials(payload: MaterialBatchDownloadRequest, user: dict = Depends(get_current_user)):
     if not payload.material_ids:
         raise HTTPException(400, "请选择要下载的材料")
 
@@ -705,7 +808,7 @@ async def batch_download_materials(payload: MaterialBatchDownloadRequest, user: 
             subtrees = [(root, [row for row in children if int(row["id"]) in readable]) for root, children in subtrees]
         archive_source_size = _estimate_material_archive_size(subtrees)
         ensure_download_allowed(archive_source_size, resource_label="所选课堂材料压缩包")
-    temp_path = await asyncio.to_thread(_create_material_zip, subtrees)
+    temp_path = _create_material_zip(subtrees)
 
     archive_title = f"course-materials-{datetime.now().strftime('%Y%m%d-%H%M%S')}.zip"
     return FileResponse(

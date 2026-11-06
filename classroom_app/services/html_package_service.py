@@ -122,7 +122,7 @@ def _main_entry_priority(row: dict) -> int:
         return len(MAIN_ENTRY_NAMES)
 
 
-def parse_html_package(conn, folder_row) -> dict[str, Any] | None:
+def parse_html_package(conn, folder_row, *, subtree_rows=None) -> dict[str, Any] | None:
     """解析一个文件夹节点是否为 HTML 包。
 
     返回结构（不是包时返回 None）::
@@ -147,7 +147,7 @@ def parse_html_package(conn, folder_row) -> dict[str, Any] | None:
 
     root_path = str(_row_get(folder_row, "material_path") or "")
     base_parts = _path_parts(root_path)
-    subtree = _load_subtree_rows(conn, folder_row)
+    subtree = _load_subtree_rows(conn, folder_row) if subtree_rows is None else subtree_rows
     if not subtree:
         return None
 
@@ -207,12 +207,24 @@ def parse_html_package(conn, folder_row) -> dict[str, Any] | None:
     }
 
 
-def find_html_package_root(conn, material_row) -> dict[str, Any] | None:
+def find_html_package_root(
+    conn, material_row, *, rows_by_id=None, subtrees_by_id=None, package_cache=None,
+) -> dict[str, Any] | None:
     """从包内任意节点（入口文件 / 课次文件夹 / 包根自身）向上定位 HTML 包。"""
     if material_row is None:
         return None
+    def parse_folder(folder):
+        folder_id = int(_row_get(folder, "id") or 0)
+        if package_cache is not None and folder_id in package_cache:
+            return package_cache[folder_id]
+        subtree = None if subtrees_by_id is None else subtrees_by_id.get(folder_id, [])
+        package = parse_html_package(conn, folder, subtree_rows=subtree)
+        if package_cache is not None:
+            package_cache[folder_id] = package
+        return package
+
     if _row_get(material_row, "node_type") == "folder":
-        package = parse_html_package(conn, material_row)
+        package = parse_folder(material_row)
         if package:
             return package
 
@@ -220,13 +232,13 @@ def find_html_package_root(conn, material_row) -> dict[str, Any] | None:
     for _depth in range(MAX_PACKAGE_ANCESTOR_DEPTH):
         if not current_parent_id:
             return None
-        parent = conn.execute(
-            "SELECT * FROM course_materials WHERE id = ? LIMIT 1",
-            (int(current_parent_id),),
-        ).fetchone()
+        parent = (
+            rows_by_id.get(int(current_parent_id)) if rows_by_id is not None else
+            conn.execute("SELECT * FROM course_materials WHERE id = ? LIMIT 1", (int(current_parent_id),)).fetchone()
+        )
         if not parent or _row_get(parent, "node_type") != "folder":
             return None
-        package = parse_html_package(conn, parent)
+        package = parse_folder(parent)
         if package:
             return package
         current_parent_id = _row_get(parent, "parent_id")

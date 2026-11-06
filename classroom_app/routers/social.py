@@ -74,7 +74,7 @@ def _transaction(work: Callable[[Any, list], Any], events: list) -> Any:
 
 
 async def _run(work: Callable[[Any, list], Any]) -> Any:
-    """Run ``work(conn, events)`` in a thread, commit, then deliver its push events."""
+    """Run work in a thread, commit, then admit its events to bounded socket FIFOs."""
     events: list = []
     try:
         result = await run_db(_transaction, work, events)
@@ -85,7 +85,7 @@ async def _run(work: Callable[[Any, list], Any]) -> Any:
             raise HTTPException(status_code=409, detail="请求重复提交，请刷新后重试。") from exc
         raise
     try:
-        await social_push_service.push_events(events)
+        await social_push_service.enqueue_committed_events(events)
     except Exception as exc:  # noqa: BLE001 - the write is committed; a failed push only delays the UI
         print(f"[SOCIAL] push after commit failed: {exc!r}")
     return result
@@ -310,9 +310,12 @@ async def social_set_conversation_preferences(key: str, data: dict = Body(defaul
 
 @router.get("/conversations/{key}/messages")
 async def social_list_messages(key: str, before_id: Optional[int] = Query(default=None),
-                               limit: int = Query(default=50), user: dict = Depends(get_current_user)):
+                               limit: int = Query(default=50),
+                               after_id: Optional[int] = Query(default=None, ge=0, le=9223372036854775807),
+                               through_id: Optional[int] = Query(default=None, ge=1, le=9223372036854775807),
+                               user: dict = Depends(get_current_user)):
     return await _run(lambda conn, events: conversations.list_messages(
-        conn, user, key, before_id=before_id, limit=limit))
+        conn, user, key, before_id=before_id, after_id=after_id, through_id=through_id, limit=limit))
 
 
 @router.post("/conversations/{key}/messages")

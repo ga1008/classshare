@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import nullcontext
 
 from .connection import get_db_connection
 from .repair import (
@@ -20,6 +21,7 @@ def save_user_session(
     ip: str | None = None,
     last_login: str | None = None,
     expires_at: str,
+    conn=None,
 ) -> dict:
     normalized_user_key = str(session_user_key or "").strip()
     if not normalized_user_key:
@@ -27,8 +29,8 @@ def save_user_session(
 
     def _save() -> dict:
         timestamp = _utcnow_iso()
-        with get_db_connection() as conn:
-            conn.execute(
+        with (nullcontext(conn) if conn is not None else get_db_connection()) as active_conn:
+            active_conn.execute(
                 """
                 INSERT INTO user_sessions (
                     session_user_key,
@@ -64,7 +66,7 @@ def save_user_session(
                     timestamp,
                 ),
             )
-            row = conn.execute(
+            row = active_conn.execute(
                 """
                 SELECT session_user_key, session_id, user_id, role, name, ip, last_login, expires_at, updated_at
                 FROM user_sessions
@@ -73,20 +75,21 @@ def save_user_session(
                 """,
                 (normalized_user_key,),
             ).fetchone()
-            conn.commit()
+            if conn is None:
+                active_conn.commit()
         return _normalize_session_row(row) or {}
 
     return _run_user_session_operation(_save)
 
-def get_user_session(session_user_key: str) -> dict | None:
+def get_user_session(session_user_key: str, *, conn=None) -> dict | None:
     normalized_user_key = str(session_user_key or "").strip()
     if not normalized_user_key:
         return None
 
     def _get() -> dict | None:
         now_iso = _utcnow_iso()
-        with get_db_connection() as conn:
-            row = conn.execute(
+        with (nullcontext(conn) if conn is not None else get_db_connection()) as active_conn:
+            row = active_conn.execute(
                 """
                 SELECT session_user_key, session_id, user_id, role, name, ip, last_login, expires_at, updated_at
                 FROM user_sessions
@@ -100,11 +103,12 @@ def get_user_session(session_user_key: str) -> dict | None:
 
             expires_at = str(row["expires_at"] or "")
             if expires_at and expires_at <= now_iso:
-                conn.execute(
-                    "DELETE FROM user_sessions WHERE session_user_key = ?",
-                    (normalized_user_key,),
+                active_conn.execute(
+                    "DELETE FROM user_sessions WHERE session_user_key = ? AND session_id = ? AND expires_at = ?",
+                    (normalized_user_key, row["session_id"], expires_at),
                 )
-                conn.commit()
+                if conn is None:
+                    active_conn.commit()
                 return None
 
         return _normalize_session_row(row)

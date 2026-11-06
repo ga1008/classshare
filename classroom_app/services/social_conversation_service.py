@@ -249,28 +249,53 @@ def dm_read_cursor(conn: Any, key: str, reader: str) -> int:
     return as_int(row["last_read_message_id"]) if row else 0
 
 
-def list_messages(conn: Any, user: dict, key: Any, *, before_id: Any = None, limit: Any = None) -> dict[str, Any]:
+def list_messages(
+    conn: Any, user: dict, key: Any, *, before_id: Any = None, after_id: Any = None,
+    through_id: Any = None, limit: Any = None,
+) -> dict[str, Any]:
     from .social_notification_service import mention_quota, muted_map
     me = user_identity(user)
     parsed = require_access(conn, me, key)
     size = max(1, min(PAGE_LIMIT_MAX, as_int(limit, PAGE_LIMIT_DEFAULT) or PAGE_LIMIT_DEFAULT))
+    forward = after_id is not None
+    after = as_int(after_id, -1) if forward else 0
+    through = as_int(through_id, -1) if through_id is not None else None
+    if (forward and (after < 0 or as_int(before_id) > 0)) or (through is not None and not forward):
+        raise SocialError("消息分页方向无效。", 400)
+    if through is not None and (through < 1 or through < after):
+        raise SocialError("消息同步范围无效。", 400)
     params: list[Any] = [parsed["key"]]
     where = "conversation_key = ?"
     if as_int(before_id) > 0:
         where += " AND id < ?"
         params.append(as_int(before_id))
     if parsed["type"] == "group":
-        # Members see history from when they (re)joined onwards.
+        # Apply the same join boundary to both the page and its watermark.
         where += " AND created_at >= ?"
         params.append(str(parsed["membership"]["joined_at"]))
+    if forward:
+        where += " AND id > ?"
+        params.append(after)
+        if through is None:
+            latest = conn.execute(
+                f"SELECT MAX(id) AS latest_id FROM social_messages WHERE {where}", params,
+            ).fetchone()
+            through = max(after, as_int(latest["latest_id"]) if latest else 0)
+        where += " AND id <= ?"
+        params.append(through)
+    direction = "ASC" if forward else "DESC"
     rows = conn.execute(
-        f"SELECT * FROM social_messages WHERE {where} ORDER BY id DESC LIMIT ?", (*params, size + 1),
+        f"SELECT * FROM social_messages WHERE {where} ORDER BY id {direction} LIMIT ?", (*params, size + 1),
     ).fetchall()
     page = [row_dict(row) for row in rows]
     has_more = len(page) > size
-    page = list(reversed(page[:size]))
+    page = page[:size] if forward else list(reversed(page[:size]))
     payload = {"items": serialize_messages(conn, me, page), "has_more": has_more,
                "muted": muted_map(conn, parsed, [me]).get(me, False), "mention_quota": mention_quota(conn, user)}
+    if forward:
+        payload.update(next_after_id=as_int(page[-1]["id"]) if page else after, through_id=through)
+    if parsed["type"] == "group":
+        payload["history_since"] = str(parsed["membership"]["joined_at"])
     if parsed["type"] == "dm":  # additive: lets the client draw 已读
         payload["peer_read_message_id"] = dm_read_cursor(conn, parsed["key"], parsed["peer"])
     return payload

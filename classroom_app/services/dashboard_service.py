@@ -2632,7 +2632,7 @@ def _build_student_dashboard_context(
         assignment_item = assignment_stats.get(offering_id, {})
         resource_item = resource_stats.get(course_id, {})
         material_item = material_stats.get(offering_id, {})
-        learning_progress = serialize_student_learning_progress(conn, offering_id, student_id)
+        learning_progress = serialize_student_learning_progress(conn, offering_id, student_id, include_details=False)
         cultivation_level = learning_progress.get("current_level") or {}
 
         assignment_count = int(assignment_item.get("assignment_count") or 0)
@@ -2721,13 +2721,15 @@ def _build_student_dashboard_context(
         offering["cultivation"] = {
             "score": learning_progress.get("score", 0),
             "progress_percent": learning_progress.get("progress_percent", 0),
+            "snapshot_status": learning_progress.get("snapshot_status", "ready"),
+            "calculated_at": learning_progress.get("calculated_at"),
             "level_name": cultivation_level.get("level_name") or "未入道",
             "short_name": cultivation_level.get("short_name") or "未入道",
             "theme": cultivation_level.get("theme") or "mortal",
             "next_stage_name": (learning_progress.get("next_stage") or {}).get("name"),
         }
         offering["metrics"] = [
-            {"label": "修为", "value": learning_progress.get("score", 0), "note": offering["cultivation"]["level_name"]},
+            {"label": "修为", "value": learning_progress.get("score") if learning_progress.get("score") is not None else "生成中", "note": offering["cultivation"]["level_name"]},
             {"label": "待完成", "value": pending_count, "note": "仅统计已发布任务"},
             {"label": "已提交", "value": submitted_count, "note": f"已批改 {graded_count}"},
             {"label": "资料", "value": resource_total, "note": f"文件 {resource_count} · 材料 {material_count}"},

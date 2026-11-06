@@ -1,6 +1,6 @@
 # LQ 模块使用记录本
 
-生成于 2026-11-05，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
+生成于 2026-11-06，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
 
 ## 怎么用
 
@@ -50,7 +50,7 @@
 | [Skeleton 骨架屏](#skeleton) | component | `lq-skeleton` | 宏 / JS / Py | 22 |
 | [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 22 |
 | [Table / Pager / BulkBar / ResultCount](#tables) | component | `lq-bulk-bar`, `lq-pager`, `lq-result-count`, `lq-table`, `lq-table-shell` | 宏 / JS / Py / React | 11 |
-| [Toast 通知](#toast) | component | `lq-toast`, `lq-toast-fallback`, `lq-toasts` | JS | 4 |
+| [Toast 通知](#toast) | component | `lq-toast`, `lq-toast-fallback`, `lq-toasts` | JS | 5 |
 | [Tooltip 提示](#tooltips) | component | `lq-tooltip` | 宏 / JS / Py | 2 |
 | [Upload / Dropzone / FileChip](#upload) | component | `lq-dropzone`, `lq-file-chip`, `lq-upload` | 宏 / JS / Py | 1 |
 | [Workspace Split / Viewer](#workspace) | component | `lq-domain-workspace`, `lq-split`, `lq-viewer` | 宏 / JS / Py | 2 |
@@ -691,6 +691,7 @@
 - `templates/lesson_plan_editor.html` ×32
 - `static/js/classroom_materials.js` ×31
 - `templates/partials/lq_navbar_topbar.html` ×31
+- `static/js/cultivation_panel.js` ×30
 - `templates/manage/system/organizations.html` ×29
 - `templates/partials/profile/email.html` ×29
 - `static/js/ai_workspace_capture.js` ×28
@@ -700,7 +701,6 @@
 - `templates/partials/learning_material_selector.html` ×28
 - `templates/teacher_evaluation_editor.html` ×28
 - `static/js/ai_chat_component.js` ×27
-- `static/js/cultivation_panel.js` ×27
 - `static/js/app_files.js` ×24
 - `static/js/ls_image_lightbox.js` ×24
 - `static/js/manage_organizations.js` ×24
@@ -1230,7 +1230,7 @@
 
 - **设计摘要**：既有头像境界标志由 static/js/cultivation_emblems.js 与 components/cultivation-emblem.css 提供；2026-10-27续修局部层级、阴影令牌与共享动效；保持SVG身份和宿主原定位。2026-10-27 道印大徽章在 static/img/cultivation/awards/ 扩展相同十阶段图案身份，tools/ui/build_cultivation_awards.py 生成 SVG；展示与 PNG 保存统一消费 learning_certificate_art.js 的映射，避免展示/导出两张不同图。
 - **参数 / 变体**：道印顺序 qi_awakening/qi_refining/foundation/application_seed/golden_core/practical_mastery/systems_thinking/nascent_soul/independent_path/mentor_heart；兼容 self_directed 与 teacher_guiding。主色依次天蓝、青绿、青、翡翠、金、橙、靛、紫、玫红、暖金。
-- **状态**：头像宿主isolation、共享raised层级、精细指针hover/键盘focus、quiet/standard/expressive/off、系统reduce零过渡、forced-colors无外部阴影；隐藏修为和SSR/动态更新保留。原头像标志状态保持；道印内容庆祝粒子 6–24、基础时长 1900–5140ms，单次有限播放；高阶段增加外环、扩散范围与多色光晕。quiet/off/reduced-motion 停止庆祝；forced-colors 隐藏装饰光效。
+- **状态**：头像宿主isolation、共享raised层级、精细指针hover/键盘focus、quiet/standard/expressive/off、系统reduce零过渡、forced-colors无外部阴影；隐藏修为和SSR/动态更新保留。2026-11-05：共享修为卡、课堂按钮和修为面板区分building（分数未知、进度无aria-valuenow）、stale（展示最近已提交值及更新时间）、ready；后台更新期间不造零分，模型迁移也保留最近提交值。面板打开时有界轮询，关闭取消计时；徽记复用首页摘要。原头像标志状态保持；道印内容庆祝粒子 6–24、基础时长 1900–5140ms，单次有限播放；高阶段增加外环、扩散范围与多色光晕。quiet/off/reduced-motion 停止庆祝；forced-colors 隐藏装饰光效。
 - **规则**：奖章 SVG/Canvas 是可导出的图形内容，不作为控件或面板材质；操作与信息区继续使用 LQ。图形色只描绘境界身份；不能将奖章特效推广成共享控件第二套动效。四项硬编码阻断已用现有令牌修复，不增加例外。除六个原登记消费者，还覆盖partials/cultivation_card.html及learning_path、profile/hero、hero_lq、overview父模板；测试tests/e2e/components/lq-cultivation-emblem.spec.ts。
 - **根类**：`lq-cultivation-emblem`, `lq-cultivation-emblem-img`, `lq-cultivation-host`, `cultivation-card__emblem`
 - **消费者**：8 个文件
@@ -1831,7 +1831,7 @@
 **Status / SaveStatus / Alert / Conflict** · 层：component · CSS：`static/css/lq/components/status.css`
 
 - **设计摘要**：业务状态呈现：状态胶囊、保存状态行、Alert（含重试动作与诊断转义）、409 冲突面板；只消费控制器确认的快照。
-- **规则**：警告/错误/保存语义优先复用这里的填充与前景配对，不把有色前景放到任意透明背景。
+- **规则**：警告/错误/保存语义优先复用这里的填充与前景配对，不把有色前景放到任意透明背景。 2026-11-05 行为记录：classroom-page、assignment_detail_student、exam_take 共用 behavior_tracker.js；202仅表示数据库已持久接收，200可为已应用回执。保持在线/焦点计分事件和账号/课堂范围草稿，b1批次固定编号重试7天、服务端回执保留10天，beacon不当成功确认；断网/503保留原批，永久4xx暂停并保留，不静默裁剪，不自动重放交卷/投票/聊天领域提交。
 - **根类**：`lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status`
 - **Jinja 宏** `templates/macros/lq/status.html`：`lq_status`, `lq_save_status`, `lq_alert`, `lq_conflict`
 - **JS 入口** `static/js/lq/status.js`：`STATUS_KINDS`, `alert`, `conflict`, `createStatus`, `html`, `saveStatus`, `save_status`, `status`, `statusMarkup`, `statusProps`
@@ -1899,14 +1899,16 @@
 **Toast 通知** · 层：component · CSS：`static/css/lq/components/toast.css`
 
 - **设计摘要**：raised 填充 + thick 实时模糊（栈上限 3），有 shell 顶栏时下移；图标为成对 tone 小胶囊。
-- **规则**：全站通过 `LQ.toast` / `showToast` 发出；不自建 toast 容器。 2026-10-27 社交聊天浮窗唯一归 SocialClient：message_notification_policy.js 识别 category=social 且 metadata.event_type（兼容 event）为 social_message/social_mention；React message-center-sync 与旧 message_center_bell 继续更新总未读但不重复弹聊天。免打扰仅抑制该会话浮窗，保留消息中心与好友角标；当前可见会话抑制浮窗，其他会话仍可提示；WS 重复消息去重；刷新铃铛通过 900ms 合并并传 allowPopup:false，避免请求风暴。好友申请不在聊天排除规则内。
+- **状态**：2026-11-05 顶栏通知与博客角标的 legacy/React owner 共用 static/js/ambient_poll.js。单 owner 对每资源仅一条在途 GET，8 秒截止并中止，完成后计时并加入抖动，失败指数退避且尊重 Retry-After，隐藏页暂停请求。React 先声明节点归属，legacy 首次延后并只更新未被接管的原节点。销毁中止请求和计时器，已读/推送更新代次优先于旧轮询。allowPopup:false 合并到正在进行的刷新时优先保持静默，社交聊天仍遵循 message_notification_policy 的唯一浮窗合同。 极晚 React 挂载与 legacy 交接时允许短暂一次读取重叠；不承诺跨 owner 的全局零重叠。
+- **规则**：全站通过 `LQ.toast` / `showToast` 发出；不自建 toast 容器。 2026-10-27 社交聊天浮窗唯一归 SocialClient：message_notification_policy.js 识别 category=social 且 metadata.event_type（兼容 event）为 social_message/social_mention；React message-center-sync 与旧 message_center_bell 继续更新总未读但不重复弹聊天。免打扰仅抑制该会话浮窗，保留消息中心与好友角标；当前可见会话抑制浮窗，其他会话仍可提示；WS 重复消息去重；刷新铃铛通过 900ms 合并并传 allowPopup:false，避免请求风暴。好友申请不在聊天排除规则内。2026-11-05 auth.js 与 api.js 共用页面级会话恢复 owner。仅同源 API 的 login_required 401 可唤起一条持久共享 Toast，安全登录动作在用户点击后打开新页，保留原页草稿、焦点与 IME。fetch/XHR 始终正常结算，403/503/429 不触发登录跳转，不自动重放提交。较新请求成功会清理提示并忽略旧 401，lanshare:auth-required 可由领域 owner 取消默认提示。
 - **根类**：`lq-toast`, `lq-toast-fallback`, `lq-toasts`
 - **JS 入口** `static/js/lq/toast.js`：`createToastClock`, `getToastSystem`, `toast`, `toastProps`
-- **消费者**：4 个文件
+- **消费者**：5 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `static/js/ui.js` ×3
+- `static/js/auth.js` ×2
 - `static/js/materials_explorer.js` ×2
 - `static/js/message_center_bell.js` ×2
 - `static/js/social/social_dom.js` ×2

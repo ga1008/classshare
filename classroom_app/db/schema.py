@@ -19,6 +19,7 @@ from .schema_attendance_reports import ensure_attendance_report_schema
 from .schema_feedback_conversations import ensure_feedback_conversation_schema
 from .schema_ai_workspace import ensure_ai_workspace_schema
 from .schema_ai_search import ensure_ai_search_schema
+from .schema_behavior_inbox import ensure_behavior_inbox_schema
 from .schema_assignments import ensure_assignment_schema
 from .schema_classroom_activity import ensure_classroom_activity_schema
 from .schema_cultivation_progress import ensure_cultivation_progress_schema
@@ -95,6 +96,9 @@ def _init_database_unlocked():
         try:
             ensure_cultivation_progress_schema(conn, engine="postgres")
             runtime_table_report = ensure_postgres_runtime_tables(conn)
+            ensure_behavior_inbox_schema(conn, engine="postgres")
+            from ..services.cultivation_display_service import ensure_cultivation_display_schema
+            ensure_cultivation_display_schema(conn)
             ensure_academic_schedule_prediction_schema(conn, engine="postgres")
             ensure_academic_teacher_timetable_schema(conn, engine="postgres")
             ensure_grade_publication_schema(conn, engine="postgres")
@@ -204,7 +208,7 @@ def _init_database_unlocked():
         try:
             wanderer_conn = get_db_connection()
             try:
-                ensure_wanderer_schema(wanderer_conn)
+                ensure_wanderer_schema(wanderer_conn, allow_schema_changes=True)
                 wanderer_conn.commit()
             finally:
                 wanderer_conn.close()
@@ -437,7 +441,7 @@ def _init_database_unlocked():
             ensure_classroom_activity_schema(conn)
             ensure_study_group_scheme_schema(conn)
             ensure_poll_schema(conn)
-            ensure_wanderer_schema(conn)
+            ensure_wanderer_schema(conn, allow_schema_changes=True)
             ensure_social_schema(conn)
             from ..services.assignment_student_window_service import ensure_student_window_schema
 
@@ -452,6 +456,9 @@ def _init_database_unlocked():
             ensure_git_learning_bindings_schema(conn)
             ensure_attendance_report_schema(conn, engine="sqlite")
             ensure_learning_blog_signature_schema(conn)
+            ensure_behavior_inbox_schema(conn, engine="sqlite")
+            from ..services.cultivation_display_service import ensure_cultivation_display_schema
+            ensure_cultivation_display_schema(conn)
             ensure_feedback_conversation_schema(conn, engine="sqlite")
             ensure_ai_workspace_schema(conn, engine="sqlite")
             ensure_ai_search_schema(conn, engine="sqlite")

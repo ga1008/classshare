@@ -8,16 +8,16 @@ from ...services.remember_login_service import current_selector as _remember_sel
 from ...services.remember_login_service import revoke_remember_selector as _revoke_remember_selector
 
 
-def forget_this_device(request) -> None:
+def forget_this_device(request, *, conn=None) -> None:
     selector = _remember_selector(request)
     if not selector:
         return
-    try:
-        with get_db_connection() as conn:
-            _revoke_remember_selector(conn, selector, "logout")
-            conn.commit()
-    except Exception as exc:  # noqa: BLE001 - logout must always succeed
-        print(f"[REMEMBER] logout revoke failed: {exc}")
+    if conn is not None:
+        _revoke_remember_selector(conn, selector, "logout")
+    else:
+        with get_db_connection() as active_conn:
+            _revoke_remember_selector(active_conn, selector, "logout")
+            active_conn.commit()
 
 
 class _AuthRoute(APIRoute):
@@ -53,8 +53,9 @@ def _wants_remember(value) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "on", "yes"}
 
 
-def _student_login_redirect(student_row, client_ip, safe_next, *, request=None, remember=False):
-    access_token, _ = _build_student_login_token(student_row, client_ip)
+def _student_login_redirect(student_row, client_ip, safe_next, *, request=None, remember=False, access_token=None):
+    if access_token is None:
+        access_token, _ = _build_student_login_token(student_row, client_ip)
     response = RedirectResponse(url=safe_next, status_code=status.HTTP_303_SEE_OTHER)
     apply_access_token_cookie(response, access_token)
     if request is not None:
@@ -113,12 +114,12 @@ def handle_student_identity_login(
 
 
 @router.post("/student/password/setup", response_class=HTMLResponse)
-def handle_student_password_setup(
+async def handle_student_password_setup(
     request: Request, setup_token: str = Form(default=""), password: str = Form(default=""),
     confirm_password: str = Form(default=""), next: Optional[str] = Form(default=None),
 ):
     try:
-        student_row, client_ip, safe_next, _ = _perform_student_password_setup(
+        student_row, client_ip, safe_next, _, access_token = await _perform_student_password_setup(
             request, setup_token, password, confirm_password, next,
         )
     except HTTPException as exc:
@@ -130,12 +131,13 @@ def handle_student_password_setup(
         retry = bool(payload and payload.get("student_id")) and (
             password != confirm_password or bool(validate_student_password(password))
         )
-        return _student_auth_flow_page(
+        return await run_in_threadpool(_student_auth_flow_page,
             request, step="setup" if retry else "identity",
             next_url=next or (payload or {}).get("next"), error=str(exc.detail),
             status_code=exc.status_code, setup_token=setup_token if retry else "",
         )
-    return _student_login_redirect(student_row, client_ip, safe_next, request=request, remember=False)
+    return await run_in_threadpool(_student_login_redirect, student_row, client_ip, safe_next,
+                                   request=request, remember=False, access_token=access_token)
 
 
 @router.get("/student/password/forgot", response_class=HTMLResponse)
@@ -269,7 +271,7 @@ async def permission_warning_page(
 
 
 @router.post("/api/student/login/password", response_class=JSONResponse)
-def api_student_password_login(
+async def api_student_password_login(
     request: Request,
     identifier: str = Form(),
     password: str = Form(),
@@ -281,23 +283,17 @@ def api_student_password_login(
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent", "")
 
-    with get_db_connection() as conn:
-        student_row, login_count = _perform_student_password_login(
-            conn,
-            identifier=identifier.strip(),
-            password=password,
-            client_ip=client_ip,
-            user_agent=user_agent,
-        )
-        conn.commit()
-
-    return _build_student_login_json_response(
+    student_row, login_count, access_token = await _perform_student_password_login(
+        identifier=identifier.strip(), password=password, client_ip=client_ip, user_agent=user_agent,
+    )
+    return await run_in_threadpool(_build_student_login_json_response,
         student_row=student_row,
         client_ip=client_ip,
         safe_next=safe_next,
         login_count=login_count,
         request=request,
         remember=_wants_remember(remember_me),
+        access_token=access_token,
     )
 
 
@@ -361,7 +357,7 @@ def _perform_student_identity_login(name, student_id_number, safe_next):
 
 
 @router.post("/api/student/password/setup", response_class=JSONResponse)
-def api_student_password_setup(
+async def api_student_password_setup(
     request: Request,
     setup_token: str = Form(),
     password: str = Form(),
@@ -369,19 +365,21 @@ def api_student_password_setup(
     next: Optional[str] = Form(default=None),
 ):
     """完成学生首次设密或重置后设密，并自动登录。"""
-    student_row, client_ip, safe_next, login_count = _perform_student_password_setup(
+    student_row, client_ip, safe_next, login_count, access_token = await _perform_student_password_setup(
         request, setup_token, password, confirm_password, next,
     )
-    return _build_student_login_json_response(
+    return await run_in_threadpool(_build_student_login_json_response,
         student_row=student_row, client_ip=client_ip,
         safe_next=safe_next, login_count=login_count,
-        request=request, remember=False,
+        request=request, remember=False, access_token=access_token,
     )
 
 
-def _perform_student_password_setup(request, setup_token, password, confirm_password, next_url):
+async def _perform_student_password_setup(request, setup_token, password, confirm_password, next_url):
     """Keep credential locks, account recheck and writes shared by both adapters."""
     from ...services.account_credentials_service import credentials_changed, prepare_credentials_change
+    from ...services.password_verification_service import hash_setup_password
+    from ...dependencies import _begin_session_cache_write, _publish_committed_access_token
     if password != confirm_password:
         raise HTTPException(status_code=400, detail="两次输入的密码不一致。")
 
@@ -399,49 +397,64 @@ def _perform_student_password_setup(request, setup_token, password, confirm_pass
     flow_type = str(token_payload.get("flow_type") or "first_login")
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent", "")
+    # Hashing can queue behind other CPU work; no connection/actor lock is held.
+    encoded = await hash_setup_password(password)
 
-    with get_db_connection() as conn:
-        prepare_credentials_change(conn, role="student", user_id=int(token_payload["student_id"]))
-        student_row = get_student_auth_record_by_pk(conn, int(token_payload["student_id"]))
-        if not student_row:
-            raise HTTPException(status_code=404, detail="学生账号不存在。")
-        _ensure_student_can_login(student_row)
+    def finish_setup():
+        with get_db_connection() as conn:
+            prepare_credentials_change(conn, role="student", user_id=int(token_payload["student_id"]))
+            if not decode_password_setup_token(setup_token):
+                raise HTTPException(400, "设密凭证已失效，请重新进行身份验证。")
+            student_row = get_student_auth_record_by_pk(conn, int(token_payload["student_id"]))
+            if not student_row:
+                raise HTTPException(status_code=404, detail="学生账号不存在。")
+            _ensure_student_can_login(student_row)
 
-        if flow_type == "password_reset":
-            if not student_row["password_reset_required"]:
-                raise HTTPException(status_code=400, detail="当前账号无需重置密码，请直接使用密码登录。")
-        elif student_row["hashed_password"] and not student_row["password_reset_required"]:
-            raise HTTPException(status_code=400, detail="该账号已设置密码，请直接使用密码登录。")
+            if flow_type == "password_reset":
+                if not student_row["password_reset_required"]:
+                    raise HTTPException(status_code=400, detail="当前账号无需重置密码，请直接使用密码登录。")
+                latest = conn.execute(
+                    "SELECT id FROM student_password_reset_requests WHERE student_id = ? AND status = 'approved' "
+                    "ORDER BY reviewed_at DESC, id DESC LIMIT 1", (student_row["id"],),
+                ).fetchone()
+                if token_payload.get("reset_request_id") != (latest["id"] if latest else None):
+                    raise HTTPException(400, "找回密码申请已更新，请重新进行身份验证。")
+            elif flow_type != "first_login" or student_row["hashed_password"] or student_row["password_reset_required"]:
+                raise HTTPException(status_code=400, detail="该账号已更新设密状态，请重新进行身份验证或使用密码登录。")
 
-        credentials_changed(conn, role="student", user_id=int(student_row["id"]), invalidate_sessions=True)
-        conn.execute(
-            """
-            UPDATE students
-            SET hashed_password = ?, password_reset_required = 0, password_updated_at = ?
-            WHERE id = ?
-            """,
-            (get_password_hash(password), datetime.now().isoformat(), student_row["id"]),
-        )
-
-        if flow_type == "password_reset":
-            mark_latest_approved_reset_request_completed(
-                conn,
-                student_id=student_row["id"],
-                approved_request_id=token_payload.get("reset_request_id"),
+            credentials_changed(conn, role="student", user_id=int(student_row["id"]), invalidate_sessions=True)
+            conn.execute(
+                """
+                UPDATE students
+                SET hashed_password = ?, password_reset_required = 0, password_updated_at = ?
+                WHERE id = ?
+                """,
+                (encoded, datetime.now().isoformat(), student_row["id"]),
             )
 
-        login_count = record_student_login(
-            conn,
-            student_row=student_row,
-            login_method="password_reset_setup" if flow_type == "password_reset" else "first_time_setup",
-            identifier_type="name_and_student_id_number",
-            identifier_value=f"{student_row['name']} / {student_row['student_id_number']}",
-            client_ip=client_ip,
-            user_agent=user_agent,
-        )
-        conn.commit()
+            if flow_type == "password_reset":
+                mark_latest_approved_reset_request_completed(
+                    conn,
+                    student_id=student_row["id"],
+                    approved_request_id=token_payload.get("reset_request_id"),
+                )
 
-    return student_row, client_ip, safe_next, login_count
+            login_count = record_student_login(
+                conn,
+                student_row=student_row,
+                login_method="password_reset_setup" if flow_type == "password_reset" else "first_time_setup",
+                identifier_type="name_and_student_id_number",
+                identifier_value=f"{student_row['name']} / {student_row['student_id_number']}",
+                client_ip=client_ip,
+                user_agent=user_agent,
+            )
+            generation = _begin_session_cache_write(str(student_row["id"]), "student")
+            access_token, _ = _build_student_login_token(student_row, client_ip, conn=conn, cache_generation=generation)
+            conn.commit()
+        _publish_committed_access_token(access_token, generation)
+        return student_row, client_ip, safe_next, login_count, access_token
+
+    return await run_in_threadpool(finish_setup)
 
 
 @router.post("/api/student/password/forgot/class-hint", response_class=JSONResponse)
@@ -502,7 +515,7 @@ def _perform_student_password_forgot(request, name, student_id_number, class_nam
 
 
 @router.post("/api/student/password/change", response_class=JSONResponse)
-def api_student_password_change(
+async def api_student_password_change(
     request: Request,
     current_password: str = Form(),
     new_password: str = Form(),
@@ -510,48 +523,16 @@ def api_student_password_change(
     user: dict = Depends(get_current_student),
 ):
     """学生登录后主动修改密码。"""
-    from ...services.account_credentials_service import credentials_changed, prepare_credentials_change
-    if new_password != confirm_password:
-        raise HTTPException(status_code=400, detail="两次输入的新密码不一致。")
-    if current_password == new_password:
-        raise HTTPException(status_code=400, detail="新密码不能与当前密码相同。")
-
-    password_error = validate_student_password(new_password)
-    if password_error:
-        raise HTTPException(status_code=400, detail=password_error)
-    from ...services.remember_login_service import current_device_remembered, reissue_for_current_device
-    # A password change forgets every remembered device; keep the one in use.
-    remembered_until = current_device_remembered(request, user)
-
-    with get_db_connection() as conn:
-        prepare_credentials_change(conn, role="student", user_id=int(user["id"]))
-        student_row = get_student_auth_record_by_pk(conn, int(user["id"]))
-        if not student_row:
-            raise HTTPException(status_code=404, detail="学生账号不存在。")
-        if student_row["password_reset_required"]:
-            raise HTTPException(status_code=400, detail="当前账号正处于重置流程，请重新登录后设置密码。")
-        if not student_row["hashed_password"] or not verify_password(current_password, student_row["hashed_password"]):
-            raise HTTPException(status_code=400, detail="当前密码错误。")
-
-        credentials_changed(conn, role="student", user_id=int(student_row["id"]))
-        conn.execute(
-            """
-            UPDATE students
-            SET hashed_password = ?, password_updated_at = ?, password_reset_required = 0
-            WHERE id = ?
-            """,
-            (get_password_hash(new_password), datetime.now().isoformat(), student_row["id"]),
-        )
-        conn.commit()
-
-    response = JSONResponse({"status": "success", "message": "密码修改成功。其他设备的保持登录已失效。"})
-    if remembered_until:
-        reissue_for_current_device(request, response, user, remembered_until)
-    return response
+    from ...services.self_password_change_service import change_own_password
+    return await change_own_password(
+        request, user, current_password, new_password, confirm_password,
+        connection_factory=get_db_connection,
+        success_message="密码修改成功。其他设备的保持登录已失效。",
+    )
 
 
 @router.post("/student/login")
-def handle_student_login(
+async def handle_student_login(
     request: Request,
     identifier: Optional[str] = Form(default=None),
     password: Optional[str] = Form(default=None),
@@ -567,15 +548,10 @@ def handle_student_login(
     if identifier and password:
         client_ip = get_client_ip(request)
         try:
-            with get_db_connection() as conn:
-                student_row, _ = _perform_student_password_login(
-                    conn,
-                    identifier=identifier,
-                    password=password,
-                    client_ip=client_ip,
-                    user_agent=request.headers.get("user-agent", ""),
-                )
-                conn.commit()
+            student_row, _, access_token = await _perform_student_password_login(
+                identifier=identifier, password=password, client_ip=client_ip,
+                user_agent=request.headers.get("user-agent", ""),
+            )
         except HTTPException as exc:
             if exc.status_code not in {400, 403, 409}:
                 raise
@@ -584,8 +560,9 @@ def handle_student_login(
                 message=str(exc.detail), identifier=identifier, status_code=exc.status_code,
             )
 
-        return _student_login_redirect(
-            student_row, client_ip, safe_next, request=request, remember=_wants_remember(remember_me),
+        return await run_in_threadpool(_student_login_redirect,
+            student_row, client_ip, safe_next, request=request,
+            remember=_wants_remember(remember_me), access_token=access_token,
         )
 
     if name and student_id_number:
@@ -617,7 +594,7 @@ def handle_teacher_register(request: Request):
 
 
 @router.post("/teacher/login")
-def handle_teacher_login(
+async def handle_teacher_login(
     request: Request,
     email: str = Form(default=""),
     password: str = Form(default=""),
@@ -638,9 +615,13 @@ def handle_teacher_login(
             message="登录失败：请填写完整的登录信息。",
         )
 
-    with get_db_connection() as conn:
-        from ...services.teacher_identity_service import teacher_login_candidates
-        candidates = teacher_login_candidates(conn, email, school_name=school_name, school_code=school_code)
+    from ...services.teacher_identity_service import teacher_login_candidates
+
+    def read_candidates():
+        with get_db_connection() as conn:
+            return [dict(row) for row in teacher_login_candidates(conn, email, school_name=school_name, school_code=school_code)]
+
+    candidates = await run_in_threadpool(read_candidates)
     if len(candidates) > 1:
         return _login_form_error(
             request, role="teacher", next_url=safe_next, email=email, school_name=school_name,
@@ -651,30 +632,43 @@ def handle_teacher_login(
     teacher = candidates[0] if candidates else None
 
     # 修复：使用 verify_password 验证
-    if not teacher or not verify_password(password, teacher['hashed_password']):
+    if not teacher or not await verify_login_password(password, teacher['hashed_password']):
         return _login_form_error(
             request, role="teacher", next_url=safe_next, email=email, school_name=school_name,
             message="登录失败：邮箱、职工号、学校或密码错误。",
         )
 
-    teacher_data = dict(teacher)
+    def finish_login():
+        with get_db_connection() as conn:
+            lock_actor_authorization_transition(conn, role="teacher", user_id=int(teacher["id"]))
+            fresh = teacher_login_candidates(conn, email, school_name=school_name, school_code=school_code)
+            if (len(fresh) != 1 or fresh[0]["id"] != teacher["id"]
+                    or fresh[0]["hashed_password"] != teacher["hashed_password"]):
+                return None
+            token_data = {
+                "id": fresh[0]["id"], "name": fresh[0]["name"], "email": fresh[0]["email"],
+                "role": "teacher", "login_time": datetime.now().isoformat(),
+            }
+            from ...dependencies import _begin_session_cache_write, _publish_committed_access_token
+            generation = _begin_session_cache_write(str(teacher["id"]), "teacher")
+            token = create_access_token(token_data, client_ip, conn=conn, cache_generation=generation)
+            conn.commit()
+        _publish_committed_access_token(token, generation)
+        return token
 
-    token_data = {
-        "id": teacher_data['id'],  # 数据库主键 PK
-        "name": teacher_data['name'],
-        "email": teacher_data['email'],
-        "role": "teacher",
-        "login_time": datetime.now().isoformat()
-    }
-
-    access_token = create_access_token(token_data, client_ip)
+    access_token = await run_in_threadpool(finish_login)
+    if access_token is None:
+        return _login_form_error(
+            request, role="teacher", next_url=safe_next, email=email, school_name=school_name,
+            message="登录期间账号信息已更新，请重新输入密码。", status_code=409,
+        )
 
     response = RedirectResponse(
         url=safe_next,
         status_code=status.HTTP_303_SEE_OTHER,
     )
     apply_access_token_cookie(response, access_token)
-    update_remember_after_login(request, response, access_token, _wants_remember(remember_me))
+    await run_in_threadpool(update_remember_after_login, request, response, access_token, _wants_remember(remember_me))
     # 教师登录后同样播放"人生一言"加载屏（教师池，无修为徽章）。
     response.set_cookie("cultivation_reveal", "1", max_age=60, httponly=False, samesite="lax")
     return response
@@ -706,9 +700,18 @@ def logout(request: Request):
     # 获取当前用户并使其会话失效
     user = get_active_user_from_request(request)
     if user and user.get('id'):
-        invalidate_session_for_user(str(user['id']), user.get('role'), revoke_remembered=False)
+        with get_db_connection() as conn:
+            lock_actor_authorization_transition(conn, role=str(user['role']), user_id=int(user['id']))
+            invalidate_session_for_user(str(user['id']), user.get('role'), conn=conn, revoke_remembered=False)
+            forget_this_device(request, conn=conn)
+            conn.commit()
         print(f"[SESSION] 用户 {user.get('name')} 主动注销")
-    forget_this_device(request)
+    else:
+        if _remember_selector(request):
+            from ...services.remember_login_service import end_remembered_session_for_logout, REMEMBER_COOKIE
+            with get_db_connection() as conn:
+                user = end_remembered_session_for_logout(conn, request.cookies.get(REMEMBER_COOKIE))
+                conn.commit()
 
     login_path = "/teacher/login" if (user or {}).get("role") == "teacher" else "/student/login"
     response = RedirectResponse(url=login_path, status_code=status.HTTP_303_SEE_OTHER)

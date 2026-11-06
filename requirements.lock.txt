@@ -69,6 +69,7 @@ typing_extensions==4.15.0
 tzdata==2025.2
 urllib3==2.6.3
 uvicorn==0.37.0
+uvloop==0.23.0; sys_platform == "linux" and platform_python_implementation == "CPython"
 volcengine-python-sdk==5.0.21
 watchfiles==1.1.1
 webencodings==0.5.1

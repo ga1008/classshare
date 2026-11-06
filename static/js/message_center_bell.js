@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { createAmbientPoll } from './ambient_poll.js';
 import { createMessageBellTargets } from './message_center_bell_dom.js';
 import { isSocialChatNotification } from './message_notification_policy.js';
 
@@ -203,19 +204,23 @@ function syncBellState(summary, latestUnread, { allowPopup }) {
     }
 }
 
-async function refreshBell(options = {}) {
-    if (legacyBellShells().length === 0) {
-        return;
-    }
-
-    const { allowPopup = true } = options;
+let bellRevision = 0;
+let allowBellPopup = false;
+const bellPoll = createAmbientPoll(async signal => {
+    const revision = bellRevision;
     try {
-        const response = await apiFetch('/api/message-center/summary', { silent: true });
+        const response = await apiFetch('/api/message-center/summary', { silent: true, signal });
+        if (signal.aborted || revision !== bellRevision || legacyBellShells().length === 0) return;
         updateBell(response?.summary || {});
-        syncBellState(response?.summary || {}, response?.latest_unread || null, { allowPopup });
-    } catch {
-        // Ignore transient polling failures.
+        syncBellState(response?.summary || {}, response?.latest_unread || null, { allowPopup: allowBellPopup });
+    } finally {
+        allowBellPopup = true;
     }
+}, { intervalMs: 15000, active: () => !document.hidden && legacyBellShells().length > 0 });
+
+function refreshBell(options = {}) {
+    allowBellPopup = bellPoll.inFlight ? allowBellPopup && options.allowPopup !== false : options.allowPopup !== false;
+    return bellPoll.refresh();
 }
 
 function updateBlogTopbar(summary) {
@@ -252,41 +257,35 @@ function updateBlogTopbar(summary) {
     });
 }
 
-async function refreshBlogTopbar() {
-    if (legacyBlogEntries().length === 0 && legacyBlogCountNodes().length === 0 && legacyBlogCaptionNodes().length === 0) {
-        return;
-    }
-
+const blogPoll = createAmbientPoll(async signal => {
     const requestedAt = Date.now();
-    try {
-        const response = await apiFetch('/api/blog/summary', { silent: true });
-        const summary = response?.summary || {};
-        updateBlogTopbar(summary);
-        // Same contract as frontend/src/lib/blog-topbar.ts publishBlogSummary.
-        const detail = {
-            todayNewCount: Math.max(0, Number(summary.today_new_count || 0)),
-            followingUnreadCount: Math.max(0, Number(summary.following_unread_count || 0)),
-            requestedAt,
-        };
-        window.__lanshareBlogSummary = detail;
-        window.dispatchEvent(new CustomEvent('blog:summary', { detail }));
-    } catch {
-        // Ignore transient polling failures.
-    }
+    const response = await apiFetch('/api/blog/summary', { silent: true, signal });
+    if (signal.aborted || !hasLegacyBlogNodes()) return;
+    const summary = response?.summary || {};
+    updateBlogTopbar(summary);
+    // Same contract as frontend/src/lib/blog-topbar.ts publishBlogSummary.
+    const detail = {
+        todayNewCount: Math.max(0, Number(summary.today_new_count || 0)),
+        followingUnreadCount: Math.max(0, Number(summary.following_unread_count || 0)),
+        requestedAt,
+    };
+    window.__lanshareBlogSummary = detail;
+    window.dispatchEvent(new CustomEvent('blog:summary', { detail }));
+}, { intervalMs: 60000, active: () => !document.hidden && hasLegacyBlogNodes() });
+
+function hasLegacyBlogNodes() {
+    return legacyBlogEntries().length > 0 || legacyBlogCountNodes().length > 0 || legacyBlogCaptionNodes().length > 0;
 }
+const refreshBlogTopbar = () => blogPoll.refresh();
 
 if (bellShells.length > 0) {
     bellShells.forEach((shell) => {
         getBellNodes(shell).bell?.addEventListener('click', () => hideBellToast(true));
     });
 
-    refreshBell({ allowPopup: false });
-
-    window.setInterval(() => {
-        if (!document.hidden) {
-            refreshBell({ allowPopup: true });
-        }
-    }, 15000);
+    // Give the React owner time to claim authored nodes before the fallback
+    // makes its first request. Subsequent polls use completion-based jitter.
+    bellPoll.start(500 + Math.random() * 500);
 
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
@@ -295,6 +294,7 @@ if (bellShells.length > 0) {
     });
 
     window.addEventListener('message-center:summary-updated', (event) => {
+        bellRevision++;
         const summary = event.detail || {};
         updateBell(summary);
         bellState.initialized = true;
@@ -314,13 +314,7 @@ if (bellShells.length > 0) {
 if (blogEntries.length > 0 || blogCountNodes.length > 0) {
     // The blog-topbar-sync island normally claims these nodes right after load;
     // waiting a moment avoids a second /api/blog/summary request (plan P7).
-    window.setTimeout(refreshBlogTopbar, 1500);
-
-    window.setInterval(() => {
-        if (!document.hidden) {
-            refreshBlogTopbar();
-        }
-    }, 60000);
+    blogPoll.start(1500);
 
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
@@ -329,6 +323,9 @@ if (blogEntries.length > 0 || blogCountNodes.length > 0) {
     });
 }
 
-window.refreshMessageCenterBell = refreshBell;
+if (typeof window.refreshMessageCenterBell !== 'function') window.refreshMessageCenterBell = refreshBell;
 // The island installs its own refresher; never overwrite it with the legacy one.
 if (typeof window.refreshBlogTopbar !== 'function') window.refreshBlogTopbar = refreshBlogTopbar;
+window.addEventListener('pagehide', event => {
+    if (!event.persisted) { bellPoll.dispose(); blogPoll.dispose(); }
+});

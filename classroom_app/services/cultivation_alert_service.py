@@ -192,19 +192,19 @@ def _load_last_activity_by_student(conn, class_offering_id: int) -> dict[int, st
         last_at = str(row["last_at"] or "")
         if last_at and last_at > last_by_student.get(student_id, ""):
             last_by_student[student_id] = last_at
-    try:
-        chat_rows = conn.execute(
-            """
-            SELECT user_id AS student_id, MAX(created_at) AS last_at
-            FROM chat_logs
-            WHERE class_offering_id = ?
-              AND user_role = 'student'
-            GROUP BY user_id
-            """,
-            (int(class_offering_id),),
-        ).fetchall()
-    except Exception:
-        chat_rows = []
+    # Chat storage uses a full-date logged_at; timestamp is display-only.  Do
+    # not swallow schema failures here: PostgreSQL would leave this entire
+    # scan transaction aborted before the remaining alert rules run.
+    chat_rows = conn.execute(
+        """
+        SELECT user_id AS student_id, MAX(logged_at) AS last_at
+        FROM chat_logs
+        WHERE class_offering_id = ?
+          AND user_role = 'student'
+        GROUP BY user_id
+        """,
+        (int(class_offering_id),),
+    ).fetchall()
     for row in chat_rows:
         student_id = _safe_int(row["student_id"])
         if not student_id:

@@ -71,11 +71,11 @@ CAPABILITIES = (
     RequestCapability('http.messages.blocks.remove', '解除私信联系人屏蔽', 'DELETE', '/api/message-center/private/blocks',
         'message_center', 'api_remove_private_message_block', '26ebe0be4b0b0c913baad902aaf876d9d8c4190c95e188af33ee9e90b4d2d66d', {'query': {'contact_identity': CONTACT}}),
     RequestCapability('http.polls.snapshot', '读取可访问课堂的投票', 'GET', '/api/polls/classrooms/{class_offering_id}/snapshot',
-        'polls', 'classroom_poll_snapshot', '91399fee806a5d62b323f6914f0907040914cf97d7332469732b3fde5a67a58f', {'path': {'class_offering_id': ID}}, mutates=False),
+        'polls', 'classroom_poll_snapshot', 'de7ccc57f509aaccbe8fce08fadd4135a09077695d25215de0933785b2933e28', {'path': {'class_offering_id': ID}}, mutates=False),
     RequestCapability('http.polls.detail', '读取可访问的投票详情', 'GET', '/api/polls/{poll_id}',
-        'polls', 'poll_detail', '9f43a67a5c50eb17b78beedddb14f8fa087bec3b494c61c8065781afbe560eea', {'path': {'poll_id': ID}}, mutates=False),
+        'polls', 'poll_detail', 'b7250595d93603f2b68604e2d2a737966e78a119ae175f7c54bb891e953145ca', {'path': {'poll_id': ID}}, mutates=False),
     RequestCapability('http.polls.vote', '提交自己的投票选项', 'POST', '/api/polls/{poll_id}/vote',
-        'polls', 'poll_vote', '9163294ec2df6c49720e403d3b320acfce0209c309775993ff21af26e1db37a4', {'path': {'poll_id': ID}, 'body': {
+        'polls', 'poll_vote', '5e702abd0f4d29b90d15f052beb914486e8bfe68a40259195a88aea02bcdc891', {'path': {'poll_id': ID}, 'body': {
             'option_ids': _spec('ids', required=True, minItems=1, maxItems=30)}}),
 )
 

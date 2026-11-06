@@ -13,14 +13,13 @@
     "旧代码可删除"
   ],
   "coverage": {
-    "templateCount": 203,
-    "entryCount": 225,
+    "templateCount": 209,
+    "entryCount": 230,
     "unresolvedTemplates": [
       "error.html",
       "macros/lq/dialogs.html",
       "manage/system/super_admin.html",
       "material_reader_unavailable.html",
-      "message_center.html",
       "partials/blog_button.html",
       "partials/dashboard_agenda_widget.html",
       "session_expired.html",
@@ -31,7 +30,7 @@
         "routePattern": "/profile",
         "method": "GET",
         "source": "classroom_app/routers/profile.py",
-        "line": 201,
+        "line": 198,
         "endpoint": "profile_page",
         "templates": [
           "manage/profile.html",
@@ -47,7 +46,7 @@
         "routePattern": "/student/login",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 506,
+        "line": 535,
         "endpoint": "handle_student_login",
         "templates": [
           "student_login_v4.html",
@@ -61,7 +60,7 @@
         "routePattern": "/teacher/login",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 569,
+        "line": 597,
         "endpoint": "handle_teacher_login",
         "templates": [
           "student_login_v4.html",
@@ -160,7 +159,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "147b962937ee946b3bd09dc0c71560c22cedf71bc3372348228d3623d8c5ba73",
+      "inventorySourceSha256": "2899dda81df061b6dfd0cf3f79294e4ae1113467db0370a483a7e46427d1b3e5",
       "before": {
         "sourceSha256": "9f4242c14c0709991c8d17a0564b4aa1a97e20ba062c443af3f3f5631cc98003",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/achievements.html",
@@ -483,7 +482,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "d016b0a73ad0ca73877e9f46665f9c97143bf14058ec171c20fd46de032df590",
+      "inventorySourceSha256": "bd363fd63931c875b989b7e4709bc0a2d761b74d7e1304569d21f0c80a6687f8",
       "before": {
         "sourceSha256": "4f017a1ad05e4d9b868b8be81be482912d97810c23e6601e1e64a84241dd573f",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/assignment_detail_student.html",
@@ -881,7 +880,7 @@
         "routePattern": "/assignment/{assignment_id}/wrong-summary",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/assignment_pages.py",
-        "line": 250,
+        "line": 251,
         "endpoint": "assignment_wrong_summary_page",
         "templates": [
           "assignment_wrong_summary.html"
@@ -928,7 +927,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "20955a4f71973a1b07befcc2ccd4f681643f9417897be18161fc510d3af2856e",
+      "inventorySourceSha256": "54d04e34f1af90d7bd50b05e56d0bf685e19bf233e196e5772d3c8246569b9b1",
       "before": {
         "sourceSha256": "8b362503a9a231ecf5bb71b0f4867a318ded9d965abdfbc407f72f150758d5f0",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/assignment_wrong_summary.html",
@@ -998,10 +997,10 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/submission/{submission_id}",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -1012,6 +1011,7 @@
       "layout": "独立完整文档（无 extends；lq-editor 族或独立页）",
       "assets": [
         "js/auth.js",
+        "js/cultivation_emblems.js",
         "js/cultivation_identity.js",
         "js/ls_date_picker.js",
         "js/message_center_bell.js",
@@ -1077,7 +1077,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "1ded2a86bbd3353fd8b77d54371d0b3d5633952c830e23f0a58f9a031740ec49",
+      "inventorySourceSha256": "421aa25910166c6eefdde1ab59c5fbf0d1e99b7b0c3265ade28e9c98d4e237ee",
       "before": {
         "sourceSha256": "773256214f65689dce93cc62bfcaa6cd279b78a53e1579a70a7f4b2ee57b37b4",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/base.html",
@@ -1124,7 +1124,6 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/teacher/login",
         "/teacher/register"
       ],
@@ -1375,6 +1374,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -1849,6 +1849,7 @@
         "css/classroom_group_qr.css",
         "css/classroom_members.css",
         "css/classroom_workspace.css",
+        "css/materials_library.css",
         "css/ordinary_grade_kind_controls.css",
         "css/session_knowledge_tree.css",
         "js/assessment_kind_controls.js",
@@ -1857,6 +1858,7 @@
         "js/classroom_group_qr.js",
         "js/feedback.js",
         "js/group_assignment_config.js",
+        "js/lq/navigation.js",
         "js/student_security.js",
         "js/tools.js"
       ],
@@ -1870,19 +1872,22 @@
         "macros/app_topbar.html",
         "macros/classroom_menus.html",
         "macros/lq/button.html",
+        "macros/lq/navigation.html",
         "macros/ui_explanation.html",
         "macros/user_ui_preferences.html",
         "partials/assessment_classification_batch.html",
         "partials/assessment_kind_control.html",
         "partials/classroom_group_qr.html",
+        "partials/classroom_material_library.html",
         "partials/classroom_members/workspace.html",
         "partials/classroom_task_preview.html",
-        "partials/cultivation_card.html",
+        "partials/cultivation_panel.html",
         "partials/feedback_modal.html",
         "partials/learning_certificate_reveal.html",
         "partials/learning_material_selector.html",
         "partials/markdown_assets.html",
         "partials/session_material_ai_modal.html",
+        "partials/social_entry.html",
         "partials/student_security_modal.html"
       ],
       "controller": [
@@ -1991,7 +1996,6 @@
         "classroom-exam-paper-options",
         "classroom-final-material-assessment-method",
         "classroom-final-material-assessment-mode",
-        "classroom-final-material-generate-btn",
         "classroom-final-material-modal",
         "classroom-final-material-prompt",
         "classroom-final-material-prompt-group",
@@ -2001,7 +2005,6 @@
         "classroom-final-material-submit-btn",
         "classroom-final-material-type",
         "classroom-grading-rubric-options",
-        "classroom-material-collection",
         "classroom-material-detail-content",
         "classroom-material-detail-download-btn",
         "classroom-material-detail-export-btn",
@@ -2012,15 +2015,6 @@
         "classroom-material-detail-open-btn",
         "classroom-material-detail-path",
         "classroom-material-detail-title",
-        "classroom-materials-back-btn",
-        "classroom-materials-breadcrumbs",
-        "classroom-materials-download-btn",
-        "classroom-materials-list",
-        "classroom-materials-refresh-btn",
-        "classroom-materials-select-all",
-        "classroom-materials-selection",
-        "classroom-materials-selection-count",
-        "classroom-materials-up-btn",
         "classroom-ordinary-assessment",
         "classroom-ordinary-attendance-freshness",
         "classroom-ordinary-grade-picker",
@@ -2110,10 +2104,6 @@
         "fileInput",
         "hero-course-detail-btn",
         "interaction-panel",
-        "learning-modal-close",
-        "learning-modal-title",
-        "learning-progress-modal",
-        "learning-progress-panel",
         "poll-panel",
         "resources-panel",
         "shared-file-ai-enrich-btn",
@@ -2234,7 +2224,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "92458061cb673b82c4ea6a69ee624ee8adb477f025743394c20369b296942aa1",
+      "inventorySourceSha256": "075e9df6156e6c088066c089e2bbc7ad782d373b93e1af4bebe7220d624ceac0",
       "before": {
         "sourceSha256": "ec29712f658cb457a5d71151554e77d61dc4c069b850f6e24c906c8b7b137e68",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/classroom_main_v4.html",
@@ -3928,7 +3918,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "01a7ee856b0dd0f9863c081f38446591c995ebb338fd5b6d188f5c6f7c1a9cde",
+      "inventorySourceSha256": "47866f2bf63834ae976075c92cc043becc27dcd739e39a888a60ae8ba6140f1b",
       "before": {
         "sourceSha256": "3834c7a4c48dcc1dce66bea580e01fce6f861167e1e8ccc7e63d423f1b5ad456",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/exam_take.html",
@@ -4119,7 +4109,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "f9c07141b2f02c3197c9c9626250bb8265d6ff9da9501fe50b0de3c923fa5493",
+      "inventorySourceSha256": "a84b59acc475d84679f810220f41835c9ae54fa83b07bd3dc614d1d24292c54c",
       "before": {
         "sourceSha256": "4ed5d26cd1f6804cc7b490686f81239bdc7b7a54325b5acffcf32e83d946e105",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/learning_path.html",
@@ -4510,6 +4500,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -4521,6 +4512,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -4620,6 +4612,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -4631,6 +4624,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -4827,6 +4821,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -4841,9 +4836,9 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -4966,10 +4961,12 @@
         "/manage/library/courses",
         "/manage/me/inbox",
         "/manage/me/password-resets",
+        "/manage/system/wanderers",
         "/manage/teaching",
         "/manage/teaching/classes",
         "/manage/teaching/classroom-hub",
-        "/profile"
+        "/profile",
+        "/wanderers/{slug}"
       ],
       "routeEvidence": null,
       "roles": [
@@ -5019,7 +5016,8 @@
       "kind": "macro",
       "ownerRoutes": [
         "/dashboard",
-        "/dev/lq"
+        "/dev/lq",
+        "/manage/system/wanderers"
       ],
       "routeEvidence": null,
       "roles": [
@@ -5162,6 +5160,7 @@
         "/manage/system/life-tips",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -5172,6 +5171,7 @@
         "/manage/teaching/semesters",
         "/points",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -5311,6 +5311,7 @@
         "/manage/system/life-tips",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -5319,7 +5320,9 @@
         "/manage/teaching/offering-merge",
         "/manage/teaching/offerings",
         "/manage/teaching/semesters",
-        "/profile"
+        "/profile",
+        "/student/login",
+        "/teacher/login"
       ],
       "routeEvidence": null,
       "roles": [
@@ -5421,6 +5424,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -5435,9 +5439,9 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -5455,7 +5459,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "e2b899b1ae6322e3f27a903dfce37f37917a85ac3f60411c0dd019e7698e4501",
+      "inventorySourceSha256": "ce8d1a0fde2ae9e59e5f9610d3e42403cd118426a21a0c53e8463bfd6a59656e",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -5540,6 +5544,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -5554,9 +5559,9 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -5705,6 +5710,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -5716,6 +5722,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -5816,6 +5823,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -5827,6 +5835,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -5873,6 +5882,7 @@
       "template": "templates/macros/lq/navigation.html",
       "kind": "macro",
       "ownerRoutes": [
+        "/classroom/{class_offering_id}",
         "/dev/lq",
         "/manage/system/blog-review"
       ],
@@ -6021,6 +6031,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -6032,6 +6043,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -6129,7 +6141,8 @@
       "template": "templates/macros/lq/status.html",
       "kind": "macro",
       "ownerRoutes": [
-        "/dev/lq"
+        "/dev/lq",
+        "/profile"
       ],
       "routeEvidence": null,
       "roles": [
@@ -6418,6 +6431,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -6583,6 +6597,7 @@
         "/manage/system/life-tips",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -6695,6 +6710,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -6706,6 +6722,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -6806,6 +6823,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -6817,6 +6835,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -8888,6 +8907,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -9301,7 +9321,7 @@
         "routePattern": "/manage/system/life-tips",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/life_tip_pages.py",
-        "line": 14,
+        "line": 15,
         "endpoint": "manage_life_tips_page",
         "templates": [
           "manage/life_tips.html"
@@ -9426,6 +9446,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -9539,6 +9560,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -9643,6 +9665,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -9664,7 +9687,8 @@
       "templateReferences": [
         "macros/lq/button.html",
         "macros/lq/icons.generated.html",
-        "macros/user_ui_preferences.html"
+        "macros/user_ui_preferences.html",
+        "partials/social_entry.html"
       ],
       "controller": [],
       "domHooks": [],
@@ -9672,7 +9696,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "b396e69cdf2d6e2aec44096ccfdc881bfc7bd3b0bd859d489052620bb9e1359e",
+      "inventorySourceSha256": "b51a3fd032af6efa38df7559bb323091fe6ffbe4149ac2fc5d280ef0d55266a9",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -9821,7 +9845,7 @@
         "routePattern": "/manage/library/materials",
         "method": "GET",
         "source": "classroom_app/routers/materials_parts/library.py",
-        "line": 350,
+        "line": 361,
         "endpoint": "manage_materials_page",
         "templates": [
           "manage/materials.html"
@@ -9840,20 +9864,20 @@
       "assets": [
         "css/lq/manage-pilot.css",
         "css/lq/manage-shell.css",
+        "css/materials_library.css",
         "css/tailwind-app.css",
         "js/base_resource_modes.js",
         "js/feedback.js",
         "js/lq/layer.js",
         "js/lq/shells.js",
         "js/manage_lq_pilot.js",
-        "js/materials_manage.js",
-        "js/message_center_bell.js",
-        "js/process_material_modal.js",
-        "js/user_ui_preferences.js",
-        "css/materials_library.css",
         "js/materials_explorer.js",
         "js/materials_library_cards.js",
-        "js/materials_menus.js"
+        "js/materials_manage.js",
+        "js/materials_menus.js",
+        "js/message_center_bell.js",
+        "js/process_material_modal.js",
+        "js/user_ui_preferences.js"
       ],
       "islands": [
         "materials-manage-page"
@@ -9890,7 +9914,6 @@
         "materials-create-file-btn",
         "materials-create-folder-btn",
         "materials-create-menu",
-        "materials-create-menu-btn",
         "materials-file-input",
         "materials-folder-file-summary",
         "materials-folder-input",
@@ -9902,7 +9925,6 @@
         "materials-upload-direct-btn",
         "materials-upload-dropdown",
         "materials-upload-menu",
-        "materials-upload-menu-btn",
         "p03-materials-file-input",
         "p03-materials-upload-direct",
         "p03-materials-upload-menu"
@@ -9949,7 +9971,7 @@
         "LQ Button/Icon（壳入口）",
         "LQ Layer（Shell唯一层所有者）"
       ],
-      "inventorySourceSha256": "c64955bfd8878cd313492832cd6ee4620abd076addf69cd67867557e9e4bb0dc",
+      "inventorySourceSha256": "967320ba151ed3896dc788f2623d94b81c378028eea046ecf87d8ef00c0720d1",
       "before": {
         "sourceSha256": "0eeb9526984805e4cf6d00fd3b77010810a3f664ebf2562ad415a7c6fcdbad26",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/manage/materials.html",
@@ -10185,7 +10207,7 @@
         "routePattern": "/manage/archive/postclass-materials",
         "method": "GET",
         "source": "classroom_app/routers/materials_parts/library.py",
-        "line": 362,
+        "line": 373,
         "endpoint": "manage_postclass_materials_page",
         "templates": [
           "manage/materials.html"
@@ -10202,6 +10224,7 @@
       "resourceScope": "由路由依赖推导：get_current_teacher；资源归属待迁移时人工核对",
       "layout": "sidebar（manage/layout.html）",
       "assets": [
+        "css/materials_library.css",
         "js/base_resource_modes.js",
         "js/materials_manage.js"
       ],
@@ -10244,7 +10267,6 @@
         "materials-create-file-btn",
         "materials-create-folder-btn",
         "materials-create-menu",
-        "materials-create-menu-btn",
         "materials-file-input",
         "materials-folder-file-summary",
         "materials-folder-input",
@@ -10256,7 +10278,6 @@
         "materials-upload-direct-btn",
         "materials-upload-dropdown",
         "materials-upload-menu",
-        "materials-upload-menu-btn",
         "p03-materials-file-input",
         "p03-materials-upload-direct",
         "p03-materials-upload-menu"
@@ -10319,7 +10340,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "c64955bfd8878cd313492832cd6ee4620abd076addf69cd67867557e9e4bb0dc",
+      "inventorySourceSha256": "967320ba151ed3896dc788f2623d94b81c378028eea046ecf87d8ef00c0720d1",
       "before": {
         "sourceSha256": "0eeb9526984805e4cf6d00fd3b77010810a3f664ebf2562ad415a7c6fcdbad26",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/manage/materials.html",
@@ -10365,7 +10386,7 @@
         "routePattern": "/manage/archive/grading-rubrics",
         "method": "GET",
         "source": "classroom_app/routers/materials_parts/library.py",
-        "line": 376,
+        "line": 387,
         "endpoint": "manage_grading_rubrics_page",
         "templates": [
           "manage/materials.html"
@@ -10382,6 +10403,7 @@
       "resourceScope": "由路由依赖推导：get_current_teacher；资源归属待迁移时人工核对",
       "layout": "sidebar（manage/layout.html）",
       "assets": [
+        "css/materials_library.css",
         "js/base_resource_modes.js",
         "js/materials_manage.js"
       ],
@@ -10424,7 +10446,6 @@
         "materials-create-file-btn",
         "materials-create-folder-btn",
         "materials-create-menu",
-        "materials-create-menu-btn",
         "materials-file-input",
         "materials-folder-file-summary",
         "materials-folder-input",
@@ -10436,7 +10457,6 @@
         "materials-upload-direct-btn",
         "materials-upload-dropdown",
         "materials-upload-menu",
-        "materials-upload-menu-btn",
         "p03-materials-file-input",
         "p03-materials-upload-direct",
         "p03-materials-upload-menu"
@@ -10499,7 +10519,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "c64955bfd8878cd313492832cd6ee4620abd076addf69cd67867557e9e4bb0dc",
+      "inventorySourceSha256": "967320ba151ed3896dc788f2623d94b81c378028eea046ecf87d8ef00c0720d1",
       "before": {
         "sourceSha256": "0eeb9526984805e4cf6d00fd3b77010810a3f664ebf2562ad415a7c6fcdbad26",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/manage/materials.html",
@@ -10545,7 +10565,7 @@
         "routePattern": "/manage/archive/ordinary-grade-records",
         "method": "GET",
         "source": "classroom_app/routers/materials_parts/library.py",
-        "line": 394,
+        "line": 405,
         "endpoint": "manage_ordinary_grade_records_page",
         "templates": [
           "manage/materials.html"
@@ -10562,6 +10582,7 @@
       "resourceScope": "由路由依赖推导：get_current_teacher；资源归属待迁移时人工核对",
       "layout": "sidebar（manage/layout.html）",
       "assets": [
+        "css/materials_library.css",
         "js/base_resource_modes.js",
         "js/materials_manage.js"
       ],
@@ -10604,7 +10625,6 @@
         "materials-create-file-btn",
         "materials-create-folder-btn",
         "materials-create-menu",
-        "materials-create-menu-btn",
         "materials-file-input",
         "materials-folder-file-summary",
         "materials-folder-input",
@@ -10616,7 +10636,6 @@
         "materials-upload-direct-btn",
         "materials-upload-dropdown",
         "materials-upload-menu",
-        "materials-upload-menu-btn",
         "p03-materials-file-input",
         "p03-materials-upload-direct",
         "p03-materials-upload-menu"
@@ -10679,7 +10698,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "c64955bfd8878cd313492832cd6ee4620abd076addf69cd67867557e9e4bb0dc",
+      "inventorySourceSha256": "967320ba151ed3896dc788f2623d94b81c378028eea046ecf87d8ef00c0720d1",
       "before": {
         "sourceSha256": "0eeb9526984805e4cf6d00fd3b77010810a3f664ebf2562ad415a7c6fcdbad26",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/manage/materials.html",
@@ -10725,7 +10744,7 @@
         "routePattern": "/manage/archive/exam-grade-records",
         "method": "GET",
         "source": "classroom_app/routers/materials_parts/library.py",
-        "line": 409,
+        "line": 420,
         "endpoint": "manage_exam_grade_records_page",
         "templates": [
           "manage/materials.html"
@@ -10742,6 +10761,7 @@
       "resourceScope": "由路由依赖推导：get_current_teacher；资源归属待迁移时人工核对",
       "layout": "sidebar（manage/layout.html）",
       "assets": [
+        "css/materials_library.css",
         "js/base_resource_modes.js",
         "js/materials_manage.js"
       ],
@@ -10784,7 +10804,6 @@
         "materials-create-file-btn",
         "materials-create-folder-btn",
         "materials-create-menu",
-        "materials-create-menu-btn",
         "materials-file-input",
         "materials-folder-file-summary",
         "materials-folder-input",
@@ -10796,7 +10815,6 @@
         "materials-upload-direct-btn",
         "materials-upload-dropdown",
         "materials-upload-menu",
-        "materials-upload-menu-btn",
         "p03-materials-file-input",
         "p03-materials-upload-direct",
         "p03-materials-upload-menu"
@@ -10859,7 +10877,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "c64955bfd8878cd313492832cd6ee4620abd076addf69cd67867557e9e4bb0dc",
+      "inventorySourceSha256": "967320ba151ed3896dc788f2623d94b81c378028eea046ecf87d8ef00c0720d1",
       "before": {
         "sourceSha256": "0eeb9526984805e4cf6d00fd3b77010810a3f664ebf2562ad415a7c6fcdbad26",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/manage/materials.html",
@@ -10905,7 +10923,7 @@
         "routePattern": "/manage/archive/final-grade-transcripts",
         "method": "GET",
         "source": "classroom_app/routers/materials_parts/library.py",
-        "line": 424,
+        "line": 435,
         "endpoint": "manage_final_grade_transcripts_page",
         "templates": [
           "manage/materials.html"
@@ -10922,6 +10940,7 @@
       "resourceScope": "由路由依赖推导：get_current_teacher；资源归属待迁移时人工核对",
       "layout": "sidebar（manage/layout.html）",
       "assets": [
+        "css/materials_library.css",
         "js/base_resource_modes.js",
         "js/materials_manage.js"
       ],
@@ -10964,7 +10983,6 @@
         "materials-create-file-btn",
         "materials-create-folder-btn",
         "materials-create-menu",
-        "materials-create-menu-btn",
         "materials-file-input",
         "materials-folder-file-summary",
         "materials-folder-input",
@@ -10976,7 +10994,6 @@
         "materials-upload-direct-btn",
         "materials-upload-dropdown",
         "materials-upload-menu",
-        "materials-upload-menu-btn",
         "p03-materials-file-input",
         "p03-materials-upload-direct",
         "p03-materials-upload-menu"
@@ -11039,7 +11056,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "c64955bfd8878cd313492832cd6ee4620abd076addf69cd67867557e9e4bb0dc",
+      "inventorySourceSha256": "967320ba151ed3896dc788f2623d94b81c378028eea046ecf87d8ef00c0720d1",
       "before": {
         "sourceSha256": "0eeb9526984805e4cf6d00fd3b77010810a3f664ebf2562ad415a7c6fcdbad26",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/manage/materials.html",
@@ -11903,7 +11920,7 @@
         "routePattern": "/profile",
         "method": "GET",
         "source": "classroom_app/routers/profile.py",
-        "line": 201,
+        "line": 198,
         "endpoint": "profile_page",
         "templates": [
           "manage/profile.html",
@@ -12548,7 +12565,8 @@
       "islands": [],
       "templateReferences": [
         "macros/app_topbar.html",
-        "manage/layout.html"
+        "manage/layout.html",
+        "partials/ability_radar.html"
       ],
       "controller": [],
       "domHooks": [
@@ -12561,7 +12579,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "1a037c6663d45417fb1938bdcb4796651f157515e7f8b96456c1f10ab4736981",
+      "inventorySourceSha256": "b64ee2bb5b53db30232d188965a36ccd37bfa3e66cfc83673c5d76d6d2c0e188",
       "before": {
         "sourceSha256": "7713855cbca2d349c05f05e39addb956dd72b6d1512ff21df73e5e3ac63ccbec",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/manage/student_detail.html",
@@ -12731,7 +12749,7 @@
         "routePattern": "/manage/system/agent-keys",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
-        "line": 170,
+        "line": 176,
         "endpoint": "get_manage_system_agent_keys_page",
         "templates": [
           "manage/system/agent_keys.html"
@@ -12841,7 +12859,7 @@
         "routePattern": "/manage/system/ai-usage",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
-        "line": 148,
+        "line": 154,
         "endpoint": "get_manage_system_ai_usage_page",
         "templates": [
           "manage/system/ai_usage.html"
@@ -12910,7 +12928,7 @@
         "routePattern": "/manage/system/blog-crawler",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
-        "line": 192,
+        "line": 226,
         "endpoint": "get_manage_system_blog_crawler_page",
         "templates": [
           "manage/system/blog_crawler.html"
@@ -13084,7 +13102,7 @@
         "routePattern": "/manage/system/diagnostics",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
-        "line": 114,
+        "line": 120,
         "endpoint": "get_manage_system_diagnostics_page",
         "templates": [
           "manage/system/diagnostics.html"
@@ -13179,7 +13197,7 @@
         "routePattern": "/manage/system/feedback",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
-        "line": 83,
+        "line": 89,
         "endpoint": "get_manage_system_feedback_page",
         "templates": [
           "manage/system/feedback.html"
@@ -13372,7 +13390,7 @@
         "routePattern": "/manage/system/monitor",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
-        "line": 131,
+        "line": 137,
         "endpoint": "get_manage_system_monitor_page",
         "templates": [
           "manage/system/monitor.html"
@@ -13476,7 +13494,7 @@
         "routePattern": "/manage/system/organizations",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
-        "line": 59,
+        "line": 65,
         "endpoint": "get_manage_system_organizations_page",
         "templates": [
           "manage/system/organizations.html"
@@ -13852,7 +13870,7 @@
         "routePattern": "/manage/system/users",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
-        "line": 26,
+        "line": 32,
         "endpoint": "get_manage_system_users_page",
         "templates": [
           "manage/system/users.html"
@@ -14111,6 +14129,108 @@
           "reason": "统一 Tailwind 入口编译产物；源码由 activeSources/foundation 扫描，产物由 asset graph、预算与真实浏览器门禁验收。"
         }
       ]
+    },
+    {
+      "id": "GET /manage/system/wanderers::manage/system/wanderers.html",
+      "routePattern": "/manage/system/wanderers",
+      "method": "GET",
+      "template": "templates/manage/system/wanderers.html",
+      "kind": "template",
+      "ownerRoutes": [
+        "/manage/system/wanderers"
+      ],
+      "routeEvidence": {
+        "routePattern": "/manage/system/wanderers",
+        "method": "GET",
+        "source": "classroom_app/routers/ui_parts/manage_pages_admin.py",
+        "line": 198,
+        "endpoint": "get_manage_system_wanderers_page",
+        "templates": [
+          "manage/system/wanderers.html"
+        ],
+        "templatePatterns": [],
+        "dependencies": [
+          "get_current_teacher"
+        ],
+        "dynamicTemplate": false
+      },
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [
+        "css/lq/pages/wanderers.css",
+        "js/manage_wanderers.js"
+      ],
+      "islands": [],
+      "templateReferences": [
+        "macros/lq/button.html",
+        "macros/lq/chip.html",
+        "macros/lq/collapsible.html",
+        "macros/lq/content.html",
+        "macros/manage_page.html",
+        "manage/layout.html"
+      ],
+      "controller": [],
+      "domHooks": [
+        "wd-card-count",
+        "wd-card-empty",
+        "wd-card-grid",
+        "wd-cards-title",
+        "wd-detail",
+        "wd-detail-body",
+        "wd-detail-title",
+        "wd-enabled",
+        "wd-env-note",
+        "wd-genesis-btn",
+        "wd-manual-summary",
+        "wd-refresh-btn",
+        "wd-reseed-btn",
+        "wd-review-btn",
+        "wd-settings-form",
+        "wd-settings-title",
+        "wd-summary",
+        "wd-tabs",
+        "wd-tabs--lq-panel-actions",
+        "wd-tabs--lq-panel-memory",
+        "wd-tabs--lq-panel-overview",
+        "wd-tabs--lq-panel-persona",
+        "wd-tabs--lq-panel-reviews",
+        "wd-tabs--lq-panel-social",
+        "wd-tabs--lq-tab-actions",
+        "wd-tabs--lq-tab-memory",
+        "wd-tabs--lq-tab-overview",
+        "wd-tabs--lq-tab-persona",
+        "wd-tabs--lq-tab-reviews",
+        "wd-tabs--lq-tab-social",
+        "wd-tick-btn"
+      ],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "19802e614f72c630942e8d1ec5a4cdf4e55bb072cd3634eb93eb0b0ede2b5fdd",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/manage/system/wanderers.html"
+        ],
+        "assets": [
+          "css/lq/pages/wanderers.css",
+          "js/manage_wanderers.js"
+        ],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
     },
     {
       "id": "GET /manage/archive/teacher-evaluations::manage/teacher_evaluations.html",
@@ -14859,7 +14979,7 @@
         "routePattern": "/materials/render-view/{material_id}",
         "method": "GET",
         "source": "classroom_app/routers/materials_parts/exports.py",
-        "line": 434,
+        "line": 581,
         "endpoint": "material_render_shell_page",
         "templates": [
           "material_render_shell.html"
@@ -14969,7 +15089,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "b0ea6fb3c09a8ea3bee0a751c56c1259b1daf5e7f767f277fab2f5b8801558b5",
+      "inventorySourceSha256": "93e841fd60b6fc1d3d2a75801a7205aa50112ce7c86243eb4bb13abbd6ff8d0a",
       "before": {
         "sourceSha256": "0bcd6235dfac7e6caf2e11bf5142db416ce73ce2b3e4420e32505ebeabbfef3a",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/material_render_shell.html",
@@ -15013,7 +15133,7 @@
         "routePattern": "/materials/view/{material_id}",
         "method": "GET",
         "source": "classroom_app/routers/materials_parts/exports.py",
-        "line": 289,
+        "line": 394,
         "endpoint": "material_viewer_page",
         "templates": [
           "material_viewer.html"
@@ -15130,7 +15250,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "de1cded4ec667a33940d98290ecb3cf247a4d2d8f7f2c411ee4b919736c22f71",
+      "inventorySourceSha256": "8d6fd17ca448bd7138de1347434dd7323b9b9f680b0375d9aaeeae0fa4d54720",
       "before": {
         "sourceSha256": "7b95d496a8df4248e4e2104b6ec7dca0c9774dc1b303963dcd16ea4a7023b52f",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/material_viewer.html",
@@ -15162,69 +15282,33 @@
       ]
     },
     {
-      "id": "template::message_center.html",
+      "id": "template::partials/ability_radar.html",
       "routePattern": null,
       "method": null,
-      "template": "templates/message_center.html",
-      "kind": "template",
-      "ownerRoutes": [],
+      "template": "templates/partials/ability_radar.html",
+      "kind": "partial",
+      "ownerRoutes": [
+        "/manage/students/{student_id}",
+        "/profile"
+      ],
       "routeEvidence": null,
-      "roles": [
-        "anonymous"
-      ],
-      "resourceScope": "无显式依赖（匿名或在处理函数内自行校验）；资源归属待迁移时人工核对",
-      "layout": "topbar（base_navbar.html）",
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
       "assets": [],
-      "islands": [
-        "message-center-page",
-        "message-center-workspace-sync"
-      ],
-      "templateReferences": [
-        "base_navbar.html",
-        "partials/markdown_assets.html"
-      ],
+      "islands": [],
+      "templateReferences": [],
       "controller": [],
-      "domHooks": [
-        "message-center-attachment-preview",
-        "message-center-block-count",
-        "message-center-block-list",
-        "message-center-compose-form",
-        "message-center-compose-input",
-        "message-center-contact-current",
-        "message-center-contact-search",
-        "message-center-contact-select",
-        "message-center-contact-total",
-        "message-center-conversation-body",
-        "message-center-conversation-header",
-        "message-center-current-tab-label",
-        "message-center-editor-toolbar",
-        "message-center-emoji-anchor",
-        "message-center-emoji-trigger",
-        "message-center-feed",
-        "message-center-file-input",
-        "message-center-file-trigger",
-        "message-center-filter",
-        "message-center-image-input",
-        "message-center-image-trigger",
-        "message-center-mark-read",
-        "message-center-page-main",
-        "message-center-private-panel",
-        "message-center-search",
-        "message-center-tabs",
-        "message-center-unread-total",
-        "message-center-workspace-main"
-      ],
+      "domHooks": [],
       "apis": [],
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "d3c26319d480982e1b40f0df237aefb535ac090912c79fe62821ecacb30c11e9",
+      "inventorySourceSha256": "1a37b8815ad52a7462b40cd8e33b286ad24157198e936e3785b8135ce8e8accd",
       "before": {
-        "sourceSha256": "293a7e10a1e4959b993584a81ca7fff1ab7df3ac16347b14e334fbdf76914cc3",
-        "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/message_center.html",
-        "gitBase": "23fd77e050a54e57b12e70b2c742a36536ae9142",
-        "status": "改动前冻结源码；截图仅证明列出的角色和状态",
-        "screenshots": []
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
       },
       "tests": [],
       "migrationFlag": null,
@@ -15232,17 +15316,14 @@
       "exceptions": [],
       "rollbackUnit": {
         "templates": [
-          "templates/message_center.html"
+          "templates/partials/ability_radar.html"
         ],
         "assets": [],
         "schema": [],
         "verified": false
       },
-      "status": "已盘点",
-      "notes": [
-        "全仓库源文件精确名称搜索未发现生产渲染/包含引用，保留待S7孤立文件审计；不把未发现当作删除授权或业务已验收。",
-        "2026-09-21 自动盘点（tools/ui/lq_registry_triage.py）：roles/layout/assets/islands/controller/domHooks/apis/versionFields 由源码静态推导；states/components 留待迁移时填写。这是盘点，不是业务或视觉验收。"
-      ]
+      "status": "未盘点",
+      "notes": []
     },
     {
       "id": "template::partials/academic_sync_dialog.html",
@@ -15365,6 +15446,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -15389,11 +15471,11 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/submission/{submission_id}",
         "/teacher-evaluation/{evaluation_id}/edit",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -15506,6 +15588,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -15530,11 +15613,11 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/submission/{submission_id}",
         "/teacher-evaluation/{evaluation_id}/edit",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -15648,6 +15731,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -15672,11 +15756,11 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/submission/{submission_id}",
         "/teacher-evaluation/{evaluation_id}/edit",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -15706,13 +15790,15 @@
         "ai-chat-previews",
         "ai-chat-textarea",
         "ai-deep-think-btn",
+        "ai-web-search-btn",
+        "ai-web-search-quota",
         "ai-workspace-subtitle"
       ],
       "apis": [],
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "ee09c70380f9e4733b01314e9d2dc2e53b7a8d1b2b1bde81e4c87aaaf20fd454",
+      "inventorySourceSha256": "cbe827a2b3117eb14df12a6bb5159edf79e21ea527fb5e31bda0d7522ce3b78d",
       "before": {
         "sourceSha256": "2c062df39791d7dd1afb63c1aa64a628a1e4dfca7f4a7b1c3dbe405b885581e7",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/partials/ai_workspace_widget.html",
@@ -15752,6 +15838,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -15769,7 +15856,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "f5003c143f394a93f47c3147593234d4ae2673db5196b0f3228de8346310bc43",
+      "inventorySourceSha256": "f960c01abdc1386d3c5bc95e5d73116fe70569753701245277581d6c8f14e3c6",
       "before": {
         "sourceSha256": "adecd748dae40b1b27bda03083167431fbd259e37f3c669d1b3aa78b9a3da72c",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/partials/app_bottomnav.html",
@@ -15851,6 +15938,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -15862,6 +15950,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -15876,7 +15965,8 @@
       "islands": [],
       "templateReferences": [
         "macros/app_topbar.html",
-        "macros/app_utility_menus.html"
+        "macros/app_utility_menus.html",
+        "partials/social_entry.html"
       ],
       "controller": [],
       "domHooks": [],
@@ -15886,7 +15976,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "8b9df26e8b35e34c159f7c74f3f8f7cb6d922575d837160a6db279f9e1fbbf9d",
+      "inventorySourceSha256": "7222aa91a2da79b3e244768f85a0aec63b9bfd1fad818eb94677f379a1fea281",
       "before": {
         "sourceSha256": "adca56d1d5d7b455314f5df391f830c0aaecd26f39a72052783946c8166e2f37",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/partials/app_topbar_utility_actions.html",
@@ -15949,7 +16039,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "9efb12eb0c602b9a636f83bab171d4f472fb3473ad5c1c525c8c28ff04ef22e7",
+      "inventorySourceSha256": "635e77d2401b12b341f8dc1c8c0572a89454d8f471632f76fa1857928ecf8e2b",
       "before": {
         "sourceSha256": "d8fab73d00ada51b6e96f6f3db3716b64c3696eb8af9659a497313cd13235518",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/partials/assessment_classification_batch.html",
@@ -16133,6 +16223,69 @@
       "notes": [
         "2026-09-21 自动盘点（tools/ui/lq_registry_triage.py）：roles/layout/assets/islands/controller/domHooks/apis/versionFields 由源码静态推导；states/components 留待迁移时填写。这是盘点，不是业务或视觉验收。"
       ]
+    },
+    {
+      "id": "template::partials/classroom_material_library.html",
+      "routePattern": null,
+      "method": null,
+      "template": "templates/partials/classroom_material_library.html",
+      "kind": "partial",
+      "ownerRoutes": [
+        "/classroom/{class_offering_id}"
+      ],
+      "routeEvidence": null,
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [],
+      "islands": [],
+      "templateReferences": [
+        "macros/lq/button.html"
+      ],
+      "controller": [],
+      "domHooks": [
+        "classroom-final-material-generate-btn",
+        "classroom-material-collection",
+        "classroom-materials-back-btn",
+        "classroom-materials-breadcrumbs",
+        "classroom-materials-download-btn",
+        "classroom-materials-files",
+        "classroom-materials-list",
+        "classroom-materials-refresh-btn",
+        "classroom-materials-select-all",
+        "classroom-materials-selection",
+        "classroom-materials-selection-count",
+        "classroom-materials-textbook",
+        "classroom-materials-up-btn",
+        "classroom-materials-upload",
+        "classroom-materials-upload-scope",
+        "classroom-materials-upload-status",
+        "classroom-materials-upload-submit"
+      ],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "98303b0dcea36c7bb9de4659211848c31d5ee46dc78c6c4a47f615d19049b3f7",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/partials/classroom_material_library.html"
+        ],
+        "assets": [],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
     },
     {
       "id": "GET /api/classrooms/{class_offering_id}/member-panels/{panel_key}::partials/classroom_members/alerts.html",
@@ -16550,7 +16703,6 @@
       "template": "templates/partials/cultivation_card.html",
       "kind": "partial",
       "ownerRoutes": [
-        "/classroom/{class_offering_id}",
         "/learning-path",
         "/profile"
       ],
@@ -16560,7 +16712,9 @@
       ],
       "resourceScope": "无显式依赖（匿名或在处理函数内自行校验）；资源归属待迁移时人工核对",
       "layout": "片段/宏（无 extends，随宿主页渲染）",
-      "assets": [],
+      "assets": [
+        "img/cultivation/emblems/{{ mark_key }}.svg"
+      ],
       "islands": [],
       "templateReferences": [],
       "controller": [],
@@ -16569,7 +16723,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "7e7a4b946c050fbdbe30620a03fbe4866cd298c363481b76e6ab7d1b2a8447d1",
+      "inventorySourceSha256": "de6eab1d6ef05c02d048c4470a4e80c3e72f6681fbc920c80cc768f4f12450b5",
       "before": {
         "sourceSha256": "f32d22fb41c384e346a9f6cc41b8c67307697abb527109cfa42335a1df32b2f5",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/partials/cultivation_card.html",
@@ -16593,6 +16747,50 @@
       "notes": [
         "2026-09-21 自动盘点（tools/ui/lq_registry_triage.py）：roles/layout/assets/islands/controller/domHooks/apis/versionFields 由源码静态推导；states/components 留待迁移时填写。这是盘点，不是业务或视觉验收。"
       ]
+    },
+    {
+      "id": "template::partials/cultivation_panel.html",
+      "routePattern": null,
+      "method": null,
+      "template": "templates/partials/cultivation_panel.html",
+      "kind": "partial",
+      "ownerRoutes": [
+        "/classroom/{class_offering_id}",
+        "/profile"
+      ],
+      "routeEvidence": null,
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [],
+      "islands": [],
+      "templateReferences": [],
+      "controller": [],
+      "domHooks": [],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "13d9d42dbda8581936bba974563e957c9eb89bd9fc1190a46c6bff02c814657a",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/partials/cultivation_panel.html"
+        ],
+        "assets": [],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
     },
     {
       "id": "template::partials/dashboard_agenda_widget.html",
@@ -17152,6 +17350,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -17164,6 +17363,7 @@
         "/profile",
         "/report-card",
         "/submission/{submission_id}",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -17259,16 +17459,14 @@
       "controller": [],
       "domHooks": [
         "learning-certificate-backdrop",
-        "learning-certificate-close",
         "learning-certificate-description",
-        "learning-certificate-save",
         "learning-certificate-title"
       ],
       "apis": [],
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "eb19cd54d9a2fa2edf4e8a26acae7d02c3b60183967ca38c27b27ddf60271884",
+      "inventorySourceSha256": "6c100641187ca92dbdf070a9974835a9041344479872b3d0acafdf2a69482dd3",
       "before": {
         "sourceSha256": "bf2686c2700082edf26e9d31ab9cb29b7b5480c44d9866a729f97d5d1df124eb",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/partials/learning_certificate_reveal.html",
@@ -17363,6 +17561,54 @@
       ]
     },
     {
+      "id": "template::partials/login_remember.html",
+      "routePattern": null,
+      "method": null,
+      "template": "templates/partials/login_remember.html",
+      "kind": "partial",
+      "ownerRoutes": [
+        "/student/login",
+        "/teacher/login"
+      ],
+      "routeEvidence": null,
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [],
+      "islands": [],
+      "templateReferences": [
+        "macros/lq/forms.html"
+      ],
+      "controller": [],
+      "domHooks": [
+        "remember-login-hint"
+      ],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "2284e2c895beae2b0aa1c781c6d75969f3c0d5566c0b677acf6d995fabc4d1f6",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/partials/login_remember.html"
+        ],
+        "assets": [],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
+    },
+    {
       "id": "template::partials/lq_app_bottomnav.html",
       "routePattern": null,
       "method": null,
@@ -17377,6 +17623,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -17487,6 +17734,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -17511,11 +17759,11 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/submission/{submission_id}",
         "/teacher-evaluation/{evaluation_id}/edit",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -17600,6 +17848,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -17623,7 +17872,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "e60206b736f29c4d35a5caf4986bac36fad4caf5d759d157c62799828e0b5afe",
+      "inventorySourceSha256": "01c48caaf481a3035079fcdd4dfd1f94d4800a9d6db78b08435cf752f53d6322",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -17714,6 +17963,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -17738,11 +17988,11 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/submission/{submission_id}",
         "/teacher-evaluation/{evaluation_id}/edit",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -17794,6 +18044,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -17893,6 +18144,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -17904,6 +18156,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -18012,6 +18265,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -18036,11 +18290,11 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/submission/{submission_id}",
         "/teacher-evaluation/{evaluation_id}/edit",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -18151,6 +18405,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -18175,11 +18430,11 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/submission/{submission_id}",
         "/teacher-evaluation/{evaluation_id}/edit",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -18307,6 +18562,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -18331,11 +18587,11 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/submission/{submission_id}",
         "/teacher-evaluation/{evaluation_id}/edit",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -18414,14 +18670,19 @@
       "controller": [],
       "domHooks": [
         "materials-ai-expand-btn",
+        "materials-board",
+        "materials-board-summary",
+        "materials-board-title",
         "materials-breadcrumbs",
         "materials-class-filter",
         "materials-college-filter",
         "materials-course-filter",
         "materials-department-filter",
         "materials-filter-count",
+        "materials-filters-clear-btn",
         "materials-filters-panel",
         "materials-filters-toggle",
+        "materials-kind-chips",
         "materials-list-body",
         "materials-refresh-btn",
         "materials-repository-btn",
@@ -18436,6 +18697,7 @@
         "materials-selection-download-btn",
         "materials-sort-by",
         "materials-sort-order",
+        "materials-view-toggle",
         "p03-materials-list",
         "p03-materials-refresh",
         "p03-materials-search"
@@ -18444,7 +18706,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "4da9cf429c6220b3fd7676f0ec400a1c34889a4a9bf12c110335c52177b6575f",
+      "inventorySourceSha256": "ba0de8ac9dad57fe5323a4e171a33baa11f9e9434c3204d976fcbe02dbe86674",
       "before": {
         "sourceSha256": "a1255db76efcc0e90b9e859489699dd18e1a077c31fb63322fac5313f76b74e4",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/partials/materials/library_card.html",
@@ -19052,6 +19314,7 @@
       "layout": "片段/宏（无 extends，随宿主页渲染）",
       "assets": [
         "css/lq/pages/message-center.css",
+        "css/lq/pages/profile-signatures.css",
         "css/lq/pages/profile.css",
         "css/signature_scope_fields.css"
       ],
@@ -19063,7 +19326,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "96a7b0df83ed9cf35ea85225b1d89af17af6865b26d597f24d2b882d8460f069",
+      "inventorySourceSha256": "a4ad342e929eb6044c49b6ca66e9302fbe2613abe96cde16b545eea82d69e258",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -19115,7 +19378,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "d0b69415e7e3cc217a0dd53b692e53f46c55fa7b21a1796670d5cecd6dc500be",
+      "inventorySourceSha256": "94373fbb14545056a46a6f24f333d017911b7872caf4bc364b68a6dfd9dcb8ff",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -19156,6 +19419,7 @@
       "templateReferences": [
         "macros/lq/button.html",
         "macros/lq/indicators.html",
+        "macros/lq/status.html",
         "partials/cultivation_card.html"
       ],
       "controller": [],
@@ -19164,7 +19428,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "cc43d03b066849959090140161975afbb1572e8d55d21163796994879c9e8347",
+      "inventorySourceSha256": "283d93fe8a10bd531bcbec4f655ed3e0bb603ae972bdb331e21f19341fe0aab1",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -19213,6 +19477,7 @@
         "message-center-attachment-preview",
         "message-center-block-count",
         "message-center-block-list",
+        "message-center-blocks-title",
         "message-center-compose-form",
         "message-center-compose-hint",
         "message-center-compose-input",
@@ -19245,7 +19510,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "2b0b0fa0ae79b5bc4be1905b7b3f8f426578c235be3e646c04a8c7913c4f3c3c",
+      "inventorySourceSha256": "cee0d66d357c66ad0a6a3143115ee54327e84f12fd03d64e5203e15e8ff2baa6",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -19333,15 +19598,19 @@
       "assets": [],
       "islands": [],
       "templateReferences": [
-        "partials/cultivation_card.html"
+        "partials/ability_radar.html",
+        "partials/cultivation_card.html",
+        "partials/cultivation_panel.html"
       ],
       "controller": [],
-      "domHooks": [],
+      "domHooks": [
+        "profile-radar-title"
+      ],
       "apis": [],
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "9712d4729a747aadc80c069500e26800aee64c54c6f643eff309856840b2a695",
+      "inventorySourceSha256": "89d1ad2a19441e05885405dc36cbc99cca5ef9d5d9be9f61d00331c8f4e69236",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -19433,6 +19702,7 @@
       "resourceScope": "无显式依赖（匿名或在处理函数内自行校验）；资源归属待迁移时人工核对",
       "layout": "片段/宏（无 extends，随宿主页渲染）",
       "assets": [
+        "js/cultivation_panel.js",
         "js/echarts.min.js",
         "js/profile.js",
         "js/profile_signatures.js"
@@ -19483,7 +19753,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "86e63d01ce8d806d192a8c03823e7a19b8afb22f1766080f656da26c084d7334",
+      "inventorySourceSha256": "56de4fe77b9122fc98060ba3b185020ca506aa00edea372e557396a9307de3a4",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -19541,7 +19811,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "67554c931443bb513b8c8050ea66e3e2b0459928afcbfe12a2730a370e59d4ad",
+      "inventorySourceSha256": "9da0a1b03a6181ba2349692df12bc49c69970a7e08147875cbb99f230ca589d9",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -19582,7 +19852,8 @@
       "assets": [],
       "islands": [],
       "templateReferences": [
-        "macros/lq/button.html"
+        "macros/lq/button.html",
+        "macros/lq/forms.html"
       ],
       "controller": [],
       "domHooks": [
@@ -19608,7 +19879,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "1af622cbfd9424561033784e3d6c5b7d34024b81bc9a0e236d17d76a0e0520af",
+      "inventorySourceSha256": "90d88f4ccea0dfe12a927c50b341ca4e96e07080d02cf0799aa0abd7dedc6951",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -19867,7 +20138,6 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/teacher/login",
         "/teacher/register"
       ],
@@ -19910,6 +20180,128 @@
       "notes": [
         "2026-09-21 自动盘点（tools/ui/lq_registry_triage.py）：roles/layout/assets/islands/controller/domHooks/apis/versionFields 由源码静态推导；states/components 留待迁移时填写。这是盘点，不是业务或视觉验收。"
       ]
+    },
+    {
+      "id": "template::partials/social_entry.html",
+      "routePattern": null,
+      "method": null,
+      "template": "templates/partials/social_entry.html",
+      "kind": "partial",
+      "ownerRoutes": [
+        "/achievements",
+        "/blog",
+        "/classroom/{class_offering_id}",
+        "/dashboard",
+        "/feedback-review",
+        "/learning-path",
+        "/manage",
+        "/manage/academic",
+        "/manage/academic/classrooms",
+        "/manage/academic/course-schedule",
+        "/manage/academic/course-schedule/editor",
+        "/manage/academic/gongwen",
+        "/manage/academic/gongwen-sync",
+        "/manage/academic/integrations",
+        "/manage/academic/smart-classroom",
+        "/manage/academic/teachers/schedule",
+        "/manage/archive",
+        "/manage/archive/academic-exam-analyses",
+        "/manage/archive/academic-grade-registers",
+        "/manage/archive/assessment-plans",
+        "/manage/archive/attendance-reports",
+        "/manage/archive/attendance-reports/{report_id}",
+        "/manage/archive/exam-grade-records",
+        "/manage/archive/final-grade-transcripts",
+        "/manage/archive/grading-rubrics",
+        "/manage/archive/ordinary-grade-records",
+        "/manage/archive/postclass-materials",
+        "/manage/archive/teacher-evaluations",
+        "/manage/library",
+        "/manage/library/courses",
+        "/manage/library/exams",
+        "/manage/library/lesson-plans",
+        "/manage/library/materials",
+        "/manage/library/polls",
+        "/manage/library/textbooks",
+        "/manage/me/credentials",
+        "/manage/me/inbox",
+        "/manage/me/password-resets",
+        "/manage/me/signature-workflows",
+        "/manage/me/signatures",
+        "/manage/students/{student_id}",
+        "/manage/system/agent-keys",
+        "/manage/system/ai-usage",
+        "/manage/system/blog-crawler",
+        "/manage/system/blog-review",
+        "/manage/system/diagnostics",
+        "/manage/system/feedback",
+        "/manage/system/life-tips",
+        "/manage/system/monitor",
+        "/manage/system/organizations",
+        "/manage/system/users",
+        "/manage/system/wanderers",
+        "/manage/teacher-evaluations",
+        "/manage/teaching",
+        "/manage/teaching/ai",
+        "/manage/teaching/classes",
+        "/manage/teaching/classroom-hub",
+        "/manage/teaching/offering-merge",
+        "/manage/teaching/offerings",
+        "/manage/teaching/semesters",
+        "/points",
+        "/profile",
+        "/report-card",
+        "/wanderers/{slug}",
+        "/wrong-book"
+      ],
+      "routeEvidence": null,
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [
+        "css/lq/pages/social.css",
+        "js/markdown_runtime.js",
+        "js/marked.min.js",
+        "js/social/social_client.js",
+        "vendor/runtime/es2022-polyfills.js"
+      ],
+      "islands": [],
+      "templateReferences": [
+        "macros/app_topbar.html",
+        "macros/lq/icons.generated.html"
+      ],
+      "controller": [],
+      "domHooks": [],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "43211e9659041c55958718fbd0ad535e44fdae82c65616d8749dfd715f18f698",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/partials/social_entry.html"
+        ],
+        "assets": [
+          "css/lq/pages/social.css",
+          "js/markdown_runtime.js",
+          "js/marked.min.js",
+          "js/social/social_client.js",
+          "vendor/runtime/es2022-polyfills.js"
+        ],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
     },
     {
       "id": "template::partials/student_dashboard_schedule.html",
@@ -19981,6 +20373,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -20136,6 +20529,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -20147,6 +20541,7 @@
         "/points",
         "/profile",
         "/report-card",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -20311,6 +20706,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -20335,11 +20731,11 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/submission/{submission_id}",
         "/teacher-evaluation/{evaluation_id}/edit",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -20457,6 +20853,7 @@
         "/manage/system/monitor",
         "/manage/system/organizations",
         "/manage/system/users",
+        "/manage/system/wanderers",
         "/manage/teacher-evaluations",
         "/manage/teaching",
         "/manage/teaching/ai",
@@ -20474,10 +20871,10 @@
         "/student/login",
         "/student/login/identity",
         "/student/password/forgot",
-        "/student/password/setup",
         "/submission/{submission_id}",
         "/teacher/login",
         "/teacher/register",
+        "/wanderers/{slug}",
         "/wrong-book"
       ],
       "routeEvidence": null,
@@ -20543,7 +20940,7 @@
         "routePattern": "/auth/forbidden",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 199,
+        "line": 238,
         "endpoint": "permission_warning_page",
         "templates": [
           "permission_denied.html"
@@ -20646,7 +21043,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "1fc64c6e970fba341f997a1c8f3e44ce89a7a657f46bae31569300ab7331185e",
+      "inventorySourceSha256": "abf320e570dc480b134c79a1151f7e8c093075750e722c7f3b7b052311d3e7a4",
       "before": {
         "sourceSha256": "94bcb146bca96eb449b00d67b9ee64038ced3d7141cc2fdcb2676e2f4189be2d",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/points_shop.html",
@@ -20684,7 +21081,7 @@
         "routePattern": "/profile",
         "method": "GET",
         "source": "classroom_app/routers/profile.py",
-        "line": 201,
+        "line": 198,
         "endpoint": "profile_page",
         "templates": [
           "manage/profile.html",
@@ -20904,7 +21301,7 @@
         "LQ Layer（Shell唯一层所有者）",
         "既有ECharts 6主题适配（不重建成绩数据）"
       ],
-      "inventorySourceSha256": "54e4df8b56116af67641df7ff62c445719fa932cb6f9568505af15814b7d1c4b",
+      "inventorySourceSha256": "2d3f92f5d28802a6d56338b79e5b83b71dfa6515d1fb615b97a2b12369391ef8",
       "before": {
         "sourceSha256": "ccdd75ace37e666610b1ee98aad598d0c1523329a58558c0b9eacfee7d59d3b2",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/report_card.html",
@@ -21037,7 +21434,7 @@
           },
           {
             "path": "static/js/cultivation_identity.js",
-            "sha256": "57021b81b32995c2d2f439e841af5f30df215d9712aa748715503cc6f2fb8317",
+            "sha256": "4da5361526e0c2e1cfa57f3a017051153f897dc08a4bc99acbd73ceab759c4c0",
             "scope": "仅 ensureTopbarChip 单一浮层关闭所有者：原 click/Esc/toggle 同一幂等释放，捕获外部 pointerdown 兼容 WebKit 触控，无迟注册 timer；保留场景、登录交棒、修为业务与其他弹层呈现。 2026-09-27 显式组件复核：仅在既有构造点接入按钮与 raised popover、reveal surface；核对原 click/Escape/外点关闭、计时、反馈/保存与登录交棒代码未改。report-card SSR 5 项通过；既有实站场景门禁保留，本轮不将静态审查写成实站场景验收。 2026-10-08 动效合同复审：欢迎展示仅将进退交给共享 fade presence，阅读停留、预载/场景交接、跳过和仅一次 onDone 原职责保留；退出完成后移除内容，不再由 320ms 猜测 CSS 时长。",
             "tests": [
               "tests/test_lq_report_card_pilot.py",
@@ -22019,7 +22416,7 @@
         "routePattern": "/teacher/register",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 183,
+        "line": 222,
         "endpoint": "teacher_register_page",
         "templates": [
           "status.html"
@@ -22088,7 +22485,7 @@
         "routePattern": "/teacher/register",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 553,
+        "line": 581,
         "endpoint": "handle_teacher_register",
         "templates": [
           "status.html"
@@ -22224,14 +22621,13 @@
       "kind": "template",
       "ownerRoutes": [
         "/student/login/identity",
-        "/student/password/forgot",
-        "/student/password/setup"
+        "/student/password/forgot"
       ],
       "routeEvidence": {
         "routePattern": "/student/login/identity",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 66,
+        "line": 88,
         "endpoint": "student_identity_login_page",
         "templates": [
           "student_auth_flow_v4.html"
@@ -22292,83 +22688,14 @@
       "kind": "template",
       "ownerRoutes": [
         "/student/login/identity",
-        "/student/password/forgot",
-        "/student/password/setup"
+        "/student/password/forgot"
       ],
       "routeEvidence": {
         "routePattern": "/student/login/identity",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 71,
+        "line": 93,
         "endpoint": "handle_student_identity_login",
-        "templates": [
-          "student_auth_flow_v4.html"
-        ],
-        "templatePatterns": [],
-        "dependencies": [],
-        "dynamicTemplate": false
-      },
-      "roles": [],
-      "resourceScope": "待人工核对端点及服务端权限",
-      "layout": "待核对",
-      "assets": [],
-      "islands": [],
-      "templateReferences": [
-        "base_centered.html",
-        "macros/lq/button.html"
-      ],
-      "controller": [],
-      "domHooks": [
-        "auth-class",
-        "auth-confirm-password",
-        "auth-flow-feedback",
-        "auth-name",
-        "auth-password",
-        "auth-password-policy",
-        "auth-student-id"
-      ],
-      "apis": [],
-      "versionFields": [],
-      "states": [],
-      "components": [],
-      "inventorySourceSha256": "79ece6746cb738231291432d9f1cf490ee4e3c58eb6409387e816f5398c3880f",
-      "before": {
-        "sourceSha256": null,
-        "screenshots": [],
-        "status": "未采集；当前盘点源码不能冒充改动前快照"
-      },
-      "tests": [],
-      "migrationFlag": null,
-      "sharedCssConsumers": [],
-      "exceptions": [],
-      "rollbackUnit": {
-        "templates": [
-          "templates/student_auth_flow_v4.html"
-        ],
-        "assets": [],
-        "schema": [],
-        "verified": false
-      },
-      "status": "未盘点",
-      "notes": []
-    },
-    {
-      "id": "POST /student/password/setup::student_auth_flow_v4.html",
-      "routePattern": "/student/password/setup",
-      "method": "POST",
-      "template": "templates/student_auth_flow_v4.html",
-      "kind": "template",
-      "ownerRoutes": [
-        "/student/login/identity",
-        "/student/password/forgot",
-        "/student/password/setup"
-      ],
-      "routeEvidence": {
-        "routePattern": "/student/password/setup",
-        "method": "POST",
-        "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 95,
-        "endpoint": "handle_student_password_setup",
         "templates": [
           "student_auth_flow_v4.html"
         ],
@@ -22428,14 +22755,13 @@
       "kind": "template",
       "ownerRoutes": [
         "/student/login/identity",
-        "/student/password/forgot",
-        "/student/password/setup"
+        "/student/password/forgot"
       ],
       "routeEvidence": {
         "routePattern": "/student/password/forgot",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 121,
+        "line": 144,
         "endpoint": "student_password_forgot_page",
         "templates": [
           "student_auth_flow_v4.html"
@@ -22496,14 +22822,13 @@
       "kind": "template",
       "ownerRoutes": [
         "/student/login/identity",
-        "/student/password/forgot",
-        "/student/password/setup"
+        "/student/password/forgot"
       ],
       "routeEvidence": {
         "routePattern": "/student/password/forgot",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 126,
+        "line": 149,
         "endpoint": "handle_student_password_forgot",
         "templates": [
           "student_auth_flow_v4.html"
@@ -22570,13 +22895,15 @@
         "routePattern": "/student/login",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 164,
+        "line": 195,
         "endpoint": "student_login_page",
         "templates": [
           "student_login_v4.html"
         ],
         "templatePatterns": [],
-        "dependencies": [],
+        "dependencies": [
+          "get_current_user_optional"
+        ],
         "dynamicTemplate": false
       },
       "roles": [
@@ -22591,7 +22918,8 @@
       "islands": [],
       "templateReferences": [
         "base_centered.html",
-        "macros/lq/button.html"
+        "macros/lq/button.html",
+        "partials/login_remember.html"
       ],
       "controller": [
         "static/js/api.js",
@@ -22652,7 +22980,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "fc3d5efee9853dd9e83d42b7c4def71e09179457a1f83cbadf2f2ac16683deae",
+      "inventorySourceSha256": "f0f913a868d1abb42ae2366b90af091c1b6ed14c3ce21e3669d1c1df4ecfa201",
       "before": {
         "sourceSha256": "83e9363b2845a6e89a9f4a49d90d80299ed76a84182ed6d562f40767e54fbdcb",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/student_login_v4.html",
@@ -22708,7 +23036,7 @@
         "routePattern": "/student/login",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 506,
+        "line": 535,
         "endpoint": "handle_student_login",
         "templates": [
           "student_login_v4.html",
@@ -22730,7 +23058,8 @@
       "islands": [],
       "templateReferences": [
         "base_centered.html",
-        "macros/lq/button.html"
+        "macros/lq/button.html",
+        "partials/login_remember.html"
       ],
       "controller": [
         "static/js/api.js",
@@ -22791,7 +23120,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "fc3d5efee9853dd9e83d42b7c4def71e09179457a1f83cbadf2f2ac16683deae",
+      "inventorySourceSha256": "f0f913a868d1abb42ae2366b90af091c1b6ed14c3ce21e3669d1c1df4ecfa201",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -22830,7 +23159,7 @@
         "routePattern": "/teacher/login",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 569,
+        "line": 597,
         "endpoint": "handle_teacher_login",
         "templates": [
           "student_login_v4.html",
@@ -22852,7 +23181,8 @@
       "islands": [],
       "templateReferences": [
         "base_centered.html",
-        "macros/lq/button.html"
+        "macros/lq/button.html",
+        "partials/login_remember.html"
       ],
       "controller": [
         "static/js/api.js",
@@ -22913,7 +23243,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "fc3d5efee9853dd9e83d42b7c4def71e09179457a1f83cbadf2f2ac16683deae",
+      "inventorySourceSha256": "f0f913a868d1abb42ae2366b90af091c1b6ed14c3ce21e3669d1c1df4ecfa201",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -22952,7 +23282,7 @@
         "routePattern": "/submission/{submission_id}",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/assignment_pages.py",
-        "line": 317,
+        "line": 318,
         "endpoint": "submission_detail_page",
         "templates": [
           "submission_detail.html"
@@ -23301,13 +23631,15 @@
         "routePattern": "/teacher/login",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 174,
+        "line": 209,
         "endpoint": "teacher_login_page",
         "templates": [
           "teacher_login_v4.html"
         ],
         "templatePatterns": [],
-        "dependencies": [],
+        "dependencies": [
+          "get_current_user_optional"
+        ],
         "dynamicTemplate": false
       },
       "roles": [
@@ -23322,7 +23654,8 @@
       "islands": [],
       "templateReferences": [
         "base_centered.html",
-        "macros/lq/button.html"
+        "macros/lq/button.html",
+        "partials/login_remember.html"
       ],
       "controller": [
         "static/js/cultivation_identity.js",
@@ -23352,7 +23685,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "d835e8271536520b9c8134e9050f461eda9ad102c96d2ae49b9c38cbc315dc18",
+      "inventorySourceSha256": "e2a8790379cede477f25d1c6e84d02cb65fb7de1ae94133eccd9413f727ce6f9",
       "before": {
         "sourceSha256": "11a33cca2f1a973d623e1e4fd703a7bfc3b56d8a77c58e70ceadde485c8aec9e",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/teacher_login_v4.html",
@@ -23408,7 +23741,7 @@
         "routePattern": "/student/login",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 506,
+        "line": 535,
         "endpoint": "handle_student_login",
         "templates": [
           "student_login_v4.html",
@@ -23430,7 +23763,8 @@
       "islands": [],
       "templateReferences": [
         "base_centered.html",
-        "macros/lq/button.html"
+        "macros/lq/button.html",
+        "partials/login_remember.html"
       ],
       "controller": [
         "static/js/cultivation_identity.js",
@@ -23460,7 +23794,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "d835e8271536520b9c8134e9050f461eda9ad102c96d2ae49b9c38cbc315dc18",
+      "inventorySourceSha256": "e2a8790379cede477f25d1c6e84d02cb65fb7de1ae94133eccd9413f727ce6f9",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -23500,7 +23834,7 @@
         "routePattern": "/teacher/login",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 569,
+        "line": 597,
         "endpoint": "handle_teacher_login",
         "templates": [
           "student_login_v4.html",
@@ -23522,7 +23856,8 @@
       "islands": [],
       "templateReferences": [
         "base_centered.html",
-        "macros/lq/button.html"
+        "macros/lq/button.html",
+        "partials/login_remember.html"
       ],
       "controller": [
         "static/js/cultivation_identity.js",
@@ -23552,7 +23887,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "d835e8271536520b9c8134e9050f461eda9ad102c96d2ae49b9c38cbc315dc18",
+      "inventorySourceSha256": "e2a8790379cede477f25d1c6e84d02cb65fb7de1ae94133eccd9413f727ce6f9",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -23633,6 +23968,77 @@
       ]
     },
     {
+      "id": "GET /wanderers/{slug}::wanderers/home.html",
+      "routePattern": "/wanderers/{slug}",
+      "method": "GET",
+      "template": "templates/wanderers/home.html",
+      "kind": "template",
+      "ownerRoutes": [
+        "/wanderers/{slug}"
+      ],
+      "routeEvidence": {
+        "routePattern": "/wanderers/{slug}",
+        "method": "GET",
+        "source": "classroom_app/routers/wanderers.py",
+        "line": 381,
+        "endpoint": "wanderer_home_page",
+        "templates": [
+          "wanderers/home.html"
+        ],
+        "templatePatterns": [],
+        "dependencies": [
+          "get_current_user"
+        ],
+        "dynamicTemplate": false
+      },
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [
+        "css/lq/pages/wanderer-home.css"
+      ],
+      "islands": [],
+      "templateReferences": [
+        "base_navbar.html",
+        "macros/lq/chip.html",
+        "macros/lq/content.html",
+        "macros/lq/indicators.html"
+      ],
+      "controller": [],
+      "domHooks": [
+        "wh-actions-title",
+        "wh-next-title",
+        "wh-posts-title",
+        "wh-reviews-title"
+      ],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "3834cf8b71a8b26063241d725dbd3a0f4b5a306857573f9590b40a2167f98669",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/wanderers/home.html"
+        ],
+        "assets": [
+          "css/lq/pages/wanderer-home.css"
+        ],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
+    },
+    {
       "id": "GET /wrong-book::wrong_book.html",
       "routePattern": "/wrong-book",
       "method": "GET",
@@ -23680,7 +24086,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "f59618459756e824478373741849f21757af66f75d27d785ff26c2a6f851d72b",
+      "inventorySourceSha256": "319ed4529f71940b77230996d9a0ae1d3388e0a7497e289542e3577139bccea6",
       "before": {
         "sourceSha256": "795aafc46aac0465c1b19333f82a60af5cfee46a3adf3e39b8dc003a0c8ab2df",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/wrong_book.html",
@@ -23724,6 +24130,89 @@
     }
   ],
   "retiredEntries": [
+    {
+      "id": "template::message_center.html",
+      "routePattern": null,
+      "method": null,
+      "template": "templates/message_center.html",
+      "kind": "template",
+      "ownerRoutes": [],
+      "routeEvidence": null,
+      "roles": [
+        "anonymous"
+      ],
+      "resourceScope": "无显式依赖（匿名或在处理函数内自行校验）；资源归属待迁移时人工核对",
+      "layout": "topbar（base_navbar.html）",
+      "assets": [],
+      "islands": [
+        "message-center-page",
+        "message-center-workspace-sync"
+      ],
+      "templateReferences": [
+        "base_navbar.html",
+        "partials/markdown_assets.html"
+      ],
+      "controller": [],
+      "domHooks": [
+        "message-center-attachment-preview",
+        "message-center-block-count",
+        "message-center-block-list",
+        "message-center-compose-form",
+        "message-center-compose-input",
+        "message-center-contact-current",
+        "message-center-contact-search",
+        "message-center-contact-select",
+        "message-center-contact-total",
+        "message-center-conversation-body",
+        "message-center-conversation-header",
+        "message-center-current-tab-label",
+        "message-center-editor-toolbar",
+        "message-center-emoji-anchor",
+        "message-center-emoji-trigger",
+        "message-center-feed",
+        "message-center-file-input",
+        "message-center-file-trigger",
+        "message-center-filter",
+        "message-center-image-input",
+        "message-center-image-trigger",
+        "message-center-mark-read",
+        "message-center-page-main",
+        "message-center-private-panel",
+        "message-center-search",
+        "message-center-tabs",
+        "message-center-unread-total",
+        "message-center-workspace-main"
+      ],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "d3c26319d480982e1b40f0df237aefb535ac090912c79fe62821ecacb30c11e9",
+      "before": {
+        "sourceSha256": "293a7e10a1e4959b993584a81ca7fff1ab7df3ac16347b14e334fbdf76914cc3",
+        "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/message_center.html",
+        "gitBase": "23fd77e050a54e57b12e70b2c742a36536ae9142",
+        "status": "改动前冻结源码；截图仅证明列出的角色和状态",
+        "screenshots": []
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/message_center.html"
+        ],
+        "assets": [],
+        "schema": [],
+        "verified": false
+      },
+      "status": "已盘点",
+      "notes": [
+        "全仓库源文件精确名称搜索未发现生产渲染/包含引用，保留待S7孤立文件审计；不把未发现当作删除授权或业务已验收。",
+        "2026-09-21 自动盘点（tools/ui/lq_registry_triage.py）：roles/layout/assets/islands/controller/domHooks/apis/versionFields 由源码静态推导；states/components 留待迁移时填写。这是盘点，不是业务或视觉验收。"
+      ]
+    },
     {
       "id": "GET /manage/teaching/workflow::manage/workflow.html",
       "routePattern": "/manage/teaching/workflow",
@@ -23815,6 +24304,74 @@
     }
   ],
   "supersededInventoryEntries": [
+    {
+      "id": "POST /student/password/setup::student_auth_flow_v4.html",
+      "routePattern": "/student/password/setup",
+      "method": "POST",
+      "template": "templates/student_auth_flow_v4.html",
+      "kind": "template",
+      "ownerRoutes": [
+        "/student/login/identity",
+        "/student/password/forgot",
+        "/student/password/setup"
+      ],
+      "routeEvidence": {
+        "routePattern": "/student/password/setup",
+        "method": "POST",
+        "source": "classroom_app/routers/ui_parts/auth.py",
+        "line": 95,
+        "endpoint": "handle_student_password_setup",
+        "templates": [
+          "student_auth_flow_v4.html"
+        ],
+        "templatePatterns": [],
+        "dependencies": [],
+        "dynamicTemplate": false
+      },
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [],
+      "islands": [],
+      "templateReferences": [
+        "base_centered.html",
+        "macros/lq/button.html"
+      ],
+      "controller": [],
+      "domHooks": [
+        "auth-class",
+        "auth-confirm-password",
+        "auth-flow-feedback",
+        "auth-name",
+        "auth-password",
+        "auth-password-policy",
+        "auth-student-id"
+      ],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "79ece6746cb738231291432d9f1cf490ee4e3c58eb6409387e816f5398c3880f",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/student_auth_flow_v4.html"
+        ],
+        "assets": [],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
+    },
     {
       "id": "POST /student/login::status.html",
       "routePattern": "/student/login",

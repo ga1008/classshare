@@ -461,6 +461,7 @@
         if (window.BehaviorTracker && {{ assignment.class_offering_id or 'null' }} ) {
             window.behaviorTracker = new window.BehaviorTracker({
                 classOfferingId: {{ assignment.class_offering_id or 'null' }},
+                userKey: {{ (user_info.role ~ ':' ~ user_info.id) | tojson }},
                 pageKey: 'assignment_detail'
             }).start();
         }

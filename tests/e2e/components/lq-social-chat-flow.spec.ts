@@ -21,7 +21,7 @@ async function mount(page: Page, options: { mobile?: boolean; empty?: boolean; c
     const friends = Array.from({ length: options.count || 2 }, (_, index) => ({ identity: `student:${index + 2}`, name: index ? `合成好友${index + 2}` : '林晚舟',
         conversation_key: `dm:student:1|student:${index + 2}`, avatar_url: avatar, online: true, relation: 'friend' }));
     const state: any = { calls: [], friends: options.empty ? [] : friends, messages: Array.from({ length: 50 }, (_, i) => message(i + 1)),
-        pageGate: null, pageStarted: false, listGate: null, listStarted: false, friendsGate: null, friendsStarted: false, groupStatus: 200, more: false, older: [],
+        pageGate: null, pageStarted: false, afterGate: null, afterStarted: false, listGate: null, listStarted: false, friendsGate: null, friendsStarted: false, groupStatus: 200, more: false, older: [],
         group: { id: 7, name: '星光学习小组', display_name: '我的学习搭档', me: { alias: '我的学习搭档', nickname: '', muted: false },
             my_role: 'owner', conversation_key: 'group:7', member_count: 2, online_count: 2, updated_at: '2026-10-28T01:00:00Z',
             members: [{ identity: 'student:1', name: '我', group_role: 'owner' }, { ...friends[0], group_role: 'member' }] } };
@@ -43,7 +43,7 @@ async function mount(page: Page, options: { mobile?: boolean; empty?: boolean; c
         if (url.pathname === '/api/profile/avatar') return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><circle cx="20" cy="20" r="20" fill="teal"/></svg>' });
         if (url.pathname.startsWith('/api/')) {
             const api = decodeURIComponent(url.pathname.replace('/api/social', ''));
-            state.calls.push({ api, method: route.request().method() });
+            state.calls.push({ api, method: route.request().method(), query: url.search });
             const json = (value: any, status = 200) => route.fulfill({ status, json: value });
             if (api === '/conversations') {
                 state.listStarted = true;
@@ -68,9 +68,22 @@ async function mount(page: Page, options: { mobile?: boolean; empty?: boolean; c
             if (api.endsWith('/messages')) {
                 state.pageStarted = true;
                 const key = api.slice('/conversations/'.length, -'/messages'.length);
-                const snapshot = JSON.parse(JSON.stringify(url.searchParams.has('before_id') ? state.older : state.messages.map((item: any) => ({ ...item, conversation_key: key }))));
+                const all = [...new Map([...state.older, ...state.messages].map((item: any) => [item.id, item])).values()]
+                    .sort((a: any, b: any) => a.id - b.id) as any[];
+                const size = Math.min(100, Number(url.searchParams.get('limit')) || 50);
+                const forward = url.searchParams.has('after_id');
+                const after = Number(url.searchParams.get('after_id')) || 0;
+                const through = Number(url.searchParams.get('through_id')) || all.at(-1)?.id || after;
+                const before = Number(url.searchParams.get('before_id')) || 0;
+                const eligible = forward ? all.filter(item => item.id > after && item.id <= through)
+                    : before ? all.filter(item => item.id < before) : all;
+                const selected = forward ? eligible.slice(0, size) : eligible.slice(-size);
+                const snapshot = JSON.parse(JSON.stringify(selected.map((item: any) => ({ ...item, conversation_key: key }))));
+                if (forward) { state.afterStarted = true; if (state.afterGate) await state.afterGate; }
                 if (state.pageGate) await state.pageGate;
-                return json({ items: snapshot, has_more: url.searchParams.has('before_id') ? false : state.more, muted: false, peer_read_message_id: 50, mention_quota: { limit: 3, remaining: 3, used: 0 } });
+                return json({ items: snapshot, has_more: eligible.length > size || (!forward && !before && state.more),
+                    ...(forward ? { next_after_id: snapshot.at(-1)?.id || after, through_id: through } : {}),
+                    muted: false, peer_read_message_id: 50, mention_quota: { limit: 3, remaining: 3, used: 0 } });
             }
             if (api.endsWith('/read')) return json({ ok: true });
             if (api === '/quota') return json({ daily_limit: 200000000, used_today: 0, file_limit: 100000000 });
@@ -247,6 +260,61 @@ test('LQ a recall during the very first HTTP page is retained before its row exi
     await push(page, { type: 'message_recalled', conversation_key: DM, id: 20 });
     release(); state.pageGate = null;
     await expect(page.locator('[data-message-id="20"]')).toContainText('撤回了一条消息');
+});
+
+test('LQ reconnect fills more than fifty missed messages from the HTTP cursor and revalidates old recalls', async ({ page }) => {
+    const state = await mount(page);
+    await open(page);
+    await page.locator('[data-lq-composer-input]').fill('重连后保留的未发送草稿');
+    // A late socket frame is higher than the last verified HTTP boundary.
+    await push(page, { type: 'message', message: message(190) });
+    state.messages = Array.from({ length: 200 }, (_, index) => message(index + 1));
+    state.messages[19] = { ...state.messages[19], recalled: true, body: '', media: [] };
+    const previous = state.calls.length;
+    await page.evaluate(() => { (window as any).client.setStatus('offline'); (window as any).client.setStatus('online'); });
+    await expect(page.locator('[data-lq-composer-input]')).toBeEnabled();
+    await expect(page.locator('[data-message-id="51"]')).toHaveCount(1);
+    await expect(page.locator('[data-message-id="150"]')).toHaveCount(1);
+    await expect(page.locator('[data-message-id="200"]')).toHaveCount(1);
+    await expect(page.locator('[data-message-id="20"]')).toContainText('撤回了一条消息');
+    await expect(page.locator('.social-msg')).toHaveCount(200);
+    await expect(page.locator('[data-lq-composer-input]')).toHaveValue('重连后保留的未发送草稿');
+    const forward = state.calls.slice(previous).filter((call: any) => call.query.includes('after_id='));
+    expect(forward).toHaveLength(2);
+    expect(forward[0].query).toContain('after_id=50');
+    expect(forward.every((call: any) => call.query.includes('through_id=200'))).toBe(true);
+});
+
+test('LQ a very large reconnect backlog shows a contiguous bounded window with history navigation', async ({ page }) => {
+    const state = await mount(page);
+    await open(page);
+    await page.locator('[data-lq-composer-input]').fill('大量历史不会清空草稿');
+    state.messages = Array.from({ length: 10000 }, (_, index) => message(index + 1));
+    const previous = state.calls.length;
+    await page.evaluate(() => { (window as any).client.setStatus('offline'); (window as any).client.setStatus('online'); });
+    await expect(page.locator('[data-message-id="10000"]')).toHaveCount(1);
+    await expect(page.locator('[data-message-id="1"]')).toHaveCount(0);
+    await expect(page.locator('.social-msg')).toHaveCount(50);
+    await expect(page.locator('[data-lq-composer-input]')).toBeEnabled();
+    await expect(page.locator('[data-lq-composer-input]')).toHaveValue('大量历史不会清空草稿');
+    expect(state.calls.slice(previous).filter((call: any) => call.query.includes('after_id='))).toHaveLength(8);
+    await expect(page.getByText('已重新同步最近消息，较早记录可向上加载。')).toBeVisible();
+});
+
+test('LQ switching conversations discards a delayed reconnect page and stops further catchup requests', async ({ page }) => {
+    const state = await mount(page);
+    await open(page);
+    state.messages = Array.from({ length: 200 }, (_, index) => message(index + 1));
+    let release!: () => void;
+    state.afterGate = new Promise<void>(resolve => { release = resolve; });
+    await page.evaluate(() => { (window as any).client.setStatus('offline'); (window as any).client.setStatus('online'); });
+    await expect.poll(() => state.afterStarted).toBe(true);
+    await open(page, OTHER);
+    await expect(page.locator('[data-lq-composer-input]')).toBeEnabled();
+    state.afterGate = null; release();
+    await expect(page.locator('[data-message-id="51"]')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as any).client.activeKey)).toBe(OTHER);
+    expect(state.calls.filter((call: any) => call.api === `/conversations/${DM}/messages` && call.query.includes('after_id='))).toHaveLength(1);
 });
 
 test('LQ reconnect during an in-flight page revalidates missed messages after that snapshot', async ({ page }) => {

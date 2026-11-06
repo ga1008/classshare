@@ -92,7 +92,10 @@ def hidden_student_ids(conn: Any, student_ids: Iterable[Any]) -> set[int]:
     ids = _clean_ids(student_ids)
     if not ids:
         return set()
-    ensure_cultivation_display_schema(conn)
+    # Schema creation is owned by startup/settings writes. Reading a rank must
+    # never upgrade the schema or take DDL locks during a classroom peak.
+    if not _table_exists(conn, get_configured_db_engine()):
+        return set()
     hidden: set[int] = set()
     for start in range(0, len(ids), 500):
         chunk = ids[start:start + 500]
@@ -159,11 +162,12 @@ def emblem_for_level(level: dict[str, Any] | None, score: float | None = None) -
 
 
 def _emblem_payload(tier: int, score: float, curved: bool) -> dict[str, Any] | None:
-    from .cultivation_growth_service import apply_growth_curve
     from .learning_progress_service import LEARNING_LEVELS
 
     level = next((item for item in LEARNING_LEVELS if int(item["tier"]) == int(tier)), None)
-    shown = score if curved else apply_growth_curve(score)
+    # Model upgrades are published by the projection worker. Every consumer
+    # displays the same committed score while that upgrade is pending.
+    shown = score
     return emblem_for_level(level, shown)
 
 

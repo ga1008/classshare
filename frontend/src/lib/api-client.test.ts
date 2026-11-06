@@ -99,4 +99,14 @@ describe('apiRequest', () => {
       requestId: 'req-123',
     } satisfies Partial<ApiError>);
   });
+
+  it('exposes Retry-After while leaving retry and draft ownership to the caller', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      error: { code: 'service_unavailable', message: '服务器繁忙' },
+    }), { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '3' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(apiRequest('/api/save', z.object({}), { method: 'POST', body: { text: 'draft' } }))
+      .rejects.toMatchObject({ status: 503, code: 'service_unavailable', retryAfterSeconds: 3 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

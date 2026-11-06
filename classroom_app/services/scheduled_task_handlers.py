@@ -380,16 +380,39 @@ from .learning_progress_service import (  # noqa: E402
     capture_cultivation_weekly_snapshots,
     create_cultivation_weekly_reports,
     generate_personal_stage_exam_from_attempt,
+    ensure_cultivation_snapshot_refresh_task,
     recalculate_dirty_learning_progress_snapshots,
+    refresh_pending_learning_snapshots,
+    CULTIVATION_SNAPSHOT_REFRESH_LIMIT,
+    CULTIVATION_SNAPSHOT_REFRESH_BUDGET_SECONDS,
+    CULTIVATION_SNAPSHOT_DISCOVERY_LIMIT,
+    CULTIVATION_SNAPSHOT_DISCOVERY_BUDGET_SECONDS,
 )
+
+
+def maintain_cultivation_projection_task() -> None:
+    """Maintain only the system projection timer, never replay arbitrary jobs."""
+    from ..db.connection import get_configured_db_engine
+
+    with get_db_connection() as conn:
+        if get_configured_db_engine() == "postgres":
+            conn.execute("SET LOCAL lock_timeout = '500ms'")
+            conn.execute("SET LOCAL statement_timeout = '1500ms'")
+        else:
+            conn.execute("PRAGMA busy_timeout = 500")
+        ensure_cultivation_snapshot_refresh_task(conn, advance_pending=False)
 
 
 def handle_cultivation_snapshot_refresh(task: dict[str, Any]) -> str:
     payload = task.get("payload") or {}
-    limit = max(1, min(int(payload.get("limit") or 100), 500))
-    with get_db_connection() as conn:
-        result = recalculate_dirty_learning_progress_snapshots(conn, limit=limit)
-        conn.commit()
+    # Existing deduped rows can still carry limit=100; the system cap applies
+    # without rewriting or replacing a pending/running task and its claim.
+    limit = max(1, min(int(payload.get("limit") or CULTIVATION_SNAPSHOT_REFRESH_LIMIT), CULTIVATION_SNAPSHOT_REFRESH_LIMIT))
+    result = refresh_pending_learning_snapshots(
+        limit=limit, time_budget_seconds=CULTIVATION_SNAPSHOT_REFRESH_BUDGET_SECONDS,
+        discovery_limit=CULTIVATION_SNAPSHOT_DISCOVERY_LIMIT,
+        discovery_time_budget_seconds=CULTIVATION_SNAPSHOT_DISCOVERY_BUDGET_SECONDS,
+    )
     return f"refreshed {result.get('refreshed', 0)} of {result.get('checked', 0)} dirty snapshot(s)"
 
 

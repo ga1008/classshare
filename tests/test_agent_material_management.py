@@ -40,8 +40,6 @@ class MaterialManagementFixture(MaterialContentRequestFixture):
                         'git_remote_host','git_remote_protocol','git_default_branch','git_head_branch','git_detect_error','git_detected_at')}}.items():
                 conn.execute(f'ALTER TABLE course_materials ADD COLUMN {name} {definition}')
             conn.executescript("""
-                CREATE TABLE course_material_assignments(id INTEGER PRIMARY KEY AUTOINCREMENT,material_id INTEGER,
-                    class_offering_id INTEGER,assigned_by_teacher_id INTEGER,created_at TEXT,UNIQUE(material_id,class_offering_id));
                 CREATE TABLE learning_material_progress(id INTEGER PRIMARY KEY,material_id INTEGER,class_offering_id INTEGER,
                     student_id INTEGER,is_completed INTEGER DEFAULT 0,is_mastered INTEGER DEFAULT 0,updated_at TEXT);
                 ALTER TABLE class_offerings ADD COLUMN semester TEXT DEFAULT '';

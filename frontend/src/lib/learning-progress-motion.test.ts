@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('/static/js/api.js', () => ({ apiFetch: vi.fn() }));
 vi.mock('/static/js/ui.js', () => ({ showToast: vi.fn() }));
 vi.mock('/static/js/learning_certificate_reveal.js?v=cultivation-certificate-20260612', () => ({ initLearningCertificateReveal: vi.fn() }));
+vi.mock('/static/js/cultivation_panel.js', () => ({ initCultivationPanel: vi.fn(() => ({ owner: 'shared-cultivation-panel' })) }));
+// @ts-expect-error Native SSR module outside the frontend tree.
+import { initCultivationPanel } from '../../../static/js/cultivation_panel.js';
 // @ts-expect-error Learning progress is a native SSR module outside the frontend tree.
 import { initLearningProgressModal, initStudentInsightModal } from '../../../static/js/learning_progress.js';
 
@@ -18,7 +21,7 @@ function fixture(reduced = false) {
   const document = {
     defaultView: view, activeElement: null as Node | null, body: { classList: classes() },
     getElementById: (id: string) => nodes.get(id),
-    querySelector: (selector: string) => selector === '[data-learning-panel]' ? panel : null,
+    querySelector: (selector: string) => selector === '[data-cultivation-panel]' ? panel : selector.includes('.cw-cultivation-entry') ? trigger : null,
     querySelectorAll: (selector: string) => selector === '[data-student-insight-open]' ? [student, secondStudent] : [trigger],
     addEventListener: vi.fn(),
   };
@@ -48,40 +51,33 @@ function fixture(reduced = false) {
   const browser = { clearTimeout, setTimeout, requestAnimationFrame: vi.fn() };
   vi.stubGlobal('document', document); vi.stubGlobal('window', browser);
   initLearningProgressModal(); initStudentInsightModal();
-  return { document, nodes, trigger, student, secondStudent, frame, browser };
+  return { document, nodes, trigger, student, secondStudent, frame, browser, panel };
 }
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); vi.clearAllMocks(); });
 
 describe('cultivation and member insight presence', () => {
-  it('keeps scrolling locked and focus inside cultivation until the complete exit', async () => {
-    vi.useFakeTimers();
-    const { trigger, nodes, document } = fixture();
-    trigger.click();
-    await vi.advanceTimersByTimeAsync(314);
-    nodes.get('learning-modal-close')!.click();
-    expect(nodes.get('learning-progress-modal')!.hidden).toBe(false);
-    expect(document.body.classList.contains('has-learning-modal')).toBe(true);
-    expect(trigger.focus).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(314);
-    expect(nodes.get('learning-progress-modal')!.hidden).toBe(true);
-    expect(document.body.classList.contains('has-learning-modal')).toBe(false);
-    expect(trigger.focus).toHaveBeenCalledTimes(1);
+  it('delegates lifecycle to the shared cultivation panel and preserves current page context', () => {
+    fixture();
+    const config = { classOfferingId: 42, classroom: { course_name: '合成课程' }, userInfo: { name: '合成同学' }, learningProgress: { score: 12.3 } };
+    const controller = initLearningProgressModal(config);
+    expect(controller).toEqual({ owner: 'shared-cultivation-panel' });
+    expect(initCultivationPanel).toHaveBeenLastCalledWith(expect.objectContaining({
+      classOfferingId: 42, courseName: '合成课程', userName: '合成同学', progress: config.learningProgress,
+    }));
   });
 
-  it('cancels immediate close/open without a stale animation-frame callback or focus return', async () => {
-    vi.useFakeTimers();
-    const { trigger, nodes, browser } = fixture();
-    trigger.click();
-    nodes.get('learning-modal-close')!.click();
-    trigger.click();
-    await vi.runAllTimersAsync();
-    expect(nodes.get('learning-progress-modal')!.hidden).toBe(false);
-    expect(nodes.get('learning-progress-modal')!.dataset.uiOverlayState).toBe('open');
-    expect(trigger.focus).not.toHaveBeenCalled();
-    expect(browser.requestAnimationFrame).not.toHaveBeenCalled();
+  it('distinguishes an unknown building score from a valid zero and a stale value', () => {
+    const { trigger } = fixture();
+    const options = vi.mocked(initCultivationPanel).mock.calls.at(-1)![0];
+    options.onProgress({ score: null, snapshot_status: 'building' });
+    expect(trigger.textContent).toBe('生成中');
+    options.onProgress({ score: 0, snapshot_status: 'ready' });
+    expect(trigger.textContent).toBe('0.0');
+    options.onProgress({ score: 42.3, snapshot_status: 'stale' });
+    expect(trigger.textContent).toBe('42.3');
   });
 
-  it('closes member insight after its exit while retaining the parent and iframe document', async () => {
+  it('closes member insight after its exit while retaining the iframe document', async () => {
     vi.useFakeTimers();
     const { trigger, student, nodes, document, frame } = fixture();
     trigger.click(); student.click();
@@ -90,8 +86,6 @@ describe('cultivation and member insight presence', () => {
     expect(document.body.classList.contains('has-student-insight-modal')).toBe(true);
     await vi.advanceTimersByTimeAsync(314);
     expect(nodes.get('student-insight-modal')!.hidden).toBe(true);
-    expect(nodes.get('learning-progress-modal')!.hidden).toBe(false);
-    expect(document.body.classList.contains('has-learning-modal')).toBe(true);
     expect(document.body.classList.contains('has-student-insight-modal')).toBe(false);
     expect(frame.src).toBe('/student/1?embed=1');
     expect(student.focus).toHaveBeenCalledTimes(1);

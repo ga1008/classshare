@@ -16,8 +16,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from ...core import ai_client, templates
+from ...services.material_scope_query_service import build_material_visibility_predicate
 from ...database import get_db_connection
 from ...dependencies import get_current_teacher, get_current_user
 from ...schemas.materials_contracts import (
@@ -332,19 +334,21 @@ def _load_cached_text_content(file_path_value: str, mtime_ns: int, file_size: in
     return _decode_text_bytes(Path(file_path_value).read_bytes())
 
 
-async def _load_material_text_content(material_row, prefer_optimized: bool = False) -> tuple[str, str]:
+def _load_material_text_content_sync(material_row, prefer_optimized: bool = False) -> tuple[str, str]:
+    """Resolve storage, stat and decode in the caller's synchronous work unit."""
     optimized_content = _row_value(material_row, "ai_optimized_markdown")
     if prefer_optimized and optimized_content:
         return optimized_content, "utf-8"
 
     file_path = _load_material_storage_path(material_row)
-    stat = await asyncio.to_thread(file_path.stat)
-    return await asyncio.to_thread(
-        _load_cached_text_content,
-        str(file_path),
-        int(stat.st_mtime_ns),
-        int(stat.st_size),
-    )
+    stat = file_path.stat()
+    return _load_cached_text_content(str(file_path), int(stat.st_mtime_ns), int(stat.st_size))
+
+
+async def _load_material_text_content(material_row, prefer_optimized: bool = False) -> tuple[str, str]:
+    # Other async consumers retain their existing interface. In particular the
+    # storage resolver can query the DB, so offload it along with stat/read.
+    return await run_in_threadpool(_load_material_text_content_sync, material_row, prefer_optimized)
 
 
 async def _write_material_file(file_hash: str, payload_bytes: bytes):
@@ -747,125 +751,7 @@ def _material_visibility_condition(conn, teacher_id: int) -> tuple[str, list[obj
         """,
         (int(teacher_id), int(teacher_id)),
     ).fetchall()
-    school_codes = sorted(
-        {
-            str(scope.get("school_code") or "").strip().lower()
-            for scope in memberships
-            if str(scope.get("school_code") or "").strip()
-        }
-        | {
-            str(row["school_code"] or "").strip().lower()
-            for row in raw_membership_rows
-            if str(row["school_code"] or "").strip()
-        }
-    )
-    department_pairs = sorted(
-        {
-            (
-                str(scope.get("school_code") or "").strip().lower(),
-                str(scope.get("department") or "").strip().lower(),
-            )
-            for scope in memberships
-            if str(scope.get("school_code") or "").strip()
-            and str(scope.get("department") or "").strip()
-        }
-        | {
-            (
-                str(row["school_code"] or "").strip().lower(),
-                str(row["department"] or "").strip().lower(),
-            )
-            for row in raw_membership_rows
-            if str(row["school_code"] or "").strip()
-            and str(row["department"] or "").strip()
-        }
-    )
-    college_pairs = sorted(
-        {
-            (
-                str(scope.get("school_code") or "").strip().lower(),
-                str(scope.get("college") or "").strip().lower(),
-            )
-            for scope in memberships
-            if str(scope.get("school_code") or "").strip()
-            and str(scope.get("college") or "").strip()
-        }
-        | {
-            (
-                str(row["school_code"] or "").strip().lower(),
-                str(row["college"] or "").strip().lower(),
-            )
-            for row in raw_membership_rows
-            if str(row["school_code"] or "").strip()
-            and str(row["college"] or "").strip()
-        }
-    )
-
-    conditions = ["m.teacher_id = ?", "m.scope_level = 'public'"]
-    params: list[object] = [int(teacher_id)]
-
-    if school_codes:
-        placeholders = ", ".join("?" for _ in school_codes)
-        conditions.append(
-            f"""
-            (
-                m.scope_level = 'school'
-                AND lower(TRIM(COALESCE(m.school_code, ''))) IN ({placeholders})
-            )
-            """
-        )
-        params.extend(school_codes)
-
-    if department_pairs:
-        pair_conditions = []
-        for school_code, department in department_pairs:
-            pair_conditions.append(
-                """
-                (
-                    lower(TRIM(COALESCE(m.school_code, ''))) = ?
-                    AND lower(TRIM(COALESCE(m.department, ''))) = ?
-                )
-                """
-            )
-            params.extend([school_code, department])
-        conditions.append(
-            """
-            (
-                m.scope_level = 'department'
-                AND (
-            """
-            + " OR ".join(pair_conditions)
-            + """
-                )
-            )
-            """
-        )
-
-    if college_pairs:
-        pair_conditions = []
-        for school_code, college in college_pairs:
-            pair_conditions.append(
-                """
-                (
-                    lower(TRIM(COALESCE(m.school_code, ''))) = ?
-                    AND lower(TRIM(COALESCE(m.college, ''))) = ?
-                )
-                """
-            )
-            params.extend([school_code, college])
-        conditions.append(
-            """
-            (
-                m.scope_level = 'college'
-                AND (
-            """
-            + " OR ".join(pair_conditions)
-            + """
-                )
-            )
-            """
-        )
-
-    return "(" + " OR ".join(f"({condition})" for condition in conditions) + ")", params
+    return build_material_visibility_predicate(int(teacher_id), memberships, raw_membership_rows)
 
 
 def _list_material_rows_for_parent(

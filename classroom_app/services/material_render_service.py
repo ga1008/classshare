@@ -22,6 +22,7 @@ from typing import Iterable, Protocol
 from urllib.parse import quote
 
 from .html_package_service import (
+    MAX_PACKAGE_ANCESTOR_DEPTH,
     find_html_package_root,
     is_package_entry_candidate_name,
     package_relative_path,
@@ -72,6 +73,88 @@ class MaterialRenderer(Protocol):
         ...
 
 
+class MaterialRenderReadIndex:
+    """Short-lived structural index; contains no permission decisions.
+
+    Prefetch only requested subtrees and at most the package ancestor depth,
+    keeping large unrelated roots and CSS/JS/blob metadata out of the read.
+    A new index is built for each serialization, so edits and revocations
+    cannot reuse results from an earlier request.
+    """
+
+    def __init__(self, conn, material_rows):
+        rows = [dict(row) for row in material_rows]
+        self.conn = conn
+        self.rows_by_id = {int(row["id"]): row for row in rows}
+        self.subtrees_by_id: dict[int, list[dict]] = {}
+        self.package_cache: dict[int, dict | None] = {}
+        candidates = [int(row["id"]) for row in self.rows_by_id.values()
+                      if row.get("parent_id") and is_package_entry_candidate_name(row.get("name"))]
+        for offset in range(0, len(candidates), 200):
+            ids = candidates[offset:offset+200]
+            placeholders = ",".join("?" for _ in ids)
+            ancestors = conn.execute(
+                f"""WITH RECURSIVE ancestors AS (
+                    SELECT m.*, 0 AS render_ancestor_depth FROM course_materials m WHERE m.id IN ({placeholders})
+                    UNION ALL
+                    SELECT p.*, a.render_ancestor_depth + 1 FROM course_materials p
+                    JOIN ancestors a ON p.id = a.parent_id
+                    WHERE a.render_ancestor_depth < ?
+                ) SELECT * FROM ancestors""",
+                (*ids, MAX_PACKAGE_ANCESTOR_DEPTH),
+            ).fetchall()
+            for row in ancestors:
+                data = dict(row)
+                data.pop("render_ancestor_depth", None)
+                self.rows_by_id[int(data["id"])] = data
+
+        folders = [row for row in self.rows_by_id.values()
+                   if row.get("node_type") == "folder" and row.get("root_id") is not None
+                   and row.get("material_path") and not is_git_internal_material_path(row["material_path"])]
+        folder_keys = {(int(row["root_id"]), str(row["material_path"])): int(row["id"]) for row in folders}
+        self.subtrees_by_id = {int(row["id"]): [] for row in folders}
+        # Collapse nested scopes. The package root already contains its lesson
+        # folders; querying each lesson again would duplicate the same rows.
+        scopes = []
+        for root_id, path in sorted(folder_keys, key=lambda value: (value[0], len(value[1]), value[1])):
+            parts = _material_path_parts(path)
+            if any((root_id, "/".join(parts[:depth])) in folder_keys for depth in range(1, len(parts))):
+                continue
+            scopes.append((root_id, path, path + "/"))
+        for offset in range(0, len(scopes), 100):
+            batch = scopes[offset:offset+100]
+            placeholders = ",".join("(?,?,?)" for _ in batch)
+            descendants = conn.execute(
+                f"""WITH scopes(root_id, path, prefix) AS (VALUES {placeholders})
+                SELECT m.id, m.parent_id, m.root_id, m.name, m.material_path,
+                       m.preview_type, m.node_type, m.file_ext, m.file_hash
+                FROM course_materials m JOIN scopes s ON m.root_id = s.root_id
+                 AND (m.material_path = s.path OR SUBSTR(m.material_path, 1, LENGTH(s.prefix)) = s.prefix)
+                WHERE m.node_type = 'folder' OR (m.node_type = 'file' AND (
+                    LOWER(m.file_ext) IN ('html', 'htm') OR LOWER(m.name) LIKE '%.html' OR LOWER(m.name) LIKE '%.htm'))""",
+                tuple(value for scope in batch for value in scope),
+            ).fetchall()
+            for row in descendants:
+                data = dict(row)
+                path = str(data.get("material_path") or "")
+                if is_git_internal_material_path(path):
+                    continue
+                parts = _material_path_parts(path)
+                for depth in range(1, len(parts)+1):
+                    folder_id = folder_keys.get((int(data["root_id"]), "/".join(parts[:depth])))
+                    if folder_id is not None:
+                        self.subtrees_by_id[folder_id].append(data)
+
+    def find_package(self, material_row):
+        return find_html_package_root(
+            self.conn, material_row, rows_by_id=self.rows_by_id,
+            subtrees_by_id=self.subtrees_by_id, package_cache=self.package_cache,
+        )
+
+    def get_node(self, material_id):
+        return self.rows_by_id.get(int(material_id))
+
+
 class HtmlRenderer:
     """HTML 单体文件 / 前端项目目录渲染器。"""
 
@@ -84,13 +167,13 @@ class HtmlRenderer:
         ext = str(_row_get(row, "file_ext") or "").lower() or _file_extension(_row_get(row, "name"))
         return ext in HTML_EXTENSIONS
 
-    def _find_folder_entry(self, conn, folder_row) -> dict | None:
+    def _find_folder_entry(self, conn, folder_row, *, subtree_rows=None) -> dict | None:
         root_id = _row_get(folder_row, "root_id")
         folder_path = str(_row_get(folder_row, "material_path") or "")
         if root_id is None or not folder_path:
             return None
         prefix = f"{folder_path}/"
-        rows = conn.execute(
+        rows = subtree_rows if subtree_rows is not None else conn.execute(
             """
             SELECT id, parent_id, root_id, name, material_path, preview_type, node_type, file_ext
             FROM course_materials
@@ -107,6 +190,8 @@ class HtmlRenderer:
         best_row = None
         best_score = None
         for row in rows:
+            if _row_get(row, "node_type") != "file":
+                continue
             path_value = str(_row_get(row, "material_path") or "")
             if is_git_internal_material_path(path_value):
                 continue
@@ -127,7 +212,7 @@ class HtmlRenderer:
                 best_row = dict(row)
         return best_row
 
-    def resolve(self, conn, material_row) -> dict | None:
+    def resolve(self, conn, material_row, *, read_index=None) -> dict | None:
         if material_row is None:
             return None
         if is_git_internal_material_path(_row_get(material_row, "material_path")):
@@ -138,7 +223,10 @@ class HtmlRenderer:
         if node_type == "file" and self._is_html_file(material_row):
             entry_row = dict(material_row)
         elif node_type == "folder":
-            entry_row = self._find_folder_entry(conn, material_row)
+            entry_row = self._find_folder_entry(
+                conn, material_row,
+                subtree_rows=None if read_index is None else read_index.subtrees_by_id.get(int(material_row["id"]), []),
+            )
 
         if not entry_row:
             return None
@@ -153,7 +241,7 @@ class HtmlRenderer:
         render_node_id = node_id
         render_subpath = ""
         if is_package_entry_candidate_name(_row_get(material_row, "name")):
-            package = find_html_package_root(conn, material_row)
+            package = find_html_package_root(conn, material_row) if read_index is None else read_index.find_package(material_row)
             if package and int(package.get("root_node_id") or 0) > 0:
                 package_root_id = int(package["root_node_id"])
                 relpath = package_relative_path(package, entry_row.get("material_path"))
@@ -187,19 +275,27 @@ class HtmlRenderer:
 MATERIAL_RENDERERS: list[MaterialRenderer] = [HtmlRenderer()]
 
 
-def resolve_render_target(conn, material_row) -> dict | None:
+def resolve_render_target(conn, material_row, *, read_index=None) -> dict | None:
     """按注册顺序解析第一个能渲染该材料的渲染目标。"""
     for renderer in MATERIAL_RENDERERS:
-        target = renderer.resolve(conn, material_row)
+        target = renderer.resolve(conn, material_row, read_index=read_index) if isinstance(renderer, HtmlRenderer) else renderer.resolve(conn, material_row)
         if target:
             return target
     return None
 
 
+def resolve_render_targets(conn, material_rows) -> dict[int, dict | None]:
+    """Resolve one request's entries using shared, permission-free structure."""
+    rows = list(material_rows)
+    read_index = MaterialRenderReadIndex(conn, rows)
+    return {int(row["id"]): resolve_render_target(conn, row, read_index=read_index) for row in rows}
+
+
 def attach_render_metadata(conn, items: list[dict]) -> list[dict]:
     """为序列化后的材料字典批量附加渲染元数据。"""
+    targets = resolve_render_targets(conn, items)
     for item in items:
-        target = resolve_render_target(conn, item)
+        target = targets[int(item["id"])]
         if target:
             item["is_renderable"] = True
             item["render_kind"] = target["kind"]
@@ -217,7 +313,7 @@ def attach_render_metadata(conn, items: list[dict]) -> list[dict]:
     return items
 
 
-def _resolve_base_and_entry(conn, node_row) -> tuple[str, str]:
+def _resolve_base_and_entry(conn, node_row, *, render_target=None) -> tuple[str, str]:
     """返回 (base_path, default_entry_relative_path)。
 
     - 文件夹节点：base 为该目录，入口为目录内最佳 HTML。
@@ -226,7 +322,7 @@ def _resolve_base_and_entry(conn, node_row) -> tuple[str, str]:
     node_type = _row_get(node_row, "node_type")
     node_path = str(_row_get(node_row, "material_path") or "")
     if node_type == "folder":
-        target = HtmlRenderer().resolve(conn, node_row)
+        target = HtmlRenderer().resolve(conn, node_row) if render_target is None else render_target
         if not target:
             return node_path, ""
         entry_path = str(target.get("entry_path") or "")
@@ -241,14 +337,20 @@ def _resolve_base_and_entry(conn, node_row) -> tuple[str, str]:
     return base_path, file_name
 
 
-def resolve_render_file(conn, node_row, subpath: str = ""):
+def resolve_render_file(conn, node_row, subpath: str = "", *, render_target=None):
     """渲染路由解析：根据节点与子路径，定位最终要返回的文件行。
 
     返回 ``course_materials`` 行（sqlite Row / dict），定位失败时返回 None。
     会对子路径做归一化以防目录穿越，并确保目标在 base 目录之内、同一 root 内。
+    render_target 仅复用当前请求已经解析的入口；不承载或缓存访问授权。
     """
-    base_path, default_entry = _resolve_base_and_entry(conn, node_row)
     relative = str(subpath or "").strip().strip("/")
+    if relative:
+        node_path = str(_row_get(node_row, "material_path") or "")
+        base_path = node_path if _row_get(node_row, "node_type") == "folder" else _parent_path(node_path)
+        default_entry = ""
+    else:
+        base_path, default_entry = _resolve_base_and_entry(conn, node_row, render_target=render_target)
     if not relative:
         relative = default_entry
     if not relative:

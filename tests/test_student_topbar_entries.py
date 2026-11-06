@@ -3,6 +3,8 @@
 import unittest
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from classroom_app.frontend_assets import asset_url
+from classroom_app.lq import lq_props
 
 
 def _render_personal_menu(role: str) -> str:
@@ -10,8 +12,9 @@ def _render_personal_menu(role: str) -> str:
         loader=FileSystemLoader("templates"),
         autoescape=select_autoescape(("html", "xml")),
     )
+    env.globals.update(lq_props=lq_props, asset_url=asset_url)
     template = env.get_template("partials/app_topbar_utility_actions.html")
-    return template.render(user_info={"role": role})
+    return template.render(user_info={"role": role, "id": 7, "name": "合成用户"})
 
 
 class StudentTopbarEntriesTests(unittest.TestCase):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from functools import lru_cache
 import re
 import threading
 from typing import Any, Iterable, Sequence
@@ -23,6 +24,8 @@ _connection_pool: Any | None = None
 _connection_pool_lock = threading.Lock()
 _LIKE_NOCASE_RE = re.compile(r"\bLIKE\s+(%s)\s+COLLATE\s+NOCASE\b", re.IGNORECASE)
 _COLLATE_NOCASE_RE = re.compile(r"\s+COLLATE\s+NOCASE\b", re.IGNORECASE)
+_SQL_CONVERSION_CACHE_SIZE = 512
+_SQL_CONVERSION_CACHE_MAX_CHARS = 4096
 
 
 def _replace_group_concat(sql: str) -> str:
@@ -103,12 +106,28 @@ def _escape_literal_percent_markers(sql: str) -> str:
     return "".join(output)
 
 
-def sqlite_sql_to_psycopg(sql: str) -> str:
+def _sqlite_sql_to_psycopg_uncached(sql: str) -> str:
     converted = qmark_to_psycopg(sql)
     converted = _replace_group_concat(converted)
     converted = _LIKE_NOCASE_RE.sub(r"ILIKE \1", converted)
     converted = _COLLATE_NOCASE_RE.sub("", converted)
     return _escape_literal_percent_markers(converted)
+
+
+@lru_cache(maxsize=_SQL_CONVERSION_CACHE_SIZE)
+def _cached_sqlite_sql_to_psycopg(sql: str) -> str:
+    # A pure string conversion: no parameters, rows, connection or authority.
+    # lru_cache serializes its bookkeeping; concurrent misses may recompute
+    # this pure result. Exceptions propagate without creating a cache entry.
+    return _sqlite_sql_to_psycopg_uncached(sql)
+
+
+def sqlite_sql_to_psycopg(sql: str) -> str:
+    # Bound both cardinality and key size; dynamic bulk SQL must not retain a
+    # large statement. Non-builtin strings retain the old coercion contract.
+    if type(sql) is str and len(sql) <= _SQL_CONVERSION_CACHE_MAX_CHARS:
+        return _cached_sqlite_sql_to_psycopg(sql)
+    return _sqlite_sql_to_psycopg_uncached(sql)
 
 
 def load_psycopg_driver() -> Any:
@@ -254,8 +273,19 @@ class LanSharePostgresConnection:
         # Prevent reuse-after-return and double-return.
         self._raw_connection = None
         if self._pool is not None:
-            # Return the physical connection to the pool instead of closing it.
-            self._pool.putconn(raw)
+            # Explicit close has always discarded uncommitted work. Finish
+            # that rollback here so read-only callers do not make the pool
+            # emit an INTRANS warning for every normal return.
+            try:
+                state = getattr(getattr(raw, "info", None), "transaction_status", None)
+                if state in (2, 3):  # psycopg INTRANS / INERROR
+                    raw.rollback()
+            except Exception:
+                # A broken connection must never be reused; putconn disposes
+                # closed connections and replenishes its bounded pool.
+                raw.close()
+            finally:
+                self._pool.putconn(raw)
         else:
             raw.close()
 
@@ -320,7 +350,7 @@ def apply_postgres_session_settings(raw_connection: Any) -> None:
             "idle_in_transaction_session_timeout",
             _session_timeout_value(config.POSTGRES_IDLE_IN_TRANSACTION_TIMEOUT_MS),
         ),
-        ("application_name", "lanshare-app"),
+        ("application_name", config.POSTGRES_APPLICATION_NAME),
     )
     # Apply every session setting in a single round-trip. With no pooling each
     # request opens a fresh connection, so collapsing four set_config calls into

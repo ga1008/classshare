@@ -1,4 +1,6 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 from classroom_app import config
 from classroom_app.db.connection import begin_immediate_transaction, execute_insert_returning_id
@@ -90,6 +92,37 @@ class FakeDescriptionCursor:
 
 
 class PostgresAdapterTests(unittest.TestCase):
+    def test_pooled_explicit_close_rolls_back_open_transaction_before_return(self):
+        raw = FakeRawConnection()
+        raw.info = SimpleNamespace(transaction_status=2)
+        pool = Mock()
+        pool.putconn.side_effect = lambda connection: self.assertTrue(connection.rolled_back)
+        conn = LanSharePostgresConnection(raw, pool=pool)
+        conn.close()
+        conn.close()
+        pool.putconn.assert_called_once_with(raw)
+        self.assertFalse(raw.closed)
+        self.assertFalse(raw.committed)
+
+    def test_pooled_idle_close_does_not_roll_back_committed_work(self):
+        raw = FakeRawConnection()
+        raw.info = SimpleNamespace(transaction_status=0)
+        raw.commit()
+        pool = Mock()
+        LanSharePostgresConnection(raw, pool=pool).close()
+        self.assertTrue(raw.committed)
+        self.assertFalse(raw.rolled_back)
+        pool.putconn.assert_called_once_with(raw)
+
+    def test_pooled_rollback_failure_discards_connection_before_return(self):
+        raw = FakeRawConnection()
+        raw.info = SimpleNamespace(transaction_status=3)
+        raw.rollback = Mock(side_effect=RuntimeError("broken connection"))
+        pool = Mock()
+        pool.putconn.side_effect = lambda connection: self.assertTrue(connection.closed)
+        LanSharePostgresConnection(raw, pool=pool).close()
+        pool.putconn.assert_called_once_with(raw)
+
     def test_qmark_to_psycopg_preserves_literals_and_comments(self):
         sql = "SELECT '?' AS literal, col FROM t WHERE id = ? AND note = '-- ?' -- ?\nAND x = ?"
 

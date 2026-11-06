@@ -6,8 +6,16 @@
             this.endpoint = options.endpoint || `/api/classrooms/${this.classOfferingId}/behavior/batch`;
             this.heartbeatMs = Number(options.heartbeatMs || 60000);
             this.maxBatchSize = Number(options.maxBatchSize || 16);
-            this.maxQueuedEvents = Number(options.maxQueuedEvents || 48);
+            this.userKey = String(options.userKey || '').trim();
+            this.storageKey = this.userKey ? `lanshare:behavior:v1:${this.userKey}:${this.classOfferingId}` : null;
             this.events = [];
+            this.pendingBatch = null;
+            this.retryAttempt = 0;
+            this.retryAt = 0;
+            this.paused = false;
+            this.requestTimeoutMs = Number(options.requestTimeoutMs || 12000);
+            this.maxQueuedEvents = Math.max(48, Number(options.maxQueuedEvents || 512));
+            this.restore();
             this.flushTimer = null;
             this.heartbeatTimer = null;
             this.flushing = false;
@@ -19,62 +27,65 @@
             this.handleFocus = this.handleFocus.bind(this);
             this.handleBlur = this.handleBlur.bind(this);
             this.handlePageHide = this.handlePageHide.bind(this);
+            this.handlePageShow = this.handlePageShow.bind(this);
+            this.handleOnline = this.handleOnline.bind(this);
         }
 
-        isPresenceEvent(actionType) {
-            return ['presence_heartbeat', 'page_presence', 'heartbeat'].includes(String(actionType || ''));
+        restore() {
+            if (!this.storageKey) return;
+            try {
+                const raw = window.sessionStorage.getItem(this.storageKey);
+                if (!raw) {
+                    this.events = [];
+                    this.pendingBatch = null;
+                    return;
+                }
+                const state = JSON.parse(raw);
+                if (state?.userKey !== this.userKey) return;
+                this.events = Array.isArray(state.events) ? state.events : [];
+                this.pendingBatch = state.pendingBatch?.body?.user_key === this.userKey ? state.pendingBatch : null;
+            } catch (error) {
+                console.warn('behavior recovery unavailable', error);
+            }
         }
 
-        isLowPriorityEvent(actionType) {
-            return this.isPresenceEvent(actionType) || ['page_focus', 'page_visibility'].includes(String(actionType || ''));
+        persist() {
+            if (!this.storageKey) return;
+            try {
+                if (!this.events.length && !this.pendingBatch) {
+                    window.sessionStorage.removeItem(this.storageKey);
+                } else {
+                    window.sessionStorage.setItem(this.storageKey, JSON.stringify({
+                        userKey: this.userKey, events: this.events, pendingBatch: this.pendingBatch,
+                    }));
+                }
+            } catch (error) {
+                console.warn('behavior local buffer unavailable', error);
+            }
         }
 
         enqueueEvent(event) {
-            if (!event || !this.classOfferingId) {
-                return;
+            if (!event || !this.classOfferingId) return false;
+            // Preserve heartbeat/focus ordering and activity counts. Never trim an unacknowledged batch.
+            if (this.events.length >= this.maxQueuedEvents) {
+                window.dispatchEvent(new CustomEvent('behavior:backpressure', { detail: { queued: this.events.length } }));
+                this.flushSoon();
+                return false;
             }
-
-            if (this.isPresenceEvent(event.action_type)) {
-                for (let index = this.events.length - 1; index >= 0; index -= 1) {
-                    if (this.isPresenceEvent(this.events[index]?.action_type)) {
-                        this.events[index] = event;
-                        return;
-                    }
-                }
-            }
-
-            const lastEvent = this.events[this.events.length - 1];
-            if (
-                lastEvent
-                && this.isLowPriorityEvent(lastEvent.action_type)
-                && lastEvent.action_type === event.action_type
-                && lastEvent.page_key === event.page_key
-                && lastEvent.summary_text === event.summary_text
-                && JSON.stringify(lastEvent.payload || {}) === JSON.stringify(event.payload || {})
-            ) {
-                this.events[this.events.length - 1] = event;
-                return;
-            }
-
             this.events.push(event);
-            this.trimQueue();
+            this.persist();
+            return true;
         }
 
-        trimQueue() {
-            if (this.events.length <= this.maxQueuedEvents) {
-                return;
-            }
+        handleOnline() {
+            this.retryAt = 0;
+            this.flushSoon(250 + Math.random() * 750);
+        }
 
-            for (let index = 0; index < this.events.length && this.events.length > this.maxQueuedEvents; index += 1) {
-                if (!this.isLowPriorityEvent(this.events[index]?.action_type)) {
-                    continue;
-                }
-                this.events.splice(index, 1);
-                index -= 1;
-            }
-
-            if (this.events.length > this.maxQueuedEvents) {
-                this.events.splice(0, this.events.length - this.maxQueuedEvents);
+        handlePageShow(event) {
+            if (event.persisted) {
+                this.restore();
+                this.start();
             }
         }
 
@@ -90,8 +101,11 @@
             window.addEventListener('focus', this.handleFocus);
             window.addEventListener('blur', this.handleBlur);
             window.addEventListener('pagehide', this.handlePageHide);
+            window.addEventListener('pageshow', this.handlePageShow);
+            window.addEventListener('online', this.handleOnline);
             this.heartbeatTimer = window.setInterval(() => this.flushHeartbeat(), this.heartbeatMs);
             this.log('page_enter', `进入页面：${this.pageKey}`, { page_key: this.pageKey });
+            this.flushSoon();
             return this;
         }
 
@@ -107,6 +121,7 @@
             window.removeEventListener('focus', this.handleFocus);
             window.removeEventListener('blur', this.handleBlur);
             window.removeEventListener('pagehide', this.handlePageHide);
+            window.removeEventListener('online', this.handleOnline);
             if (this.flushTimer) {
                 window.clearTimeout(this.flushTimer);
                 this.flushTimer = null;
@@ -203,56 +218,84 @@
         }
 
         flushSoon(delay = 2200) {
-            if (this.flushTimer) {
-                return;
-            }
+            if (this.flushTimer || this.paused || !this.started) return;
+            const wait = Math.max(delay, this.retryAt - Date.now(), 0);
             this.flushTimer = window.setTimeout(() => {
                 this.flushTimer = null;
                 this.flush();
-            }, delay);
+            }, wait);
         }
 
-        flush({ sync = false } = {}) {
-            if (!this.classOfferingId || !this.events.length) {
+        prepareBatch() {
+            if (this.pendingBatch) return this.pendingBatch;
+            if (!this.events.length) return null;
+            const nonce = window.crypto?.randomUUID?.() || `${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+            const id = `b1_${Date.now()}_${nonce}`;
+            this.pendingBatch = { body: {
+                batch_id: id, user_key: this.userKey || null,
+                page_key: this.pageKey, events: this.events.splice(0, Math.min(20, this.maxBatchSize)),
+            } };
+            this.persist();
+            return this.pendingBatch;
+        }
+
+        async flush({ sync = false } = {}) {
+            if (!this.classOfferingId || this.paused) return;
+            const pending = this.prepareBatch();
+            if (!pending) return;
+            const body = JSON.stringify(pending.body);
+            if (sync) {
+                // A beacon is an unacknowledged copy, including when fetch is already in flight.
+                // Retain the exact batch in sessionStorage until a response confirms durable intake.
+                this.persist();
+                if (navigator.sendBeacon) navigator.sendBeacon(this.endpoint, new Blob([body], { type: 'application/json' }));
                 return;
             }
-            if (this.flushing && !sync) {
+            if (this.flushing) return;
+            if (Date.now() < this.retryAt) {
+                this.flushSoon();
                 return;
             }
-
-            const batch = this.events.splice(0, this.maxBatchSize);
-            const body = JSON.stringify({
-                page_key: this.pageKey,
-                events: batch,
-            });
-
-            if (sync && navigator.sendBeacon) {
-                const blob = new Blob([body], { type: 'application/json' });
-                navigator.sendBeacon(this.endpoint, blob);
-                return;
-            }
-
             this.flushing = true;
-            fetch(this.endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'same-origin',
-                body,
-                keepalive: sync,
-            }).then((response) => {
-                if (!response.ok && response.status >= 500) {
+            const controller = new AbortController();
+            const timeout = window.setTimeout(() => controller.abort(), this.requestTimeoutMs);
+            let retryAfterMs = 0;
+            try {
+                const response = await fetch(this.endpoint, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin', body, signal: controller.signal,
+                });
+                const retryHeader = response.headers.get('Retry-After');
+                if (retryHeader) {
+                    const seconds = Number(retryHeader);
+                    retryAfterMs = Number.isFinite(seconds) ? seconds * 1000 : Math.max(0, Date.parse(retryHeader) - Date.now());
+                }
+                if (!response.ok) {
+                    if (response.status < 500 && response.status !== 429 && response.status !== 408) this.paused = true;
                     throw new Error(`HTTP ${response.status}`);
                 }
-            }).catch((error) => {
-                console.warn('behavior flush failed', error);
-                this.events = batch.concat(this.events);
-                this.trimQueue();
-            }).finally(() => {
-                this.flushing = false;
-                if (this.events.length) {
-                    this.flushSoon(300);
+                const receipt = await response.json();
+                if (receipt.status !== 'success' || receipt.degraded || !['durable_queued', 'synced', 'noop'].includes(receipt.write_mode)) {
+                    throw new Error('Behavior intake was not confirmed');
                 }
-            });
+                if (receipt.batch_id && receipt.batch_id !== pending.body.batch_id) throw new Error('Behavior receipt mismatch');
+                // A resumed bfcache page may have restored a newer shared-tab batch.
+                if (this.pendingBatch?.body.batch_id !== pending.body.batch_id) return;
+                this.pendingBatch = null;
+                this.retryAttempt = 0;
+                this.retryAt = 0;
+                this.persist();
+            } catch (error) {
+                this.retryAttempt += 1;
+                const backoff = Math.min(60000, 1000 * (2 ** Math.min(this.retryAttempt, 6)));
+                this.retryAt = Date.now() + Math.max(retryAfterMs, backoff) + Math.random() * 1000;
+                this.persist();
+                console.warn('behavior flush deferred', error);
+            } finally {
+                window.clearTimeout(timeout);
+                this.flushing = false;
+                if (this.pendingBatch || this.events.length) this.flushSoon(500);
+            }
         }
     }
 

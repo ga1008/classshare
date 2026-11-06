@@ -26,6 +26,7 @@ class CultivationDisplayTests(unittest.TestCase):
     def setUp(self):
         display.invalidate_emblem_cache()
         self.conn = _conn()
+        display.ensure_cultivation_display_schema(self.conn)
         self.addCleanup(self.conn.close)
         self.addCleanup(display.invalidate_emblem_cache)
         rows = [
@@ -50,8 +51,7 @@ class CultivationDisplayTests(unittest.TestCase):
         self.assertEqual(5, emblems[1]["tier"])
         self.assertEqual(61.2, emblems[1]["score"])
         self.assertEqual("/static/img/cultivation/emblems/golden_core.svg", emblems[1]["emblem_url"])
-        from classroom_app.services.cultivation_growth_service import apply_growth_curve
-        self.assertEqual(apply_growth_curve(20.0), emblems[2]["score"])  # legacy score shown on the curve
+        self.assertEqual(20.0, emblems[2]["score"])  # last committed score until the background model upgrade
         self.assertNotIn(4, emblems)  # no certificate -> no emblem
 
     def test_hidden_student_has_no_emblem_and_cache_invalidates(self):

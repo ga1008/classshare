@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from ..database import get_db_connection
 from ..dependencies import get_current_user
@@ -91,7 +92,7 @@ def _record_interaction_behavior(
 
 
 @router.get("/classrooms/{class_offering_id}/snapshot", response_class=JSONResponse)
-async def interaction_snapshot(class_offering_id: int, user: dict = Depends(get_current_user)):
+def interaction_snapshot(class_offering_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         snapshot = load_interaction_snapshot(conn, class_offering_id, user)
     return {"status": "ok", "snapshot": snapshot}
@@ -103,9 +104,13 @@ async def mark_discussion_message_useful(
     message_id: int,
     user: dict = Depends(get_current_user),
 ):
-    with get_db_connection() as conn:
-        result = mark_chat_message_useful(conn, class_offering_id, message_id, user)
-        conn.commit()
+    def persist():
+        with get_db_connection() as conn:
+            result = mark_chat_message_useful(conn, class_offering_id, message_id, user)
+            conn.commit()
+        return result
+
+    result = await run_in_threadpool(persist)
     if result.get("counted"):
         await _broadcast_changed(class_offering_id, reason="peer_help_marked")
     return {
@@ -118,17 +123,21 @@ async def mark_discussion_message_useful(
 @router.post("/classrooms/{class_offering_id}/activities", response_class=JSONResponse)
 async def create_live_activity(class_offering_id: int, request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request)
-    with get_db_connection() as conn:
-        activity = create_activity(conn, class_offering_id, user, payload)
-        snapshot = load_interaction_snapshot(conn, class_offering_id, user)
-        conn.commit()
-    _record_interaction_behavior(
-        class_offering_id=class_offering_id,
-        user=user,
-        action_type="live_activity_create",
-        summary_text=f"发起{ACTIVITY_KIND_LABELS.get(activity.get('kind'), '课堂互动')}：{activity.get('title')}",
-        payload={"activity_id": activity["id"], "kind": activity.get("kind")},
-    )
+    def persist():
+        with get_db_connection() as conn:
+            activity = create_activity(conn, class_offering_id, user, payload)
+            snapshot = load_interaction_snapshot(conn, class_offering_id, user)
+            conn.commit()
+        _record_interaction_behavior(
+            class_offering_id=class_offering_id,
+            user=user,
+            action_type="live_activity_create",
+            summary_text=f"发起{ACTIVITY_KIND_LABELS.get(activity.get('kind'), '课堂互动')}：{activity.get('title')}",
+            payload={"activity_id": activity["id"], "kind": activity.get("kind")},
+        )
+        return activity, snapshot
+
+    activity, snapshot = await run_in_threadpool(persist)
     await _broadcast_changed(class_offering_id, reason="activity_created", activity_id=activity["id"])
     return {
         "status": "ok",
@@ -141,18 +150,22 @@ async def create_live_activity(class_offering_id: int, request: Request, user: d
 @router.post("/activities/{activity_id}/respond", response_class=JSONResponse)
 async def respond_live_activity(activity_id: int, request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request)
-    with get_db_connection() as conn:
-        activity = respond_to_activity(conn, activity_id, user, payload)
-        class_offering_id = int(activity["class_offering_id"])
-        snapshot = load_interaction_snapshot(conn, class_offering_id, user)
-        conn.commit()
-    _record_interaction_behavior(
-        class_offering_id=class_offering_id,
-        user=user,
-        action_type="live_activity_response",
-        summary_text=f"提交{ACTIVITY_KIND_LABELS.get(activity.get('kind'), '课堂互动')}回应：{activity.get('title')}",
-        payload={"activity_id": activity["id"], "kind": activity.get("kind")},
-    )
+    def persist():
+        with get_db_connection() as conn:
+            activity = respond_to_activity(conn, activity_id, user, payload)
+            class_offering_id = int(activity["class_offering_id"])
+            snapshot = load_interaction_snapshot(conn, class_offering_id, user)
+            conn.commit()
+        _record_interaction_behavior(
+            class_offering_id=class_offering_id,
+            user=user,
+            action_type="live_activity_response",
+            summary_text=f"提交{ACTIVITY_KIND_LABELS.get(activity.get('kind'), '课堂互动')}回应：{activity.get('title')}",
+            payload={"activity_id": activity["id"], "kind": activity.get("kind")},
+        )
+        return activity, class_offering_id, snapshot
+
+    activity, class_offering_id, snapshot = await run_in_threadpool(persist)
     await _broadcast_changed(class_offering_id, reason="activity_response", activity_id=activity["id"])
     return {
         "status": "ok",
@@ -165,24 +178,28 @@ async def respond_live_activity(activity_id: int, request: Request, user: dict =
 @router.post("/activities/{activity_id}/questions", response_class=JSONResponse)
 async def create_live_question(activity_id: int, request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request)
-    with get_db_connection() as conn:
-        question = submit_question(conn, activity_id, user, payload)
-        activity_row = conn.execute(
-            "SELECT class_offering_id FROM classroom_live_activities WHERE id = ?",
-            (int(activity_id),),
-        ).fetchone()
-        if activity_row is None:
-            raise HTTPException(404, "互动活动不存在")
-        class_offering_id = int(activity_row["class_offering_id"])
-        snapshot = load_interaction_snapshot(conn, class_offering_id, user)
-        conn.commit()
-    _record_interaction_behavior(
-        class_offering_id=class_offering_id,
-        user=user,
-        action_type="live_activity_question",
-        summary_text="提交课堂即时提问",
-        payload={"activity_id": int(activity_id), "question_id": question["id"], "anonymous": question["is_anonymous"]},
-    )
+    def persist():
+        with get_db_connection() as conn:
+            question = submit_question(conn, activity_id, user, payload)
+            activity_row = conn.execute(
+                "SELECT class_offering_id FROM classroom_live_activities WHERE id = ?",
+                (int(activity_id),),
+            ).fetchone()
+            if activity_row is None:
+                raise HTTPException(404, "互动活动不存在")
+            class_offering_id = int(activity_row["class_offering_id"])
+            snapshot = load_interaction_snapshot(conn, class_offering_id, user)
+            conn.commit()
+        _record_interaction_behavior(
+            class_offering_id=class_offering_id,
+            user=user,
+            action_type="live_activity_question",
+            summary_text="提交课堂即时提问",
+            payload={"activity_id": int(activity_id), "question_id": question["id"], "anonymous": question["is_anonymous"]},
+        )
+        return question, class_offering_id, snapshot
+
+    question, class_offering_id, snapshot = await run_in_threadpool(persist)
     await _broadcast_changed(class_offering_id, reason="question_created", activity_id=int(activity_id))
     return {
         "status": "ok",
@@ -194,18 +211,22 @@ async def create_live_question(activity_id: int, request: Request, user: dict = 
 
 @router.post("/activities/{activity_id}/close", response_class=JSONResponse)
 async def close_live_activity(activity_id: int, user: dict = Depends(get_current_user)):
-    with get_db_connection() as conn:
-        activity = close_activity(conn, activity_id, user)
-        class_offering_id = int(activity["class_offering_id"])
-        snapshot = load_interaction_snapshot(conn, class_offering_id, user)
-        conn.commit()
-    _record_interaction_behavior(
-        class_offering_id=class_offering_id,
-        user=user,
-        action_type="live_activity_close",
-        summary_text=f"结束课堂互动：{activity.get('title')}",
-        payload={"activity_id": activity["id"], "kind": activity.get("kind")},
-    )
+    def persist():
+        with get_db_connection() as conn:
+            activity = close_activity(conn, activity_id, user)
+            class_offering_id = int(activity["class_offering_id"])
+            snapshot = load_interaction_snapshot(conn, class_offering_id, user)
+            conn.commit()
+        _record_interaction_behavior(
+            class_offering_id=class_offering_id,
+            user=user,
+            action_type="live_activity_close",
+            summary_text=f"结束课堂互动：{activity.get('title')}",
+            payload={"activity_id": activity["id"], "kind": activity.get("kind")},
+        )
+        return activity, class_offering_id, snapshot
+
+    activity, class_offering_id, snapshot = await run_in_threadpool(persist)
     await _broadcast_changed(class_offering_id, reason="activity_closed", activity_id=activity["id"])
     return {
         "status": "ok",
@@ -218,24 +239,28 @@ async def close_live_activity(activity_id: int, user: dict = Depends(get_current
 @router.post("/questions/{question_id}/resolve", response_class=JSONResponse)
 async def resolve_live_question(question_id: int, request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request)
-    with get_db_connection() as conn:
-        question = resolve_question(conn, question_id, user, status=str(payload.get("status") or "addressed"))
-        activity_row = conn.execute(
-            "SELECT class_offering_id FROM classroom_live_activities WHERE id = ?",
-            (int(question["activity_id"]),),
-        ).fetchone()
-        if activity_row is None:
-            raise HTTPException(404, "互动活动不存在")
-        class_offering_id = int(activity_row["class_offering_id"])
-        snapshot = load_interaction_snapshot(conn, class_offering_id, user)
-        conn.commit()
-    _record_interaction_behavior(
-        class_offering_id=class_offering_id,
-        user=user,
-        action_type="live_question_resolve",
-        summary_text="处理课堂即时提问",
-        payload={"question_id": int(question_id), "status": question["status"]},
-    )
+    def persist():
+        with get_db_connection() as conn:
+            question = resolve_question(conn, question_id, user, status=str(payload.get("status") or "addressed"))
+            activity_row = conn.execute(
+                "SELECT class_offering_id FROM classroom_live_activities WHERE id = ?",
+                (int(question["activity_id"]),),
+            ).fetchone()
+            if activity_row is None:
+                raise HTTPException(404, "互动活动不存在")
+            class_offering_id = int(activity_row["class_offering_id"])
+            snapshot = load_interaction_snapshot(conn, class_offering_id, user)
+            conn.commit()
+        _record_interaction_behavior(
+            class_offering_id=class_offering_id,
+            user=user,
+            action_type="live_question_resolve",
+            summary_text="处理课堂即时提问",
+            payload={"question_id": int(question_id), "status": question["status"]},
+        )
+        return question, class_offering_id, snapshot
+
+    question, class_offering_id, snapshot = await run_in_threadpool(persist)
     await _broadcast_changed(class_offering_id, reason="question_resolved", activity_id=int(question["activity_id"]))
     return {
         "status": "ok",
@@ -248,17 +273,21 @@ async def resolve_live_question(question_id: int, request: Request, user: dict =
 @router.post("/classrooms/{class_offering_id}/signals", response_class=JSONResponse)
 async def set_live_signal(class_offering_id: int, request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request)
-    with get_db_connection() as conn:
-        signal = set_help_signal(conn, class_offering_id, user, payload)
-        snapshot = load_interaction_snapshot(conn, class_offering_id, user)
-        conn.commit()
-    _record_interaction_behavior(
-        class_offering_id=class_offering_id,
-        user=user,
-        action_type="live_signal_update",
-        summary_text=f"更新课堂状态：{(signal or {}).get('signal_label', '清除')}",
-        payload={"signal_id": (signal or {}).get("id"), "signal_type": (signal or {}).get("signal_type")},
-    )
+    def persist():
+        with get_db_connection() as conn:
+            signal = set_help_signal(conn, class_offering_id, user, payload)
+            snapshot = load_interaction_snapshot(conn, class_offering_id, user)
+            conn.commit()
+        _record_interaction_behavior(
+            class_offering_id=class_offering_id,
+            user=user,
+            action_type="live_signal_update",
+            summary_text=f"更新课堂状态：{(signal or {}).get('signal_label', '清除')}",
+            payload={"signal_id": (signal or {}).get("id"), "signal_type": (signal or {}).get("signal_type")},
+        )
+        return signal, snapshot
+
+    signal, snapshot = await run_in_threadpool(persist)
     await _broadcast_changed(
         class_offering_id,
         reason="signal_updated",
@@ -274,17 +303,21 @@ async def set_live_signal(class_offering_id: int, request: Request, user: dict =
 
 @router.post("/classrooms/{class_offering_id}/signals/clear", response_class=JSONResponse)
 async def clear_live_signal(class_offering_id: int, user: dict = Depends(get_current_user)):
-    with get_db_connection() as conn:
-        clear_my_help_signal(conn, class_offering_id, user)
-        snapshot = load_interaction_snapshot(conn, class_offering_id, user)
-        conn.commit()
-    _record_interaction_behavior(
-        class_offering_id=class_offering_id,
-        user=user,
-        action_type="live_signal_clear",
-        summary_text="清除课堂举手/求助状态",
-        payload={},
-    )
+    def persist():
+        with get_db_connection() as conn:
+            clear_my_help_signal(conn, class_offering_id, user)
+            snapshot = load_interaction_snapshot(conn, class_offering_id, user)
+            conn.commit()
+        _record_interaction_behavior(
+            class_offering_id=class_offering_id,
+            user=user,
+            action_type="live_signal_clear",
+            summary_text="清除课堂举手/求助状态",
+            payload={},
+        )
+        return snapshot
+
+    snapshot = await run_in_threadpool(persist)
     await _broadcast_changed(class_offering_id, reason="signal_cleared")
     return {
         "status": "ok",
@@ -295,18 +328,22 @@ async def clear_live_signal(class_offering_id: int, user: dict = Depends(get_cur
 
 @router.post("/signals/{signal_id}/resolve", response_class=JSONResponse)
 async def resolve_live_signal(signal_id: int, user: dict = Depends(get_current_user)):
-    with get_db_connection() as conn:
-        signal = resolve_help_signal(conn, signal_id, user)
-        class_offering_id = int(signal["class_offering_id"])
-        snapshot = load_interaction_snapshot(conn, class_offering_id, user)
-        conn.commit()
-    _record_interaction_behavior(
-        class_offering_id=class_offering_id,
-        user=user,
-        action_type="live_signal_resolve",
-        summary_text=f"处理学生课堂状态：{signal.get('signal_label')}",
-        payload={"signal_id": int(signal_id), "signal_type": signal.get("signal_type")},
-    )
+    def persist():
+        with get_db_connection() as conn:
+            signal = resolve_help_signal(conn, signal_id, user)
+            class_offering_id = int(signal["class_offering_id"])
+            snapshot = load_interaction_snapshot(conn, class_offering_id, user)
+            conn.commit()
+        _record_interaction_behavior(
+            class_offering_id=class_offering_id,
+            user=user,
+            action_type="live_signal_resolve",
+            summary_text=f"处理学生课堂状态：{signal.get('signal_label')}",
+            payload={"signal_id": int(signal_id), "signal_type": signal.get("signal_type")},
+        )
+        return signal, class_offering_id, snapshot
+
+    signal, class_offering_id, snapshot = await run_in_threadpool(persist)
     await _broadcast_changed(class_offering_id, reason="signal_resolved", signal_id=int(signal_id))
     return {
         "status": "ok",

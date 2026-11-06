@@ -35,7 +35,6 @@ from .social_common import (
     user_identity,
 )
 from .social_conversation_service import (
-    for_viewer,
     insert_message,
     load_message_row,
     participants,
@@ -173,9 +172,14 @@ def push_message(events: Optional[list], conn: Any, parsed: dict[str, Any], mess
         return
     viewers = participants(conn, parsed)
     muted = muted_map(conn, parsed, viewers)
+    audiences: dict[tuple[bool, bool], list[str]] = {}
     for viewer in viewers:
-        add_event(events, [viewer], {"type": "message", "message": {
-            **for_viewer(message, viewer), "muted": muted.get(viewer, False)}})
+        variant = (message["sender"]["identity"] == viewer, muted.get(viewer, False))
+        audiences.setdefault(variant, []).append(viewer)
+    # Only mine/muted differ per recipient. Preserve those boundaries while
+    # serializing/fanning out at most four frames for a 200-member group.
+    for (mine, is_muted), identities in audiences.items():
+        add_event(events, identities, {"type": "message", "message": {**message, "mine": mine, "muted": is_muted}})
 
 
 def _validated_body(payload: dict[str, Any]) -> tuple[str, str]:

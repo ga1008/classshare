@@ -1,3 +1,5 @@
+import { reportAuthFailure } from './auth.js';
+
 export class APIError extends Error {
     constructor(message, status, data, options = {}) {
         super(message);
@@ -10,6 +12,7 @@ export class APIError extends Error {
         this.requestId = options.requestId || structured.requestId || null;
         this.redirectTo = options.redirectTo || null;
         this.suppressToast = Boolean(options.suppressToast);
+        this.retryAfterSeconds = options.retryAfterSeconds ?? null;
     }
 }
 
@@ -115,12 +118,9 @@ function extractErrorMessage(response, data) {
 
 export async function handleAuthFailureResponse(response, preloadedData = undefined) {
     const data = preloadedData === undefined ? await parseResponseData(response) : preloadedData;
-    const redirectTo = data && typeof data === 'object' ? data.redirect_to : null;
-
-    if ((response.status === 401 || response.status === 403) && redirectTo) {
-        window.location.href = redirectTo;
-        throw new APIError('页面跳转中', response.status, data, {
-            redirectTo,
+    if (await reportAuthFailure(response, data)) {
+        throw new APIError('登录状态已失效，请重新登录后重试。', response.status, data, {
+            redirectTo: data.redirect_to || data.error?.details?.redirect_to,
             suppressToast: true,
         });
     }
@@ -153,7 +153,10 @@ export async function apiFetch(endpoint, options = {}) {
         if (!response.ok) {
             data = await handleAuthFailureResponse(response, data);
             const errorMessage = extractErrorMessage(response, data);
-            throw new APIError(errorMessage, response.status, data);
+            const retryAfter = response.headers.get('retry-after');
+            throw new APIError(errorMessage, response.status, data, {
+                retryAfterSeconds: retryAfter !== null && /^\d+$/.test(retryAfter) ? Number(retryAfter) : null,
+            });
         }
 
         return data;

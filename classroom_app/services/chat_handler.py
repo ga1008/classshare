@@ -24,6 +24,8 @@ HISTORY_PAGE_SIZE = 20
 ALIAS_SWITCH_COOLDOWN_SECONDS = 10
 ALIAS_SWITCH_LIMIT_PER_ENTRY = 6
 BROADCAST_CHUNK_SIZE = 64
+SOCKET_SEND_TIMEOUT_SECONDS = 2.0
+PRESENCE_BATCH_WINDOW_SECONDS = 0.1
 
 TEMPORARY_NAMES = [
     "令狐冲", "杨过", "小龙女", "张无忌", "赵敏", "黄蓉", "郭靖", "周芷若", "乔峰", "段誉",
@@ -732,6 +734,8 @@ class MultiRoomConnectionManager:
         self.room_display_names: Dict[int, Dict[str, str]] = {}
         self.room_alias_sessions: Dict[int, Dict[str, dict]] = {}
         self.disconnect_tasks: Dict[Tuple[int, str], asyncio.Task] = {}
+        self.presence_tasks: Dict[int, asyncio.Task] = {}
+        self.presence_dirty: set[int] = set()
         self.name_pool = TEMPORARY_NAMES.copy()
 
     def get_room_id(self, websocket: WebSocket) -> int:
@@ -897,11 +901,45 @@ class MultiRoomConnectionManager:
 
     async def _send_display_name_payload_safely(self, room_id: int, connection_id: str) -> str | None:
         try:
-            await self.send_display_name_payload(room_id, connection_id)
+            await asyncio.wait_for(self.send_display_name_payload(room_id, connection_id), SOCKET_SEND_TIMEOUT_SECONDS)
             return None
         except Exception as exc:
             print(f"[CHAT] 发送代号状态失败 (课堂: {room_id}, 连接: {connection_id}): {exc}", file=sys.stderr)
+            await self._close_failed_socket(room_id, connection_id)
             return connection_id
+
+    async def _close_failed_socket(self, room_id: int, connection_id: str) -> None:
+        websocket = self.rooms.get(room_id, {}).get(connection_id)
+        if websocket is not None:
+            try:
+                await asyncio.wait_for(websocket.close(code=1013), 0.2)
+            except Exception:
+                pass
+
+    async def refresh_room_presence(self, room_id: int) -> None:
+        """Coalesce simultaneous joins without changing names or roster payloads."""
+        self.presence_dirty.add(room_id)
+        task = self.presence_tasks.get(room_id)
+        if task is None or task.done():
+            task = asyncio.create_task(self._flush_room_presence(room_id))
+            self.presence_tasks[room_id] = task
+        await asyncio.shield(task)
+
+    async def _flush_room_presence(self, room_id: int) -> None:
+        try:
+            await asyncio.sleep(PRESENCE_BATCH_WINDOW_SECONDS)
+            self.presence_dirty.discard(room_id)
+            await self.broadcast_user_list(room_id)
+            await self.broadcast_alias_states(room_id)
+        except asyncio.CancelledError:
+            self.presence_dirty.discard(room_id)
+            raise
+        finally:
+            self.presence_tasks.pop(room_id, None)
+            # A join during a slow send needs another current snapshot. It must
+            # not keep the completed callers waiting for continuous churn.
+            if room_id in self.presence_dirty and self.rooms.get(room_id):
+                self.presence_tasks[room_id] = asyncio.create_task(self._flush_room_presence(room_id))
 
     async def broadcast_alias_states(self, room_id: int) -> None:
         connection_ids = list(self.rooms.get(room_id, {}).keys())
@@ -944,17 +982,30 @@ class MultiRoomConnectionManager:
         }
         _report_presence(user, connection_id, opened=True)
 
-        await self.send_display_name_payload(room_id, connection_id)
-        await websocket.send_text(json.dumps(await load_initial_history_payload(room_id), ensure_ascii=False))
-        await self.broadcast_user_list(room_id)
-        await self.broadcast_alias_states(room_id)
+        try:
+            await asyncio.wait_for(self.send_display_name_payload(room_id, connection_id), SOCKET_SEND_TIMEOUT_SECONDS)
+            history = await load_initial_history_payload(room_id)
+            await asyncio.wait_for(websocket.send_text(json.dumps(history, ensure_ascii=False)), SOCKET_SEND_TIMEOUT_SECONDS)
+            await self.refresh_room_presence(room_id)
 
-        if not was_present and not is_reconnect:
-            display_name = self.get_display_name(room_id, participant_key, str(user.get("name") or "课堂成员"))
-            await self.broadcast(
-                room_id,
-                json.dumps({"type": "system", "message": f"{display_name} 加入了课堂。"}, ensure_ascii=False),
-            )
+            if not was_present and not is_reconnect:
+                display_name = self.get_display_name(room_id, participant_key, str(user.get("name") or "课堂成员"))
+                await self.broadcast(
+                    room_id,
+                    json.dumps({"type": "system", "message": f"{display_name} 加入了课堂。"}, ensure_ascii=False),
+                )
+        except BaseException:
+            # The caller does not receive connection_id until this method
+            # returns, so handshake failures must clean their registration here.
+            try:
+                await self._close_failed_socket(room_id, connection_id)
+            finally:
+                self.forget_connection(connection_id)
+                if not self.room_participants.get(room_id, {}).get(participant_key):
+                    self.room_user_info.get(room_id, {}).pop(participant_key, None)
+                    self.room_display_names.get(room_id, {}).pop(participant_key, None)
+                    self.room_alias_sessions.get(room_id, {}).pop(participant_key, None)
+            raise
 
         return connection_id
 
@@ -978,7 +1029,7 @@ class MultiRoomConnectionManager:
             self.room_participants[room_id].pop(participant_key, None)
 
         user_name = self.get_display_name(room_id, participant_key, str(user.get("name") or "课堂成员"))
-        await self.broadcast_user_list(room_id)
+        await self.refresh_room_presence(room_id)
 
         task = asyncio.create_task(
             self.delayed_leave_broadcast(room_id, participant_key, user_name)
@@ -1049,10 +1100,11 @@ class MultiRoomConnectionManager:
 
     async def _send_broadcast_safely(self, room_id: int, connection_id: str, websocket: WebSocket, message: str) -> str | None:
         try:
-            await websocket.send_text(message)
+            await asyncio.wait_for(websocket.send_text(message), SOCKET_SEND_TIMEOUT_SECONDS)
             return None
         except Exception as exc:
             print(f"[CHAT] 广播失败 (课堂: {room_id}, 连接: {connection_id}): {exc}", file=sys.stderr)
+            await self._close_failed_socket(room_id, connection_id)
             return connection_id
 
     async def broadcast(self, room_id: int, message: str) -> None:

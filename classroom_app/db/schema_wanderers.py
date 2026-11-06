@@ -1,11 +1,12 @@
 """Schema for the 散修 (AI free-agent "electronic student") system.
 
-docs/wanderer-ai-free-agents-2026-10-25.md §3. Six runtime-owned tables:
+docs/wanderer-ai-free-agents-2026-10-25.md §3. Runtime-owned tables:
 
 * ``wanderer_agents``            1:1 with a ``students`` row; the runtime truth
                                  (persona prompt, tier, schedule, switches, stats).
 * ``wanderer_knowledge_entries`` what a wanderer has "learned and remembered".
 * ``wanderer_memory_threads``    per-conversation memory (summary + recent turns).
+* ``wanderer_experience_notes``  scoped experience learned from real sources.
 * ``wanderer_action_log``        every action a wanderer took (or skipped).
 * ``wanderer_dao_reviews``       天道 verdicts (promotion, discipline, death, ...).
 * ``wanderer_runtime_settings``  key/value switches and daily counters.
@@ -14,20 +15,28 @@ docs/wanderer-ai-free-agents-2026-10-25.md §3. Six runtime-owned tables:
 * ``wanderer_episodic_memories`` importance/recency/relevance-ranked autobiographical events.
 * ``wanderer_memory_chapters``   era summaries folded from old episodic events.
 * ``wanderer_daily_reflections`` one self-reflection per wanderer per local day (budget-exempt).
+* ``wanderer_social_inbox``      durable, leased incoming conversations.
+* ``wanderer_todos``             autonomous tasks and their wake-up state.
 
-Engine-aware and idempotent (``CREATE TABLE IF NOT EXISTS`` on SQLite and
-PostgreSQL), ensured lazily at runtime like ``schema_polls`` — deliberately not
-part of the central SQLite->PostgreSQL migration or ``REQUIRED_POSTGRES_TABLES``.
+Complete databases are checked without DDL. PostgreSQL changes are explicitly
+owned by startup, with genuine upgrades requiring quiesced business work;
+business callers only validate. SQLite retains transactional lazy preparation
+for standalone databases. These tables are deliberately not part of the
+central SQLite->PostgreSQL migration or ``REQUIRED_POSTGRES_TABLES``.
 Timestamps are ISO-8601 TEXT, booleans INTEGER 0/1.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from .connection import get_configured_db_engine
 
+# Compatibility for older fixture resets only. No caller's uncommitted DDL
+# can establish readiness for another transaction or database.
 _SCHEMA_READY = False
+_MIGRATION_LOCK_KEY = 742819036120
 
 
 def _id_column(engine: str) -> str:
@@ -424,16 +433,131 @@ def wanderer_schema_statements(engine: str) -> list[str]:
     return [*_table_statements(_id_column(normalized)), *_INDEX_STATEMENTS]
 
 
-def ensure_wanderer_schema(conn: Any, *, engine: str | None = None) -> None:
-    """Create the wanderer tables on either engine (idempotent)."""
-    global _SCHEMA_READY
-    if _SCHEMA_READY:
-        return
-    resolved_engine = str(engine or get_configured_db_engine()).strip().lower()
-    for statement in _table_statements(_id_column(resolved_engine)):
-        conn.execute(statement)
-    for table, column, definition in ADDED_COLUMNS:
-        _add_column_if_missing(conn, resolved_engine, table, column, definition)
+class WandererSchemaUpgradeRequired(RuntimeError):
+    """Business work must wait for an owned, quiesced startup migration."""
+
+    def __init__(self, missing):
+        self.missing = tuple(sorted(missing))
+        detail = ", ".join(f"{kind}:{table}.{name}" for kind, table, name in self.missing[:12])
+        super().__init__(f"Wanderer schema requires an owned startup migration: {detail}")
+
+
+def _schema_requirements():
+    """Derive names from our canonical one-column-per-line DDL, once.
+
+    This is deliberately a parser for these declarations, not arbitrary SQL.
+    Existing type/default/unique/FK declarations remain the migration source.
+    """
+    tables, columns, indexes = {}, set(), {}
+    for statement in _table_statements(_id_column("sqlite")):
+        table = re.search(r"CREATE TABLE IF NOT EXISTS (\w+)\s*\(", statement).group(1)
+        tables[table] = statement
+        for line in statement.splitlines():
+            match = re.match(r"\s*(\w+)\s+", line)
+            if match and match[1].upper() not in {"CREATE", "UNIQUE", "PRIMARY", "FOREIGN", "CHECK", "CONSTRAINT"}:
+                columns.add((table, match[1]))
+    columns.update((table, column) for table, column, _definition in ADDED_COLUMNS)
     for statement in _INDEX_STATEMENTS:
-        conn.execute(statement)
-    _SCHEMA_READY = True
+        match = re.search(r"CREATE INDEX IF NOT EXISTS (\w+)\s+ON (\w+)", statement)
+        indexes[match[1]] = (match[2], statement)
+    return tables, tuple(sorted(columns)), indexes
+
+
+_TABLES, _COLUMNS, _INDEXES = _schema_requirements()
+_TABLE_NAMES = tuple(sorted(_TABLES))
+_INDEX_NAMES = tuple(sorted((table, name) for name, (table, _) in _INDEXES.items()))
+_WITNESS_RESULT = "SELECT kind,table_name,object_name FROM missing ORDER BY kind,table_name,object_name"
+_PG_WITNESS = """WITH expected_tables(table_name) AS (SELECT unnest(?::text[])),
+expected_columns(table_name,column_name) AS (SELECT * FROM unnest(?::text[],?::text[])),
+expected_indexes(table_name,index_name) AS (SELECT * FROM unnest(?::text[],?::text[])),
+present_tables AS (SELECT c.oid,c.relname::text AS table_name FROM pg_catalog.pg_class c
+ JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+ WHERE n.nspname=current_schema() AND c.relkind IN ('r','p')
+ AND c.relname::text IN (SELECT table_name FROM expected_tables)),
+missing AS (
+ SELECT 'table' AS kind,e.table_name,e.table_name AS object_name FROM expected_tables e
+ WHERE NOT EXISTS (SELECT 1 FROM present_tables t WHERE t.table_name=e.table_name)
+ UNION ALL
+ SELECT 'column',e.table_name,e.column_name FROM expected_columns e JOIN present_tables t USING(table_name)
+ WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a WHERE a.attrelid=t.oid
+  AND a.attname::text=e.column_name AND a.attnum>0 AND NOT a.attisdropped)
+ UNION ALL
+ SELECT 'index',e.table_name,e.index_name FROM expected_indexes e JOIN present_tables t USING(table_name)
+ WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_index x JOIN pg_catalog.pg_class i ON i.oid=x.indexrelid
+  WHERE x.indrelid=t.oid AND i.relname::text=e.index_name AND x.indisvalid AND x.indisready))
+""" + _WITNESS_RESULT
+_PG_WITNESS_PARAMS = (list(_TABLE_NAMES), [table for table, _ in _COLUMNS], [column for _, column in _COLUMNS],
+                       [table for table, _ in _INDEX_NAMES], [name for _, name in _INDEX_NAMES])
+_SQLITE_WITNESS = (
+    "WITH expected_tables(table_name) AS (VALUES " + ",".join("(?)" for _ in _TABLE_NAMES) + "),\n"
+    "expected_columns(table_name,column_name) AS (VALUES " + ",".join("(?,?)" for _ in _COLUMNS) + "),\n"
+    "expected_indexes(table_name,index_name) AS (VALUES " + ",".join("(?,?)" for _ in _INDEX_NAMES) + "),\n"
+    """present_tables AS (SELECT name AS table_name FROM sqlite_master WHERE type='table'
+ AND name IN (SELECT table_name FROM expected_tables)),
+present_columns AS (SELECT t.table_name,p.name AS column_name FROM present_tables t,pragma_table_info(t.table_name) p
+ GROUP BY t.table_name,p.name),
+missing AS (
+ SELECT 'table' AS kind,e.table_name,e.table_name AS object_name FROM expected_tables e
+ WHERE NOT EXISTS (SELECT 1 FROM present_tables t WHERE t.table_name=e.table_name)
+ UNION ALL
+ SELECT 'column',e.table_name,e.column_name FROM expected_columns e JOIN present_tables t USING(table_name)
+ LEFT JOIN present_columns p ON p.table_name=e.table_name AND p.column_name=e.column_name WHERE p.column_name IS NULL
+ UNION ALL
+ SELECT 'index',e.table_name,e.index_name FROM expected_indexes e JOIN present_tables t USING(table_name)
+ WHERE NOT EXISTS (SELECT 1 FROM sqlite_master i WHERE i.type='index' AND i.tbl_name=e.table_name AND i.name=e.index_name))
+""" + _WITNESS_RESULT)
+_SQLITE_WITNESS_PARAMS = (*_TABLE_NAMES, *(value for pair in _COLUMNS for value in pair),
+                        *(value for pair in _INDEX_NAMES for value in pair))
+
+
+def _missing_schema(conn: Any, engine: str) -> set[tuple[str, str, str]]:
+    statement, params = (_PG_WITNESS, _PG_WITNESS_PARAMS) if engine == "postgres" else (_SQLITE_WITNESS, _SQLITE_WITNESS_PARAMS)
+    rows = conn.execute(statement, params).fetchall()
+    names = ("kind", "table_name", "object_name")
+    return {tuple(str(row[name] if hasattr(row, "keys") else row[index]) for index, name in enumerate(names)) for row in rows}
+
+
+def ensure_wanderer_schema(conn: Any, *, engine: str | None = None, allow_schema_changes: bool = False) -> None:
+    """Validate business transactions; prepare only explicit PG startup owners.
+
+    Complete schemas perform one catalog query and no DDL, even in a newly
+    started process. SQLite retains transactional lazy setup for standalone
+    databases. Neither path commits the caller or publishes a ready flag.
+    Genuine PostgreSQL upgrades require quiesced work and an explicit owner.
+    """
+    resolved_engine = str(engine or get_configured_db_engine()).strip().lower()
+    if resolved_engine not in {"sqlite", "postgres"}:
+        raise ValueError("Unsupported wanderer schema engine")
+    missing = _missing_schema(conn, resolved_engine)
+    if not missing:
+        return
+    if resolved_engine == "postgres":
+        if not allow_schema_changes:
+            raise WandererSchemaUpgradeRequired(missing)
+        conn.execute("SELECT pg_advisory_xact_lock(?)", (_MIGRATION_LOCK_KEY,))
+        missing = _missing_schema(conn, resolved_engine)
+    elif not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+        missing = _missing_schema(conn, resolved_engine)
+    if not missing:
+        return
+    added = {(table, column) for table, column, _ in ADDED_COLUMNS}
+    non_additive = {item for item in missing if item[0] == "column" and (item[1], item[2]) not in added}
+    if non_additive:
+        raise WandererSchemaUpgradeRequired(non_additive)
+    new_tables = {table for kind, table, _name in missing if kind == "table"}
+    if new_tables:
+        for statement in _table_statements(_id_column(resolved_engine)):
+            table = re.search(r"CREATE TABLE IF NOT EXISTS (\w+)", statement).group(1)
+            if table in new_tables:
+                conn.execute(statement)
+        missing = _missing_schema(conn, resolved_engine)
+    for table, column, definition in ADDED_COLUMNS:
+        if ("column", table, column) in missing:
+            _add_column_if_missing(conn, resolved_engine, table, column, definition)
+    for name, (table, statement) in _INDEXES.items():
+        if ("index", table, name) in missing:
+            conn.execute(statement)
+    remaining = _missing_schema(conn, resolved_engine)
+    if remaining:
+        raise WandererSchemaUpgradeRequired(remaining)

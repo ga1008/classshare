@@ -92,19 +92,32 @@ def main() -> int:
                     "-nodes", "-days", "1", "-subj", "/CN=localhost", "-keyout", str(key),
                     "-out", str(cert)], check=True, capture_output=True, creationflags=flags)
     original = (ROOT / "nginx.conf").read_text(encoding="utf-8")
+    adapted = original
+    # Both pools must reach this probe's isolated upstream. Keep the production
+    # distinction: ordinary HTTP has its keepalive pool, /ws/ starts fresh.
+    for name in ("lanshare_app", "lanshare_realtime"):
+        prefix = f"upstream {name} {{\n    server app:8000;"
+        if adapted.count(prefix) != 1:
+            raise ValueError(f"Repository nginx upstream changed: {name}")
+        adapted = adapted.replace(prefix, f"upstream {name} {{\n    server 127.0.0.1:{upstream.server_port};")
+    if "server app:8000;" in adapted:
+        raise ValueError("Repository nginx has an unreviewed application upstream")
     substitutions = {
-        "server app:8000;": f"server 127.0.0.1:{upstream.server_port};",
         "listen 80;": f"listen 127.0.0.1:{http_port};",
         "listen 443 ssl;": f"listen 127.0.0.1:{https_port} ssl;",
         "/etc/nginx/ssl/guardianangel.net.cn_bundle.crt": f'"{cert.as_posix()}"',
         "/etc/nginx/ssl/guardianangel.net.cn.key": f'"{key.as_posix()}"',
         "root /srv/lanshare;": f'root "{public.as_posix()}";',
     }
-    adapted = original
     for old, new in substitutions.items():
         if adapted.count(old) != 1:
             raise ValueError(f"Repository nginx configuration changed: {old}")
         adapted = adapted.replace(old, new)
+    # Each virtual server owns its timing logger; leave every artifact inside
+    # this probe instead of attempting the production container's absolute path.
+    if adapted.count("/var/log/nginx/access.log") != 2:
+        raise ValueError("Repository nginx timing log ownership changed")
+    adapted = adapted.replace("/var/log/nginx/access.log", f'"{(output / "logs/access.log").as_posix()}"')
     (output / "site.conf").write_text(adapted, encoding="utf-8")
     mime = nginx.parent / "conf/mime.types"
     config = f'''daemon off;

@@ -57,6 +57,7 @@ export const socialApi = Object.freeze({
     conversationPreferences: (key) => call(`/conversations/${seg(key)}/preferences`),
     updateConversationPreferences: (key, patch) => call(`/conversations/${seg(key)}/preferences`, { method: 'PATCH', body: patch }),
     messages: (key, beforeId = 0, limit = 50) => call(`/conversations/${seg(key)}/messages?limit=${limit}${beforeId ? `&before_id=${beforeId}` : ''}`),
+    messagesAfter: (key, afterId, throughId, limit = 100) => call(`/conversations/${seg(key)}/messages?limit=${limit}&after_id=${afterId}&through_id=${throughId}`),
     send: (key, payload) => call(`/conversations/${seg(key)}/messages`, { method: 'POST', body: payload }),
     read: (key, last_message_id) => call(`/conversations/${seg(key)}/read`, { method: 'POST', body: { last_message_id } }),
     nudge: (key, identity) => call(`/conversations/${seg(key)}/nudge`, { method: 'POST', body: identity ? { identity } : {} }),

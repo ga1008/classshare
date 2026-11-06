@@ -142,7 +142,8 @@ class _Session:
         self.typing_cache: dict[str, tuple[float, str, list[str]]] = {}
 
     async def send(self, payload: dict[str, Any]) -> None:
-        await self.websocket.send_text(json.dumps(payload, ensure_ascii=False))
+        if not await social_push_service.send_connection(self.me, self.conn_id, payload):
+            raise WebSocketDisconnect(code=1013)
 
     async def typing(self, key: Any) -> None:
         if not typing_allowed(self.me, str(key)):
@@ -223,17 +224,27 @@ async def social_websocket(websocket: WebSocket):
         return
     await websocket.accept()
     session = _Session(websocket, me)
-    for old_id, old_socket in social_push_service.register(me, session.conn_id, websocket):
-        presence_service.connection_closed(me, old_id)
-        await social_push_service.close_quietly(old_socket, code=CLOSE_TOO_MANY_SOCKETS)
+    # Presence becomes observable as soon as the accepted connection starts
+    # loading hello; application frames wait behind its reserved first slot.
     presence_service.connection_opened(me, session.conn_id, "social_ws")
     try:
-        await session.send(await run_db(_hello_payload, me))
+        # Reserve hello first, then allow committed pushes to buffer while its
+        # database snapshot loads. Registering after that read loses join-race
+        # messages which commit in between the snapshot and registration.
+        evicted = social_push_service.register(me, session.conn_id, websocket, awaiting_hello=True)
+        for old_id, old_socket in evicted:
+            presence_service.connection_closed(me, old_id)
+            await social_push_service.close_quietly(old_socket, code=CLOSE_TOO_MANY_SOCKETS)
+        hello = await run_db(_hello_payload, me)
+        hello_ack = social_push_service.queue_connection(me, session.conn_id, hello, initial=True)
+        if not await hello_ack:
+            return
         await _serve(session)
     except WebSocketDisconnect:
         pass
     except Exception as exc:  # noqa: BLE001 - one broken socket must not leak its registrations
         print(f"[SOCIAL_WS] connection error for {me}: {exc!r}")
+        await social_push_service.close_quietly(websocket, code=1011)
     finally:
         social_push_service.unregister(me, session.conn_id)
         presence_service.connection_closed(me, session.conn_id)

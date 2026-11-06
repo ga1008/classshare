@@ -210,6 +210,60 @@ class LearningProgressSnapshotTests(unittest.TestCase):
             events,
         )
 
+    def test_dirty_snapshot_keeps_last_value_and_read_does_not_write(self):
+        with patch.object(service, "_build_learning_metrics", return_value=_metrics(42, material=30, task=12)):
+            service.refresh_student_learning_state(self.conn, 1, 2)
+        service.mark_student_learning_progress_dirty(self.conn, 1, 2, source_ref="late:activity")
+        self.conn.commit()
+        statements = []
+        self.conn.set_trace_callback(statements.append)
+        with patch.object(service, "_build_learning_metrics", side_effect=AssertionError("read must not recalculate")):
+            state = service.get_student_learning_state(self.conn, 1, 2)
+        self.conn.set_trace_callback(None)
+        self.assertEqual((42, "stale"), (state["score"], state["snapshot_status"]))
+        self.assertFalse(any(sql.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE", "CREATE", "ALTER")) for sql in statements))
+        self.assertEqual(1, self.conn.execute("SELECT dirty FROM learning_progress_snapshots").fetchone()[0])
+
+    def test_missing_snapshot_is_building_and_has_no_invented_score(self):
+        with patch.object(service, "_build_learning_metrics", side_effect=AssertionError("read must not recalculate")):
+            state = service.get_student_learning_state(self.conn, 1, 2)
+        self.assertEqual("building", state["snapshot_status"])
+        self.assertIsNone(state["score"])
+        self.assertIsNone(state["progress_percent"])
+        self.assertIsNone(state["eligible_stage"])
+        self.assertEqual(0, self.conn.execute("SELECT COUNT(*) FROM learning_progress_snapshots").fetchone()[0])
+
+    def test_legacy_model_read_keeps_recorded_score_until_background_upgrade(self):
+        legacy = _metrics(83, material=40, task=43)
+        legacy.pop("growth_exponent")
+        self.conn.execute("""INSERT INTO learning_progress_snapshots
+            (class_offering_id,student_id,score,metrics_json,components_json,dirty)
+            VALUES(1,2,83,?,?,0)""", (json.dumps(legacy), json.dumps(legacy["components"])))
+        state = service.get_student_learning_state(self.conn, 1, 2)
+        self.assertEqual((83, "stale"), (state["score"], state["snapshot_status"]))
+        self.assertEqual(0, self.conn.execute("SELECT dirty FROM learning_progress_snapshots").fetchone()[0])
+
+    def test_late_dirty_version_rejects_old_projection_without_score_events(self):
+        service.mark_student_learning_progress_dirty(self.conn, 1, 2)
+        expected = self.conn.execute("SELECT dirty_version FROM learning_progress_snapshots").fetchone()[0]
+        service.mark_student_learning_progress_dirty(self.conn, 1, 2, source_ref="newer")
+        _, published = service._publish_learning_metrics(
+            self.conn, 1, 2, _metrics(9, material=9), expected_version=expected, event_source_ref="older",
+        )
+        self.assertFalse(published)
+        row = self.conn.execute("SELECT dirty,dirty_version,calculated_version FROM learning_progress_snapshots").fetchone()
+        self.assertEqual((1, 2, 0), tuple(row))
+        self.assertEqual(0, self.conn.execute("SELECT COUNT(*) FROM cultivation_score_events").fetchone()[0])
+        self.assertEqual(0, self.conn.execute("SELECT COUNT(*) FROM learning_stage_status").fetchone()[0])
+
+    def test_corrected_score_can_decrease_and_events_capture_only_delta(self):
+        for score in (45, 32):
+            with patch.object(service, "_build_learning_metrics", return_value=_metrics(score, task=score)):
+                service.refresh_student_learning_state(self.conn, 1, 2, event_source_ref="grading:corrected")
+        self.assertEqual(32, service.get_student_learning_state(self.conn, 1, 2)["score"])
+        rows = self.conn.execute("SELECT delta FROM cultivation_score_events ORDER BY id").fetchall()
+        self.assertEqual([45, -13], [row[0] for row in rows])
+
     def test_build_score_opportunities_prioritizes_actionable_gains(self):
         opportunities = service.build_score_opportunities(
             _metrics(20, material=11.2, task=0, interaction=3, consistency=0.5),

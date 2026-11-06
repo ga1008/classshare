@@ -26,12 +26,12 @@
     {% if profile.role == 'student' and cultivation %}
     {# The existing cultivation card stays authored by its own subsystem. #}
     <details class="lq-profile-head__growth">
-        <summary data-lq-component="disclosure" class="lq-disclosure-trigger">成长概览 · {{ cultivation.highest_level.level_name }} · {{ cultivation.score }} 分</summary>
+        <summary data-lq-component="disclosure" class="lq-disclosure-trigger">成长概览 · {{ cultivation.highest_level.level_name }} · {{ cultivation.score ~ ' 分' if cultivation.score is not none else '正在生成进度' }}</summary>
         {% set cultivation_status_label = '可破境 · ' ~ cultivation.next_stage_name if cultivation.breakthrough_ready and cultivation.next_stage_name else ('试炼生成中' if cultivation.generating_stage_exam else (('下一境界 · ' ~ cultivation.next_stage_name) if cultivation.next_stage_name else '全部点亮')) %}
         {% set cultivation_card = {
             'variant': 'full', 'title': cultivation.highest_level.level_name,
             'subtitle': cultivation.sect_level_label ~ ' · ' ~ cultivation.course_count ~ ' 门课堂',
-            'score': cultivation.score, 'progress_percent': cultivation.progress_percent,
+            'score': cultivation.score, 'progress_percent': cultivation.progress_percent, 'snapshot_status': cultivation.snapshot_status,
             'level_short': cultivation.highest_level.short_name, 'level_name': cultivation.highest_level.level_name,
             'level': cultivation.highest_level, 'theme': cultivation.highest_level.theme,
             'next_label': cultivation_status_label, 'next_hint': cultivation.rank_notice

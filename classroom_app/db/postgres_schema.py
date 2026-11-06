@@ -18,6 +18,7 @@ from .schema_attendance_reports import ATTENDANCE_REPORT_POSTGRES_TABLES, ATTEND
 from .schema_feedback_conversations import FEEDBACK_CONVERSATION_POSTGRES_TABLES
 from .schema_ai_workspace import AI_WORKSPACE_POSTGRES_TABLES
 from .schema_ai_search import AI_SEARCH_TABLES
+from .schema_behavior_inbox import BEHAVIOR_INBOX_TABLES
 from .schema_classroom_activity import MESSAGE_CENTER_NOTIFICATION_LOOP_COLUMNS
 from .schema_learning_blog import BLOG_CLOSED_LOOP_COLUMNS
 
@@ -424,6 +425,7 @@ POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
 
 
 POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
+    **BEHAVIOR_INBOX_TABLES,
     **AI_SEARCH_TABLES,
     **ACADEMIC_TEACHER_TIMETABLE_POSTGRES_TABLES,
     **AI_WORKSPACE_POSTGRES_TABLES,
@@ -754,6 +756,7 @@ REQUIRED_POSTGRES_TABLES = (
     "identity_appointments",
     "assignment_wrong_summary_jobs",
     "classroom_behavior_events",
+    *BEHAVIOR_INBOX_TABLES,
     "classroom_behavior_states",
     "classroom_behavior_profiles",
     "ui_copy_snapshots",

@@ -75,6 +75,8 @@ class HomeClassroomBackendClosureTests(unittest.TestCase):
         self.clients = []
         self.addCleanup(lambda: [client.close() for client in self.clients])
         with self.db() as conn:
+            from classroom_app.db.schema_cultivation_progress import ensure_cultivation_progress_schema
+            ensure_cultivation_progress_schema(conn, engine="sqlite")
             conn.execute("UPDATE students SET class_id=?, enrollment_status='active' WHERE id=?", (self.fixture["classId"], self.peer))
         self.client = self.login("student")
 
@@ -179,7 +181,7 @@ class HomeClassroomBackendClosureTests(unittest.TestCase):
                                 "stage_percent": progress["next_stage"]["progress_percent"],
                                 "progress_percent": progress["progress_percent"]}
 
-    def test_d18_missing_and_dirty_snapshots_recalculate_real_sources_not_zero(self):
+    def test_d18_missing_and_dirty_reads_preserve_facts_until_background_refresh(self):
         from classroom_app.services import learning_progress_service as learning
         with self.db() as conn:
             expected = learning._build_learning_metrics(conn, self.offering, self.student)["score"]
@@ -192,12 +194,15 @@ class HomeClassroomBackendClosureTests(unittest.TestCase):
                 else:
                     conn.execute("UPDATE learning_progress_snapshots SET dirty=1 WHERE class_offering_id=? AND student_id=?", (self.offering, self.student))
             result = self.get(f"/api/classrooms/{self.offering}/learning/progress").json()["progress"]
-            self.assertEqual(expected, result["score"], mode)
-            self.assertNotEqual(99.9, result["score"])
+            self.assertEqual(None if mode == "missing" else 99.9, result["score"], mode)
+            self.assertEqual("building" if mode == "missing" else "stale", result["snapshot_status"])
+            learning.refresh_pending_learning_snapshots(limit=100, time_budget_seconds=30)
+            refreshed = self.get(f"/api/classrooms/{self.offering}/learning/progress").json()["progress"]
+            self.assertEqual(expected, refreshed["score"], mode)
             with self.db() as conn:
                 snapshot = conn.execute("SELECT score,dirty FROM learning_progress_snapshots WHERE class_offering_id=? AND student_id=?", (self.offering, self.student)).fetchone()
                 self.assertEqual((expected, 0), tuple(snapshot))
-        self.verified_values = {"recalculated_score": expected, "modes": ["missing", "dirty"], "dirty_after": 0}
+        self.verified_values = {"background_score": expected, "modes": ["building", "stale"], "dirty_after": 0}
 
     def test_c18_mixed_generated_and_teacher_content_keeps_summary_and_full_http_details(self):
         intro = "第 1 次课，按教务实际排课自动生成，请补充本次课要讲的知识点、实验内容或案例任务。"
@@ -314,21 +319,25 @@ class HomeClassroomBackendClosureTests(unittest.TestCase):
             self.assertTrue(detail.context["assignment"]["is_accepting_submissions"])
         self.verified_values = {"published_before_starts_at_accepts": True, "preserved_existing_rule": True}
 
-    def test_d18_a12_failed_snapshot_returns_unavailable_not_zero_and_retry_recovers(self):
+    def test_d18_a12_background_failure_keeps_building_and_retry_recovers(self):
         with self.db() as conn:
             conn.execute("DELETE FROM learning_progress_snapshots WHERE class_offering_id=? AND student_id=?", (self.offering, self.student))
         with patch("classroom_app.services.learning_progress_service._build_learning_metrics", side_effect=RuntimeError("synthetic unavailable source")):
+            from classroom_app.services import learning_progress_service as learning
+            result = learning.refresh_pending_learning_snapshots(limit=100, time_budget_seconds=30)
+            self.assertGreater(result["failed"], 0)
             api = self.client.get(f"/api/classrooms/{self.offering}/learning/progress")
-            self.assertEqual(503, api.status_code)
-            self.assertEqual("修为暂时无法读取，请稍后重试", api.json()["detail"])
-            self.assertNotIn("progress", api.json())
+            self.assertEqual(200, api.status_code)
+            self.assertIsNone(api.json()["progress"]["score"])
+            self.assertEqual("building", api.json()["progress"]["snapshot_status"])
             page = self.get(f"/classroom/{self.offering}")
-            self.assertIsNone(page.context["classroom_page"]["learning_progress"])
-            self.assertEqual("修为暂时无法读取，请稍后重试", page.context["classroom_page"]["learning_progress_error"])
+            self.assertIsNone(page.context["classroom_page"]["learning_progress"]["score"])
+            self.assertIn("生成中", page.text)
             self.assertFalse(re.search(r"修为\s*<strong>0(?:\.0)?</strong>", page.text))
+        learning.refresh_pending_learning_snapshots(limit=100, time_budget_seconds=30)
         recovered = self.get(f"/api/classrooms/{self.offering}/learning/progress").json()["progress"]
         self.assertGreater(recovered["score"], 0)
-        self.verified_values = {"failure_status": api.status_code, "failure_has_progress": False,
+        self.verified_values = {"failure_status": "building", "failure_has_invented_score": False,
                                 "page_progress": None, "recovered_score": recovered["score"]}
 
     def test_d17_r08_group_visibility_failure_fails_closed_without_feedback(self):

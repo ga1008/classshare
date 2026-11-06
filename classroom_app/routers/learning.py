@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field
 from ..database import get_db_connection
 from ..dependencies import get_current_user
 from ..services.life_tip_service import (
-    build_login_tip_payload_for_student,
-    build_login_tip_payload_for_teacher,
+    build_committed_login_tip_payload,
+    invalidate_pool_cache,
     record_tip_feedback,
 )
 from ..services.learning_progress_service import (
@@ -165,26 +165,20 @@ def _ensure_material_in_classroom(conn, class_offering_id: int, material_id: int
 
 
 @router.get("/learning/cultivation-profile", response_class=JSONResponse)
-async def get_cultivation_profile(include_tip: int = 0, user: dict = Depends(get_current_user)):
+def get_cultivation_profile(include_tip: int = 0, include_rank: int = 0, user: dict = Depends(get_current_user)):
     if user["role"] != "student":
         # 教师没有修为体系，但登录 reveal 仍可展示教师池的"人生一言"。
         if user["role"] == "teacher" and include_tip:
-            with get_db_connection() as conn:
-                login_tip = build_login_tip_payload_for_teacher(conn, int(user["id"]))
-                conn.commit()
+            login_tip = build_committed_login_tip_payload(user_id=int(user["id"]), role="teacher")
             return {"status": "success", "profile": None, "login_tip": login_tip}
         return {"status": "success", "profile": None}
     with get_db_connection() as conn:
-        profile = build_student_global_cultivation_profile(conn, int(user["id"]))
+        profile = build_student_global_cultivation_profile(conn, int(user["id"]), include_rank=bool(include_rank))
         # 表单登录走 cookie reveal 时才请求提示语（include_tip=1），
         # 普通页面加载不带该参数，不产生投放开销。
-        login_tip = (
-            build_login_tip_payload_for_student(conn, int(user["id"]))
-            if include_tip
-            else None
-        )
         conn.commit()
-        return {"status": "success", "profile": profile, "login_tip": login_tip}
+    login_tip = build_committed_login_tip_payload(user_id=int(user["id"]), role="student") if include_tip else None
+    return {"status": "success", "profile": profile, "login_tip": login_tip}
 
 
 @router.get("/learning/personal-greeting", response_class=JSONResponse)
@@ -225,11 +219,12 @@ async def submit_life_tip_feedback(
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         conn.commit()
+        invalidate_pool_cache()
     return {"status": "success", **result}
 
 
 @router.get("/classrooms/{class_offering_id}/learning/progress", response_class=JSONResponse)
-async def get_learning_progress(class_offering_id: int, user: dict = Depends(get_current_user)):
+def get_learning_progress(class_offering_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         _ensure_classroom_access(conn, class_offering_id, user)
         if user["role"] == "teacher":

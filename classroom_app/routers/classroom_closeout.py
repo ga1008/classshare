@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import json
 from typing import Any
 
@@ -100,7 +102,7 @@ async def run_closeout(
         conn.commit()
 
     try:
-        record_behavior_event(
+        await asyncio.to_thread(record_behavior_event,
             class_offering_id=int(class_offering_id),
             user_pk=int(user["id"]),
             user_role="teacher",

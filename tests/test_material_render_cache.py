@@ -40,7 +40,7 @@ class MaterialRenderCacheTests(unittest.TestCase):
         self.stack.enter_context(patch.object(exports, "get_db_connection", side_effect=lambda: nullcontext(object())))
         self.stack.enter_context(patch.object(exports, "ensure_user_material_access", side_effect=check_access))
         self.stack.enter_context(patch.object(exports, "resolve_render_target", return_value={"entry_id": 2}))
-        self.stack.enter_context(patch.object(exports, "resolve_render_file", side_effect=lambda *args: self.target))
+        self.stack.enter_context(patch.object(exports, "resolve_render_file", side_effect=lambda *args, **kwargs: self.target))
         self.storage_lookup = self.stack.enter_context(patch.object(common, "resolve_global_file_path", side_effect=storage_path))
 
         app = FastAPI()

@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from .offering_membership_service import student_offering_where_by_student_id
 from .organization_scope_service import (
     build_org_scope,
     load_teacher_org_memberships,
@@ -347,17 +348,12 @@ def _student_in_course(conn: sqlite3.Connection, student_id: int, course_id: int
     return row is not None
 
 
+_ACTIVE_CLASSROOM_STUDENT_EXISTS = student_offering_where_by_student_id(require_active=True)
+
+
 def _student_in_classroom(conn: sqlite3.Connection, student_id: int, class_offering_id: int) -> bool:
     row = conn.execute(
-        """
-        SELECT 1
-        FROM class_offerings o
-        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
-        WHERE o.id = ?
-          AND s.id = ?
-          AND COALESCE(s.enrollment_status, 'active') = 'active'
-        LIMIT 1
-        """,
+        f"SELECT 1 FROM class_offerings o WHERE o.id = ? AND {_ACTIVE_CLASSROOM_STUDENT_EXISTS}",
         (class_offering_id, student_id),
     ).fetchone()
     return row is not None
@@ -602,28 +598,30 @@ def ensure_classroom_access(conn: sqlite3.Connection, class_offering_id: int, us
     if user_pk is None:
         raise HTTPException(status_code=403, detail="Invalid user")
 
-    offering = conn.execute(
-        """
+    role = str(user.get("role") or "").strip().lower()
+    offering_pk = int(class_offering_id)
+    offering_sql = """
         SELECT o.*, c.name AS course_name, cl.name AS class_name
         FROM class_offerings o
         JOIN courses c ON o.course_id = c.id
         JOIN classes cl ON o.class_id = cl.id
         WHERE o.id = ?
-        LIMIT 1
-        """,
-        (int(class_offering_id),),
-    ).fetchone()
+    """
+    if role == "student":
+        offering = conn.execute(
+            f"{offering_sql} AND {_ACTIVE_CLASSROOM_STUDENT_EXISTS} LIMIT 1",
+            (offering_pk, user_pk),
+        ).fetchone()
+        if offering:
+            return offering
+
+    # A missing student match can mean either an absent classroom or denied access.
+    offering = conn.execute(f"{offering_sql} LIMIT 1", (offering_pk,)).fetchone()
     if not offering:
         raise HTTPException(status_code=404, detail="Classroom not found")
 
-    role = str(user.get("role") or "").strip().lower()
     if role == "teacher":
         if int(offering["teacher_id"]) == user_pk or is_super_admin_teacher(conn, user_pk):
-            return offering
-        raise HTTPException(status_code=403, detail="Permission denied")
-
-    if role == "student":
-        if _student_in_classroom(conn, user_pk, int(offering["id"])):
             return offering
 
     raise HTTPException(status_code=403, detail="Permission denied")

@@ -16,6 +16,7 @@ Design goals:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
 import socket
@@ -31,13 +32,30 @@ TaskHandler = Callable[[dict[str, Any]], "Any | Awaitable[Any]"]
 
 _HANDLERS: dict[str, TaskHandler] = {}
 
-SCHEDULER_POLL_SECONDS = max(5, int(os.getenv("SCHEDULER_POLL_SECONDS", "20")))
+SCHEDULER_POLL_SECONDS = max(5, int(os.getenv("SCHEDULER_POLL_SECONDS", "5")))
 SCHEDULER_BATCH_SIZE = max(1, int(os.getenv("SCHEDULER_BATCH_SIZE", "20")))
 SCHEDULER_STALE_MINUTES = max(1, int(os.getenv("SCHEDULER_STALE_MINUTES", "15")))
 SCHEDULER_HEARTBEAT_TIMEOUT_SECONDS = max(
     60, int(os.getenv("SCHEDULER_HEARTBEAT_TIMEOUT_SECONDS", "180"))
 )
 MAX_BACKOFF_SECONDS = 3600
+SCHEDULER_LEASE_HEARTBEAT_SECONDS = min(30.0, SCHEDULER_STALE_MINUTES * 20.0)
+SCHEDULER_FAIR_WAIT_SECONDS = 300
+# Each lane has one execution slot. Slow autonomous/AI work cannot reserve
+# reminders or the normal projection slot while waiting for a supplier.
+DEADLINE_TASK_KINDS = (
+    "exam_email_reminder", "todo_due_reminder", "assignment_due_reminder",
+    "signature_request_reminder", "approval_request_reminder", "late_window_expiry",
+    "late_window_reminder", "assignment_close_sweep", "resubmission_window_expiry",
+    "mp_deadline_reminder_scan", "mp_subscribe_dispatch",
+)
+ELASTIC_TASK_KINDS = (
+    "stage_exam_generation", "session_material_generate", "personal_greeting_generate",
+    "life_tip_gongwen_refresh", "blog_mention_reply", "blog_content_review",
+    "material_search_index", "gongwen_incremental_sync", "gongwen_parse_pending",
+    "gongwen_follow_scan", "gongwen_follow_rescan", "cultivation_weekly_snapshot",
+    "cultivation_weekly_report", "cultivation_score_event_archive",
+)
 
 
 def register_task_handler(task_kind: str, handler: TaskHandler) -> None:
@@ -187,44 +205,62 @@ def get_owner_task_by_dedupe(conn, dedupe_key: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def _claim_due_tasks(limit: int) -> list[dict[str, Any]]:
+def _claim_due_tasks(limit: int, *, lane: str | None = None) -> list[dict[str, Any]]:
     now = _now_iso()
     stale_cutoff = _to_iso(_now() - timedelta(minutes=SCHEDULER_STALE_MINUTES))
     worker_tag = (os.getenv("SCHEDULER_WORKER_ID") or socket.gethostname()) + ":" + uuid.uuid4().hex
     engine = get_configured_db_engine()
     safe_limit = max(1, min(int(limit), 100))
+    lane_sql = ""
+    lane_params = ()
+    if lane is not None:
+        kinds = ",".join("?" for _ in DEADLINE_TASK_KINDS)
+        lane_params = DEADLINE_TASK_KINDS
+        if lane == "deadline":
+            lane_sql = f" AND task_kind IN ({kinds})"
+        elif lane in {"normal", "elastic"}:
+            elastic_kinds = ",".join("?" for _ in ELASTIC_TASK_KINDS)
+            heavy = f"(task_kind IN ({elastic_kinds}) OR task_kind LIKE 'wanderer_%')"
+            classification = f"priority < 100 AND NOT {heavy}" if lane == "normal" else f"(priority >= 100 OR {heavy})"
+            lane_sql = f" AND task_kind NOT IN ({kinds}) AND ({classification})"
+            lane_params = (*DEADLINE_TASK_KINDS, *ELASTIC_TASK_KINDS)
+        else:
+            raise ValueError("Unknown scheduler lane")
+    fair_before = _to_iso(_now() - timedelta(seconds=SCHEDULER_FAIR_WAIT_SECONDS))
     with get_db_connection() as conn:
         ensure_scheduler_schema(conn)
         if engine == "postgres":
             rows = conn.execute(
-                """
+                f"""
                 UPDATE scheduled_tasks
                 SET status = 'running', locked_at = ?, locked_by = ?,
                     started_at = ?, updated_at = ?
                 WHERE id IN (
                     SELECT id FROM scheduled_tasks
-                    WHERE (status = 'pending' AND run_at <= ?)
-                       OR (status = 'running' AND (locked_at IS NULL OR locked_at <= ?))
-                    ORDER BY priority ASC, run_at ASC, id ASC
+                    WHERE ((status = 'pending' AND run_at <= ?)
+                       OR (status = 'running' AND (locked_at IS NULL OR COALESCE(NULLIF(updated_at, ''), locked_at) <= ?)))
+                    {lane_sql}
+                    ORDER BY CASE WHEN run_at <= ? THEN 0 ELSE 1 END, priority ASC, run_at ASC, id ASC
                     LIMIT ?
                     FOR UPDATE SKIP LOCKED
                 )
                 RETURNING *
                 """,
-                (now, worker_tag, now, now, now, stale_cutoff, safe_limit),
+                (now, worker_tag, now, now, now, stale_cutoff, *lane_params, fair_before, safe_limit),
             ).fetchall()
             conn.commit()
             return [dict(row) for row in rows]
 
         rows = conn.execute(
-            """
+            f"""
             SELECT * FROM scheduled_tasks
-            WHERE (status = 'pending' AND run_at <= ?)
-               OR (status = 'running' AND (locked_at IS NULL OR locked_at <= ?))
-            ORDER BY priority ASC, run_at ASC, id ASC
+            WHERE ((status = 'pending' AND run_at <= ?)
+               OR (status = 'running' AND (locked_at IS NULL OR COALESCE(NULLIF(updated_at, ''), locked_at) <= ?)))
+            {lane_sql}
+            ORDER BY CASE WHEN run_at <= ? THEN 0 ELSE 1 END, priority ASC, run_at ASC, id ASC
             LIMIT ?
             """,
-            (now, stale_cutoff, safe_limit),
+            (now, stale_cutoff, *lane_params, fair_before, safe_limit),
         ).fetchall()
         claimed: list[dict[str, Any]] = []
         for row in rows:
@@ -236,7 +272,7 @@ def _claim_due_tasks(limit: int) -> list[dict[str, Any]]:
                 WHERE id = ?
                   AND (
                     (status = 'pending' AND run_at <= ?)
-                    OR (status = 'running' AND (locked_at IS NULL OR locked_at <= ?))
+                    OR (status = 'running' AND (locked_at IS NULL OR COALESCE(NULLIF(updated_at, ''), locked_at) <= ?))
                   )
                 """,
                 (now, worker_tag, now, now, int(row["id"]), now, stale_cutoff),
@@ -253,10 +289,100 @@ async def _dispatch_task(task: dict[str, Any]) -> Any:
         raise LookupError(f"No handler registered for task_kind={task.get('task_kind')!r}")
     payload = _json_loads(task.get("payload_json"))
     task_with_payload = {**task, "payload": payload}
-    result = handler(task_with_payload)
-    if asyncio.iscoroutine(result):
+    if inspect.iscoroutinefunction(handler):
+        result = handler(task_with_payload)
+    else:
+        result = await asyncio.to_thread(handler, task_with_payload)
+    if inspect.isawaitable(result):
         result = await result
     return result
+
+
+def _renew_task_lease(task: dict[str, Any]) -> bool:
+    with get_db_connection() as conn:
+        changed = conn.execute(
+            """UPDATE scheduled_tasks SET updated_at = ?
+               WHERE id=? AND status='running' AND locked_by=? AND locked_at=?""",
+            (_now_iso(), int(task["id"]), task.get("locked_by"), task.get("locked_at")),
+        ).rowcount
+    return changed == 1
+
+
+async def _task_lease_heartbeat(task, stopped):
+    while not stopped.is_set():
+        try:
+            await asyncio.wait_for(stopped.wait(), timeout=SCHEDULER_LEASE_HEARTBEAT_SECONDS)
+            return
+        except asyncio.TimeoutError:
+            pass
+        try:
+            if not await asyncio.to_thread(_renew_task_lease, task):
+                return
+        except Exception as exc:
+            # Do not release work whose synchronous handler is still executing.
+            # Completion is fenced by the immutable claim token even after a
+            # failed renewal or an operator cancellation/replacement.
+            print(f"[SCHEDULER] lease renewal deferred task={task['id']}: {type(exc).__name__}")
+
+
+async def _await_owned_work(work: asyncio.Task, *, operation: str):
+    """Observe real work through repeated caller cancellation, then propagate it.
+
+    Cancelling an executor Future cannot stop its SQL/thread. Ownership spans
+    claim, handler and finalization; never leave one of those running unseen.
+    An internally cancelled task is already settled and must not spin forever.
+    """
+    cancelled = False
+    while not work.done():
+        try:
+            # wait() cancels only its waiter, never the owned task. Unlike
+            # repeatedly shielding a failed Future on Python 3.14, it does not
+            # report an error before this owner retrieves the final exception.
+            await asyncio.wait((work,))
+        except asyncio.CancelledError:
+            cancelled = True
+    try:
+        result = work.result()
+    except Exception as exc:
+        if cancelled:
+            # An unknown claim/commit result cannot be safely invented or
+            # returned to pending. Preserve the diagnostic and stale fence.
+            print(f"[SCHEDULER] cancelled {operation} ended with {type(exc).__name__}")
+            raise asyncio.CancelledError from exc
+        raise
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
+
+
+async def _execute_claimed_task(task: dict[str, Any]) -> str:
+    stopped = asyncio.Event()
+    heartbeat = asyncio.create_task(_task_lease_heartbeat(task, stopped))
+    try:
+        try:
+            result = await _dispatch_task(task)
+        except Exception as exc:
+            await asyncio.to_thread(_mark_failure, task, f"{type(exc).__name__}: {exc}")
+            outcome = "failed" if int(task.get("attempt_count") or 0) + 1 >= int(task.get("max_attempts") or 5) else "retry"
+        else:
+            await asyncio.to_thread(_mark_success, task, result)
+            outcome = "rescheduled" if task.get("recurrence_seconds") else "done"
+    finally:
+        stopped.set()
+        await heartbeat
+    return outcome
+
+
+async def _run_claimed_task(task: dict[str, Any]) -> str:
+    execution = asyncio.create_task(_execute_claimed_task(task))
+    return await _await_owned_work(execution, operation=f"task {task['id']}")
+
+
+async def _claim_and_run_due_task(*, lane: str | None) -> str | None:
+    tasks = await asyncio.to_thread(_claim_due_tasks, 1, **({"lane": lane} if lane is not None else {}))
+    if not tasks:
+        return None
+    return await _run_claimed_task(tasks[0])
 
 
 def _mark_success(task: dict[str, Any], result: Any) -> None:
@@ -320,20 +446,15 @@ def _mark_failure(task: dict[str, Any], error: str) -> None:
         conn.commit()
 
 
-async def process_due_scheduled_tasks_once(limit: int = SCHEDULER_BATCH_SIZE) -> dict[str, int]:
-    tasks = _claim_due_tasks(limit)
-    result = {"claimed": len(tasks), "done": 0, "rescheduled": 0, "failed": 0, "retry": 0}
-    for task in tasks:
-        try:
-            handler_result = await _dispatch_task(task)
-        except Exception as exc:  # noqa: BLE001 - a failing task must not kill the loop
-            attempt_count = int(task.get("attempt_count") or 0) + 1
-            final = attempt_count >= int(task.get("max_attempts") or 5)
-            _mark_failure(task, f"{type(exc).__name__}: {exc}")
-            result["failed" if final else "retry"] += 1
-            continue
-        _mark_success(task, handler_result)
-        result["rescheduled" if task.get("recurrence_seconds") else "done"] += 1
+async def process_due_scheduled_tasks_once(limit: int = SCHEDULER_BATCH_SIZE, *, lane: str | None = None) -> dict[str, int]:
+    result = {"claimed": 0, "done": 0, "rescheduled": 0, "failed": 0, "retry": 0}
+    for _ in range(max(1, min(int(limit), 100))):
+        owned_slot = asyncio.create_task(_claim_and_run_due_task(lane=lane))
+        outcome = await _await_owned_work(owned_slot, operation=f"{lane or 'all'} claim slot")
+        if outcome is None:
+            break
+        result["claimed"] += 1
+        result[outcome] += 1
     return result
 
 
@@ -394,18 +515,42 @@ async def run_scheduler_worker_forever(worker_id: str = "scheduler", poll_second
 
     interval = max(5, int(poll_seconds or SCHEDULER_POLL_SECONDS))
     print(f"[SCHEDULER] worker {worker_id} started (kinds={get_registered_task_kinds()})")
-    update_scheduler_heartbeat(worker_id, status="running")
-    while True:
-        try:
-            result = await process_due_scheduled_tasks_once()
-            if result.get("claimed"):
-                print(f"[SCHEDULER] processed batch: {result}")
-            update_scheduler_heartbeat(worker_id, status="running")
-        except Exception as exc:  # noqa: BLE001
-            error = str(exc)
-            print(f"[SCHEDULER] worker loop failed: {error}")
+    async def heartbeat_loop():
+        while True:
             try:
-                update_scheduler_heartbeat(worker_id, status="error", last_error=error)
-            except Exception:
-                pass
-        await asyncio.sleep(interval)
+                await asyncio.to_thread(update_scheduler_heartbeat, worker_id, status="running")
+            except Exception as exc:
+                print(f"[SCHEDULER] worker heartbeat deferred: {type(exc).__name__}")
+            # One awaited maintenance call at a time, after the worker beat.
+            # SQL lock/statement budgets live in this narrow handler; task lease
+            # heartbeats continue independently while it uses its own thread.
+            maintenance = asyncio.create_task(asyncio.to_thread(scheduled_task_handlers.maintain_cultivation_projection_task))
+            try:
+                await asyncio.shield(maintenance)
+            except asyncio.CancelledError:
+                await asyncio.gather(maintenance, return_exceptions=True)
+                raise
+            except Exception as exc:
+                print(f"[SCHEDULER] projection timer maintenance deferred: {type(exc).__name__}")
+            await asyncio.sleep(min(30, interval))
+
+    async def lane_loop(lane):
+        while True:
+            try:
+                result = await process_due_scheduled_tasks_once(limit=1, lane=lane)
+            except Exception as exc:
+                print(f"[SCHEDULER] {lane} loop deferred: {type(exc).__name__}")
+                await asyncio.sleep(interval)
+                continue
+            # Drain ready work through each single slot. Empty lanes back off.
+            await asyncio.sleep(0.1 if result["claimed"] else interval)
+
+    tasks = [asyncio.create_task(heartbeat_loop())]
+    tasks.extend(asyncio.create_task(lane_loop(lane)) for lane in ("deadline", "normal", "elastic"))
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        for task in tasks:
+            if not task.done() and not task.cancelling():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)

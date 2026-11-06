@@ -61,6 +61,9 @@ class SocialMessageTest(SocialDbTestCase):
         with self.assertRaises(SocialError) as ctx:
             self.send(self.b, key)
         self.assertEqual(ctx.exception.status_code, 403)
+        _message, events = self.send(self.a, key, "退出后发送的合成消息")
+        targets = {identity for audience, event in events if event["type"] == "message" for identity in audience}
+        self.assertEqual(targets, {self.a, self.c})
 
     def test_body_limits_and_empty(self):
         with self.assertRaises(SocialError):

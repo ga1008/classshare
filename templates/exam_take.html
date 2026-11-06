@@ -410,6 +410,7 @@
         if (window.BehaviorTracker && CLASS_OFFERING_ID) {
             window.behaviorTracker = new window.BehaviorTracker({
                 classOfferingId: CLASS_OFFERING_ID,
+                userKey: {{ (user_info.role ~ ':' ~ user_info.id) | tojson }},
                 pageKey: 'exam_take'
             }).start();
         }

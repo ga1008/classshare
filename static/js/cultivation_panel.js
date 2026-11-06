@@ -20,6 +20,7 @@ const STATUS_LABELS = {
     in_exam: '试炼进行中',
     available: '修炼中',
     locked: '未解锁',
+    pending: '正在生成进度',
 };
 const EVENT_TYPE_LABELS = {
     material_progress: '研读',
@@ -58,6 +59,7 @@ function svgEl(tag, attrs = {}) {
 }
 
 const fmt = (value, digits = 1) => {
+    if (value === null || value === undefined) return '—';
     const number = Number(value);
     return Number.isFinite(number) ? number.toFixed(digits).replace(/\.0$/, '') : '0';
 };
@@ -72,17 +74,18 @@ function formatDate(value) {
 }
 
 function ring(percent, { size = 'md', tone = null, label = '' } = {}) {
+    const known = percent !== null && percent !== undefined;
     const value = Math.round(clamp01(percent / 100) * 100);
     const node = el('span', {
         class: `lq-progress lq-progress--ring lq-cultivation__ring lq-cultivation__ring--${size}`,
-        role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': value,
+        role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': 100, 'aria-valuenow': known ? value : null,
         'aria-label': label || `进度 ${value}%`, 'data-tone': tone,
     });
     const svg = svgEl('svg', { class: 'lq-progress__svg', viewBox: '0 0 36 36', focusable: 'false', 'aria-hidden': 'true' });
     const fill = svgEl('circle', { class: 'lq-progress__fill', cx: 18, cy: 18, r: 15.9155, pathLength: 100, 'stroke-dasharray': `${value} 100` });
     if (value === 0) fill.setAttribute('visibility', 'hidden');
     svg.append(svgEl('circle', { class: 'lq-progress__track', cx: 18, cy: 18, r: 15.9155, pathLength: 100 }), fill);
-    node.append(svg, el('span', { class: 'lq-progress__value', 'aria-hidden': 'true', text: `${value}%` }));
+    node.append(svg, el('span', { class: 'lq-progress__value', 'aria-hidden': 'true', text: known ? `${value}%` : '—' }));
     return node;
 }
 
@@ -113,7 +116,7 @@ function renderHero(progress, ctx) {
     const next = progress.next_stage;
     const eligible = progress.eligible_stage;
     const growth = progress.growth || {};
-    const score = Number(progress.score) || 0;
+    const score = progress.score === null ? null : Number(progress.score) || 0;
     const theme = level.theme || level.level_key || level.key || 'mortal';
 
     const levelKey = level.level_key || level.key || 'mortal';
@@ -126,6 +129,8 @@ function renderHero(progress, ctx) {
         el('h3', { class: 'lq-cultivation__level', text: level.level_name || level.name || '未入道' }),
         el('p', { class: 'lq-cultivation__aura', text: level.aura_label || level.description || '正在凝聚第一缕灵力' }),
         el('div', { class: 'lq-cultivation__chips' }, [
+            progress.snapshot_status === 'building' ? chip('学习进度正在生成', 'info') : null,
+            progress.snapshot_status === 'stale' ? chip(`待更新${progress.calculated_at ? ` · ${formatDate(progress.calculated_at)}` : ''}`, 'neutral') : null,
             growth.phase_label ? chip(growth.phase_label.split(' · ')[0], 'info') : null,
             eligible ? chip(`可破境 · ${eligible.name}`, 'primary') : (next ? chip(`下一境 · ${next.name}`, 'neutral') : chip('十境圆满', 'success')),
             progress.display?.hidden
@@ -134,11 +139,11 @@ function renderHero(progress, ctx) {
         ]),
     ]);
     const scoreBlock = el('div', { class: 'lq-cultivation__score' }, [
-        ring(next ? next.progress_percent : 100, { size: 'lg', tone: 'primary', label: next ? `距 ${next.name} ${next.progress_percent}%` : '全部境界已点亮' }),
+        ring(next ? next.progress_percent : 100, { size: 'lg', tone: 'primary', label: score === null ? '学习进度正在生成' : next ? `距 ${next.name} ${next.progress_percent}%` : '全部境界已点亮' }),
         el('div', { class: 'lq-cultivation__score-copy' }, [
             el('strong', { text: fmt(score) }),
             el('span', { text: '修为' }),
-            next
+            score === null ? el('small', { text: '稍后自动更新' }) : next
                 ? el('small', { text: `还差 ${fmt(Math.max(0, Number(next.unlock_score) - score))} 分可挑战 ${next.short_name || next.name}` })
                 : el('small', { text: '已达巅峰境界' }),
         ]),
@@ -149,6 +154,12 @@ function renderHero(progress, ctx) {
 function renderStageAction(progress, ctx) {
     const next = progress.next_stage;
     const card = el('div', { class: 'lq-surface lq-cultivation__action', 'data-lq-component': 'surface', 'data-lq-surface': 'embedded' });
+    if (progress.snapshot_status === 'building' && !['generating', 'in_exam'].includes(next?.status)) {
+        card.append(el('strong', { text: '正在整理你的学习记录' }),
+            el('p', { text: '学习进度生成后会自动显示，已获得的道印继续保留。' }),
+            el('button', { class: 'lq-btn lq-btn--soft lq-btn--sm', type: 'button', 'data-lq-component': 'button', text: '刷新进度', onclick: () => ctx.reload() }));
+        return card;
+    }
     if (!next) {
         card.append(
             el('span', { class: 'lq-cultivation__action-kicker', text: '十境圆满' }),
@@ -820,7 +831,7 @@ function createContext(panel, options) {
 function renderBody(body, progress, ctx) {
     body.textContent = '';
     body.removeAttribute('aria-busy');
-    const main = el('div', { class: 'lq-cultivation__main' }, [renderBreakdown(progress), renderGrowthNote(progress)]);
+    const main = el('div', { class: 'lq-cultivation__main' }, progress.snapshot_status === 'building' ? [] : [renderBreakdown(progress), renderGrowthNote(progress)]);
     const aside = el('div', { class: 'lq-cultivation__aside' }, [renderSect(progress, ctx), renderTrend(progress), renderOpportunities(progress), renderLedger(progress)]);
     body.append(renderHero(progress, ctx), renderPath(progress, ctx), el('div', { class: 'lq-cultivation__grid' }, [main, aside]));
     ctx.runMounted();
@@ -850,7 +861,7 @@ function createPanel(root) {
         root,
         isOpen: () => !root.hidden,
         async open(options = {}) {
-            current = { classOfferingId: options.classOfferingId, options, trigger: options.trigger || document.activeElement };
+            current = { classOfferingId: options.classOfferingId, options, trigger: options.trigger || document.activeElement, pendingRefreshes: 0 };
             if (title) title.textContent = options.title || '修为';
             if (kicker) kicker.textContent = options.courseName ? `${options.courseName} · Cultivation Path` : 'Cultivation Path';
             foot.textContent = '';
@@ -888,6 +899,11 @@ function createPanel(root) {
             panel.teardown();
             try {
                 renderBody(body, progress, createContext(panel, current.options));
+                if (['building', 'stale'].includes(progress.snapshot_status) && current.pendingRefreshes < 12) {
+                    current.pendingRefreshes += 1;
+                    const timer = window.setTimeout(() => { if (!root.hidden && !document.hidden) void panel.reload(); }, 10000 + Math.random() * 2000);
+                    panel.cleanups.push(() => window.clearTimeout(timer));
+                }
             } catch (error) {
                 console.error('[cultivation-panel] render failed', error);
                 renderError(body, '修为面板渲染失败，请刷新页面重试。');

@@ -144,7 +144,7 @@ class CultivationAlertServiceTests(unittest.TestCase):
                 user_id TEXT,
                 user_role TEXT,
                 message TEXT,
-                created_at TEXT
+                logged_at TEXT
             )
             """
         )
@@ -225,6 +225,18 @@ class CultivationAlertServiceTests(unittest.TestCase):
         self.assertIn("no_activity_7d", rule_keys)
         self.assertIn("stage_exam_failed_twice", rule_keys)
         self.assertEqual("L3", alerts[0]["severity"])
+
+    def test_canonical_chat_activity_prevents_inactivity_alert(self):
+        # This table deliberately has logged_at, not the nonexistent
+        # created_at column that previously poisoned the PostgreSQL scan.
+        self.conn.execute(
+            "INSERT INTO chat_logs (class_offering_id, user_id, user_name, user_role, message, timestamp, logged_at) "
+            "VALUES (1, '2', 'Alice', 'student', 'recent classroom interaction', '10:00', '2026-06-11T10:00:00')"
+        )
+        generate_cultivation_alerts(self.conn, class_offering_id=1, now="2026-06-12T08:00:00")
+        rules = {item["rule_key"] for item in list_cultivation_alerts(self.conn, 1) if item["student_id"] == 2}
+        self.assertNotIn("no_activity_7d", rules)
+        self.assertIn("pending_assignment_due_soon", rules)
 
     def test_handled_alert_is_suppressed_during_cooldown(self):
         generate_cultivation_alerts(self.conn, class_offering_id=1, now="2026-06-12T08:00:00")

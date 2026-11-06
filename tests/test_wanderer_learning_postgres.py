@@ -89,7 +89,7 @@ class WandererLearningPostgresTest(unittest.TestCase):
             conn.commit()
         for _ in range(2):
             with patch.object(schema_wanderers, "_SCHEMA_READY", False), self.connect() as conn:
-                schema_wanderers.ensure_wanderer_schema(conn, engine="postgres")
+                schema_wanderers.ensure_wanderer_schema(conn, engine="postgres", allow_schema_changes=True)
                 conn.commit()
         with self.connect() as conn:
             self.assertEqual(conn.execute("SELECT summary FROM wanderer_memory_threads").fetchone()[0], "原有记忆")

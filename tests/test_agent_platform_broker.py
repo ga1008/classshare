@@ -46,8 +46,15 @@ class AgentPlatformBrokerTests(unittest.TestCase):
             CREATE TABLE courses(id INTEGER PRIMARY KEY, name TEXT);
             CREATE TABLE class_offerings(id INTEGER PRIMARY KEY, teacher_id INTEGER, class_id INTEGER, course_id INTEGER, semester_id INTEGER, semester TEXT);
             CREATE TABLE class_offering_class_links(offering_id INTEGER,class_id INTEGER);
-            CREATE TABLE course_materials(id INTEGER PRIMARY KEY,name TEXT,node_type TEXT);
-            CREATE TABLE course_material_assignments(material_id INTEGER,class_offering_id INTEGER);
+            CREATE TABLE course_materials(id INTEGER PRIMARY KEY,teacher_id INTEGER,parent_id INTEGER,root_id INTEGER,
+                material_path TEXT,name TEXT,node_type TEXT,preview_type TEXT DEFAULT '');
+            CREATE TABLE course_material_assignments(id INTEGER PRIMARY KEY,material_id INTEGER NOT NULL,
+                class_offering_id INTEGER NOT NULL,assigned_by_teacher_id INTEGER NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,publication_mode TEXT,
+                FOREIGN KEY(material_id) REFERENCES course_materials(id) ON DELETE CASCADE,
+                FOREIGN KEY(class_offering_id) REFERENCES class_offerings(id) ON DELETE CASCADE,
+                FOREIGN KEY(assigned_by_teacher_id) REFERENCES teachers(id),
+                UNIQUE(material_id,class_offering_id));
             CREATE TABLE assignments(id INTEGER PRIMARY KEY,title TEXT,course_id INTEGER,class_offering_id INTEGER,status TEXT,exam_paper_id INTEGER,
                 assessment_kind TEXT,assessment_kind_version INTEGER,assessment_kind_source TEXT,created_at TEXT);
             CREATE TABLE learning_stage_exam_attempts(assignment_id INTEGER);
@@ -59,8 +66,11 @@ class AgentPlatformBrokerTests(unittest.TestCase):
             INSERT INTO classes VALUES(30,'Class A'),(31,'Class B');
             INSERT INTO courses VALUES(1,'Networks A'),(2,'Networks B');
             INSERT INTO class_offerings VALUES(1,7,30,1,1,'Term'),(2,7,31,2,1,'Term');
-            INSERT INTO course_materials VALUES(1,'Networks own material','file'),(2,'Networks other class material','file');
-            INSERT INTO course_material_assignments VALUES(1,1),(2,2);
+            INSERT INTO course_materials(id,teacher_id,root_id,material_path,name,node_type)
+                VALUES(1,7,1,'networks-own.md','Networks own material','file'),
+                      (2,7,2,'networks-other.md','Networks other class material','file');
+            INSERT INTO course_material_assignments(material_id,class_offering_id,assigned_by_teacher_id,publication_mode)
+                VALUES(1,1,7,'explicit'),(2,2,7,'explicit');
             INSERT INTO assignments VALUES(1,'Networks published',1,1,'published',NULL,'assignment',1,'teacher','now'),
                 (2,'Networks draft',1,1,'new',NULL,'assignment',1,'teacher','now');
             INSERT INTO message_center_notifications VALUES(1,'teacher:7','teacher',7,'agent_task','normal','','',NULL,'Agent',

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import closing
 import sqlite3
 import unittest
 from pathlib import Path
@@ -201,8 +202,12 @@ def assert_student_visible_effective_scores(case, conn):
 
 class StudentSupportCourseSignalsSQLiteTests(unittest.TestCase):
     def test_ordering_combined_class_and_existing_submission_filters(self):
-        with sqlite3.connect(":memory:") as conn:
+        with closing(sqlite3.connect(":memory:")) as conn:
             conn.row_factory = sqlite3.Row
+            # TEMP tables otherwise depend on an external SQLite temp file even
+            # with an in-memory main DB. Match the application's connection
+            # pragma and keep this fixture owned in memory for the whole test.
+            conn.execute("PRAGMA temp_store=MEMORY")
             create_fixture(conn)
             assert_course_behavior(self, conn)
             assert_independent_history_totals(self, conn)

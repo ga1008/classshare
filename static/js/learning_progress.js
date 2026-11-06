@@ -18,7 +18,7 @@ export function initLearningProgressModal(config = window.APP_CONFIG || {}) {
         userName: config.userInfo?.name || '',
         onProgress: (progress) => {
             config.learningProgress = progress;
-            if (trigger && progress?.score !== undefined) trigger.textContent = Number(progress.score).toFixed(1);
+            if (trigger && progress?.score !== undefined) trigger.textContent = progress.score === null ? '生成中' : Number(progress.score).toFixed(1);
         },
     });
 }

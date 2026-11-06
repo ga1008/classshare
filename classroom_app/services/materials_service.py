@@ -703,7 +703,7 @@ def get_effective_assignment_nodes(conn, class_offering_id: int, *, publication_
     return effective
 
 
-def get_learning_material_assignment_anchor(conn, material_row):
+def get_learning_material_assignment_anchor(conn, material_row, *, package_read_index=None):
     if not material_row["parent_id"] or (
         material_row["node_type"] == "file" and material_row["preview_type"] == "markdown"
     ):
@@ -714,9 +714,12 @@ def get_learning_material_assignment_anchor(conn, material_row):
     from .html_package_service import find_html_package_root, is_package_entry_candidate_name
 
     if is_package_entry_candidate_name(material_row["name"]):
-        package = find_html_package_root(conn, material_row)
+        package = (
+            find_html_package_root(conn, material_row) if package_read_index is None
+            else package_read_index.find_package(material_row)
+        )
         if package and int(package.get("root_node_id") or 0) > 0:
-            package_root = conn.execute(
+            package_root = package_read_index.get_node(package["root_node_id"]) if package_read_index is not None else conn.execute(
                 """
                 SELECT * FROM course_materials WHERE id = ? LIMIT 1
                 """,

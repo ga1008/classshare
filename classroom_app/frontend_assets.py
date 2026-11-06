@@ -137,16 +137,22 @@ def get_frontend_asset(name_or_path: str) -> dict:
 
 
 def asset_url(name_or_path: str) -> str:
-    asset = get_frontend_asset(name_or_path)
+    asset = load_frontend_asset_manifest().get(str(name_or_path))
+    relative_path = asset["path"] if asset is not None else _normalize_static_path(name_or_path)
     graph = load_static_asset_graph()
-    hashed_path = graph.get("entries", {}).get(asset["path"])
+    hashed_path = graph.get("entries", {}).get(relative_path)
     if hashed_path:
+        # The graph loader already validated the immutable target. A source
+        # file mtime cannot change this URL, so avoid its filesystem lookup.
         return f"/static/{hashed_path}"
     if graph and (
-        asset["path"].startswith(("js/", "css/", "vendor/", "fonts/"))
-        or asset["path"] == "google_css.css"
+        relative_path.startswith(("js/", "css/", "vendor/", "fonts/"))
+        or relative_path == "google_css.css"
     ):
-        raise FileNotFoundError(f"Application asset is absent from the built graph; rebuild assets: {asset['path']}")
+        raise FileNotFoundError(f"Application asset is absent from the built graph; rebuild assets: {relative_path}")
+    if asset is None:
+        # Unbuilt/dev media retains the existing per-call mtime contract.
+        asset = get_frontend_asset(name_or_path)
     url = f"/static/{asset['path']}"
     revision = str(asset.get("revision") or "").strip()
     if revision:

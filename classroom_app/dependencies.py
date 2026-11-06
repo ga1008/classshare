@@ -7,6 +7,7 @@ import re
 import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
+from contextlib import nullcontext
 from typing import Optional, Dict
 from urllib.parse import urlencode, urlsplit
 from fastapi import Request, HTTPException, Depends, status
@@ -14,6 +15,7 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 
 from .config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from .db.errors import DatabaseBusyError
 from .database import (
     delete_user_sessions,
     get_db_connection,
@@ -37,6 +39,9 @@ pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 active_sessions: Dict[str, Dict] = {}
 _sessions_lock = threading.Lock()
+# A revocation may belong to a transaction whose caller has not committed yet.
+# Such identities use canonical reads until a fresh session write commits.
+_session_cache_versions: Dict[str, tuple[int, bool]] = {}
 _identity_validation_cache: Dict[str, float] = {}
 _identity_validation_lock = threading.Lock()
 IDENTITY_VALIDATION_CACHE_SECONDS = 10.0
@@ -118,21 +123,53 @@ def _build_session_snapshot(
     }
 
 
-def _cache_session_snapshot(session_user_key: str, session_snapshot: dict) -> None:
+def _cache_session_snapshot(session_user_key: str, session_snapshot: dict, *,
+                            expected_generation: int, committed: bool = False) -> bool:
     normalized_user_key = str(session_user_key or "").strip()
     if not normalized_user_key:
-        return
+        return False
     with _sessions_lock:
+        generation, blocked = _session_cache_versions.get(normalized_user_key, (0, False))
+        if generation != expected_generation or (blocked and not committed):
+            return False
+        if committed:
+            _session_cache_versions[normalized_user_key] = (generation, False)
         active_sessions[normalized_user_key] = dict(session_snapshot)
+        return True
+
+
+def _session_cache_state(session_user_key: str) -> tuple[Optional[dict], int, bool]:
+    with _sessions_lock:
+        snapshot = active_sessions.get(session_user_key)
+        generation, blocked = _session_cache_versions.get(session_user_key, (0, False))
+        return (dict(snapshot) if snapshot and not blocked else None), generation, blocked
+
+
+def _begin_session_cache_write(user_id: str, role: str) -> int:
+    """Reserve before a serialized DB write; failed writes keep safe cold reads."""
+    key = build_session_user_key(user_id, role) or str(user_id)
+    with _sessions_lock:
+        generation = _session_cache_versions.get(key, (0, False))[0] + 1
+        _session_cache_versions[key] = (generation, True)
+        active_sessions.pop(key, None)
+        return generation
+
+
+def _publish_committed_access_token(token: str, generation: int) -> bool:
+    payload = decode_token_payload(token) or {}
+    key = get_session_user_key_from_payload(payload)
+    if not key:
+        return False
+    return _cache_session_snapshot(key, {
+        "session_id": payload.get("session_id"), "user_id": str(payload.get("id")),
+        "role": payload.get("role"), "name": payload.get("name", ""), "ip": payload.get("ip"),
+        "last_login": payload.get("login_time", ""),
+        "expires_at": datetime.fromtimestamp(payload["exp"], timezone.utc).isoformat(),
+    }, expected_generation=generation, committed=True)
 
 
 def _get_cached_session_snapshot(session_user_key: str) -> Optional[dict]:
-    normalized_user_key = str(session_user_key or "").strip()
-    if not normalized_user_key:
-        return None
-    with _sessions_lock:
-        snapshot = active_sessions.get(normalized_user_key)
-        return dict(snapshot) if snapshot else None
+    return _session_cache_state(str(session_user_key or "").strip())[0]
 
 
 def _is_cached_session_expired(session_snapshot: dict) -> bool:
@@ -140,7 +177,7 @@ def _is_cached_session_expired(session_snapshot: dict) -> bool:
     return bool(expires_at and expires_at <= datetime.now(timezone.utc).isoformat())
 
 
-def _drop_cached_sessions_for_user(user_id: str, role: Optional[str] = None) -> int:
+def _drop_cached_sessions_for_user(user_id: str, role: Optional[str] = None, *, block: bool = False) -> int:
     raw_user_id = str(user_id or "").strip()
     normalized_role = str(role or "").strip().lower()
     if not raw_user_id:
@@ -154,6 +191,12 @@ def _drop_cached_sessions_for_user(user_id: str, role: Optional[str] = None) -> 
             if str(session.get("user_id") or "") == raw_user_id
             and (not normalized_role or str(session.get("role") or "").strip().lower() == normalized_role)
         ]
+        keys_to_fence = {raw_user_id, *keys_to_remove}
+        keys_to_fence.update(build_session_user_key(raw_user_id, candidate_role)
+                             for candidate_role in ([normalized_role] if normalized_role else VALID_AUTHENTICATED_ROLES))
+        for session_key in keys_to_fence:
+            generation, blocked = _session_cache_versions.get(session_key, (0, False))
+            _session_cache_versions[session_key] = (generation + 1, blocked or block)
         for session_key in keys_to_remove:
             if session_key in active_sessions:
                 del active_sessions[session_key]
@@ -199,11 +242,8 @@ def _drop_identity_cache_for_user(user_id: str, role: Optional[str] = None) -> N
 
 
 def list_active_sessions() -> dict[str, dict]:
-    sessions = list_user_sessions()
-    with _sessions_lock:
-        active_sessions.clear()
-        active_sessions.update({key: dict(value) for key, value in sessions.items()})
-    return sessions
+    # Administrative snapshots are not an authorization-cache publication.
+    return list_user_sessions()
 
 
 def list_active_session_roles_for_user(user_id: str) -> set[str]:
@@ -267,7 +307,7 @@ def get_password_hash(password):
     return pwd_context.hash(password)
 
 # --- 认证 ---
-def create_access_token(data: dict, client_ip: str) -> str:
+def create_access_token(data: dict, client_ip: str, *, conn=None, cache_generation=None) -> str:
     """创建 JWT token，包含会话ID和IP信息"""
     session_id = str(uuid.uuid4())
     normalized_ip = normalize_ip(client_ip) or str(client_ip)
@@ -284,17 +324,29 @@ def create_access_token(data: dict, client_ip: str) -> str:
     token_data["exp"] = expire_at
 
     user_id = str(data["id"])
-    session_snapshot = save_user_session(
-        session_user_key=session_user_key,
-        session_id=session_id,
-        user_id=user_id,
-        role=str(data.get("role") or ""),
-        name=str(data.get("name") or ""),
-        ip=normalized_ip,
-        last_login=str(data.get("login_time") or ""),
-        expires_at=expire_at.isoformat(),
-    )
-    _cache_session_snapshot(session_user_key, session_snapshot)
+    generation = cache_generation
+    with (nullcontext(conn) if conn is not None else get_db_connection()) as active_conn:
+        if conn is None:
+            from .services.account_credentials_service import lock_actor_authorization_transition
+            lock_actor_authorization_transition(active_conn, role=str(data.get("role") or ""), user_id=int(user_id))
+        if generation is None:
+            generation = _begin_session_cache_write(user_id, str(data.get("role") or ""))
+        session_snapshot = save_user_session(
+            session_user_key=session_user_key,
+            session_id=session_id,
+            user_id=user_id,
+            role=str(data.get("role") or ""),
+            name=str(data.get("name") or ""),
+            ip=normalized_ip,
+            last_login=str(data.get("login_time") or ""),
+            expires_at=expire_at.isoformat(),
+            conn=active_conn,
+        )
+        if conn is None:
+            active_conn.commit()
+    # A caller-owned transaction publishes its session only after committing.
+    if conn is None:
+        _cache_session_snapshot(session_user_key, session_snapshot, expected_generation=generation, committed=True)
 
     print(f"[SESSION] 用户 {data.get('name')} 登录，IP: {normalized_ip}, 会话ID: {session_id}")
     return jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
@@ -328,18 +380,19 @@ def verify_token(token: Optional[str], client_ip: Optional[str] = None) -> Optio
         token_ip = normalize_ip(payload.get("ip"))
         normalized_client_ip = normalize_ip(client_ip)
 
-        current_session = _get_cached_session_snapshot(session_user_key)
+        current_session, generation, blocked = _session_cache_state(session_user_key)
         if current_session is not None and _is_cached_session_expired(current_session):
             _drop_cached_sessions_for_user(user_id, str(payload.get("role") or ""))
-            current_session = None
+            current_session, generation, blocked = _session_cache_state(session_user_key)
         if current_session is None:
             current_session = get_user_session(session_user_key)
+            if current_session is not None:
+                _cache_session_snapshot(session_user_key, current_session, expected_generation=generation)
         if current_session is None:
-            _drop_cached_sessions_for_user(user_id, str(payload.get("role") or ""))
             print(f"[SESSION] 用户 {user_id} 没有活跃会话")
             return None
-
-        _cache_session_snapshot(session_user_key, current_session)
+        if _session_cache_state(session_user_key)[1] != generation:
+            return None  # A newer login/revocation won while the DB read waited.
         session_ip = normalize_ip(current_session.get("ip"))
 
         if current_session["session_id"] != session_id:
@@ -536,10 +589,19 @@ def invalidate_session_for_user(
     and forgets only its own device."""
     raw_user_id = str(user_id).strip()
     normalized_role = role.strip().lower() if role else None
-    if revoke_remembered:
-        _revoke_remembered_devices(raw_user_id, normalized_role, conn=conn)
-    removed_count = delete_user_sessions(raw_user_id, normalized_role, conn=conn)
-    removed_cache_count = _drop_cached_sessions_for_user(raw_user_id, normalized_role)
+    removed_cache_count = _drop_cached_sessions_for_user(raw_user_id, normalized_role, block=True)
+    with (nullcontext(conn) if conn is not None else get_db_connection()) as active_conn:
+        if conn is None and raw_user_id.isdigit():
+            from .services.account_credentials_service import lock_actor_authorization_transition
+            for actor_role in ([normalized_role] if normalized_role else sorted(VALID_AUTHENTICATED_ROLES)):
+                if actor_role in VALID_AUTHENTICATED_ROLES:
+                    lock_actor_authorization_transition(active_conn, role=actor_role, user_id=int(raw_user_id))
+        if revoke_remembered:
+            _revoke_remembered_devices(raw_user_id, normalized_role, conn=active_conn)
+        removed_count = delete_user_sessions(raw_user_id, normalized_role, conn=active_conn)
+        if conn is None:
+            active_conn.commit()
+    removed_cache_count += _drop_cached_sessions_for_user(raw_user_id, normalized_role, block=True)
     _drop_identity_cache_for_user(raw_user_id, normalized_role)
 
     if removed_count > 0 or removed_cache_count > 0:
@@ -550,14 +612,11 @@ def invalidate_session_for_user(
 
 
 def _revoke_remembered_devices(user_id: str, role: Optional[str], *, conn=None) -> None:
-    try:
-        from .services.remember_login_service import revoke_remember_tokens, revoke_remember_tokens_standalone
-        if conn is not None:
-            revoke_remember_tokens(conn, user_id, role, "session_invalidated")
-        else:
-            revoke_remember_tokens_standalone(user_id, role, "session_invalidated")
-    except Exception as exc:  # noqa: BLE001 - never block ending a session
-        print(f"[REMEMBER] revoke on invalidate failed for {role}:{user_id}: {exc}")
+    from .services.remember_login_service import revoke_remember_tokens, revoke_remember_tokens_standalone
+    if conn is not None:
+        revoke_remember_tokens(conn, user_id, role, "session_invalidated")
+    else:
+        revoke_remember_tokens_standalone(user_id, role, "session_invalidated")
 
 
 def get_client_ip(request: Request) -> str:
@@ -592,16 +651,12 @@ def _get_mp_bearer_user(request: Request) -> Optional[dict]:
     bearer_token = header[7:].strip()
     if not bearer_token:
         return None
-    try:
-        from .services import wechat_mp_service
+    from .services import wechat_mp_service
 
-        with get_db_connection() as conn:
-            session = wechat_mp_service.resolve_mp_session(conn, bearer_token)
-            user = wechat_mp_service.load_mp_user(conn, session) if session else None
-            conn.commit()
-    except Exception as exc:
-        print(f"[WECHAT_MP] bearer 会话解析失败: {exc}")
-        return None
+    with get_db_connection() as conn:
+        session = wechat_mp_service.resolve_mp_session(conn, bearer_token)
+        user = wechat_mp_service.load_mp_user(conn, session) if session else None
+        conn.commit()
     if not user:
         return None
     user["auth_channel"] = "mp"
@@ -609,13 +664,22 @@ def _get_mp_bearer_user(request: Request) -> Optional[dict]:
 
 
 def get_active_user_from_request(request: Request) -> Optional[dict]:
+    if getattr(request.state, "auth_unavailable", False):
+        raise DatabaseBusyError("身份验证服务暂时繁忙，请稍后重试。")
+    if getattr(request.state, "auth_verified", False):
+        return request.state.auth_user
     token = request.cookies.get("access_token")
     if token:
         client_ip = get_client_ip(request)
         user = verify_token(token, client_ip)
         if user:
+            request.state.auth_user = user
+            request.state.auth_verified = True
             return user
-    return _get_mp_bearer_user(request)
+    user = _get_mp_bearer_user(request)
+    request.state.auth_user = user
+    request.state.auth_verified = True
+    return user
 
 
 def get_current_user_optional(request: Request) -> Optional[dict]:
@@ -643,11 +707,16 @@ def _permission_denied_headers(required_role: Optional[str] = None) -> dict[str,
     return headers
 
 
-def _permission_denied(detail: str, required_role: Optional[str] = None) -> HTTPException:
+def _permission_denied(
+    detail: str, required_role: Optional[str] = None, *, session_invalidated: bool = False,
+) -> HTTPException:
+    headers = _permission_denied_headers(required_role)
+    if session_invalidated:
+        headers["X-Auth-Session-Invalidated"] = "1"
     return HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail=detail,
-        headers=_permission_denied_headers(required_role),
+        headers=headers,
     )
 
 
@@ -659,27 +728,24 @@ def _validate_teacher_identity(user: dict) -> None:
     if _identity_cache_is_valid("teacher", user_id):
         return
 
-    try:
-        with get_db_connection() as conn:
-            row = conn.execute(
-                """
-                SELECT COALESCE(is_active, 1) AS is_active
-                FROM teachers
-                WHERE id = ?
-                LIMIT 1
-                """,
-                (user_id,),
-            ).fetchone()
-    except Exception:
-        row = None
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT COALESCE(is_active, 1) AS is_active
+            FROM teachers
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
 
     if row is None:
         invalidate_session_for_user(user_id, "teacher")
-        raise _permission_denied("当前教师账号不存在或已移除。", "teacher")
+        raise _permission_denied("当前教师账号不存在或已移除。", "teacher", session_invalidated=True)
 
     if int(row["is_active"] or 0) != 1:
         invalidate_session_for_user(user_id, "teacher")
-        raise _permission_denied("当前教师账号已停用，暂不能继续访问系统。", "teacher")
+        raise _permission_denied("当前教师账号已停用，暂不能继续访问系统。", "teacher", session_invalidated=True)
 
 
     _cache_valid_identity("teacher", user_id)
@@ -693,23 +759,20 @@ def _validate_student_identity(user: dict) -> None:
     if _identity_cache_is_valid("student", user_id):
         return
 
-    try:
-        with get_db_connection() as conn:
-            row = conn.execute(
-                """
-                SELECT COALESCE(enrollment_status, 'active') AS enrollment_status
-                FROM students
-                WHERE id = ?
-                LIMIT 1
-                """,
-                (user_id,),
-            ).fetchone()
-    except Exception:
-        row = None
+    with get_db_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT COALESCE(enrollment_status, 'active') AS enrollment_status
+            FROM students
+            WHERE id = ?
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
 
     if row is None:
         invalidate_session_for_user(user_id, "student")
-        raise _permission_denied("当前学生账号不存在或已移除。", "student")
+        raise _permission_denied("当前学生账号不存在或已移除。", "student", session_invalidated=True)
 
     normalized_status = normalize_student_enrollment_status(row["enrollment_status"])
     if normalized_status != STUDENT_STATUS_ACTIVE:
@@ -717,6 +780,7 @@ def _validate_student_identity(user: dict) -> None:
         raise _permission_denied(
             f"当前学生账号已设置为{student_enrollment_status_label(normalized_status)}，暂不纳入课堂学习。",
             "student",
+            session_invalidated=True,
         )
 
 
@@ -729,7 +793,7 @@ def validate_authenticated_user_identity(user: dict) -> dict:
         user_id = str(user.get("id") or "").strip()
         if user_id:
             invalidate_session_for_user(user_id, normalized_role or None)
-        raise _permission_denied("当前登录身份无效，请重新登录。")
+        raise _permission_denied("当前登录身份无效，请重新登录。", session_invalidated=True)
 
     normalized_user = dict(user)
     normalized_user["role"] = normalized_role

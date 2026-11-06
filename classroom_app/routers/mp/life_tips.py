@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from ...db.connection import get_db_connection
-from ...services.life_tip_service import record_tip_feedback
+from ...services.life_tip_service import invalidate_pool_cache, record_tip_feedback
 from .deps import get_current_mp_user
 
 router = APIRouter(prefix="/life-tips")
@@ -37,6 +37,7 @@ def mp_tip_feedback(
                 verdict=payload.verdict,
             )
             conn.commit()
+            invalidate_pool_cache()
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {"success": True, "data": result, "error": None}

@@ -79,18 +79,39 @@ class ClassroomMaterialLibraryRouteTests(unittest.IsolatedAsyncioTestCase):
         record_classroom_material_publication(self.conn, 200, 5, 1)
         self.conn.commit()
         for user in (self.teacher, self.student):
-            root = await learning.get_classroom_materials(5, None, user)
+            root = learning.get_classroom_materials(5, None, user)
             self.assertEqual([200], [item["id"] for item in root["items"]])
             self.assertEqual(1, root["items"][0]["child_count"])
             self.assertEqual(user == self.teacher, root["capabilities"]["can_upload"])
-            folder = await learning.get_classroom_materials(5, 200, user)
+            folder = learning.get_classroom_materials(5, 200, user)
             self.assertEqual([201], [item["id"] for item in folder["items"]])
             self.assertFalse(folder["capabilities"]["can_upload"])
             self.assertNotIn("check_questions_json", folder["items"][0])
             self.assertIn("/materials/render-view/", folder["items"][0]["preview_url"])
             with self.assertRaises(HTTPException) as denied:
-                await learning.get_classroom_material_detail(5, 202, user)
+                learning.get_classroom_material_detail(5, 202, user)
             self.assertEqual(403, denied.exception.status_code)
+
+    async def test_list_and_detail_share_archive_exclusions_once_per_request(self):
+        from classroom_app.services import material_publication_service as publication
+
+        record_classroom_material_publication(self.conn, 200, 5, 1)
+        self.conn.commit()
+        with patch.object(publication, "get_restricted_material_paths", wraps=publication.get_restricted_material_paths) as restricted:
+            self.assertEqual([200], [item["id"] for item in learning.get_classroom_materials(5, None, self.student)["items"]])
+            self.assertEqual(1, restricted.call_count)
+            restricted.reset_mock()
+            self.assertEqual(201, learning.get_classroom_material_detail(5, 201, self.student)["material"]["id"])
+            self.assertEqual(1, restricted.call_count)
+        with patch.object(learning, "resolve_render_targets", wraps=learning.resolve_render_targets) as render:
+            folder = learning.get_classroom_materials(5, 200, self.student)
+            self.assertEqual(200, folder["current_folder"]["id"])
+            self.assertEqual([201], [item["id"] for item in folder["items"]])
+            self.assertEqual(1, render.call_count)
+        self.conn.execute("DELETE FROM course_material_assignments")
+        with self.assertRaises(HTTPException) as withdrawn:
+            learning.get_classroom_material_detail(5, 201, self.student)
+        self.assertEqual(403, withdrawn.exception.status_code)
 
     async def test_classroom_upload_defaults_to_current_class_and_requires_its_teacher(self):
         async def store(file):
@@ -126,9 +147,9 @@ class ClassroomMaterialLibraryRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(material["name"], second["name"])
         self.assertEqual(
             {material["id"], second["id"]},
-            {row["id"] for row in (await learning.get_classroom_materials(5, None, self.student))["items"]},
+            {row["id"] for row in (learning.get_classroom_materials(5, None, self.student))["items"]},
         )
-        self.assertFalse((await learning.get_classroom_materials(6, None, self.other_student))["items"])
+        self.assertFalse((learning.get_classroom_materials(6, None, self.other_student))["items"])
 
     async def test_owner_only_publication_and_explicit_withdrawal(self):
         self.conn.execute("UPDATE course_materials SET scope_level='public' WHERE id=100")
@@ -142,10 +163,10 @@ class ClassroomMaterialLibraryRouteTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(0, repeated["added_count"])
         self.assertEqual(1, len(repeated["assignments"]))
-        self.assertEqual(100, (await learning.get_classroom_material_detail(5, 100, self.student))["material"]["id"])
+        self.assertEqual(100, (learning.get_classroom_material_detail(5, 100, self.student))["material"]["id"])
         await library.assign_material_to_classrooms(100, library.MaterialAssignRequest(class_offering_ids=[]), self.teacher)
         with self.assertRaises(HTTPException) as withdrawn:
-            await learning.get_classroom_material_detail(5, 100, self.student)
+            learning.get_classroom_material_detail(5, 100, self.student)
         self.assertEqual(403, withdrawn.exception.status_code)
 
     async def test_organization_student_opt_in_preserves_scope_and_honors_revision(self):
@@ -175,7 +196,7 @@ class ClassroomMaterialLibraryRouteTests(unittest.IsolatedAsyncioTestCase):
                 (str(path), path.name, path.stat().st_size),
             )
             self.conn.execute("UPDATE class_offerings SET textbook_id=1 WHERE id=5")
-            root = await learning.get_classroom_materials(5, None, self.student)
+            root = learning.get_classroom_materials(5, None, self.student)
             self.assertEqual("Course book", root["textbook"]["title"])
             self.assertTrue(root["textbook"]["preview_url"].endswith("?preview=true"))
             self.assertNotIn("attachment_path", root["textbook"])

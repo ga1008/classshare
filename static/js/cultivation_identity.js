@@ -639,7 +639,7 @@ function buildReveal(profile, durationMs) {
         ? `可破境 · ${profile.next_stage_name}`
         : (level.level_name || '未入道');
     const courseLine = profile?.reveal_subtitle
-        || `${profile?.best_course?.course_name || '课堂修行'} · 修为 ${profile?.score ?? 0} / 100`;
+        || (profile?.score === null ? '学习进度正在生成' : `${profile?.best_course?.course_name || '课堂修行'} · 修为 ${profile?.score ?? 0} / 100`);
     const progressLabel = profile?.progress_label || '修为进度';
     const nextHint = profile?.breakthrough_ready && profile?.next_stage_name
         ? `已可挑战 ${profile.next_stage_name}`
@@ -733,7 +733,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         clearRevealCookie();
     }
     const wantsReveal = !sceneEntered && shouldRevealFromCookie();
-    const payload = await fetchCultivationProfile(wantsReveal);
+    const initialProfile = window.DASHBOARD_CULTIVATION_REVEAL?.cultivationProfile;
+    const payload = initialProfile && !wantsReveal ? { profile: initialProfile } : await fetchCultivationProfile(wantsReveal);
     const profile = payload?.profile || null;
     if (profile) {
         window.CULTIVATION_PROFILE = profile;

@@ -20,7 +20,7 @@ def build_capabilities(Capability, spec, _id):
                 'expected_submission_version': version}}, transport='form', allows_files=True, max_body_bytes=512000,
             response_contract='assignment_draft'),
         Capability('http.assignment.submit', '按当前学生身份提交作业，沿用原有附件与评分流程', 'POST', '/api/assignments/{assignment_id}/submit',
-            'homework_parts.submissions', 'submit_assignment', '63876517056eeea0453ea474ad3f12be161e35bf3a675d7cd29f40209284282b',
+            'homework_parts.submissions', 'submit_assignment', 'ca57f5a8040a3d577e6c88bc7c1d7713b0bf62bfa8886cd560ea3322db50d853',
             {'path': {'assignment_id': assignment}, 'body': {'answers_json': answers, 'manifest': manifest,
                 'started_at': spec('string', maxLength=100), 'use_server_draft': spec('boolean'),
                 'expected_submission_version': version}}, transport='form', allows_files=True, max_body_bytes=512000),

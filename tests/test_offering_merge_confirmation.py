@@ -12,6 +12,75 @@ class OfferingMergeConfirmationTests(OfferingMergeServiceTests):
         return merge.build_merge_preview(conn, teacher_id=self.teacher_id,
             target_offering_id=self.target_id, source_offering_ids=[self.source_id])
 
+    def test_pending_behavior_blocks_merge_and_applied_receipt_keeps_immutable_scope(self):
+        with database.get_db_connection() as conn:
+            conn.execute("""INSERT INTO behavior_write_inbox
+                (batch_key,batch_id,payload_hash,class_offering_id,user_pk,user_role,display_name,events_json,received_at)
+                VALUES('receipt-key','receipt-id','immutable-hash',?,?,'student','Synthetic','[]','2026-11-05')""",
+                (self.source_id, self.student_b))
+            conn.commit()
+            self.assertEqual([], merge.find_unregistered_offering_tables(conn))
+            before = self.preview(conn)
+            self.assertFalse(before["can_execute"])
+            self.assertTrue(any("等待落库" in item for item in before["blockers"]))
+            conn.execute("UPDATE behavior_write_inbox SET state='applied',result_json='{}',applied_at='2026-11-05'")
+            conn.execute("""INSERT INTO behavior_write_inbox
+                (batch_key,batch_id,payload_hash,class_offering_id,user_pk,user_role,display_name,events_json,received_at)
+                VALUES('target-key','target-id','target-hash',?,?,'student','Synthetic','[]','2026-11-05')""",
+                (self.target_id, self.student_a))
+            self.assertFalse(self.preview(conn)["can_execute"], "target work must also drain before a merge")
+            conn.execute("UPDATE behavior_write_inbox SET state='applied',result_json='{}',applied_at='2026-11-05'")
+            conn.commit()
+            ready = self.preview(conn)
+            self.assertTrue(ready["can_execute"])
+            self.assertNotEqual(before["review_hash"], ready["review_hash"])
+            self._execute(conn)
+            row = conn.execute("SELECT batch_key,class_offering_id,payload_hash,state FROM behavior_write_inbox").fetchone()
+            self.assertEqual(("receipt-key", self.source_id, "immutable-hash", "applied"), tuple(row))
+            archived = conn.execute("SELECT payload_json FROM offering_merge_archives ORDER BY id DESC LIMIT 1").fetchone()[0]
+            self.assertIn("receipt-key", archived)
+
+    def test_known_unmapped_scopes_allow_empty_tables_and_block_populated_source(self):
+        from classroom_app.db import schema_session_knowledge_trees, schema_wanderers
+        with database.get_db_connection() as conn:
+            with patch.object(schema_session_knowledge_trees, "_SCHEMA_READY", False), patch.object(schema_wanderers, "_SCHEMA_READY", False):
+                schema_session_knowledge_trees.ensure_session_knowledge_tree_schema(conn)
+                schema_wanderers.ensure_wanderer_schema(conn, engine="sqlite")
+            self.assertTrue(self.preview(conn)["can_execute"])
+            inserts = {
+                "session_knowledge_trees": ("INSERT INTO session_knowledge_trees(id,class_offering_id,session_id) VALUES('probe',?,?)", (self.source_id, self.source_session)),
+                "wanderer_action_log": ("INSERT INTO wanderer_action_log(wanderer_id,action_kind,class_offering_id,created_at) VALUES(1,'probe',?,'2026-11-05')", (self.source_id,)),
+                "wanderer_social_inbox": ("INSERT INTO wanderer_social_inbox(wanderer_id,source,conversation_key,peer_identity,class_offering_id,run_at,created_at,updated_at) VALUES(1,'classroom','probe','student:1',?,'2026-11-05','2026-11-05','2026-11-05')", (self.source_id,)),
+            }
+            for table, (statement, params) in inserts.items():
+                with self.subTest(table=table):
+                    conn.execute(statement, params)
+                    self.assertFalse(self.preview(conn)["can_execute"])
+                    with self.assertRaises(merge.OfferingMergeError):
+                        self._execute(conn)
+                    conn.execute(f"DELETE FROM {table}")
+
+    def test_quarantined_behavior_blocks_each_participant_until_explicit_discard(self):
+        with database.get_db_connection() as conn:
+            for key, offering_id, student_id in (("source-quarantine", self.source_id, self.student_b),
+                                                ("target-quarantine", self.target_id, self.student_a)):
+                conn.execute("""INSERT INTO behavior_write_inbox
+                    (batch_key,batch_id,payload_hash,class_offering_id,user_pk,user_role,display_name,events_json,received_at,state)
+                    VALUES(?,?,?, ?,?,'student','Synthetic','[]','2026-11-05','quarantined')""",
+                    (key, key, key+"-hash", offering_id, student_id))
+                preview = self.preview(conn)
+                self.assertFalse(preview["can_execute"])
+                self.assertTrue(any("隔离待修复" in item for item in preview["blockers"]))
+                with self.assertRaises(merge.OfferingMergeError):
+                    self._execute(conn)
+                conn.execute("UPDATE behavior_write_inbox SET state='discarded' WHERE batch_key=?", (key,))
+            ready = self.preview(conn)
+            self.assertTrue(ready["can_execute"])
+            self._execute(conn)
+            rows = conn.execute("SELECT batch_key,class_offering_id,payload_hash,state FROM behavior_write_inbox ORDER BY batch_key").fetchall()
+            self.assertEqual([("source-quarantine", self.source_id, "source-quarantine-hash", "discarded"),
+                              ("target-quarantine", self.target_id, "target-quarantine-hash", "discarded")], [tuple(row) for row in rows])
+
     def test_review_performs_no_ddl_or_mutation_and_detects_same_count_changes(self):
         with database.get_db_connection() as conn:
             statements = []
