@@ -327,6 +327,11 @@ POSTGRES_RUNTIME_UNIQUE_INDEXES: tuple[tuple[str, str, tuple[str, ...]], ...] = 
 
 POSTGRES_RUNTIME_COLUMN_DEFINITIONS: dict[str, dict[str, str]] = {
     **AI_JOB_POSTGRES_RUNTIME_COLUMNS,
+    "classroom_behavior_states": {
+        "learning_online_seconds": "INTEGER",
+        "learning_focus_seconds": "INTEGER",
+        "presence_coverage_json": "TEXT NOT NULL DEFAULT '{}'",
+    },
     "assignment_wrong_summary_jobs": {
         # Added to the CREATE TABLE later without an ALTER migration, so a
         # PostgreSQL provisioned from an older schema lacks it. Auto-add here.

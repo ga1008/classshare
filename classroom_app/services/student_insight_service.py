@@ -245,8 +245,8 @@ def _load_activity_summary(
     state_row = conn.execute(
         f"""
         SELECT SUM(total_activity_count) AS activity_count,
-               SUM(online_accumulated_seconds) AS online_seconds,
-               SUM(focus_total_seconds) AS focus_seconds,
+               SUM(COALESCE(learning_online_seconds, online_accumulated_seconds)) AS online_seconds,
+               SUM(COALESCE(learning_focus_seconds, focus_total_seconds)) AS focus_seconds,
                SUM(visible_total_seconds) AS visible_seconds
         FROM classroom_behavior_states
         WHERE class_offering_id IN ({placeholders})

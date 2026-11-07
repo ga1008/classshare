@@ -616,7 +616,7 @@ def _build_student_overview(conn, profile: dict[str, Any], user: dict) -> dict[s
     behavior_row = conn.execute(
         """
         SELECT SUM(total_activity_count) AS activity_count,
-               SUM(focus_total_seconds) AS focus_seconds,
+               SUM(COALESCE(learning_focus_seconds, focus_total_seconds)) AS focus_seconds,
                MAX(last_event_at) AS last_event_at
         FROM classroom_behavior_states
         WHERE user_role = 'student' AND user_pk = ?

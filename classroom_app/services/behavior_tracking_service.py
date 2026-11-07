@@ -18,8 +18,10 @@ from ..core import ai_client
 from ..database import get_db_connection
 from ..db.connection import begin_immediate_transaction, execute_insert_returning_id
 from .ai_gateway_service import ai_gateway_post
+from .behavior_event_validation import HEARTBEAT_ACTIONS, is_measured_presence
 from .behavior_inbox_service import BehaviorWritePipeline as _BehaviorWritePipeline
 from .behavior_inbox_service import BehaviorWriteRequest as _BehaviorWriteRequest
+from .behavior_presence_service import ACTIVE_PRESENCE_WINDOW_SECONDS, measure_presence, read_presence_sample, timestamp_ms
 from .psych_profile_service import (
     build_explicit_user_profile_prompt,
     format_classroom_summary,
@@ -39,8 +41,6 @@ from .student_support_service import build_student_support_signal_prompt
 PROFILE_INTERVAL_MIN_SECONDS = 30 * 60
 PROFILE_INTERVAL_MAX_SECONDS = 70 * 60
 PROFILE_RETRY_BACKOFF_SECONDS = 5 * 60
-HEARTBEAT_MAX_DELTA_SECONDS = 90
-ACTIVE_PRESENCE_WINDOW_SECONDS = 150
 PROFILE_SCHEDULER_POLL_SECONDS = 45
 PROFILE_SCHEDULER_MAX_CONCURRENT = 1
 BEHAVIOR_HISTORY_LIMIT = 48
@@ -245,13 +245,9 @@ def _seconds_until_due_timestamp(value: Any) -> int:
 
 
 def _should_start_new_behavior_session(current_anchor_text: Any, session_started_at_text: Optional[str]) -> bool:
-    next_anchor = _parse_iso_datetime(session_started_at_text)
-    if next_anchor is None:
-        return False
-    current_anchor = _parse_iso_datetime(current_anchor_text)
-    if current_anchor is None:
-        return True
-    return next_anchor > current_anchor + timedelta(seconds=1)
+    next_anchor = timestamp_ms(session_started_at_text)
+    current_anchor = timestamp_ms(current_anchor_text)
+    return next_anchor > 0 and (current_anchor == 0 or next_anchor > current_anchor + 1000)
 
 
 @retry_on_locked()
@@ -268,7 +264,7 @@ def _ensure_behavior_state_row(
 ) -> None:
     state = conn.execute(
         """
-        SELECT current_session_started_at, last_profiled_at,
+        SELECT current_session_started_at, last_profiled_at, last_presence_at,
                next_profile_interval_seconds, next_profile_due_at
         FROM classroom_behavior_states
         WHERE class_offering_id = ?
@@ -309,6 +305,9 @@ def _ensure_behavior_state_row(
         )
         return
 
+    if timestamp_ms(last_presence_at) < timestamp_ms(state["last_presence_at"]):
+        last_presence_at = None
+
     if _should_start_new_behavior_session(
         _safe_row_value(state, "current_session_started_at"),
         session_started_at,
@@ -324,6 +323,8 @@ def _ensure_behavior_state_row(
                 profile_generation_pending = 0,
                 next_profile_interval_seconds = ?,
                 next_profile_due_at = ?,
+                learning_online_seconds = COALESCE(learning_online_seconds, online_accumulated_seconds),
+                learning_focus_seconds = COALESCE(learning_focus_seconds, focus_total_seconds),
                 online_accumulated_seconds = 0,
                 focus_total_seconds = 0,
                 blur_total_seconds = 0,
@@ -403,7 +404,12 @@ def _load_behavior_state_snapshot(
 ) -> dict[str, Any]:
     row = conn.execute(
         """
-        SELECT *
+        SELECT class_offering_id, user_pk, user_role, total_activity_count, last_profiled_activity_count,
+               profile_generation_pending, last_event_at, last_profiled_at, next_profile_interval_seconds,
+               next_profile_due_at, online_accumulated_seconds, current_session_started_at, last_presence_at,
+               last_page_key, last_visibility_state, last_focus_state, last_idle_seconds, focus_total_seconds,
+               blur_total_seconds, visible_total_seconds, hidden_total_seconds, discussion_lurk_total_seconds,
+               ai_panel_open_total_seconds, learning_online_seconds, learning_focus_seconds, created_at, updated_at
         FROM classroom_behavior_states
         WHERE class_offering_id = ?
           AND user_pk = ?
@@ -435,6 +441,12 @@ def _record_behavior_batch_in_connection(
     now = datetime.fromisoformat(recorded_at) if recorded_at else datetime.now()
     now_text = now.isoformat()
     logged_event_ids: list[int] = []
+    learning_seconds = 0
+    has_receipt_presence = any(
+        _normalize_action_type(str(item.get("action_type") or "page_action")) not in HEARTBEAT_ACTIONS
+        or not is_measured_presence(item["payload"] if isinstance(item.get("payload"), dict) else {})
+        for item in events if isinstance(item, dict)
+    )
 
     _ensure_behavior_state_row(
         conn,
@@ -443,8 +455,8 @@ def _record_behavior_batch_in_connection(
         user_role=user_role,
         now=now_text,
         session_started_at=session_started_at,
-        last_presence_at=now_text,
-        page_key=page_key,
+        last_presence_at=now_text if has_receipt_presence else None,
+        page_key=page_key if has_receipt_presence else None,
     )
 
     for item in events:
@@ -456,20 +468,16 @@ def _record_behavior_batch_in_connection(
         summary_text = _truncate_text(item.get("summary_text") or "", 300)
         item_page_key = str(item.get("page_key") or page_key or "").strip() or None
 
-        if event_type in {"presence_heartbeat", "page_presence", "heartbeat"}:
-            visibility_state = "visible" if str(payload.get("visibility_state") or "visible") == "visible" else "hidden"
-            focus_state = "focused" if bool(payload.get("focused", True)) else "blurred"
-            _apply_presence_heartbeat(
+        if event_type in HEARTBEAT_ACTIONS:
+            learning_seconds += _apply_presence_heartbeat(
                 conn,
                 class_offering_id=class_offering_id,
                 user_pk=user_pk,
                 user_role=user_role,
                 now=now,
                 page_key=item_page_key,
-                visibility_state=visibility_state,
-                focus_state=focus_state,
-                idle_seconds=int(payload.get("idle_seconds") or 0),
-                ai_panel_open=bool(payload.get("ai_panel_open")),
+                session_started_at=session_started_at,
+                payload=payload,
             )
             if not summary_text:
                 continue
@@ -522,14 +530,19 @@ def _record_behavior_batch_in_connection(
         user_pk=user_pk,
         user_role=user_role,
     )
-    if user_role == "student" and logged_event_ids:
+    if user_role == "student" and (logged_event_ids or learning_seconds):
         from .learning_progress_service import mark_student_learning_progress_dirty
+
+        # Duration updates change the published progress view but blank
+        # heartbeats are still ineligible for the daily activity reward.
+        mark_student_learning_progress_dirty(conn, int(class_offering_id), int(user_pk),
+                                            source_ref="behavior:event" if logged_event_ids else "behavior:presence")
+    if user_role == "student" and logged_event_ids:
         from .student_streak_service import record_student_activity
         from .student_points_service import award_points_once
 
         # These effects are part of the same savepoint as the event and receipt.
         # Never swallow a PostgreSQL error and continue an aborted transaction.
-        mark_student_learning_progress_dirty(conn, int(class_offering_id), int(user_pk), source_ref="behavior:event")
         streak_state = record_student_activity(conn, int(user_pk), active_date=now.date())
         if streak_state.get("is_new_day"):
             award_points_once(conn, int(user_pk), kind="daily_active",
@@ -586,14 +599,15 @@ def _apply_presence_heartbeat(
     user_role: str,
     now: datetime,
     page_key: Optional[str],
-    visibility_state: str,
-    focus_state: str,
-    idle_seconds: int,
-    ai_panel_open: bool,
-) -> None:
+    session_started_at: Optional[str],
+    payload: dict,
+) -> int:
+    sample = read_presence_sample(payload, now, session_started_at)
+    if sample is None:
+        return 0
     state = conn.execute(
         """
-        SELECT last_presence_at, current_session_started_at
+        SELECT last_presence_at, current_session_started_at, last_profiled_at, presence_coverage_json
         FROM classroom_behavior_states
         WHERE class_offering_id = ?
           AND user_pk = ?
@@ -603,45 +617,33 @@ def _apply_presence_heartbeat(
         (class_offering_id, user_pk, user_role),
     ).fetchone()
 
-    now_text = now.isoformat()
-    previous_presence_at = str(state["last_presence_at"] or "") if state else ""
-    previous_session_started_at = str(state["current_session_started_at"] or "") if state else ""
-
-    raw_delta_seconds = 0
-    delta_seconds = 0
-    if previous_presence_at:
-        try:
-            previous_dt = datetime.fromisoformat(previous_presence_at)
-        except ValueError:
-            previous_dt = now
-        raw_delta_seconds = int(max(0, (now - previous_dt).total_seconds()))
-        delta_seconds = int(max(0, min(raw_delta_seconds, HEARTBEAT_MAX_DELTA_SECONDS)))
-
-    is_new_session = (not previous_presence_at) or raw_delta_seconds > ACTIVE_PRESENCE_WINDOW_SECONDS
-    session_started_at = previous_session_started_at or now_text
-    effective_delta = 0 if is_new_session else delta_seconds
-    capped_idle_seconds = max(0, min(int(idle_seconds or 0), HEARTBEAT_MAX_DELTA_SECONDS))
-    is_active = effective_delta > 0 and capped_idle_seconds < ACTIVE_PRESENCE_WINDOW_SECONDS
-
-    online_delta = effective_delta if is_active else 0
-    focus_delta = effective_delta if focus_state == "focused" else 0
-    blur_delta = effective_delta if focus_state != "focused" else 0
-    visible_delta = effective_delta if visibility_state == "visible" else 0
-    hidden_delta = effective_delta if visibility_state != "visible" else 0
-    lurk_delta = 0
-    if page_key == "classroom_discussion" and visibility_state == "visible" and focus_state != "focused":
-        lurk_delta = effective_delta
-    ai_panel_delta = effective_delta if ai_panel_open else 0
+    if state is None:
+        return 0
+    session_since = timestamp_ms(state["current_session_started_at"])
+    measured = measure_presence(
+        state["presence_coverage_json"], sample,
+        session_since=session_since,
+        rolling_since=max(session_since, timestamp_ms(state["last_profiled_at"])),
+        page_key=page_key,
+    )
+    if measured is None:
+        return 0
+    coverage, deltas, fresh_status = measured
+    update_presence = fresh_status and sample.observed_ms >= timestamp_ms(state["last_presence_at"])
+    observed_at = datetime.fromtimestamp(sample.observed_ms / 1000, tz=now.tzinfo).isoformat() if update_presence else None
+    focus_state = "focused" if sample.focused else "blurred"
 
     conn.execute(
         """
         UPDATE classroom_behavior_states
-        SET current_session_started_at = ?,
-            last_presence_at = ?,
+        SET last_presence_at = COALESCE(?, last_presence_at),
             last_page_key = COALESCE(?, last_page_key),
-            last_visibility_state = ?,
-            last_focus_state = ?,
-            last_idle_seconds = ?,
+            last_visibility_state = COALESCE(?, last_visibility_state),
+            last_focus_state = COALESCE(?, last_focus_state),
+            last_idle_seconds = COALESCE(?, last_idle_seconds),
+            learning_online_seconds = COALESCE(learning_online_seconds, online_accumulated_seconds) + ?,
+            learning_focus_seconds = COALESCE(learning_focus_seconds, focus_total_seconds) + ?,
+            presence_coverage_json = ?,
             online_accumulated_seconds = online_accumulated_seconds + ?,
             focus_total_seconds = focus_total_seconds + ?,
             blur_total_seconds = blur_total_seconds + ?,
@@ -655,25 +657,28 @@ def _apply_presence_heartbeat(
           AND user_role = ?
         """,
         (
-            session_started_at,
-            now_text,
-            page_key,
-            visibility_state,
-            focus_state,
-            capped_idle_seconds,
-            online_delta,
-            focus_delta,
-            blur_delta,
-            visible_delta,
-            hidden_delta,
-            lurk_delta,
-            ai_panel_delta,
-            now_text,
+            observed_at,
+            page_key if update_presence else None,
+            sample.visibility if fresh_status else None,
+            focus_state if fresh_status else None,
+            min(sample.idle_seconds, ACTIVE_PRESENCE_WINDOW_SECONDS) if fresh_status else None,
+            deltas["learning"],
+            deltas["learning"],
+            coverage,
+            deltas["rolling_learning"],
+            deltas["rolling_learning"],
+            deltas["blur"],
+            deltas["visible"],
+            deltas["hidden"],
+            deltas["lurk"],
+            deltas["ai"],
+            now.isoformat(),
             class_offering_id,
             user_pk,
             user_role,
         ),
     )
+    return deltas["learning"]
 
 
 def record_behavior_batch(
@@ -988,6 +993,8 @@ def _finalize_profile_generation(
                 SET last_profiled_activity_count = ?,
                     last_profiled_at = ?,
                     profile_generation_pending = 0,
+                    learning_online_seconds = COALESCE(learning_online_seconds, online_accumulated_seconds),
+                    learning_focus_seconds = COALESCE(learning_focus_seconds, focus_total_seconds),
                     online_accumulated_seconds = 0,
                     focus_total_seconds = 0,
                     blur_total_seconds = 0,

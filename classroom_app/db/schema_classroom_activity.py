@@ -949,6 +949,9 @@ def ensure_classroom_activity_schema(conn: sqlite3.Connection) -> None:
                          NOT
                              NULL
                          DEFAULT 0,
+                     learning_online_seconds INTEGER,
+                     learning_focus_seconds INTEGER,
+                     presence_coverage_json TEXT NOT NULL DEFAULT '{}',
                      created_at
                           TEXT
                           DEFAULT
@@ -1034,6 +1037,14 @@ def ensure_classroom_activity_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE classroom_behavior_states ADD COLUMN ai_panel_open_total_seconds INTEGER NOT NULL DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+    presence_columns = {row[1] for row in conn.execute("PRAGMA table_info(classroom_behavior_states)")}
+    for name, definition in (
+        ("learning_online_seconds", "INTEGER"),
+        ("learning_focus_seconds", "INTEGER"),
+        ("presence_coverage_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ):
+        if name not in presence_columns:
+            conn.execute(f"ALTER TABLE classroom_behavior_states ADD COLUMN {name} {definition}")
 
     # 13.8 课堂研讨室内部学习支持快照
     conn.execute('''

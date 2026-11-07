@@ -8,6 +8,10 @@ MAX_PAYLOAD_BYTES = 64 * 1024
 HEARTBEAT_ACTIONS = {"presence_heartbeat", "page_presence", "heartbeat"}
 
 
+def is_measured_presence(payload: dict) -> bool:
+    return type(payload.get("presence_version")) is int and payload["presence_version"] == 2
+
+
 class BehaviorValidationError(ValueError):
     """A batch cannot be applied with the existing behavior parsing rules."""
 
@@ -53,7 +57,7 @@ def validate_behavior_payload(*, events, page_key, display_name="", session_star
             _text(event.get(field), field)
         action = str(event.get("action_type") or "page_action").strip().lower().replace("-", "_").replace(" ", "_")[:64]
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
-        if action in HEARTBEAT_ACTIONS:
+        if action in HEARTBEAT_ACTIONS and not is_measured_presence(payload):
             try:
                 # Match the application exactly, including legacy numeric
                 # strings, finite floats and empty-value fallback to zero.

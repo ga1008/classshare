@@ -6,12 +6,17 @@ const source = readFileSync('static/js/behavior_tracker.js', 'utf8');
 
 function runtime() {
     vi.useFakeTimers();
+    const epoch = Date.UTC(2026, 10, 7, 0, 0, 0, 125);
+    vi.setSystemTime(epoch);
+    let monotonicMs = 0;
+    let nonce = 0;
     const values = new Map();
     const storage = { getItem: key => values.get(key) || null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
     const fetch = vi.fn();
-    const navigator = { sendBeacon: vi.fn(() => false) };
+    const navigator = { sendBeacon: vi.fn(() => true) };
     const listeners = new Map();
-    const window = { sessionStorage: storage, crypto: { randomUUID: () => 'synthetic-stable-nonce' },
+    const window = { sessionStorage: storage, crypto: { randomUUID: () => `synthetic-nonce-${++nonce}` },
+        performance: { timeOrigin: epoch, now: () => monotonicMs },
         setTimeout, clearTimeout, setInterval, clearInterval,
         addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name),
         dispatchEvent: vi.fn() };
@@ -21,7 +26,8 @@ function runtime() {
         console: { warn: vi.fn() } });
     vm.runInContext(source, context);
     const create = (userKey = 'student:10') => new window.BehaviorTracker({ classOfferingId: 1, userKey, pageKey: 'test' });
-    return { create, fetch, navigator, values, listeners, window };
+    const advance = (ms) => { monotonicMs += ms; vi.setSystemTime(Date.now() + ms); };
+    return { create, fetch, navigator, values, listeners, window, document, epoch, advance };
 }
 
 function receipt(body, extra = {}) {
@@ -57,12 +63,15 @@ describe('durable behavior transport', () => {
     it('restores unacknowledged work only within the same identity and classroom', async () => {
         const f = runtime(); const tracker = f.create();
         tracker.logClick('offline');
+        f.navigator.sendBeacon.mockReturnValueOnce(false);
+        f.fetch.mockResolvedValueOnce({ ok: true });
         await tracker.flush({ sync: true });
         expect(f.create().pendingBatch.body.batch_id).toBe(tracker.pendingBatch.body.batch_id);
         expect(f.create('student:11').pendingBatch).toBeNull();
         expect(f.create('teacher:10').events).toHaveLength(0);
         expect(tracker.pendingBatch.body.user_key).toBe('student:10');
         expect(f.values.size).toBe(1); // sendBeacon(false) retains recovery state.
+        expect(f.fetch.mock.calls[0][1].keepalive).toBe(true);
     });
 
     it('honors Retry-After and never treats a degraded 200 as durable receipt', async () => {
@@ -90,17 +99,64 @@ describe('durable behavior transport', () => {
         expect(f.values.size).toBe(1);
     });
 
-    it('keeps heartbeat and focus events ordered and restores after bfcache', async () => {
+    it('closes the focused interval at blur and sends an unmeasured status at the boundary', () => {
         const f = runtime(); const tracker = f.create(); tracker.start();
-        tracker.enqueueEvent(tracker.buildHeartbeatEvent());
-        tracker.handleBlur(); tracker.enqueueEvent(tracker.buildHeartbeatEvent());
-        const types = tracker.events.map(event => event.action_type);
-        expect(types).toEqual(['page_enter', 'presence_heartbeat', 'page_focus', 'presence_heartbeat']);
-        tracker.handlePageHide();
+        f.advance(14375);
+        // A wall clock correction must not affect a measured span.
+        vi.setSystemTime(Date.now() + 600000);
+        f.listeners.get('blur')();
+        expect(tracker.events.map(event => event.action_type)).toEqual([
+            'page_enter', 'presence_heartbeat', 'presence_heartbeat', 'presence_heartbeat', 'page_focus',
+        ]);
+        const [, initial, measured, blurred] = tracker.events;
+        expect(initial.payload).toMatchObject({ presence_version: 2, presence_observed_ms: f.epoch });
+        expect(initial.payload).not.toHaveProperty('interval_start_ms');
+        expect(measured.payload).toMatchObject({ interval_start_ms: f.epoch, interval_end_ms: f.epoch + 14375,
+            focused: true, visibility_state: 'visible', idle_seconds: 15 });
+        expect(blurred.payload).toMatchObject({ focused: false, presence_observed_ms: f.epoch + 14375 });
+        expect(blurred.payload).not.toHaveProperty('interval_end_ms');
+    });
+
+    it('preserves a final foreground interval despite a pending batch and restarts after bfcache', async () => {
+        const f = runtime(); const tracker = f.create(); tracker.start();
+        f.fetch.mockImplementationOnce(() => new Promise(() => {}));
+        void tracker.flush();
+        const older = tracker.pendingBatch.body.batch_id;
+        f.advance(16000);
+        f.document.visibilityState = 'hidden';
+        tracker.handleVisibilityChange();
+        f.listeners.get('pagehide')({ persisted: true });
         expect(tracker.started).toBe(false);
-        expect(tracker.pendingBatch).not.toBeNull();
-        tracker.handlePageShow({ persisted: true });
+        expect(tracker.pendingBatch.body.batch_id).toBe(older);
+        expect(f.navigator.sendBeacon).toHaveBeenCalledTimes(2);
+        const sent = JSON.parse(await f.navigator.sendBeacon.mock.calls[1][1].text());
+        expect(sent.batch_id).not.toBe(older);
+        expect(sent.events).toHaveLength(1);
+        expect(sent.events[0].payload).toMatchObject({ interval_start_ms: f.epoch, interval_end_ms: f.epoch + 16000,
+            focused: true, visibility_state: 'visible' });
+        expect(tracker.events).toContainEqual(sent.events[0]);
+        f.advance(180000);
+        f.document.visibilityState = 'visible';
+        f.listeners.get('pageshow')({ persisted: true });
         expect(tracker.started).toBe(true);
+        expect(tracker.events.at(-1).payload).not.toHaveProperty('interval_start_ms');
         tracker.stop();
+    });
+
+    it('closes a past idle span before resuming and discards unobserved timer gaps', () => {
+        const f = runtime(); const tracker = f.create(); tracker.start();
+        f.advance(90000);
+        tracker.samplePresence(f.epoch + 90000);
+        f.advance(80000);
+        tracker.handleActivity();
+        expect(tracker.events.at(-1).payload).toMatchObject({ interval_start_ms: f.epoch + 90000,
+            interval_end_ms: f.epoch + 170000, idle_seconds: 170 });
+        f.advance(120000);
+        tracker.samplePresence(f.epoch + 290000);
+        expect(tracker.events.at(-1).payload).not.toHaveProperty('interval_start_ms');
+        f.advance(15000);
+        tracker.samplePresence(f.epoch + 305000);
+        expect(tracker.events.at(-1).payload).toMatchObject({ interval_start_ms: f.epoch + 290000,
+            interval_end_ms: f.epoch + 305000, idle_seconds: 135 });
     });
 });

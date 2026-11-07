@@ -1,6 +1,6 @@
 # LQ 模块使用记录本
 
-生成于 2026-11-06，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
+生成于 2026-11-07，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
 
 ## 怎么用
 
@@ -1831,7 +1831,7 @@
 **Status / SaveStatus / Alert / Conflict** · 层：component · CSS：`static/css/lq/components/status.css`
 
 - **设计摘要**：业务状态呈现：状态胶囊、保存状态行、Alert（含重试动作与诊断转义）、409 冲突面板；只消费控制器确认的快照。
-- **规则**：警告/错误/保存语义优先复用这里的填充与前景配对，不把有色前景放到任意透明背景。 2026-11-05 行为记录：classroom-page、assignment_detail_student、exam_take 共用 behavior_tracker.js；202仅表示数据库已持久接收，200可为已应用回执。保持在线/焦点计分事件和账号/课堂范围草稿，b1批次固定编号重试7天、服务端回执保留10天，beacon不当成功确认；断网/503保留原批，永久4xx暂停并保留，不静默裁剪，不自动重放交卷/投票/聊天领域提交。
+- **规则**：警告/错误/保存语义优先复用这里的填充与前景配对，不把有色前景放到任意透明背景。 classroom-page、assignment_detail_student、exam_take 共用 behavior_tracker.js。202 表示持久接收，200 可为已应用回执。b1 批次按账号和课堂固定编号重试 7 天，服务端回执保留至少 10 天，beacon 与 keepalive 发送均不视为确认。断网或限流保留原批，永久 4xx 暂停并保留。心跳用单调时钟记录有界区间，在可见性、焦点或 AI 面板状态切换时结算。页面离开时可独立发送仍在缓冲区的时长证据，服务器按时间区间去重。交卷、投票、聊天等业务提交保持各自的接口和重试策略。
 - **根类**：`lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status`
 - **Jinja 宏** `templates/macros/lq/status.html`：`lq_status`, `lq_save_status`, `lq_alert`, `lq_conflict`
 - **JS 入口** `static/js/lq/status.js`：`STATUS_KINDS`, `alert`, `conflict`, `createStatus`, `html`, `saveStatus`, `save_status`, `status`, `statusMarkup`, `statusProps`

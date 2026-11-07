@@ -1022,8 +1022,8 @@ def _load_interaction_metrics(conn, class_offering_id: int, student_id: int) -> 
     state_row = conn.execute(
         """
         SELECT total_activity_count,
-               online_accumulated_seconds,
-               focus_total_seconds,
+               COALESCE(learning_online_seconds, online_accumulated_seconds) AS online_accumulated_seconds,
+               COALESCE(learning_focus_seconds, focus_total_seconds) AS focus_total_seconds,
                visible_total_seconds,
                discussion_lurk_total_seconds,
                ai_panel_open_total_seconds
@@ -3517,8 +3517,8 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
             """
             SELECT user_pk,
                    total_activity_count,
-                   online_accumulated_seconds,
-                   focus_total_seconds,
+                   COALESCE(learning_online_seconds, online_accumulated_seconds) AS online_accumulated_seconds,
+                   COALESCE(learning_focus_seconds, focus_total_seconds) AS focus_total_seconds,
                    last_page_key,
                    last_event_at
             FROM classroom_behavior_states
