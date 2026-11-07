@@ -44,6 +44,8 @@ def _build_conn() -> sqlite3.Connection:
             total_activity_count INTEGER DEFAULT 0,
             online_accumulated_seconds INTEGER DEFAULT 0,
             focus_total_seconds INTEGER DEFAULT 0,
+            learning_online_seconds INTEGER,
+            learning_focus_seconds INTEGER,
             visible_total_seconds INTEGER DEFAULT 0,
             discussion_lurk_total_seconds INTEGER DEFAULT 0,
             ai_panel_open_total_seconds INTEGER DEFAULT 0
