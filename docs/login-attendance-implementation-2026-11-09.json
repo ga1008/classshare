@@ -38,6 +38,7 @@
     "vmware_200_users": "new candidate-bound 5400-second load plus actual settlement period required; the 239bc5d1 / 0054 baseline was stopped after about 24.5 minutes because burst drain and recovery exceeded the 30-second limit, and is not accepted as a capacity pass",
     "failed_baseline_conservation": "52243 unique acknowledged batches all applied, 29716 operations and 116841 measured learning seconds matched independent calculation; accepted queues and projections were drained before preserving the stopped environment",
     "recorder_state_optimization": "within-receipt state reads/writes merged without changing event order or transaction boundaries; 68 regressions and 7 native PostgreSQL checks passed, plus 10 old/new parity scenarios over 27 batches and all fields of 8 affected tables; this is not a substitute for the VMware capacity gate",
+    "recorder_selection_optimization": "materialize the first pending receipt for each actor once, then lock only the selected actual receipt; preserve ordering across classrooms, future retry barriers, timestamp ties and rollback. Native PostgreSQL stale-statistics custom/generic/auto work bounds reject the old quadratic scan. Independent 35-batch/s reproduction processed 1299/1299 in 20 seconds versus 384/1299 previously; this does not replace the real mixed-load VMware test",
     "production_deployment": "not performed for this candidate yet",
     "git_push": "not performed for this candidate yet"
   }
