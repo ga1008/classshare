@@ -39,6 +39,26 @@ class AttendanceLifecycleTests(unittest.TestCase):
         conn.execute("INSERT INTO smart_attendance_sync_runs(id,binding_id,owner_teacher_id,local_round_id,local_revision,context_fingerprint,credential_generation,binding_revision,target_json,baseline_json,state,created_at,updated_at) "
             "VALUES('run','b',?,?,1,'fingerprint','g',1,'{}','{}',?,'2026-03-09','2026-03-09')",(self.f.teacher_id,str(rid),state))
 
+    def test_full_startup_repairs_absent_approval_dependency_before_attendance_reads(self):
+        # A fresh installation may never have opened an approval page. Also
+        # exercise the warm process cache left by a previously initialized DB.
+        with database.get_db_connection() as conn:
+            for table in ('approval_request_events','approval_request_reviewers','approval_requests'):
+                conn.execute('DROP TABLE IF EXISTS '+table)
+            conn.commit()
+        with patch.object(approval_workflow_schema,'_SCHEMA_READY',True):
+            database.init_database()
+            with database.get_db_connection() as conn:
+                for table in approval_workflow_schema.APPROVAL_REQUIRED_COLUMNS:
+                    self.assertEqual(0,conn.execute('SELECT COUNT(*) FROM '+table).fetchone()[0])
+                rid=self.seed(conn)
+                student=attendance.student_view(conn,self.f.source_id,self.f.source_session,
+                    {'role':'student','id':self.f.student_b})
+                self.assertEqual('PRESENT',student['status'])
+                self.assertIsNone(student['appeal'])
+                detail=attendance.student_detail(conn,rid,self.f.student_b,self.user)
+                self.assertIsNone(detail['pending_appeal'])
+
     def test_merge_keeps_original_slot_roster_and_allows_only_former_current_history_edit(self):
         with database.get_db_connection() as conn:
             old=self.seed(conn,current=0,key='superseded-original')

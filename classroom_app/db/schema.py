@@ -18,6 +18,7 @@ from .schema_grade_publications import ensure_grade_publication_schema
 from .schema_attendance_reports import ensure_attendance_report_schema
 from .schema_login_attendance import ensure_login_attendance_schema
 from .schema_smart_classroom_write import ensure_smart_classroom_write_schema
+from ..services.approval_workflow_schema import ensure_approval_workflow_schema
 from .schema_feedback_conversations import ensure_feedback_conversation_schema
 from .schema_ai_workspace import ensure_ai_workspace_schema
 from .schema_ai_search import ensure_ai_search_schema
@@ -109,6 +110,7 @@ def _init_database_unlocked():
             ensure_academic_teacher_timetable_schema(conn, engine="postgres")
             ensure_grade_publication_schema(conn, engine="postgres")
             ensure_attendance_report_schema(conn, engine="postgres")
+            ensure_approval_workflow_schema(conn, engine="postgres", force=True)
             ensure_login_attendance_schema(conn, engine="postgres")
             ensure_smart_classroom_write_schema(conn, engine="postgres")
             ensure_feedback_conversation_schema(conn, engine="postgres")
@@ -463,6 +465,7 @@ def _init_database_unlocked():
             ensure_teacher_identity_schema(conn, engine="sqlite")
             ensure_git_learning_bindings_schema(conn)
             ensure_attendance_report_schema(conn, engine="sqlite")
+            ensure_approval_workflow_schema(conn, engine="sqlite", force=True)
             ensure_login_attendance_schema(conn, engine="sqlite")
             ensure_smart_classroom_write_schema(conn, engine="sqlite")
             ensure_learning_blog_signature_schema(conn)

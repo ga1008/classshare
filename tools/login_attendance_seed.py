@@ -90,10 +90,11 @@ def seed():
                     (offering, session, teacher, "synthetic-history-"+identity["lab_nonce"]+str(index), start_ms, end_ms,
                      start_ms-600000, end_ms+600000, end_ms+720000, start_ms-60000, end_ms, end_ms+720000,
                      int(datetime.now().timestamp()*1000)+86400000, policy, context)).fetchone()[0]
-                conn.executemany("""INSERT INTO login_attendance_records(round_id,student_id,student_number,name,class_name,
-                    status,suggestion,quality,manual_confirmed,reason,decided_by,decided_at_ms,updated_at_ms)
-                    VALUES(%s,%s,%s,%s,%s,'PRESENT','PRESENT','synthetic_archive',1,'Synthetic archived fixture',%s,%s,%s)""",
-                    [(round_id, sid, number, name, class_name, teacher, end_ms, end_ms) for sid,number,name,class_name in students])
+                with conn.cursor() as cursor:
+                    cursor.executemany("""INSERT INTO login_attendance_records(round_id,student_id,student_number,name,class_name,
+                        status,suggestion,quality,manual_confirmed,reason,decided_by,decided_at_ms,updated_at_ms)
+                        VALUES(%s,%s,%s,%s,%s,'PRESENT','PRESENT','synthetic_archive',1,'Synthetic archived fixture',%s,%s,%s)""",
+                        [(round_id, sid, number, name, class_name, teacher, end_ms, end_ms) for sid,number,name,class_name in students])
                 viewers.append({"id": teacher, "email": email, "offering_id": offering, "session_id": session, "round_id": round_id})
         result = {"kind": FIXTURE_KIND, "schema_version": 1, "synthetic": True,
             "lab_nonce": identity["lab_nonce"], "release_id": marker["release_id"],

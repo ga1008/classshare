@@ -216,8 +216,10 @@ def apply_assessment_migrations(conn) -> None:
     from classroom_app.db.schema_retake import ensure_retake_schema
     from classroom_app.db.schema_login_attendance import ensure_login_attendance_schema
     from classroom_app.db.schema_smart_classroom_write import ensure_smart_classroom_write_schema
+    from classroom_app.services.approval_workflow_schema import ensure_approval_workflow_schema
     from classroom_app.db.postgres import LanSharePostgresConnection
     with _runtime_schema_adapter(conn) as adapter:
+        ensure_approval_workflow_schema(adapter, engine="postgres", force=True)
         ensure_behavior_inbox_schema(adapter, engine="postgres")
         ensure_login_attendance_schema(adapter, engine="postgres")
         ensure_smart_classroom_write_schema(adapter, engine="postgres")

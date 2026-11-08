@@ -16,6 +16,7 @@ from .schema_academic_schedule_predictions import ACADEMIC_SCHEDULE_PREDICTION_P
 from .schema_academic_teacher_timetables import ACADEMIC_TEACHER_TIMETABLE_POSTGRES_TABLES
 from .schema_attendance_reports import ATTENDANCE_REPORT_POSTGRES_TABLES, ATTENDANCE_REPORT_REQUIRED_COLUMNS
 from .schema_login_attendance import REQUIRED_COLUMNS as LOGIN_ATTENDANCE_REQUIRED_COLUMNS
+from ..services.approval_workflow_schema import APPROVAL_REQUIRED_COLUMNS
 from .schema_smart_classroom_write import SMART_CLASSROOM_WRITE_REQUIRED_COLUMNS
 from .schema_feedback_conversations import FEEDBACK_CONVERSATION_POSTGRES_TABLES
 from .schema_ai_workspace import AI_WORKSPACE_POSTGRES_TABLES
@@ -657,6 +658,7 @@ POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
 
 
 REQUIRED_POSTGRES_TABLES = (
+    *APPROVAL_REQUIRED_COLUMNS,
     *LOGIN_ATTENDANCE_REQUIRED_COLUMNS,
     *SMART_CLASSROOM_WRITE_REQUIRED_COLUMNS,
     *ACADEMIC_TEACHER_TIMETABLE_POSTGRES_TABLES,

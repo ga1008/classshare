@@ -22,6 +22,7 @@ REQUIRED_MIGRATION_FILES = (
     "classroom_app/db/schema_signature_workflow.py",
     "classroom_app/services/material_publication_service.py",
     "classroom_app/services/session_learning_materials_service.py",
+    "classroom_app/services/approval_workflow_schema.py",
     "tools/assessment_postgres_rehearsal.py", "tools/signature_visibility_rehearsal.py",
     "tools/agent_authority_migration_rehearsal.py", "tools/deploy/validate_native_pg_rehearsal.py",
     "tools/behavior_capacity_migration_rehearsal.py",

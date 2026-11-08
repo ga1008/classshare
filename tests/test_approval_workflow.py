@@ -24,6 +24,49 @@ def _iso(dt):
     return dt.replace(microsecond=0).isoformat()
 
 
+class ApprovalWorkflowSchemaTests(unittest.TestCase):
+    def setUp(self):
+        self.conn = sqlite3.connect(":memory:")
+        self.addCleanup(self.conn.close)
+        cached = mock.patch.object(schema_approval_workflow, "_SCHEMA_READY", True)
+        cached.start()
+        self.addCleanup(cached.stop)
+
+    def test_force_creates_all_tables_in_new_database_despite_ready_cache(self):
+        # Existing callers retain the lazy cache; startup explicitly forces DDL
+        # against its actual connection, independently of configured engine.
+        schema_approval_workflow.ensure_approval_workflow_schema(self.conn)
+        self.assertEqual([], self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall())
+        with mock.patch.object(schema_approval_workflow, "get_configured_db_engine", side_effect=AssertionError("Explicit engine ignored")):
+            schema_approval_workflow.ensure_approval_workflow_schema(self.conn, engine="sqlite", force=True)
+        for table, required in schema_approval_workflow.APPROVAL_REQUIRED_COLUMNS.items():
+            columns = tuple(row[1] for row in self.conn.execute(f"PRAGMA table_info({table})"))
+            self.assertEqual(required, columns)
+
+    def test_repeated_force_preserves_approval_rows_events_and_sequences(self):
+        schema_approval_workflow.ensure_approval_workflow_schema(self.conn, engine="sqlite", force=True)
+        self.conn.execute("INSERT INTO approval_requests (id,request_type,applicant_role,applicant_user_pk,payload_json) "
+                          "VALUES (17,'synthetic','student',20,'{\"retained\":true}')")
+        self.conn.execute("INSERT INTO approval_request_reviewers (id,request_id,reviewer_role,reviewer_user_pk) "
+                          "VALUES (23,17,'teacher',7)")
+        self.conn.execute("INSERT INTO approval_request_events (id,request_id,event_type,note) "
+                          "VALUES (31,17,'created','retained audit event')")
+        self.conn.commit()
+        tables = tuple(schema_approval_workflow.APPROVAL_REQUIRED_COLUMNS)
+        before = {table: self.conn.execute(f"SELECT * FROM {table} ORDER BY id").fetchall() for table in tables}
+        sequences = self.conn.execute("SELECT name,seq FROM sqlite_sequence ORDER BY name").fetchall()
+        for _ in range(2):
+            schema_approval_workflow.ensure_approval_workflow_schema(self.conn, engine="sqlite", force=True)
+            self.conn.commit()
+            self.assertEqual(before, {table: self.conn.execute(f"SELECT * FROM {table} ORDER BY id").fetchall() for table in tables})
+            self.assertEqual(sequences, self.conn.execute("SELECT name,seq FROM sqlite_sequence ORDER BY name").fetchall())
+        self.assertEqual(18, self.conn.execute("INSERT INTO approval_requests (request_type,applicant_role,applicant_user_pk) "
+                                             "VALUES ('next','student',21)").lastrowid)
+        self.assertEqual(24, self.conn.execute("INSERT INTO approval_request_reviewers (request_id,reviewer_role,reviewer_user_pk) "
+                                             "VALUES (18,'teacher',8)").lastrowid)
+        self.assertEqual(32, self.conn.execute("INSERT INTO approval_request_events (request_id,event_type) VALUES (18,'created')").lastrowid)
+
+
 class ApprovalWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.stack = mock.patch.dict(os.environ, {"DB_ENGINE": "sqlite"})
