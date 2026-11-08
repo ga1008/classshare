@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import io
-from typing import Any
+from typing import Any, Callable
 
 from ..db.connection import execute_insert_returning_id
 from .file_service import store_file_object_globally
@@ -276,11 +276,15 @@ def platform_manual_markdown() -> str:
 """
 
 
+def _manual_document_factories() -> tuple[tuple[str, Callable[[], str]], ...]:
+    return (
+        ("散修进阶手册", advancement_manual_markdown),
+        ("平台与天道手册", platform_manual_markdown),
+    )
+
+
 def manual_documents() -> list[dict[str, str]]:
-    return [
-        {"title": "散修进阶手册", "content": advancement_manual_markdown()},
-        {"title": "平台与天道手册", "content": platform_manual_markdown()},
-    ]
+    return [{"title": title, "content": render()} for title, render in _manual_document_factories()]
 
 
 def _local_iso() -> str:
@@ -351,7 +355,11 @@ def _store_markdown(content: str) -> dict[str, Any]:
 
 
 def ensure_manual_materials(conn: Any) -> dict[str, Any]:
-    """Seed/update the two built-in manuals. Caller commits; safe to re-run."""
+    """Seed missing manuals only; preserve existing content and permissions.
+
+    Caller commits. Re-running startup is not authorization to replace a
+    teacher's edited manual, revision, access scope, or search index.
+    """
     teacher_id = _owner_teacher_id(conn)
     if teacher_id is None:
         return {"status": "skipped", "reason": "no_teacher"}
@@ -360,48 +368,38 @@ def ensure_manual_materials(conn: Any) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - schema may be mid-migration
         return {"status": "failed", "reason": f"{type(exc).__name__}: {exc}"[:200]}
 
-    created = updated = 0
-    for document in manual_documents():
-        title = document["title"]
+    created = 0
+    for title, render in _manual_document_factories():
         filename = f"{title}.md"
         material_path = f"{MANUAL_FOLDER_PATH}/{filename}"
-        stored = _store_markdown(document["content"])
         row = conn.execute(
-            "SELECT id, file_hash FROM course_materials WHERE parent_id = ? AND name = ? AND node_type = 'file' "
+            "SELECT id FROM course_materials WHERE parent_id = ? AND name = ? AND node_type = 'file' "
             "ORDER BY id LIMIT 1",
             (folder_id, filename),
         ).fetchone()
+        if row is not None:
+            continue
+        stored = _store_markdown(render())
         now = _local_iso()
-        if row is None:
-            material_id = int(execute_insert_returning_id(
-                conn,
-                """
-                INSERT INTO course_materials
-                (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type, preview_type,
-                 ai_capability, file_ext, file_hash, file_size, ai_parse_status, ai_parse_result_json,
-                 ai_optimize_status, ai_optimized_markdown, scope_level, owner_role, owner_user_pk,
-                 wanderer_min_tier, wanderer_max_tier, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'file', 'text/markdown', 'markdown', 'text', '.md', ?, ?,
-                        'idle', NULL, 'idle', NULL, 'public', ?, ?, 0, NULL, ?, ?)
-                """,
-                (int(teacher_id), folder_id, folder_id, material_path, filename, stored["file_hash"],
-                 stored["size"], MANUAL_OWNER_ROLE, int(teacher_id), now, now),
-            ))
-            created += 1
-        else:
-            material_id = int(_row_value(row, "id", 0))
-            if str(_row_value(row, "file_hash", 1) or "") == stored["file_hash"]:
-                continue
-            conn.execute(
-                "UPDATE course_materials SET file_hash = ?, file_size = ?, material_path = ?, "
-                "wanderer_min_tier = 0, wanderer_max_tier = NULL, updated_at = ? WHERE id = ?",
-                (stored["file_hash"], stored["size"], material_path, now, material_id),
-            )
-            updated += 1
+        material_id = int(execute_insert_returning_id(
+            conn,
+            """
+            INSERT INTO course_materials
+            (teacher_id, parent_id, root_id, material_path, name, node_type, mime_type, preview_type,
+             ai_capability, file_ext, file_hash, file_size, ai_parse_status, ai_parse_result_json,
+             ai_optimize_status, ai_optimized_markdown, scope_level, owner_role, owner_user_pk,
+             wanderer_min_tier, wanderer_max_tier, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'file', 'text/markdown', 'markdown', 'text', '.md', ?, ?,
+                    'idle', NULL, 'idle', NULL, 'public', ?, ?, 0, NULL, ?, ?)
+            """,
+            (int(teacher_id), folder_id, folder_id, material_path, filename, stored["file_hash"],
+             stored["size"], MANUAL_OWNER_ROLE, int(teacher_id), now, now),
+        ))
+        created += 1
         try:
             from .material_search_index_service import index_material_by_id
 
             index_material_by_id(conn, material_id)
         except Exception as exc:  # noqa: BLE001 - the scheduler will retry indexing
             print(f"[WANDERER MANUAL] 索引《{title}》失败，等待调度器重试: {type(exc).__name__}: {exc}")
-    return {"status": "ok", "created": created, "updated": updated, "folder_id": folder_id}
+    return {"status": "ok", "created": created, "updated": 0, "folder_id": folder_id}

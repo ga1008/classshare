@@ -1,8 +1,11 @@
 """Built-in manuals in the learning library and stage-gated reading."""
+import hashlib
 import unittest
+from unittest.mock import patch
 
 from classroom_app.services.wanderer_actions_knowledge import readable_materials
 from classroom_app.services.wanderer_life_core import cultivation_target
+from classroom_app.services import wanderer_manual_library as manual_library
 from classroom_app.services.wanderer_manual_library import (
     MANUAL_FOLDER_NAME,
     advancement_manual_markdown,
@@ -52,6 +55,42 @@ class ManualLibraryTest(WandererDbTestCase):
             again = self._seed(conn)
             self.assertEqual(again["status"], "ok")
             self.assertEqual((again["created"], again["updated"]), (0, 0))
+
+    def test_reseeding_preserves_custom_content_permissions_and_index_without_render_or_store(self):
+        with self.connect() as conn:
+            folder_id = self._seed(conn)["folder_id"]
+            try:
+                rows = conn.execute("SELECT id, name FROM course_materials WHERE parent_id=? ORDER BY id", (folder_id,)).fetchall()
+                for index, row in enumerate(rows):
+                    custom = f"# 用户定制手册 {index}\n\n仅保留原有三条禁则。".encode("utf-8")
+                    conn.execute("""UPDATE course_materials SET file_hash=?,file_size=?,updated_at=?,
+                        material_path=?,scope_level='private',owner_role='teacher',owner_user_pk=999,
+                        wanderer_min_tier=4,wanderer_max_tier=7,ai_parse_status='completed',
+                        ai_parse_result_json=?,ai_optimize_status='completed',ai_optimized_markdown=? WHERE id=?""",
+                        (hashlib.sha256(custom).hexdigest(), len(custom), "2026-10-01T09:15:00",
+                         f"customized/manual-{index}.md", '{"custom":true}', custom.decode("utf-8"), row["id"]))
+                before = [dict(row) for row in conn.execute("SELECT * FROM course_materials WHERE parent_id=? ORDER BY id", (folder_id,))]
+                documents = [dict(row) for row in conn.execute("SELECT d.* FROM material_search_documents d JOIN course_materials m "
+                    "ON m.id=d.material_id WHERE m.parent_id=? ORDER BY d.material_id", (folder_id,))]
+                chunks = [dict(row) for row in conn.execute("SELECT c.* FROM material_search_chunks c JOIN course_materials m "
+                    "ON m.id=c.material_id WHERE m.parent_id=? ORDER BY c.id", (folder_id,))]
+                with patch.object(manual_library, "advancement_manual_markdown", side_effect=AssertionError("existing content must not render")) as advancement, \
+                     patch.object(manual_library, "platform_manual_markdown", side_effect=AssertionError("existing content must not render")) as platform, \
+                     patch.object(manual_library, "_store_markdown", side_effect=AssertionError("existing content must not store")) as store, \
+                     patch("classroom_app.services.material_search_index_service.index_material_by_id", side_effect=AssertionError("existing content must not reindex")) as index_material:
+                    for _ in range(2):
+                        result = ensure_manual_materials(conn)
+                        self.assertEqual((result["status"], result["created"], result["updated"]), ("ok", 0, 0))
+                    for mocked in (advancement, platform, store, index_material):
+                        mocked.assert_not_called()
+                self.assertEqual(before, [dict(row) for row in conn.execute(
+                    "SELECT * FROM course_materials WHERE parent_id=? ORDER BY id", (folder_id,))])
+                self.assertEqual(documents, [dict(row) for row in conn.execute("SELECT d.* FROM material_search_documents d JOIN course_materials m "
+                    "ON m.id=d.material_id WHERE m.parent_id=? ORDER BY d.material_id", (folder_id,))])
+                self.assertEqual(chunks, [dict(row) for row in conn.execute("SELECT c.* FROM material_search_chunks c JOIN course_materials m "
+                    "ON m.id=c.material_id WHERE m.parent_id=? ORDER BY c.id", (folder_id,))])
+            finally:
+                conn.rollback()
 
     def test_reseeding_repairs_legacy_null_root_without_replacing_manuals(self):
         with self.connect() as conn:
