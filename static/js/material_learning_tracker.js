@@ -1,5 +1,5 @@
 /** Material reading reuses the classroom collector's bounded durable transport. */
-export function startMaterialLearningTracker({ context, pageKey, getProgress = () => ({}), onReceipt = null }) {
+export function startMaterialLearningTracker({ context, pageKey, frameElement = null, getProgress = () => ({}), onReceipt = null }) {
     const offeringId = Number(context?.classOfferingId || 0);
     const materialId = Number(context?.materialId || 0);
     const userId = Number(context?.userId || 0);
@@ -10,6 +10,35 @@ export function startMaterialLearningTracker({ context, pageKey, getProgress = (
         return null;
     }
     class MaterialTracker extends Tracker {
+        constructor(options) {
+            super(options);
+            this.materialFrameActivity = event => {
+                if (!this.started || this.isCollectionSuspended() || event.source !== frameElement?.contentWindow
+                    || event.origin !== 'null' || event.data?.type !== 'lanshare:material-frame-activity') return;
+                const state = this.readPresenceState();
+                this.changePresence(state);
+                if (state.visibility_state === 'visible' && state.focused) this.handleActivity();
+            };
+        }
+        start() {
+            const wasStarted = this.started;
+            super.start();
+            if (!wasStarted && this.started && frameElement) window.addEventListener('message', this.materialFrameActivity);
+            return this;
+        }
+        stop(options) {
+            window.removeEventListener('message', this.materialFrameActivity);
+            super.stop(options);
+        }
+        handleBlur() {
+            if (!frameElement) return super.handleBlur();
+            // Focus inside the sandbox belongs to this document. A parent
+            // window blur alone must not turn an active lesson into idle time.
+            const state = this.readPresenceState();
+            this.changePresence(state);
+            this.log('page_focus', '材料页面焦点变化', { focused: state.focused });
+            this.flushSoon();
+        }
         makeBatchBody(events) {
             const body = super.makeBatchBody(events);
             let progress = {};

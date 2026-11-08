@@ -182,7 +182,7 @@ function initLearningProgressHeartbeat() {
         classOfferingId: Number(shellConfig.classOfferingId || viewerContext.classOfferingId || 0),
         materialId: Number(shellConfig.entryMaterialId || viewerContext.materialId || 0),
         sessionId: shellConfig.sessionId || viewerContext.sessionId,
-    }, pageKey: 'material_render_shell' });
+    }, pageKey: 'material_render_shell', frameElement: renderFrame });
 }
 
 initTopbar();

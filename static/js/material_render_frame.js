@@ -1,7 +1,17 @@
-/* Course documents run in an opaque origin. Send only reader navigation state. */
+/* Opaque-origin course documents send bounded navigation/activity evidence. */
 (() => {
     if (window.parent === window) return;
     const host = window.location.origin;
+    let lastActivity = -Infinity;
+    const activity = event => {
+        if (!event.isTrusted || performance.now() - lastActivity < 1000) return;
+        lastActivity = performance.now();
+        // No keys, text, paths or user details leave the sandbox.
+        window.parent.postMessage({ type: 'lanshare:material-frame-activity' }, host);
+    };
+    for (const type of ['pointerdown', 'keydown', 'scroll', 'focusin']) {
+        document.addEventListener(type, activity, { capture: true, passive: true });
+    }
     const publish = () => {
         window.parent.postMessage({
             type: 'lanshare:material-frame-location',
