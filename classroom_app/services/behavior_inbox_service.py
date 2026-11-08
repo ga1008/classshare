@@ -35,6 +35,17 @@ def new_batch_id() -> str:
     return f"b1_{int(time.time() * 1000)}_{uuid.uuid4().hex}"
 
 
+def _validate_new_batch_timestamp(batch_id: str) -> None:
+    if batch_id.startswith("b1_"):
+        try:
+            created = datetime.fromtimestamp(int(batch_id.split("_", 2)[1]) / 1000.0)
+        except (ValueError, OverflowError, OSError) as exc:
+            raise BehaviorBatchConflict("行为批次编号无效。", "batch_timestamp_invalid") from exc
+        age = datetime.now() - created
+        if age > timedelta(days=CLIENT_RETRY_DAYS) or age < -timedelta(days=1):
+            raise BehaviorBatchConflict("行为批次已超过重试期限，请刷新页面查看记录状态。", "batch_expired")
+
+
 class BehaviorBatchConflict(ValueError):
     """A previously used batch ID has a different immutable payload."""
 
@@ -318,20 +329,14 @@ class BehaviorWritePipeline:
             raise BehaviorBatchConflict("账号已变更，请刷新页面后查看行为记录状态。", "actor_unavailable")
         if postgres:
             conn.execute("SELECT pg_advisory_xact_lock(?, ?)", CAPACITY_LOCK)
+            return self._persist_locked_postgres(conn, request, batch_key, payload_hash, received_at)
         # Another intake can have committed while this one waited for capacity.
         row = conn.execute("SELECT * FROM behavior_write_inbox WHERE batch_key = ?", (batch_key,)).fetchone()
         if row:
             if row["payload_hash"] != payload_hash:
                 raise BehaviorBatchConflict("行为批次编号已用于其他内容。")
             return _receipt(row)
-        if request.batch_id.startswith("b1_"):
-            try:
-                created = datetime.fromtimestamp(int(request.batch_id.split("_", 2)[1]) / 1000.0)
-            except (ValueError, OverflowError, OSError) as exc:
-                raise BehaviorBatchConflict("行为批次编号无效。", "batch_timestamp_invalid") from exc
-            age = datetime.now() - created
-            if age > timedelta(days=CLIENT_RETRY_DAYS) or age < -timedelta(days=1):
-                raise BehaviorBatchConflict("行为批次已超过重试期限，请刷新页面查看记录状态。", "batch_expired")
+        _validate_new_batch_timestamp(request.batch_id)
         count = conn.execute("SELECT COUNT(*) AS n FROM behavior_write_inbox WHERE state IN ('pending','quarantined')").fetchone()["n"]
         if int(count) >= int(BEHAVIOR_WRITE_QUEUE_SIZE):
             raise DatabaseBusyError("行为记录暂时积压，请稍后使用原批次编号重试。")
@@ -345,6 +350,46 @@ class BehaviorWritePipeline:
              request.session_started_at, received_at))
         return _receipt({"state": "pending", "batch_id": request.batch_id,
                          "events_json": json.dumps(request.events, default=str)})
+
+    def _persist_locked_postgres(self, conn, request, batch_key, payload_hash, received_at) -> dict[str, Any]:
+        """One fresh statement after the capacity lock, in the caller's transaction.
+
+        The advisory lock must remain a separate command: a statement snapshot
+        taken before waiting cannot see a competing intake's eventual commit.
+        Existing receipts win over new-batch age/capacity checks, including a
+        receipt that appeared while we waited. No immutable row is overwritten.
+        """
+        timestamp_error = None
+        try:
+            _validate_new_batch_timestamp(request.batch_id)
+        except BehaviorBatchConflict as exc:
+            timestamp_error = exc
+        row = conn.execute("""WITH existing AS MATERIALIZED (
+                SELECT payload_hash, state, batch_id, events_json, result_json, last_error
+                FROM behavior_write_inbox WHERE batch_key = ?
+            ), inserted AS (
+                INSERT INTO behavior_write_inbox (
+                    batch_key, batch_id, payload_hash, class_offering_id, user_pk, user_role,
+                    display_name, page_key, events_json, session_started_at, received_at
+                )
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                WHERE NOT EXISTS (SELECT 1 FROM existing) AND ?
+                  AND (SELECT COUNT(*) FROM behavior_write_inbox
+                       WHERE state IN ('pending','quarantined')) < ?
+                RETURNING payload_hash, state, batch_id, events_json, result_json, last_error
+            )
+            SELECT * FROM existing UNION ALL SELECT * FROM inserted""",
+            (batch_key, batch_key, request.batch_id, payload_hash, request.class_offering_id,
+             request.user_pk, request.user_role, request.display_name, request.page_key,
+             json.dumps(request.events, ensure_ascii=False, default=str), request.session_started_at,
+             received_at, timestamp_error is None, int(BEHAVIOR_WRITE_QUEUE_SIZE))).fetchone()
+        if row is not None:
+            if row["payload_hash"] != payload_hash:
+                raise BehaviorBatchConflict("行为批次编号已用于其他内容。")
+            return _receipt(row)
+        if timestamp_error is not None:
+            raise timestamp_error
+        raise DatabaseBusyError("行为记录暂时积压，请稍后使用原批次编号重试。")
 
     def _persist_request(self, request, batch_key, payload_hash, received_at) -> dict[str, Any]:
         deadline = time.monotonic() + BEHAVIOR_WRITE_ENQUEUE_TIMEOUT_MS / 1000.0
