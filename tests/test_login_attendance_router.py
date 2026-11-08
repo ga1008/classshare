@@ -19,7 +19,7 @@ class AttendanceRouterTests(unittest.TestCase):
         self.conn=replacement;self.addCleanup(replacement.close)
         self.conn.execute('CREATE TABLE message_center_notifications(id INTEGER PRIMARY KEY,recipient_role TEXT,recipient_user_pk INTEGER,ref_type TEXT,ref_id TEXT,email_status TEXT,email_queued_at TEXT,email_sent_at TEXT)')
         self.conn.commit()
-        app=FastAPI();app.include_router(api.router);app.include_router(api.attention_router)
+        app=FastAPI();app.include_router(api.router);app.include_router(api.attention_router);app.include_router(api.archive_router)
         app.add_middleware(TrustedProxySchemeMiddleware)
         app.dependency_overrides[api.get_current_teacher]=lambda:self.user
         app.dependency_overrides[api.get_current_user]=lambda:self.identity
@@ -77,6 +77,18 @@ class AttendanceRouterTests(unittest.TestCase):
         response=self.client.post(self.base+f"/rounds/{rnd['id']}/void",headers=self.headers,
             json={'revision':rnd['revision'],'reason':'Unauthorized'})
         self.assertEqual(403,response.status_code)
+
+    def test_identity_scoped_attendance_projections_are_never_http_cached(self):
+        rnd=self.create()
+        paths=[self.base+'/sessions/21', self.base+'/sessions/21/me',
+               self.base+f"/rounds/{rnd['id']}/students/1",self.base+'/history',
+               '/api/login-attendance/attention','/api/login-attendance/archive/history']
+        for path in paths:
+            with self.subTest(path=path):
+                response=self.client.get(path)
+                self.assertEqual(200,response.status_code,response.text)
+                self.assertEqual('private, no-store',response.headers['Cache-Control'])
+                self.assertEqual({'Cookie','Authorization'},set(response.headers['Vary'].split(', ')))
 
     def test_durable_appeal_attention_tab_claim_and_manual_resolution(self):
         rnd=self.create()

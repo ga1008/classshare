@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from ..database import get_db_connection
@@ -13,9 +13,16 @@ from ..services import login_attendance_service as service
 from ..services import approval_workflow_service as workflow
 from ..services.trusted_network_service import client_network, require_same_origin
 
-router = APIRouter(prefix="/api/classrooms/{offering_id}/login-attendance")
-attention_router = APIRouter(prefix="/api/login-attendance/attention")
-archive_router = APIRouter(prefix="/api/login-attendance/archive")
+async def _private_response(response: Response):
+    # These projections include personal attendance and teacher-only IP
+    # evidence; shared classroom browsers must fetch for the current identity.
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Cookie, Authorization"
+
+
+router = APIRouter(prefix="/api/classrooms/{offering_id}/login-attendance", dependencies=[Depends(_private_response)])
+attention_router = APIRouter(prefix="/api/login-attendance/attention", dependencies=[Depends(_private_response)])
+archive_router = APIRouter(prefix="/api/login-attendance/archive", dependencies=[Depends(_private_response)])
 
 
 class Revision(BaseModel):
