@@ -24,6 +24,7 @@ from .config import (
     DB_PATH,
     EXAM_GENERATION_STALE_MINUTES,
     MAIN_THREADPOOL_TOKENS,
+    HTTP_GZIP_COMPRESSION_LEVEL,
     STATIC_DIR,
     ensure_runtime_directories,
 )
@@ -168,7 +169,7 @@ class StreamingAwareGZipMiddleware(GZipMiddleware):
         await super().__call__(scope, receive, send)
 
 
-app.add_middleware(StreamingAwareGZipMiddleware, minimum_size=1024)
+app.add_middleware(StreamingAwareGZipMiddleware, minimum_size=1024, compresslevel=HTTP_GZIP_COMPRESSION_LEVEL)
 
 
 @app.middleware("http")

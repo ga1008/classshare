@@ -32,7 +32,7 @@ NONCE = re.compile(r"[a-f0-9]{32}")
 REQUIRED_EXPORT = {
     "Dockerfile", "DockerfileBase", ".dockerignore", "main.py", "scheduled_task_dispatcher.py",
     "ai_assistant.py", "ai_assistant_doc_extract.py", "agent_task_worker.py", "ai_blog_crawler_worker.py", "email_worker.py",
-    "package.json", "package-lock.json", "nginx.conf", "requirements.txt",
+    "package.json", "package-lock.json", "nginx.conf", "deployment/nginx-main.conf", "requirements.txt",
     "requirements.lock.txt", "requirements-docker.txt", "deployment/docker/entrypoint.sh",
     "postcss.config.js", "tailwind.config.js", "tsconfig.json", "vite.config.ts",
     "tools/build_static_assets.mjs", "tools/ui/native_lq_print.mjs", "tools/publish_static_assets.py",
@@ -49,10 +49,11 @@ FORBIDDEN_ROOTS = {".git", ".codex-temp", "data", "storage", "attendance", "chat
                    "logs", "rosters", "shared_files", "node_modules", "venv", ".venv", "python_runtime"}
 SERVER_CONFIG = {
     "lq_families": "manage-shell,navbar-shell,dashboard,calendar,profile,messages,centered,growth,manage-pages",
-    "threadpool_tokens": 32, "postgres_pool_max": 12, "uvicorn_limit_concurrency": 1024,
+    "threadpool_tokens": 32, "postgres_pool_max": 12, "uvicorn_limit_concurrency": 2048,
     "workers": 1, "host": "linux", "backlog": 2048, "timeout_keep_alive": 30,
     "ws_ping_interval": 20.0, "ws_ping_timeout": 20.0,
 }
+NOFILE_LIMITS = {"soft": 8192, "hard": 8192}
 
 
 def fingerprint(value):
@@ -274,6 +275,7 @@ def compose_definition(marker, image):
     nonce, project = marker["lab_nonce"], marker["compose_project"]
     labels = {LABEL: nonce, "io.lanshare.capacity-lab.kind": KIND}
     shared = {"image": image, "pull_policy": "never", "init": True, "restart": "no", "env_file": ["./app.env"], "labels": labels,
+              "ulimits": {"nofile": dict(NOFILE_LIMITS)},
               "volumes": ["data:/app/data", "./lab-marker.json:/lab/lab-marker.json:ro", "./artifacts:/lab/artifacts"],
               "networks": {"lab": {}}}
     app = {**shared, "command": ["main"], "cpu_shares": 2048, "stop_grace_period": "5m",
@@ -294,7 +296,8 @@ def compose_definition(marker, image):
           "healthcheck": {"test": ["CMD-SHELL", 'pg_isready -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"'], "interval": "5s", "timeout": "3s", "retries": 30},
           "networks": {"lab": {"ipv4_address": marker["database"]["server_address"]}}}
     nginx = {"image": "nginx:1.27-alpine", "restart": "no", "cpu_shares": 1024, "labels": labels,
-             "ports": ["127.0.0.1:28769:443"], "volumes": ["./nginx.conf:/etc/nginx/conf.d/default.conf:ro",
+             "ulimits": {"nofile": dict(NOFILE_LIMITS)},
+             "ports": ["127.0.0.1:28769:443"], "volumes": ["./nginx-main.conf:/etc/nginx/nginx.conf:ro", "./nginx.conf:/etc/nginx/conf.d/default.conf:ro",
                  "./tls:/etc/nginx/ssl:ro", "static:/srv/lanshare/static:ro", "./artifacts:/lab/artifacts:ro"],
              "healthcheck": {"test": ["CMD-SHELL", "wget -qO- http://127.0.0.1/api/internal/live >/dev/null 2>&1"], "interval": "5s", "timeout": "5s", "retries": 36},
              "networks": {"lab": {"ipv4_address": marker["network"]["addresses"]["nginx"]}}}
@@ -332,7 +335,7 @@ def application_environment(marker):
     return {"PYTHON_DOTENV_DISABLED": "1", "DB_ENGINE": "postgres", "POSTGRES_BACKEND_READY": "true", "POSTGRES_POOL_ENABLED": "true",
            "DATABASE_URL": database_url(marker), "LANSHARE_CAPACITY_LAB_NONCE": marker["lab_nonce"], "LANSHARE_DATA_ROOT": "/app/data", "MAIN_DATA_DIR": "/app/data",
            "POSTGRES_POOL_MIN": "1", "POSTGRES_POOL_MAX": "12", "MAIN_THREADPOOL_TOKENS": "32", "MAIN_WORKERS": "1", "MAIN_HOST": "0.0.0.0", "MAIN_PORT": "8000",
-           "MAIN_LIMIT_CONCURRENCY": "1024", "MAIN_BACKLOG": "2048", "MAIN_TIMEOUT_KEEP_ALIVE": "30", "MAIN_WS_PING_INTERVAL": "20", "MAIN_WS_PING_TIMEOUT": "20",
+           "MAIN_LIMIT_CONCURRENCY": str(SERVER_CONFIG["uvicorn_limit_concurrency"]), "MAIN_BACKLOG": "2048", "MAIN_TIMEOUT_KEEP_ALIVE": "30", "MAIN_WS_PING_INTERVAL": "20", "MAIN_WS_PING_TIMEOUT": "20",
            "SECRET_KEY": marker["synthetic_jwt_secret"], "LANSHARE_RELEASE_ID": marker["release_id"], "LANSHARE_LQ_FAMILIES": SERVER_CONFIG["lq_families"],
            "AI_ASSISTANT_URL": "http://127.0.0.1:1", "UI_COPY_GENERATION_ENABLED": "false", "TZ": "Asia/Shanghai", "APP_TIMEZONE": "Asia/Shanghai",
            "INITIAL_SUPER_ADMIN_EMAIL": "capacity-admin@example.invalid", "INITIAL_SUPER_ADMIN_NAME": "Synthetic capacity administrator", "INITIAL_SUPER_ADMIN_PASSWORD": marker["synthetic_password"]}
@@ -360,6 +363,10 @@ def validate_lab_layout(runtime, marker):
     if (digest(source) != marker["source_manifest"]["nginx.conf"]
             or (runtime / "nginx.conf").read_text(encoding="utf-8") != render_nginx(source.read_text(encoding="utf-8"), client_ip=marker["client_ip"], release_id=marker["release_id"])):
         raise ValueError("Lab Nginx derivation changed after staging")
+    main_source = runtime / "source/deployment/nginx-main.conf"
+    if (digest(main_source) != marker["source_manifest"]["deployment/nginx-main.conf"]
+            or (runtime / "nginx-main.conf").read_bytes() != main_source.read_bytes()):
+        raise ValueError("Lab Nginx main configuration changed after staging")
     for name in ("artifacts", "tls", "source"):
         path = runtime / name
         if path.is_symlink() or not path.resolve(strict=True).is_relative_to(runtime):
@@ -395,6 +402,7 @@ def stage_bundle(bundle, runtime, *, client_ip):
         target = runtime / name
         target.write_text(_env_text(values), encoding="utf-8"); target.chmod(0o600)
     (runtime / "nginx.conf").write_text(render_nginx((runtime / "source/nginx.conf").read_text(encoding="utf-8"), client_ip=client_ip, release_id=marker["release_id"]), encoding="utf-8")
+    shutil.copyfile(runtime / "source/deployment/nginx-main.conf", runtime / "nginx-main.conf")
     write_json(runtime / "compose.json", compose_definition(marker, "lanshare-capacity:" + marker["lab_nonce"]))
     return {"lab_nonce": marker["lab_nonce"], "runtime": str(runtime), "state": "staged_not_started"}
 
@@ -570,6 +578,10 @@ def inspect_owned_resources(runtime, marker):
         labels = item["Config"].get("Labels", {})
         if labels.get(LABEL) != marker["lab_nonce"] or labels.get("com.docker.compose.project") != marker["compose_project"]:
             raise ValueError("Refuse any container outside the explicit nonce/project")
+        service = labels["com.docker.compose.service"]
+        nofile = [limit for limit in item.get("HostConfig", {}).get("Ulimits", []) or [] if limit.get("Name") == "nofile"]
+        if service != "postgres" and nofile != [{"Name": "nofile", "Hard": NOFILE_LIMITS["hard"], "Soft": NOFILE_LIMITS["soft"]}]:
+            raise ValueError("Live application/proxy nofile differs from the reviewed connection budget")
         mounts = []
         for mount in item.get("Mounts", []):
             if mount["Type"] == "volume":
@@ -580,7 +592,7 @@ def inspect_owned_resources(runtime, marker):
         networks = item.get("NetworkSettings", {}).get("Networks", {})
         if set(networks) != {marker["compose_project"] + "-network"}:
             raise ValueError("Container is attached to an undeclared network")
-        result.append({"id": item["Id"], "service": labels["com.docker.compose.service"], "image_id": item["Image"],
+        result.append({"id": item["Id"], "service": service, "image_id": item["Image"], "nofile": nofile,
                        "running": item["State"]["Running"], "exit_code": item["State"]["ExitCode"], "oom_killed": item["State"].get("OOMKilled", False),
                        "volumes": mounts})
     if containers:
@@ -680,6 +692,15 @@ def verify_frontend_runtime_inputs(root, source_manifest):
             "vendor_source_fingerprint":fingerprint(vendor_files), "runtime_graph_revision":graph["revision"]}
 
 
+def process_nofile_limits():
+    import resource
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    actual = {"soft": soft, "hard": hard}
+    if actual != NOFILE_LIMITS:
+        raise ValueError("Effective process nofile differs from the reviewed connection budget")
+    return actual
+
+
 def container_inventory(marker_path=MARKER):
     identity = validate_container_boundary(marker_path)
     root = Path("/app")
@@ -715,8 +736,9 @@ def container_inventory(marker_path=MARKER):
     config["lq_families"] = os.environ["LANSHARE_LQ_FAMILIES"]
     if config != SERVER_CONFIG:
         raise ValueError("Effective application settings differ from the reviewed comparison settings")
+    nofile = process_nofile_limits()
     result = {"lab_nonce": identity["lab_nonce"], "release_id": identity["marker"]["release_id"], "server_source_sha256": sources,
-              "server_config": config, "static_graph_sha256": digest(graph_path), "static_graph_revision": graph["revision"],
+              "server_config": config, "process_nofile": nofile, "static_graph_sha256": digest(graph_path), "static_graph_revision": graph["revision"],
               "runtime_python_sha256": runtime_python, "immutable_asset_files":len(assets), "immutable_assets_fingerprint":fingerprint(assets)}
     result.update(frontend_inputs)
     write_json(ARTIFACTS / "server-inventory.json", result)
@@ -902,7 +924,7 @@ def main(argv=None):
             if inventory["static_graph_sha256"] != identity["static_graph_sha256"] or any(
                     item["image_id"] != build["image_id"] for item in containers if item["service"] in {"app", "scheduler"}):
                 raise ValueError("Final image or static graph differs from the frozen lab identity")
-            for host_name, container_name in [("nginx.conf", "/etc/nginx/conf.d/default.conf"), ("tls/capacity-lab.crt", "/etc/nginx/ssl/capacity-lab.crt")]:
+            for host_name, container_name in [("nginx-main.conf", "/etc/nginx/nginx.conf"), ("nginx.conf", "/etc/nginx/conf.d/default.conf"), ("tls/capacity-lab.crt", "/etc/nginx/ssl/capacity-lab.crt")]:
                 actual = compose_command(runtime, marker, "exec", "-T", "nginx", "sha256sum", container_name, capture=True).split()[0]
                 if actual != digest(runtime / host_name):
                     raise ValueError("Final proxy configuration or TLS certificate mismatch")

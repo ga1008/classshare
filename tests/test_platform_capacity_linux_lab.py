@@ -50,8 +50,13 @@ class LinuxLabTests(unittest.TestCase):
             (runtime / name).mkdir(parents=True, exist_ok=True)
         nginx = (lab.ROOT / "nginx.conf").read_text(encoding="utf-8")
         (runtime / "source/nginx.conf").write_text(nginx, encoding="utf-8")
+        main = runtime / "source/deployment/nginx-main.conf"
+        main.parent.mkdir(parents=True)
+        main.write_bytes((lab.ROOT / "deployment/nginx-main.conf").read_bytes())
+        (runtime / "nginx-main.conf").write_bytes(main.read_bytes())
         marker = copy.deepcopy(self.marker)
-        marker["source_manifest"] = {"nginx.conf":lab.digest(runtime / "source/nginx.conf")}
+        marker["source_manifest"] = {"nginx.conf":lab.digest(runtime / "source/nginx.conf"),
+                                     "deployment/nginx-main.conf":lab.digest(main)}
         lab.write_json(runtime / "compose.json", lab.compose_definition(marker, "lanshare-capacity:" + self.nonce))
         (runtime / "app.env").write_text(lab._env_text(lab.application_environment(marker)), encoding="utf-8")
         (runtime / "postgres.env").write_text(lab._env_text({"POSTGRES_USER": marker["database"]["user"],
@@ -209,6 +214,57 @@ class LinuxLabTests(unittest.TestCase):
         self.assertNotIn("docker.sock", json.dumps(compose))
         self.assertNotIn("./docker.env", json.dumps(compose))
         self.assertEqual("never", services["app"]["pull_policy"])
+
+    def test_connection_limits_are_identical_in_generated_env_compose_and_source_export(self):
+        services = lab.compose_definition(self.marker, "owned-image")["services"]
+        self.assertEqual(2048, lab.SERVER_CONFIG["uvicorn_limit_concurrency"])
+        self.assertEqual("2048", lab.application_environment(self.marker)["MAIN_LIMIT_CONCURRENCY"])
+        self.assertEqual(1, lab.SERVER_CONFIG["workers"])
+        self.assertEqual(12, lab.SERVER_CONFIG["postgres_pool_max"])
+        for name in ("app", "scheduler", "controller", "nginx"):
+            self.assertEqual({"nofile": {"soft": 8192, "hard": 8192}}, services[name]["ulimits"])
+        self.assertIn("./nginx-main.conf:/etc/nginx/nginx.conf:ro", services["nginx"]["volumes"])
+        self.assertIn("deployment/nginx-main.conf", lab.REQUIRED_EXPORT)
+
+    def test_layout_rejects_changed_proxy_main_config_and_missing_export(self):
+        runtime, marker = self.layout()
+        lab.validate_lab_layout(runtime, marker)
+        (runtime / "nginx-main.conf").write_text("events { worker_connections 1024; }\n")
+        with self.assertRaisesRegex(ValueError, "Nginx main configuration"):
+            lab.validate_lab_layout(runtime, marker)
+        path, manifest = self.repository()
+        del manifest["deployment/nginx-main.conf"]
+        with self.assertRaisesRegex(ValueError, "required build/lab inputs"):
+            lab.validate_export_manifest(self.root, manifest)
+
+    def test_live_inspection_rejects_missing_or_unbounded_nofile(self):
+        network_name = self.marker["compose_project"] + "-network"
+        app = {"Id": "owned-app", "Image": "owned-image", "Config": {"Labels": {
+                lab.LABEL: self.nonce, "com.docker.compose.project": self.marker["compose_project"],
+                "com.docker.compose.service": "app"}},
+               "HostConfig": {"Ulimits": [{"Name": "nofile", "Soft": 8192, "Hard": 8192}]},
+               "NetworkSettings": {"Networks": {network_name: {}}}, "State": {"Running": True, "ExitCode": 0}}
+        network = {"Internal": True, "Labels": {lab.LABEL: self.nonce}}
+        with patch.object(lab, "compose_command", return_value="owned-app\n"), \
+             patch.object(lab, "_run", side_effect=[json.dumps([app]), json.dumps([network])]):
+            self.assertEqual([{"Name": "nofile", "Soft": 8192, "Hard": 8192}],
+                             lab.inspect_owned_resources(self.root, self.marker)[0]["nofile"])
+        for limits in (None, [], [{"Name": "nofile", "Soft": 1024, "Hard": 8192}],
+                       [{"Name": "nofile", "Soft": -1, "Hard": -1}]):
+            app["HostConfig"]["Ulimits"] = limits
+            with self.subTest(limits=limits), patch.object(lab, "compose_command", return_value="owned-app\n"), \
+                 patch.object(lab, "_run", return_value=json.dumps([app])), self.assertRaisesRegex(ValueError, "nofile"):
+                lab.inspect_owned_resources(self.root, self.marker)
+
+    def test_effective_process_nofile_is_measured_instead_of_reported_from_source(self):
+        resource = SimpleNamespace(RLIMIT_NOFILE=7, getrlimit=Mock(return_value=(8192, 8192)))
+        with patch.dict(sys.modules, {"resource": resource}):
+            self.assertEqual({"soft": 8192, "hard": 8192}, lab.process_nofile_limits())
+            resource.getrlimit.assert_called_once_with(resource.RLIMIT_NOFILE)
+            for limits in ((1024, 8192), (8192, -1)):
+                resource.getrlimit.return_value = limits
+                with self.subTest(limits=limits), self.assertRaisesRegex(ValueError, "Effective process nofile"):
+                    lab.process_nofile_limits()
 
     def test_mode2_fresh_stage_reserves_static_slots_before_first_network_creation(self):
         manifest_path, manifest = self.repository()

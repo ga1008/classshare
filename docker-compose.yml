@@ -13,6 +13,11 @@ x-lanshare-service: &lanshare-service
   image: ${LANSHARE_IMAGE:-lanshare-app}:${LANSHARE_TAG:-latest}
   restart: unless-stopped
   init: true
+  # Socket capacity is separate from the bounded DB/thread/AI execution pools.
+  ulimits:
+    nofile:
+      soft: 8192
+      hard: 8192
   env_file:
     - ./docker.env
   volumes:
@@ -71,7 +76,7 @@ services:
       <<: *lanshare-timezone
       MAIN_HOST: 0.0.0.0
       MAIN_PORT: "8000"
-      MAIN_LIMIT_CONCURRENCY: ${LANSHARE_APP_MAX_CONNECTIONS:-1024}
+      MAIN_LIMIT_CONCURRENCY: ${LANSHARE_APP_MAX_CONNECTIONS:-2048}
       AI_ASSISTANT_URL: http://ai:8001
       MAIN_APP_CALLBACK_URL: http://app:8000/api/internal/grading-complete
       # Bound DB fan-out on the shared 2c/4G host. HTTP concurrency is much
@@ -195,6 +200,10 @@ services:
     image: nginx:1.27-alpine
     cpu_shares: ${LANSHARE_NGINX_CPU_SHARES:-1024}
     restart: unless-stopped
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 8192
     depends_on:
       app:
         condition: service_healthy
@@ -202,6 +211,7 @@ services:
       - "${LANSHARE_HTTP_PORT:-80}:80"
       - "${LANSHARE_HTTPS_PORT:-443}:443"
     volumes:
+      - ./deployment/nginx-main.conf:/etc/nginx/nginx.conf:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./tools/guardianangel.net.cn_nginx:/etc/nginx/ssl:ro
       - lanshare-static:/srv/lanshare/static:ro

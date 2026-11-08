@@ -153,11 +153,15 @@ AI_ASSISTANT_URL = _read_url_env("AI_ASSISTANT_URL") or f"http://{os.getenv('AI_
 MAIN_APP_CALLBACK_URL = _read_url_env("MAIN_APP_CALLBACK_URL") or f"http://127.0.0.1:{PORT}/api/internal/grading-complete"
 MAIN_WORKERS = max(1, int(os.getenv("MAIN_WORKERS", 1)))
 MAIN_THREADPOOL_TOKENS = max(16, int(os.getenv("MAIN_THREADPOOL_TOKENS", 32)))
+# Runtime HTML/JSON compression shares the event loop with realtime sockets.
+# Level 6 retains almost the same wire size as 9 without its peak CPU cost.
+HTTP_GZIP_COMPRESSION_LEVEL = max(1, min(9, int(os.getenv("HTTP_GZIP_COMPRESSION_LEVEL", 6))))
 MAIN_BACKLOG = max(128, int(os.getenv("MAIN_BACKLOG", 2048)))
-# Uvicorn counts established WebSockets as well as HTTP: 200 students can
-# hold 400 classroom/social sockets before a simultaneous HTTP action starts.
+# Uvicorn counts established WebSockets as well as HTTP: 200 students with
+# two classroom tabs and a dashboard can hold 1000 sockets. Leave HTTP room
+# within the explicit 2048 connection budget; Compose also bounds nofile.
 # Execution remains bounded independently by DB/thread/AI/outbound budgets.
-MAIN_LIMIT_CONCURRENCY = max(0, int(os.getenv("MAIN_LIMIT_CONCURRENCY", 1024)))
+MAIN_LIMIT_CONCURRENCY = max(0, int(os.getenv("MAIN_LIMIT_CONCURRENCY", 2048)))
 MAIN_TIMEOUT_KEEP_ALIVE = max(5, int(os.getenv("MAIN_TIMEOUT_KEEP_ALIVE", 30)))
 MAIN_WS_PING_INTERVAL = max(5.0, float(os.getenv("MAIN_WS_PING_INTERVAL", 20.0)))
 MAIN_WS_PING_TIMEOUT = max(5.0, float(os.getenv("MAIN_WS_PING_TIMEOUT", 20.0)))
