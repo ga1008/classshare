@@ -20,7 +20,7 @@ from tools.login_attendance_lab import (FIXTURE_KIND, check_student_dto,
                                         coordinate_worker_fault)
 from tools.login_attendance_lab_facts import add_union
 from tools.login_attendance_probe import Probe, gather_owned
-from tools.recorder_capacity_fault import main as coordinate_app_fault
+from tools.recorder_capacity_fault import main as coordinate_app_fault, restart_identity_report
 
 
 class AttendanceCapacityGuardsTests(unittest.TestCase):
@@ -327,6 +327,33 @@ class AttendanceCapacityGuardsTests(unittest.TestCase):
         self.assertFalse(probe.completed)
         self.assertTrue(report["stop_drain_completed"])
         self.assertFalse(report["capacity_result"])
+
+    def test_raw_restart_identity_refuses_replacement_or_unchanged_process(self):
+        before={"Id":"a"*64,"Image":"sha256:"+"b"*64,"State":{"Pid":101}}
+        after={**before,"State":{"Pid":102}}
+        report=restart_identity_report(before,after)
+        self.assertEqual(report["container_id_before"],report["container_id_after"])
+        self.assertEqual(report["image_id_before"],report["image_id_after"])
+        for changed in ({**after,"Id":"c"*64},{**after,"Image":"sha256:"+"d"*64},before,
+                        {**after,"State":{"Pid":0}},{**after,"State":{"Pid":True}}):
+            with self.subTest(changed=changed),self.assertRaises(AssertionError):
+                restart_identity_report(before,changed)
+        with self.assertRaises(AssertionError):
+            restart_identity_report({**before,"State":{"Pid":0}},after)
+
+    def test_fault_refuses_missing_client_run_identity_before_injection(self):
+        config=self.work/"synthetic-ssh-config"
+        config.write_text("# mocked transport")
+        (self.work/"fault-ready").write_text("unbound ready marker")
+        marker={"kind":"lanshare-capacity-linux-lab","synthetic":True,
+            "lab_nonce":self.nonce,"release_id":self.release,"network":{"addresses":{"nginx":"172.30.40.4"}}}
+        arguments=SimpleNamespace(work=str(self.work),runtime="/owned/"+self.nonce,
+            lab_nonce=self.nonce,ssh_config=str(config),ssh_host="syntheticlab",nginx_ip="172.30.40.4")
+        with patch("tools.recorder_capacity_fault.subprocess.check_output",return_value=json.dumps(marker)) as reads, \
+             patch("tools.recorder_capacity_fault.subprocess.Popen",side_effect=AssertionError("Unbound fault must not start")):
+            with self.assertRaisesRegex(ValueError,"client run identity"):
+                coordinate_app_fault(arguments)
+        self.assertEqual(reads.call_count,1)  # Read nonce marker only, no inspect/restart/holder.
 
 
 if __name__ == "__main__":

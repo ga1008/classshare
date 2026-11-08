@@ -302,8 +302,8 @@ def coordinate_worker_fault(args):
         time.sleep(.2)
     else:
         raise RuntimeError("Real scheduler did not restart and publish a new worker state")
-    if current["Id"] != old["Id"] or current["Image"] != old["Image"] or current["State"]["Pid"] == old["State"]["Pid"]:
-        raise AssertionError("Scheduler restart identity proof failed")
+    from tools.recorder_capacity_fault import restart_identity_report
+    identity_report = restart_identity_report(old,current)
     if hold.wait(timeout=110)!=0:
         raise RuntimeError("Inflight attendance scan recovery proof failed; retained fault log")
     log.close()
@@ -311,6 +311,7 @@ def coordinate_worker_fault(args):
     if recovery.get("status")!="passed" or recovery.get("completion_seconds_after_release_monotonic",101)>100:
         raise AssertionError("Inflight scan takeover did not meet its server-clock recovery bound")
     result = {"status": "restarted", "lab_nonce": args.lab_nonce,
+        "run_id":client_marker["run_id"],"round_id":client_marker["round_id"],**identity_report,
         "same_container_and_image": True, "old_host_pid": old["State"]["Pid"],
         "new_host_pid": current["State"]["Pid"], "client_monotonic_recovery_seconds": time.monotonic()-began,
         "clock_domain": "Client monotonic duration; VM ISO worker states remain separate",

@@ -1,6 +1,16 @@
 """Precisely coordinate a 15s apply lock and one explicit app restart."""
 import argparse,json,os,re,shlex,subprocess,time
 from pathlib import Path
+
+def restart_identity_report(before,after):
+    """Bind a restart to one immutable container/image and a changed host PID."""
+    if (any(type(value) is not int or value<=0 for value in (before['State']['Pid'],after['State']['Pid']))
+            or before['Id']!=after['Id'] or before['Image']!=after['Image']
+            or before['State']['Pid']==after['State']['Pid']):
+        raise AssertionError('Restart must preserve container/image and replace the process')
+    return {'container_id_before':before['Id'],'container_id_after':after['Id'],
+            'image_id_before':before['Image'],'image_id_after':after['Image']}
+
 def main(a):
     work=Path(a.work).resolve();runtime=a.runtime
     nonce=a.lab_nonce
@@ -29,6 +39,9 @@ def main(a):
         if (work/'fault-ready').exists():break
         time.sleep(.2)
     assert (work/'fault-ready').exists()
+    ready_marker=(work/'fault-ready').read_text().strip()
+    if re.fullmatch('[a-f0-9]{32}',ready_marker) is None:
+        raise ValueError('Fault requires the explicit client run identity before any injection')
     old=json.loads(command('docker inspect '+name))[0]
     assert old['Config']['Labels']['io.lanshare.capacity-lab.nonce']==nonce
     log=(work/'fault-holder.log').open('w')
@@ -54,11 +67,12 @@ def main(a):
         time.sleep(.2)
     assert status=='200'
     after=json.loads(command('docker inspect '+name))[0]
-    assert old['Id']==after['Id'] and old['Image']==after['Image'] and old['State']['Pid']!=after['State']['Pid']
+    identity_report=restart_identity_report(old,after)
     (work/'fault-restarted').write_text(str(time.time()))
     assert hold.wait(timeout=40)==0;log.close()
     release=float(command('cat '+runtime+'/artifacts/apply-released'))
-    report={'status':'injected','lab_nonce':nonce,'hold_acquired_server_epoch':held,'hold_released_server_epoch':release,'hold_seconds':release-held,
+    report={'status':'injected','lab_nonce':nonce,'run_id':ready_marker,
+            **identity_report,'hold_acquired_server_epoch':held,'hold_released_server_epoch':release,'hold_seconds':release-held,
             'hold_observed_client_epoch':held_observed_client_epoch,
             'timestamp_domains':{'hold_acquired_server_epoch':'VM','hold_released_server_epoch':'VM','hold_observed_client_epoch':'external_client','planned_app_restart_began_epoch':'external_client','app_ready_epoch':'external_client'},
             'planned_app_restart_began_epoch':restart_began,'app_ready_epoch':float((work/'fault-restarted').read_text()),
