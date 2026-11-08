@@ -11,6 +11,7 @@
     "network": "transport peer retained; forwarded addresses and TLS metadata accepted only from configured proxy; no inferred public /24",
     "collection_budget": "one per-minute platform observation per student, session and IP across paths/tabs; concurrent duplicates do not acquire extra connections; optional PG checkout 250 ms, lock 250 ms, statement 1000 ms; failed collection does not revoke login",
     "retention": "90-day raw access horizon; bounded 5000-row cleanup every 10 minutes; pending appeals pin related windows; sealed lesson evidence is not recalculated after the raw replay horizon",
+    "scheduler_recovery": "attendance scan alone uses a 90-second stale lease with existing 30-second heartbeat and immutable claim fencing; other task kinds retain their configured lease; retention initializes the existing lazy approval schema before checking appeal pins",
     "appeals": "after end, own record, default 7-day submission window; accepted cases do not expire; current teacher inbox plus durable cross-tab popup and existing email outbox; delivery failure is visible",
     "lifecycle": "course close persists a no-new-round boundary; merge archives stable round and student identities with original slot/roster instead of guessing a target slot; active or unresolved work blocks merge; deletion resolves local work, pauses remote work and preserves historical records"
   },

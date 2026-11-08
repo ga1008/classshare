@@ -56,6 +56,16 @@ class AttendanceJobTests(unittest.TestCase):
         jobs.attendance.evaluate_round(self.conn,rnd['id'])
         self.assertEqual(before,jobs.attendance._records(self.conn,rnd['id']))
 
+    def test_retention_before_first_approval_page_initializes_its_lazy_dependency(self):
+        from classroom_app.services import approval_workflow_schema
+
+        for table in ('approval_request_events','approval_request_reviewers','approval_requests'):
+            self.conn.execute('DROP TABLE '+table)
+        self.conn.commit()
+        with patch.object(approval_workflow_schema,'_SCHEMA_READY',False):
+            self.assertEqual({'removed_access_observations':0},jobs.handle_retention({'payload':{}}))
+        self.assertEqual(0,self.conn.execute('SELECT COUNT(*) FROM approval_requests').fetchone()[0])
+
     def test_settlement_tail_pending_receipt_remains_pending_quality(self):
         rnd=Fixture.create(self);Fixture.observe(self)
         stamp=jobs.attendance.rules.display_time(rnd['window_end_ms']+1000)

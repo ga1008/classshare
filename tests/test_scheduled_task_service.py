@@ -216,6 +216,42 @@ class ScheduledTaskServiceTests(unittest.TestCase):
             row = conn.execute("SELECT status,last_result FROM scheduled_tasks WHERE id=?", (task_id,)).fetchone()
         self.assertEqual(("done", "completed once"), tuple(row))
 
+    def test_dead_attendance_scan_reclaimed_without_shortening_other_job_leases(self):
+        clock = datetime.now().replace(microsecond=0)
+        with get_db_connection() as conn:
+            scan_id = sts.schedule_task(conn, task_kind="login_attendance_scan", run_at=clock-timedelta(seconds=1))
+            other_id = sts.schedule_task(conn, task_kind="unit_test_kind", run_at=clock-timedelta(seconds=1))
+        with patch.object(sts, "_now", return_value=clock):
+            old = {task["id"]: task for task in sts._claim_due_tasks(2)}
+        with patch.object(sts, "_now", return_value=clock+timedelta(seconds=89)):
+            self.assertEqual([], sts._claim_due_tasks(2))
+        with patch.object(sts, "_now", return_value=clock+timedelta(seconds=91)):
+            recovered = sts._claim_due_tasks(2)
+            self.assertEqual([scan_id], [task["id"] for task in recovered])
+            self.assertNotEqual(old[scan_id]["locked_by"], recovered[0]["locked_by"])
+            self.assertFalse(sts._renew_task_lease(old[scan_id]))
+            sts._mark_success(old[scan_id], "stale success")
+            sts._mark_failure(old[scan_id], "stale failure")
+            sts._mark_success(recovered[0], "recovered")
+        with get_db_connection() as conn:
+            scan = dict(conn.execute("SELECT * FROM scheduled_tasks WHERE id=?", (scan_id,)).fetchone())
+            other = dict(conn.execute("SELECT * FROM scheduled_tasks WHERE id=?", (other_id,)).fetchone())
+        self.assertEqual(("done", "recovered", ""), (scan["status"], scan["last_result"], scan["last_error"]))
+        self.assertEqual(("running", old[other_id]["locked_by"]), (other["status"], other["locked_by"]))
+
+    def test_renewed_attendance_scan_is_not_reclaimed_from_its_original_start_time(self):
+        clock = datetime.now().replace(microsecond=0)
+        with get_db_connection() as conn:
+            sts.schedule_task(conn, task_kind="login_attendance_scan", run_at=clock-timedelta(seconds=1))
+        with patch.object(sts, "_now", return_value=clock):
+            claim = sts._claim_due_tasks(1, lane="deadline")[0]
+        with patch.object(sts, "_now", return_value=clock+timedelta(seconds=60)):
+            self.assertTrue(sts._renew_task_lease(claim))
+        with patch.object(sts, "_now", return_value=clock+timedelta(seconds=91)):
+            self.assertEqual([], sts._claim_due_tasks(1, lane="deadline"))
+        with patch.object(sts, "_now", return_value=clock+timedelta(seconds=151)):
+            self.assertEqual([claim["id"]], [task["id"] for task in sts._claim_due_tasks(1, lane="deadline")])
+
     def test_lanes_reserve_projection_and_old_waiters_age_ahead_of_new_priority(self):
         with get_db_connection() as conn:
             generation = sts.schedule_task(conn, task_kind="stage_exam_generation", priority=20, run_at=datetime.now()-timedelta(seconds=10))

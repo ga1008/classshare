@@ -41,6 +41,10 @@ SCHEDULER_HEARTBEAT_TIMEOUT_SECONDS = max(
 MAX_BACKOFF_SECONDS = 3600
 SCHEDULER_LEASE_HEARTBEAT_SECONDS = min(30.0, SCHEDULER_STALE_MINUTES * 20.0)
 SCHEDULER_FAIR_WAIT_SECONDS = 300
+# The attendance scan has no external side effects and serializes each round
+# under its database lock. Recover its dead worker promptly, while retaining
+# the longer lease for existing AI/network jobs. Live scans renew every 30s.
+ATTENDANCE_SCAN_STALE_SECONDS = 90
 # Each lane has one execution slot. Slow autonomous/AI work cannot reserve
 # reminders or the normal projection slot while waiting for a supplier.
 DEADLINE_TASK_KINDS = (
@@ -209,6 +213,10 @@ def get_owner_task_by_dedupe(conn, dedupe_key: str) -> dict[str, Any] | None:
 def _claim_due_tasks(limit: int, *, lane: str | None = None) -> list[dict[str, Any]]:
     now = _now_iso()
     stale_cutoff = _to_iso(_now() - timedelta(minutes=SCHEDULER_STALE_MINUTES))
+    attendance_cutoff = _to_iso(_now() - timedelta(
+        seconds=min(ATTENDANCE_SCAN_STALE_SECONDS, SCHEDULER_STALE_MINUTES * 60)))
+    stale_predicate = ("locked_at IS NULL OR COALESCE(NULLIF(updated_at, ''), locked_at) <= "
+                       "CASE WHEN task_kind = 'login_attendance_scan' THEN ? ELSE ? END")
     worker_tag = (os.getenv("SCHEDULER_WORKER_ID") or socket.gethostname()) + ":" + uuid.uuid4().hex
     engine = get_configured_db_engine()
     safe_limit = max(1, min(int(limit), 100))
@@ -239,7 +247,7 @@ def _claim_due_tasks(limit: int, *, lane: str | None = None) -> list[dict[str, A
                 WHERE id IN (
                     SELECT id FROM scheduled_tasks
                     WHERE ((status = 'pending' AND run_at <= ?)
-                       OR (status = 'running' AND (locked_at IS NULL OR COALESCE(NULLIF(updated_at, ''), locked_at) <= ?)))
+                       OR (status = 'running' AND ({stale_predicate})))
                     {lane_sql}
                     ORDER BY CASE WHEN run_at <= ? THEN 0 ELSE 1 END, priority ASC, run_at ASC, id ASC
                     LIMIT ?
@@ -247,7 +255,7 @@ def _claim_due_tasks(limit: int, *, lane: str | None = None) -> list[dict[str, A
                 )
                 RETURNING *
                 """,
-                (now, worker_tag, now, now, now, stale_cutoff, *lane_params, fair_before, safe_limit),
+                (now, worker_tag, now, now, now, attendance_cutoff, stale_cutoff, *lane_params, fair_before, safe_limit),
             ).fetchall()
             conn.commit()
             return [dict(row) for row in rows]
@@ -256,27 +264,27 @@ def _claim_due_tasks(limit: int, *, lane: str | None = None) -> list[dict[str, A
             f"""
             SELECT * FROM scheduled_tasks
             WHERE ((status = 'pending' AND run_at <= ?)
-               OR (status = 'running' AND (locked_at IS NULL OR COALESCE(NULLIF(updated_at, ''), locked_at) <= ?)))
+               OR (status = 'running' AND ({stale_predicate})))
             {lane_sql}
             ORDER BY CASE WHEN run_at <= ? THEN 0 ELSE 1 END, priority ASC, run_at ASC, id ASC
             LIMIT ?
             """,
-            (now, stale_cutoff, *lane_params, fair_before, safe_limit),
+            (now, attendance_cutoff, stale_cutoff, *lane_params, fair_before, safe_limit),
         ).fetchall()
         claimed: list[dict[str, Any]] = []
         for row in rows:
             cursor = conn.execute(
-                """
+                f"""
                 UPDATE scheduled_tasks
                 SET status = 'running', locked_at = ?, locked_by = ?,
                     started_at = ?, updated_at = ?
                 WHERE id = ?
                   AND (
                     (status = 'pending' AND run_at <= ?)
-                    OR (status = 'running' AND (locked_at IS NULL OR COALESCE(NULLIF(updated_at, ''), locked_at) <= ?))
+                    OR (status = 'running' AND ({stale_predicate}))
                   )
                 """,
-                (now, worker_tag, now, now, int(row["id"]), now, stale_cutoff),
+                (now, worker_tag, now, now, int(row["id"]), now, attendance_cutoff, stale_cutoff),
             )
             if cursor.rowcount:
                 claimed.append({**dict(row), "status": "running", "locked_at": now, "locked_by": worker_tag, "started_at": now, "updated_at": now})

@@ -37,8 +37,13 @@ def handle_scan(payload):
 
 
 def handle_retention(payload):
+    from .approval_workflow_schema import ensure_approval_workflow_schema
+
     cutoff=attendance.now_ms()-90*86400_000
     with get_db_connection() as conn:
+        # Approvals are lazy in the existing platform. A fresh installation
+        # may have observations before anyone has opened an approval page.
+        ensure_approval_workflow_schema(conn)
         # Bounded cleanup. Pending appeals pin every related student's window.
         rows=conn.execute("SELECT e.event_key FROM login_attendance_access e WHERE e.received_at_ms<? AND NOT EXISTS ("
             "SELECT 1 FROM login_attendance_records s JOIN login_attendance_rounds r ON r.id=s.round_id "
