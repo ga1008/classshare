@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from ..database import get_db_connection
 from ..dependencies import get_current_user
+from .behavior import BehaviorRoute
 from ..services.life_tip_service import (
     build_committed_login_tip_payload,
     invalidate_pool_cache,
@@ -48,7 +49,7 @@ from ..services.todo_service import (
 )
 from ..services.resource_access_service import ensure_classroom_access as ensure_scoped_classroom_access
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", route_class=BehaviorRoute)
 
 
 @router.get("/classrooms/{class_offering_id}/members", response_class=JSONResponse)
@@ -98,6 +99,10 @@ class MaterialProgressPayload(BaseModel):
     scroll_ratio: float = 0.0
     completed: bool = False
     page_key: str = "material_viewer"
+    progress_version: int = Field(default=1, ge=1, le=2)
+    batch_id: Optional[str] = Field(default=None, max_length=96)
+    user_key: Optional[str] = Field(default=None, max_length=40)
+    events: list[dict[str, Any]] = Field(default_factory=list, max_length=20)
 
 
 class MaterialMasteryCheckPayload(BaseModel):
@@ -615,7 +620,7 @@ async def delete_classroom_todo(
 
 
 @router.post("/classrooms/{class_offering_id}/learning/material-progress", response_class=JSONResponse)
-async def post_material_progress(
+def post_material_progress(
     class_offering_id: int,
     payload: MaterialProgressPayload,
     user: dict = Depends(get_current_user),
@@ -623,8 +628,37 @@ async def post_material_progress(
     if user["role"] != "student":
         raise HTTPException(403, "仅学生需要记录学习进度")
     with get_db_connection() as conn:
+        from ..db.connection import begin_immediate_transaction, get_configured_db_engine
+        if get_configured_db_engine() == "sqlite":
+            begin_immediate_transaction(conn)
+        else:
+            conn.execute("SET LOCAL lock_timeout = '500ms'")
+            conn.execute("SET LOCAL statement_timeout = '1500ms'")
+            # Parent locks precede material row locks, matching deletion and
+            # durable inbox intake; a delete cannot deadlock or orphan telemetry.
+            for table, value in (("class_offerings", class_offering_id), ("students", int(user["id"]))):
+                if conn.execute(f"SELECT id FROM {table} WHERE id=? FOR KEY SHARE", (value,)).fetchone() is None:
+                    raise HTTPException(404, "课堂或账号已不存在")
         _ensure_classroom_access(conn, class_offering_id, user)
         _ensure_material_in_classroom(conn, class_offering_id, int(payload.material_id), user)
+        if payload.progress_version == 2:
+            from ..services.material_progress_collection_service import MaterialCollectionError, collect_material_progress
+            from ..services.behavior_inbox_service import BehaviorBatchConflict
+            from ..services.behavior_event_validation import BehaviorValidationError
+            try:
+                result = collect_material_progress(conn, class_offering_id=class_offering_id, user=user, payload=payload.model_dump())
+                if result.get("degraded"):
+                    raise MaterialCollectionError("本批次已保留等待修复，不会重新编号入账。", "batch_payload_conflict", status=409)
+            except (MaterialCollectionError, BehaviorBatchConflict, BehaviorValidationError) as exc:
+                code = getattr(exc, "code", getattr(exc, "error_code", "batch_payload_invalid"))
+                retryable = bool(getattr(exc, "retryable", False))
+                raise HTTPException(getattr(exc, "status", 409 if isinstance(exc, BehaviorBatchConflict) else 422),
+                    detail={"error_code": code, "message": str(exc), "retryable": retryable,
+                            "batch_disposition": "retain" if retryable else "quarantine",
+                            "current_user_key": f"{user['role']}:{user['id']}"},
+                    headers={"Retry-After": "10"} if retryable else None) from exc
+            conn.commit()
+            return result
         result = record_material_learning_progress(
             conn,
             class_offering_id=class_offering_id,
@@ -636,6 +670,7 @@ async def post_material_progress(
             scroll_ratio=payload.scroll_ratio,
             completed=payload.completed,
             metadata={"page_key": payload.page_key},
+            defer_projection=True,
         )
         conn.commit()
         return result

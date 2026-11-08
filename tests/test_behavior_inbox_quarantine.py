@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from decimal import Decimal
 import json
+import hashlib
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -82,6 +83,65 @@ class QuarantineTests(unittest.TestCase):
                 self.pipeline.submit(replace(self.request, **{field: value}))
         self.assertEqual(self.count("behavior_write_inbox"), 0)
         self.assertEqual(self.count("effects"), 0)
+
+    def test_unreadable_metadata_is_quarantined_once_without_blocking_other_actors(self):
+        with self.connect() as conn:
+            conn.execute("INSERT INTO students VALUES(20)")
+        cases = ("{broken", "[]", "null", '{"recovery_actions":[1]}',
+                 '{"permanent_error_streak":"broken"}', json.dumps(["legacy_" * 12000]))
+        for number, raw in enumerate(cases):
+            request = replace(self.request, batch_id=inbox.new_batch_id())
+            self.pipeline.submit(request)
+            with self.connect() as conn:
+                conn.execute("UPDATE behavior_write_inbox SET result_json=? WHERE batch_id=?", (raw, request.batch_id))
+                original = dict(conn.execute("SELECT * FROM behavior_write_inbox WHERE batch_id=?", (request.batch_id,)).fetchone())
+            self.pipeline.submit(replace(self.request, user_pk=20, batch_id=inbox.new_batch_id(),
+                                         events=[{"action_type": f"good_{number}"}]))
+            with patch.object(inbox.time, "monotonic", return_value=0):
+                self.assertEqual(2, self.pipeline._drain_batch())
+            with self.connect() as conn:
+                isolated = dict(conn.execute("SELECT * FROM behavior_write_inbox WHERE batch_id=?", (request.batch_id,)).fetchone())
+            evidence = json.loads(isolated["result_json"])
+            self.assertEqual(("quarantined", 1), (isolated["state"], isolated["attempts"]))
+            self.assertEqual(original["events_json"], isolated["events_json"])
+            self.assertEqual(original["payload_hash"], isolated["payload_hash"])
+            self.assertEqual(raw, evidence["unreadable_result_json"])
+            self.assertEqual(hashlib.sha256(raw.encode("utf-8")).hexdigest(), evidence["unreadable_result_sha256"])
+            self.assertEqual(len(raw.encode("utf-8")), evidence["unreadable_result_bytes"])
+            self.assertLessEqual(len(isolated["result_json"].encode("utf-8")), 2 * len(raw.encode("utf-8")) + 4096)
+            self.assertEqual(number + 1, self.count("effects"))
+            self.assertEqual(0, self.pipeline._drain_batch())
+            with self.connect() as conn:
+                repeated = dict(conn.execute("SELECT * FROM behavior_write_inbox WHERE batch_id=?", (request.batch_id,)).fetchone())
+            self.assertEqual(isolated, repeated)  # No repeated parse/wrap/retry loop.
+
+    def test_admin_retry_and_discard_preserve_unreadable_metadata_without_exposing_it_to_clients(self):
+        requests = [replace(self.request, batch_id=inbox.new_batch_id()) for _ in range(2)]
+        raw_values = ("{original legacy metadata", "[]")
+        for request, raw in zip(requests, raw_values):
+            self.pipeline.submit(request)
+            with self.connect() as conn:
+                conn.execute("UPDATE behavior_write_inbox SET result_json=? WHERE batch_id=?", (raw, request.batch_id))
+        with patch.object(inbox.time, "monotonic", return_value=0):
+            self.assertEqual(2, self.pipeline._drain_batch())
+        with self.connect() as conn:
+            rows = [dict(conn.execute("SELECT * FROM behavior_write_inbox WHERE batch_id=?", (request.batch_id,)).fetchone())
+                    for request in requests]
+        self.assertEqual("pending", self.recover("retry", rows[0])["state"])
+        self.assertTrue(self.pipeline._drain_once())
+        receipt = self.pipeline.submit(requests[0])
+        self.assertEqual("synced", receipt["write_mode"])
+        self.assertTrue(all(field not in receipt for field in inbox._UNREADABLE_RESULT_FIELDS))
+        self.assertEqual("discarded", self.recover("discard", rows[1])["state"])
+        self.assertEqual("discarded", self.pipeline.submit(requests[1])["write_mode"])
+        with self.connect() as conn:
+            for request, raw, action in zip(requests, raw_values, ("retry", "discard")):
+                row = dict(conn.execute("SELECT * FROM behavior_write_inbox WHERE batch_id=?", (request.batch_id,)).fetchone())
+                metadata = json.loads(row["result_json"])
+                self.assertEqual(raw, metadata["unreadable_result_json"])
+                self.assertEqual(action, metadata["recovery_actions"][-1]["action"])
+                self.assertEqual(rows[0]["payload_hash"], row["payload_hash"])
+        self.assertEqual(1, self.count("effects"))
 
     def test_legacy_server_metadata_and_heartbeat_coercion_are_preserved(self):
         for value in ("12", 1.5, None, False, [], {}):

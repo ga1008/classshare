@@ -11,7 +11,7 @@ from classroom_app.db.schema_behavior_collection_health import (
     BEHAVIOR_COLLECTION_HEALTH_REQUIRED_COLUMNS,
     ensure_behavior_collection_health_schema,
 )
-from classroom_app.services.behavior_collection_health_service import record_collection_observation
+from classroom_app.services.behavior_collection_health_service import record_collection_observation, record_collection_observations
 
 
 class BehaviorCollectionHealthServiceTests(unittest.TestCase):
@@ -67,6 +67,23 @@ class BehaviorCollectionHealthServiceTests(unittest.TestCase):
     def test_caller_transaction_rolls_back_observation(self):
         self.conn.execute("BEGIN")
         self.assertTrue(self.record())
+        self.conn.rollback()
+        self.assertIsNone(self.row())
+
+    def test_bulk_diagnostics_are_one_write_with_first_fact_retained_and_atomic_validation(self):
+        items = [{**self.args, "batch_id": f"d1_bulk_{n}", "source": "client_diagnostic", "valid_sample_count": 0,
+                  "observed_start": None, "observed_end": None,
+                  "reason_codes": ["client_request_timeout"], "diagnostics": {"occurrence_count": n + 1}}
+                 for n in range(20)]
+        statements = []
+        self.conn.set_trace_callback(statements.append)
+        self.assertEqual(20, record_collection_observations(self.conn, items))
+        self.assertEqual(1, sum(sql.startswith("INSERT INTO behavior_collection_observations") for sql in statements))
+        self.assertEqual(0, record_collection_observations(self.conn, items))
+        self.assertEqual(20, self.conn.execute("SELECT COUNT(*) FROM behavior_collection_observations").fetchone()[0])
+        with self.assertRaises(ValueError):
+            record_collection_observations(self.conn, [{**items[0], "batch_id": "d1_other"}, {**items[1], "valid_sample_count": 1}])
+        self.assertEqual(20, self.conn.execute("SELECT COUNT(*) FROM behavior_collection_observations").fetchone()[0])
         self.conn.rollback()
         self.assertIsNone(self.row())
 

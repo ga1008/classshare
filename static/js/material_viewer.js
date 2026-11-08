@@ -5,6 +5,7 @@ import { showToast } from './ui.js';
 import { renderFilePreview } from './file_preview.js';
 import { openImageLightbox as openSharedImageLightbox } from './ls_image_lightbox.js';
 import { bindProcessMaterialExportDownloadActions } from './process_material_editor_preview.js';
+import { startMaterialLearningTracker } from './material_learning_tracker.js';
 
 const material = window.MATERIAL_VIEWER || {};
 const viewerContext = window.MATERIAL_VIEWER_CONTEXT || {};
@@ -279,93 +280,15 @@ async function submitMasteryCheck() {
 }
 
 function initLearningMaterialProgressTracker() {
-    if (viewerContext.userRole !== 'student' || !viewerContext.classOfferingId || !viewerContext.materialId) {
-        return;
-    }
-
-    let startedAt = performance.now();
-    let lastTickAt = startedAt;
-    let activeSeconds = 0;
-    let maxScrollRatio = 0;
-    let pending = false;
-
-    const endpoint = `/api/classrooms/${viewerContext.classOfferingId}/learning/material-progress`;
-    const getScrollRatio = () => {
+    let maximumScroll = 0;
+    const getProgress = () => {
         const doc = document.documentElement;
-        const maxScrollTop = Math.max(1, doc.scrollHeight - window.innerHeight);
-        return Math.min(1, Math.max(0, (window.scrollY || doc.scrollTop || 0) / maxScrollTop));
+        const maximum = Math.max(1, doc.scrollHeight - window.innerHeight);
+        maximumScroll = Math.max(maximumScroll, Math.min(1, Math.max(0, (window.scrollY || doc.scrollTop || 0) / maximum)));
+        return { scroll_ratio: maximumScroll, completed: maximumScroll >= 0.88 };
     };
-    const syncActivity = () => {
-        const now = performance.now();
-        const delta = Math.max(0, Math.min(15, (now - lastTickAt) / 1000));
-        if (document.visibilityState === 'visible' && document.hasFocus()) {
-            activeSeconds += delta;
-        }
-        lastTickAt = now;
-        maxScrollRatio = Math.max(maxScrollRatio, getScrollRatio());
-    };
-    const sendProgress = async (options = {}) => {
-        syncActivity();
-        const durationSeconds = Math.round(Math.max(0, (performance.now() - startedAt) / 1000));
-        if (!options.force && durationSeconds < 8 && maxScrollRatio < 0.18) {
-            return;
-        }
-        if (pending && !options.final) {
-            return;
-        }
-        const payload = {
-            material_id: Number(viewerContext.materialId),
-            session_id: viewerContext.sessionId ? Number(viewerContext.sessionId) : null,
-            duration_seconds: durationSeconds,
-            active_seconds: Math.round(activeSeconds),
-            scroll_ratio: maxScrollRatio,
-            completed: maxScrollRatio >= 0.88 || activeSeconds >= 180,
-            page_key: 'material_viewer',
-        };
-        const body = JSON.stringify(payload);
-        if (options.final && navigator.sendBeacon) {
-            const blob = new Blob([body], { type: 'application/json' });
-            navigator.sendBeacon(endpoint, blob);
-        } else {
-            pending = true;
-            try {
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: { 'Content-Type': 'application/json' },
-                    body,
-                    keepalive: Boolean(options.final),
-                });
-                if (response.ok) {
-                    const result = await response.json().catch(() => null);
-                    handleLearningProgressResult(result);
-                }
-            } catch (error) {
-                console.debug('learning progress heartbeat failed', error);
-            } finally {
-                pending = false;
-            }
-        }
-        startedAt = performance.now();
-        lastTickAt = startedAt;
-        activeSeconds = 0;
-    };
-
-    window.addEventListener('scroll', () => {
-        maxScrollRatio = Math.max(maxScrollRatio, getScrollRatio());
-    }, { passive: true });
-    window.setInterval(() => {
-        sendProgress().catch(() => {});
-    }, 30000);
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') {
-            sendProgress({ final: true, force: true }).catch(() => {});
-        }
-    });
-    window.addEventListener('pagehide', () => {
-        sendProgress({ final: true, force: true }).catch(() => {});
-    });
-    window.setInterval(syncActivity, 5000);
+    return startMaterialLearningTracker({ context: viewerContext, pageKey: 'material_viewer',
+        getProgress, onReceipt: handleLearningProgressResult });
 }
 
 function escapeHtml(value) {

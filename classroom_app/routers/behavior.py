@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional
 from datetime import datetime, timedelta
 import ipaddress
+import hashlib
 
 from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from fastapi.exceptions import RequestValidationError
@@ -11,6 +12,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field
 
 from ..database import get_db_connection
+from ..db.connection import begin_immediate_transaction, get_configured_db_engine
 from ..dependencies import get_current_user, get_current_teacher, get_client_ip
 from ..services.behavior_tracking_service import record_behavior_batch
 from ..services.behavior_inbox_service import BehaviorBatchConflict
@@ -25,7 +27,7 @@ class BehaviorRoute(APIRoute):
             try:
                 return await handler(request)
             except RequestValidationError:
-                if self.path.endswith("/behavior/batch"):
+                if self.path.endswith(("/behavior/batch", "/learning/material-progress")):
                     return JSONResponse(status_code=422, content={"detail": _collection_error(
                         "batch_payload_invalid", "采集批次格式无效，已停止重放该批次。", quarantine=True)}, headers={"Cache-Control": "no-store"})
                 raise
@@ -118,6 +120,8 @@ class CollectionDiagnostic(BaseModel):
     observed_ms: int = Field(gt=0, le=4102444800000)
     affected_batch_id: Optional[str] = Field(default=None, max_length=96, pattern=r"^b1_[0-9]{10,16}_[A-Za-z0-9_-]+$")
     event_count: int = Field(default=0, ge=0, le=512)
+    occurrence_count: int = Field(default=1, ge=1, le=1000000)
+    affected_batch_count: int = Field(default=0, ge=0, le=1000000)
     interval_start_ms: Optional[int] = Field(default=None, gt=0, le=4102444800000)
     interval_end_ms: Optional[int] = Field(default=None, gt=0, le=4102444800000)
 
@@ -130,7 +134,7 @@ class CollectionDiagnosticsRequest(BaseModel):
 @router.post("/{class_offering_id}/behavior/diagnostics")
 def ingest_collection_diagnostics(class_offering_id: int, body: CollectionDiagnosticsRequest, request: Request,
                                   response: Response, user: dict = Depends(get_current_user)):
-    from ..services.behavior_collection_health_service import record_collection_observation
+    from ..services.behavior_collection_health_service import record_collection_observations
 
     current = _check_identity(user, body.user_key)
     now = datetime.now()
@@ -140,7 +144,34 @@ def ingest_collection_diagnostics(class_offering_id: int, body: CollectionDiagno
         peer_ip = None
     # Client reports are evidence of a collection failure, never attendance or learning credit.
     floor, ceiling = int((now - timedelta(days=7)).timestamp() * 1000), int(now.timestamp() * 1000) + 5000
+    observations = []
+    for item in body.diagnostics:
+        if (item.interval_start_ms is None) != (item.interval_end_ms is None) or (item.interval_start_ms is not None and
+                item.interval_start_ms > item.interval_end_ms):
+            raise HTTPException(422, detail=_collection_error("diagnostic_interval_invalid", "诊断区间无效。", quarantine=True))
+        reasons = [item.error_code]
+        # Clock values remain untrusted claims. Receipt time controls retention,
+        # and diagnostic counters never earn attendance or learning credit.
+        if not floor <= item.observed_ms <= ceiling:
+            reasons.append("client_clock_out_of_range")
+        observations.append(dict(class_offering_id=class_offering_id, user_pk=int(user["id"]),
+            user_role=str(user["role"]), batch_id=item.diagnostic_id, received_at=now.isoformat(),
+            source="client_diagnostic", valid_sample_count=0, rejected_sample_count=0, learning_delta_seconds=0,
+            reason_codes=reasons, diagnostics=item.model_dump(exclude_none=True), ip_address=peer_ip))
     with get_db_connection() as conn:
+        engine = get_configured_db_engine()
+        if engine == "sqlite":
+            begin_immediate_transaction(conn)
+        else:
+            # Match business intake/deletion lock order. Personal diagnostic
+            # evidence cannot arrive behind a committed actor/class deletion.
+            for table, value, code in (("class_offerings", class_offering_id, "classroom_unavailable"),
+                                       ("students" if user["role"] == "student" else "teachers", int(user["id"]), "actor_unavailable")):
+                if conn.execute(f"SELECT id FROM {table} WHERE id=? FOR KEY SHARE", (value,)).fetchone() is None:
+                    raise HTTPException(409, detail=_collection_error(code, "课堂或账号已变更。", quarantine=True))
+            lock_key = int.from_bytes(hashlib.blake2s(f"{current}:{class_offering_id}".encode(), digest_size=4).digest(), "big", signed=True)
+            if not conn.execute("SELECT pg_try_advisory_xact_lock(?, ?) AS acquired", (0x42484447, lock_key)).fetchone()["acquired"]:
+                raise HTTPException(429, detail=_collection_error("diagnostic_rate_limited", "诊断正在合并，请稍后重试。"), headers={"Retry-After": "2"})
         _ensure_behavior_access(conn, class_offering_id, int(user["id"]), str(user["role"]))
         scope = (str(user["role"]), int(user["id"]), class_offering_id)
         ids = {item.diagnostic_id for item in body.diagnostics}
@@ -151,20 +182,8 @@ def ingest_collection_diagnostics(class_offering_id: int, body: CollectionDiagno
                                   (*scope, (now - timedelta(minutes=1)).isoformat())).fetchone()["n"]
             if int(recent) + new_count > 60:
                 raise HTTPException(429, detail=_collection_error("diagnostic_rate_limited", "诊断正在合并，请稍后重试。"), headers={"Retry-After": "60"})
-        for item in body.diagnostics:
-            if (item.interval_start_ms is None) != (item.interval_end_ms is None) or (item.interval_start_ms is not None and
-                    item.interval_start_ms > item.interval_end_ms):
-                raise HTTPException(422, detail=_collection_error("diagnostic_interval_invalid", "诊断区间无效。", quarantine=True))
-            reasons = [item.error_code]
-            # A bad client clock or an expired batch is exactly what this
-            # channel must be able to report. These times are untrusted claims;
-            # server received_at controls reporting and none earns credit.
-            if not floor <= item.observed_ms <= ceiling:
-                reasons.append("client_clock_out_of_range")
-            record_collection_observation(conn, class_offering_id=class_offering_id, user_pk=int(user["id"]),
-                user_role=str(user["role"]), batch_id=item.diagnostic_id, received_at=now.isoformat(),
-                source="client_diagnostic", valid_sample_count=0, rejected_sample_count=0, learning_delta_seconds=0,
-                reason_codes=reasons, diagnostics=item.model_dump(exclude_none=True), ip_address=peer_ip)
+        if new_count:
+            record_collection_observations(conn, observations)
         conn.commit()
     response.headers["Cache-Control"] = "no-store"
     return {"status": "success", "current_user_key": current,

@@ -77,3 +77,10 @@ def ensure_behavior_inbox_schema(conn, *, engine=None) -> None:
                  "ON behavior_write_inbox(user_role, user_pk, state, received_at, batch_key)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_behavior_inbox_class "
                  "ON behavior_write_inbox(class_offering_id, state, received_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_behavior_inbox_open_capacity "
+                 "ON behavior_write_inbox(state) WHERE state IN ('pending','quarantined')")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_behavior_inbox_pending_actor_order "
+                 "ON behavior_write_inbox(user_role, user_pk, received_at, batch_key) WHERE state='pending'")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_behavior_inbox_retired_cleanup "
+                 "ON behavior_write_inbox(COALESCE(resolved_at, applied_at, received_at), batch_key) "
+                 "WHERE state IN ('applied','discarded') AND SUBSTR(batch_id,1,3)='b1_'")

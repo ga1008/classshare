@@ -73,5 +73,6 @@
 
 {% block scripts %}
 {% include "partials/markdown_assets.html" %}
+<script src="{{ asset_url('js/behavior_tracker.js') }}"></script>
 <script type="module" src="{{ asset_url('js/material_render_shell.js') }}"></script>
 {% endblock %}

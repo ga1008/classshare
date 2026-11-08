@@ -3815,10 +3815,12 @@ def record_material_learning_progress(
     scroll_ratio: float = 0.0,
     completed: bool = False,
     metadata: Optional[dict[str, Any]] = None,
+    defer_projection: bool = False,
+    measured_interval: bool = False,
 ) -> dict[str, Any]:
     timestamp = now_iso()
-    duration_seconds = max(0, min(int(duration_seconds or 0), 600))
-    active_seconds = max(0, min(int(active_seconds or 0), duration_seconds or 600))
+    duration_seconds = max(0, min(int(duration_seconds or 0), 1800 if measured_interval else 600))
+    active_seconds = max(0, min(int(active_seconds or 0), 1800 if measured_interval else duration_seconds or 600))
     scroll_ratio = clamp(float(scroll_ratio or 0))
     completed = bool(
         completed
@@ -3841,10 +3843,14 @@ def record_material_learning_progress(
     mastery_source = "single_tier_fallback" if auto_mastered else ""
     progress_rule_version = "material_mastery_v2" if check_ready else "material_single_tier_fallback_v2"
     if get_configured_db_engine() == "postgres":
+        metadata_merge_sql = "(COALESCE(NULLIF(learning_material_progress.metadata_json, ''), '{}')::jsonb || excluded.metadata_json::jsonb)::text"
         view_count_increment_sql = """
                 WHEN (excluded.last_viewed_at::timestamp - learning_material_progress.last_viewed_at::timestamp) > INTERVAL '1800 seconds' THEN 1
         """
     else:
+        # Coverage is an encoded immutable value within the metadata object.
+        # Legacy writers omit it and must preserve newer collectors' replay state.
+        metadata_merge_sql = "json_patch(COALESCE(NULLIF(learning_material_progress.metadata_json, ''), '{}'), excluded.metadata_json)"
         view_count_increment_sql = """
                 WHEN (julianday(excluded.last_viewed_at) - julianday(learning_material_progress.last_viewed_at)) * 86400 > 1800 THEN 1
         """
@@ -3895,7 +3901,7 @@ def record_material_learning_progress(
             END,
             last_viewed_at = excluded.last_viewed_at,
             updated_at = excluded.updated_at,
-            metadata_json = excluded.metadata_json
+            metadata_json = {metadata_merge_sql}
         """,
         (
             int(class_offering_id),
@@ -3940,17 +3946,21 @@ def record_material_learning_progress(
             if auto_mastered
             else f"material:{int(material_id)}:read-v2"
         )
-    state = refresh_student_learning_state(
-        conn,
-        int(class_offering_id),
-        int(student_id),
-        event_source_ref=event_source,
-    )
+    if defer_projection:
+        # Heartbeats persist facts and coalesce a durable projection request.
+        # Eligibility decisions still use the explicit synchronous refresh path.
+        mark_student_learning_progress_dirty(conn, int(class_offering_id), int(student_id), source_ref=event_source)
+        state = get_student_learning_state(conn, int(class_offering_id), int(student_id))
+    else:
+        state = refresh_student_learning_state(
+            conn, int(class_offering_id), int(student_id), event_source_ref=event_source,
+        )
     return {
         "status": "success",
-        "completed": completed,
+        "completed": bool(progress and safe_int(progress.get("completed"))),
         "mastered": bool(progress and safe_int(progress.get("mastered"))),
         "mastery_check": _public_mastery_check_context(material, progress),
+        "progress_pending": bool(defer_projection and state.get("snapshot_status") != "ready"),
         "progress": {
             "score": state["score"],
             "progress_percent": state["progress_percent"],

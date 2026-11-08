@@ -11,6 +11,8 @@ from tools.deploy.validate_native_pg_rehearsal import (
     REPORT_CONTRACT, REQUIRED_MIGRATION_FILES, file_hash, migration_source_hashes, validate_report,
 )
 from tools.agent_authority_migration_rehearsal import prove as prove_agent_authority
+from tools.behavior_capacity_migration_rehearsal import prove as prove_behavior_capacity
+from tests.test_behavior_capacity_migration_rehearsal import baseline as capacity_baseline, migrated as capacity_migrated
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -43,9 +45,12 @@ class NativePostgresDeployGateTests(unittest.TestCase):
             "migration_source_sha256": migration_source_hashes(self.root),
         }
         empty_agent_proof = prove_agent_authority({"tables": {}, "authority_tables": {}}, {"tables": {}, "authority_tables": {}})
+        capacity_before = capacity_baseline()
+        capacity_proof = prove_behavior_capacity(capacity_before, capacity_migrated(capacity_before))
         for phase in ("incremental", "full_startup"):
             self.report[phase]["agent_authority_migration_per_pass"] = [empty_agent_proof, copy.deepcopy(empty_agent_proof)]
             self.report[phase]["unexpected_old_differences_per_pass"] = [[], []]
+            self.report[phase]["behavior_capacity_migration_per_pass"] = [capacity_proof, copy.deepcopy(capacity_proof)]
 
     def tearDown(self):
         self.temp.cleanup()
@@ -116,6 +121,35 @@ class NativePostgresDeployGateTests(unittest.TestCase):
     def test_agent_proof_is_required_even_if_old_projection_has_no_differences(self):
         self.report["incremental"].pop("agent_authority_migration_per_pass")
         self.assertIn("incremental_differences_or_missing_checks", self.validate()["blockers"])
+
+    def test_recorder_index_proof_is_required_in_both_phases_even_when_sources_match(self):
+        for phase in ("incremental", "full_startup"):
+            changed = copy.deepcopy(self.report)
+            changed[phase].pop("behavior_capacity_migration_per_pass")
+            with self.subTest(phase=phase):
+                self.assertIn(phase + "_behavior_capacity_proof_missing_or_invalid", self.validate(changed)["blockers"])
+
+    def test_recorder_indexes_need_two_identical_proofs_and_cannot_allow_old_differences(self):
+        for modification in ("one_pass", "different_pass", "wrong_predicate", "widened_allowlist", "missing_table"):
+            changed = copy.deepcopy(self.report)
+            proofs = changed["incremental"]["behavior_capacity_migration_per_pass"]
+            if modification == "one_pass":
+                proofs.pop()
+            elif modification == "different_pass":
+                proofs[1] = prove_behavior_capacity(proofs[0]["after"], proofs[0]["after"])
+            elif modification == "wrong_predicate":
+                after = copy.deepcopy(proofs[0]["after"])
+                after["indexes"]["idx_behavior_inbox_open_capacity"]["predicate"] = "state='applied'"
+                proofs[:] = [prove_behavior_capacity(proofs[0]["before"], after)] * 2
+            elif modification == "widened_allowlist":
+                for proof in proofs:
+                    proof["allowed_differences"] = ["schema:index:idx_behavior_inbox_open_capacity"]
+                changed["incremental"]["old_differences_per_pass"] = [["schema:index:idx_behavior_inbox_open_capacity"]] * 2
+            else:
+                absent = {"present": False, "table": None, "non_index_schema": {}, "indexes": {}, "sequences": {}}
+                proofs[:] = [prove_behavior_capacity(absent, absent)] * 2
+            with self.subTest(modification=modification):
+                self.assertIn("incremental_behavior_capacity_proof_missing_or_invalid", self.validate(changed)["blockers"])
 
     def test_agent_nullable_pk_and_row_changes_require_two_identical_exact_proofs(self):
         from tests.test_agent_authority_migration_rehearsal import migration_fixture

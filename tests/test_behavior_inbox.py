@@ -207,7 +207,7 @@ class BehaviorInboxTests(unittest.TestCase):
     def test_supervision_survives_pool_failure_and_stop_keeps_durable_work(self):
         self.pipeline.submit(self.request)
         self.start_guard.stop()
-        with patch.object(self.pipeline, "_drain_once", side_effect=[DatabaseBusyError("synthetic pool"), True]) as drain:
+        with patch.object(self.pipeline, "_drain_batch", side_effect=[DatabaseBusyError("synthetic pool"), 1]) as drain:
             self.pipeline.start()
             deadline = time.monotonic() + 2
             while drain.call_count < 2 and time.monotonic() < deadline:

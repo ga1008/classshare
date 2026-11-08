@@ -6,6 +6,7 @@
  */
 
 import { adoptDomainControl } from './lq/domain-controls.js';
+import { startMaterialLearningTracker } from './material_learning_tracker.js';
 
 const shellConfig = window.MATERIAL_RENDER_SHELL || {};
 const viewerContext = window.MATERIAL_VIEWER_CONTEXT || {};
@@ -177,70 +178,11 @@ function loadTeacherWhiteboardWhenIdle() {
 }
 
 function initLearningProgressHeartbeat() {
-    const classOfferingId = Number(shellConfig.classOfferingId || 0);
-    const materialId = Number(shellConfig.entryMaterialId || 0);
-    if (viewerContext.userRole !== 'student' || !classOfferingId || !materialId) {
-        return;
-    }
-
-    const endpoint = `/api/classrooms/${classOfferingId}/learning/material-progress`;
-    const startedAt = performance.now();
-    let lastTickAt = startedAt;
-    let activeSeconds = 0;
-    let pending = false;
-
-    const syncActivity = () => {
-        const now = performance.now();
-        const delta = Math.max(0, Math.min(15, (now - lastTickAt) / 1000));
-        if (document.visibilityState === 'visible') {
-            activeSeconds += delta;
-        }
-        lastTickAt = now;
-    };
-
-    const buildPayload = () => ({
-        material_id: materialId,
-        session_id: shellConfig.sessionId ? Number(shellConfig.sessionId) : null,
-        duration_seconds: Math.round(Math.max(0, (performance.now() - startedAt) / 1000)),
-        active_seconds: Math.round(activeSeconds),
-        scroll_ratio: 0,
-        completed: activeSeconds >= 180,
-        page_key: 'material_render_shell',
-    });
-
-    const sendProgress = async (options = {}) => {
-        syncActivity();
-        const payload = buildPayload();
-        if (!options.force && payload.duration_seconds < 8) return;
-        const body = JSON.stringify(payload);
-        if (options.final && navigator.sendBeacon) {
-            navigator.sendBeacon(endpoint, new Blob([body], { type: 'application/json' }));
-            return;
-        }
-        if (pending) return;
-        pending = true;
-        try {
-            await fetch(endpoint, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body,
-            });
-        } catch {
-            /* 学习进度是尽力而为项，网络失败静默。 */
-        } finally {
-            pending = false;
-        }
-    };
-
-    window.setInterval(syncActivity, 5000);
-    window.setInterval(() => sendProgress(), 45000);
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') {
-            sendProgress({ force: true, final: true });
-        }
-    });
-    window.addEventListener('pagehide', () => sendProgress({ force: true, final: true }));
+    return startMaterialLearningTracker({ context: { ...viewerContext,
+        classOfferingId: Number(shellConfig.classOfferingId || viewerContext.classOfferingId || 0),
+        materialId: Number(shellConfig.entryMaterialId || viewerContext.materialId || 0),
+        sessionId: shellConfig.sessionId || viewerContext.sessionId,
+    }, pageKey: 'material_render_shell' });
 }
 
 initTopbar();

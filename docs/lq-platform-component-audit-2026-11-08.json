@@ -23,7 +23,7 @@
     "countMeaning": "Source occurrences, including mutually exclusive Jinja branches; not rendered element counts. Component calls and their definitions are separate records, not a completion ratio."
   },
   "summary": {
-    "files": 588,
+    "files": 589,
     "htmlTemplates": 209,
     "entries": 5674,
     "byKind": {
@@ -1321,12 +1321,12 @@
     },
     {
       "file": "templates/material_render_shell.html",
-      "sha256": "93e841fd60b6fc1d3d2a75801a7205aa50112ce7c86243eb4bb13abbd6ff8d0a",
+      "sha256": "a91e22166eba147f58091bc9fb7b2e2f4b88a0505678fb671a5799d6bc6a66fd",
       "entryCount": 6
     },
     {
       "file": "templates/material_viewer.html",
-      "sha256": "8d6fd17ca448bd7138de1347434dd7323b9b9f680b0375d9aaeeae0fa4d54720",
+      "sha256": "ef2c9c44926e728ee99c14f1c9fa70bdfaa7f0d721d080f5e2ff6dbef5be89df",
       "entryCount": 19
     },
     {
@@ -1941,7 +1941,7 @@
     },
     {
       "file": "static/js/behavior_tracker.js",
-      "sha256": "1ef818cdec2415a12525145afe3c25d3c667d17aff7747ae696c8d3d7bbc4961",
+      "sha256": "4650cc5c9d7338bde3ef88fba1c7a47c33725c346e151c39cb2e3fd8d33b75b4",
       "entryCount": 0
     },
     {
@@ -2820,6 +2820,11 @@
       "entryCount": 3
     },
     {
+      "file": "static/js/material_learning_tracker.js",
+      "sha256": "df5f28503ceda60ff4b0479cd94f53deb7f110258972e1b932a7d98238496f9c",
+      "entryCount": 0
+    },
+    {
       "file": "static/js/material_reader_return.js",
       "sha256": "87a1450ad6c6bb9bbf811825d430af02352e4bee188b54702fc2202a39476fb8",
       "entryCount": 0
@@ -2831,7 +2836,7 @@
     },
     {
       "file": "static/js/material_render_shell.js",
-      "sha256": "284c0eb9f475e1b9d97f58887ac4cdf32a9f082ad361b1ab8ba39d077916fd5d",
+      "sha256": "7c81c054cf28e4ee85c078419b2076e6b2661ab28e8cd490bd4323a918c5b4be",
       "entryCount": 2
     },
     {
@@ -2846,7 +2851,7 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "sha256": "0b9cf3233b54282abae0123a282182e8b991cb1be36bd5e36a764ce64f166631",
+      "sha256": "6aff0be137f3cac8af850afc6b20c4cca425396a2ef3f703ef7951f66dade7b9",
       "entryCount": 21
     },
     {
@@ -142940,9 +142945,9 @@
     },
     {
       "file": "static/js/material_render_shell.js",
-      "line": 99,
+      "line": 100,
       "column": 16,
-      "offset": 4243,
+      "offset": 4322,
       "kind": "button",
       "syntax": "create-element",
       "tagOrFactory": "a",
@@ -142967,9 +142972,9 @@
     },
     {
       "file": "static/js/material_render_shell.js",
-      "line": 99,
+      "line": 100,
       "column": 47,
-      "offset": 4274,
+      "offset": 4353,
       "kind": "button",
       "syntax": "create-element",
       "tagOrFactory": "button",
@@ -143982,9 +143987,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 117,
+      "line": 118,
       "column": 13,
-      "offset": 4677,
+      "offset": 4756,
       "kind": "button",
       "syntax": "js-html-candidate",
       "tagOrFactory": "button",
@@ -144013,9 +144018,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 152,
+      "line": 153,
       "column": 9,
-      "offset": 5938,
+      "offset": 6017,
       "kind": "surface",
       "syntax": "js-html-candidate",
       "tagOrFactory": "div",
@@ -144047,9 +144052,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 159,
+      "line": 160,
       "column": 17,
-      "offset": 6530,
+      "offset": 6609,
       "kind": "button",
       "syntax": "js-html-candidate",
       "tagOrFactory": "button",
@@ -144078,9 +144083,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 163,
+      "line": 164,
       "column": 17,
-      "offset": 6874,
+      "offset": 6953,
       "kind": "button",
       "syntax": "js-html-candidate",
       "tagOrFactory": "button",
@@ -144109,9 +144114,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 164,
+      "line": 165,
       "column": 17,
-      "offset": 7031,
+      "offset": 7110,
       "kind": "button",
       "syntax": "js-html-candidate",
       "tagOrFactory": "button",
@@ -144140,9 +144145,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 214,
+      "line": 215,
       "column": 21,
-      "offset": 10073,
+      "offset": 10152,
       "kind": "choice",
       "syntax": "js-html-candidate",
       "tagOrFactory": "input",
@@ -144170,9 +144175,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 221,
+      "line": 222,
       "column": 13,
-      "offset": 10475,
+      "offset": 10554,
       "kind": "field",
       "syntax": "js-html-candidate",
       "tagOrFactory": "fieldset",
@@ -144206,9 +144211,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 383,
+      "line": 306,
       "column": 9,
-      "offset": 16876,
+      "offset": 14019,
       "kind": "button",
       "syntax": "js-html-candidate",
       "tagOrFactory": "button",
@@ -144237,9 +144242,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 146,
+      "line": 147,
       "column": 19,
-      "offset": 5697,
+      "offset": 5776,
       "kind": "layer",
       "syntax": "create-element",
       "tagOrFactory": "div",
@@ -144268,9 +144273,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 621,
+      "line": 544,
       "column": 20,
-      "offset": 26005,
+      "offset": 23148,
       "kind": "content-slot",
       "syntax": "create-element",
       "tagOrFactory": "textarea",
@@ -144295,9 +144300,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 650,
+      "line": 573,
       "column": 28,
-      "offset": 26820,
+      "offset": 23963,
       "kind": "button",
       "syntax": "create-element",
       "tagOrFactory": "button",
@@ -144322,9 +144327,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 135,
+      "line": 136,
       "column": 12,
-      "offset": 5319,
+      "offset": 5398,
       "kind": "unknown",
       "syntax": "dynamic-html-sink",
       "tagOrFactory": ".outerHTML =",
@@ -144348,9 +144353,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 151,
+      "line": 152,
       "column": 10,
-      "offset": 5915,
+      "offset": 5994,
       "kind": "unknown",
       "syntax": "dynamic-html-sink",
       "tagOrFactory": ".innerHTML =",
@@ -144374,9 +144379,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 201,
+      "line": 202,
       "column": 9,
-      "offset": 9055,
+      "offset": 9134,
       "kind": "unknown",
       "syntax": "dynamic-html-sink",
       "tagOrFactory": ".innerHTML =",
@@ -144400,9 +144405,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 551,
+      "line": 474,
       "column": 10,
-      "offset": 23253,
+      "offset": 20396,
       "kind": "unknown",
       "syntax": "dynamic-html-sink",
       "tagOrFactory": ".innerHTML =",
@@ -144426,9 +144431,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 773,
+      "line": 696,
       "column": 14,
-      "offset": 32013,
+      "offset": 29156,
       "kind": "unknown",
       "syntax": "dynamic-html-sink",
       "tagOrFactory": ".innerHTML =",
@@ -144452,9 +144457,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 801,
+      "line": 724,
       "column": 18,
-      "offset": 33207,
+      "offset": 30350,
       "kind": "unknown",
       "syntax": "dynamic-html-sink",
       "tagOrFactory": ".innerHTML =",
@@ -144478,9 +144483,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 813,
+      "line": 736,
       "column": 14,
-      "offset": 33616,
+      "offset": 30759,
       "kind": "unknown",
       "syntax": "dynamic-html-sink",
       "tagOrFactory": ".innerHTML =",
@@ -144504,9 +144509,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 824,
+      "line": 747,
       "column": 14,
-      "offset": 34101,
+      "offset": 31244,
       "kind": "unknown",
       "syntax": "dynamic-html-sink",
       "tagOrFactory": ".innerHTML =",
@@ -144530,9 +144535,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 845,
+      "line": 768,
       "column": 15,
-      "offset": 35132,
+      "offset": 32275,
       "kind": "unknown",
       "syntax": "dynamic-html-sink",
       "tagOrFactory": ".outerHTML =",
@@ -144556,9 +144561,9 @@
     },
     {
       "file": "static/js/material_viewer.js",
-      "line": 1038,
+      "line": 961,
       "column": 18,
-      "offset": 41354,
+      "offset": 38497,
       "kind": "unknown",
       "syntax": "dynamic-html-sink",
       "tagOrFactory": ".innerHTML =",

@@ -25,7 +25,7 @@ function runtime() {
         CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init.detail; } },
         console: { warn: vi.fn() } });
     vm.runInContext(source, context);
-    const create = (userKey = 'student:10') => new window.BehaviorTracker({ classOfferingId: 1, userKey, pageKey: 'test' });
+    const create = (userKey = 'student:10', options = {}) => new window.BehaviorTracker({ classOfferingId: 1, userKey, pageKey: 'test', ...options });
     const advance = (ms) => { monotonicMs += ms; vi.setSystemTime(Date.now() + ms); };
     return { create, fetch, navigator, values, listeners, window, document, epoch, advance };
 }
@@ -217,7 +217,7 @@ describe('durable behavior transport', () => {
         expect(tracker.quarantinedDiagnostics[0].diagnostics).toEqual([invalid]);
         expect(tracker.diagnostics).toHaveLength(1);
         expect(tracker.diagnostics[0].error_code).toBe('diagnostic_interval_invalid');
-        expect(tracker.diagnostics[0]).not.toHaveProperty('interval_start_ms');
+        expect(tracker.diagnostics[0]).toMatchObject({ interval_start_ms: f.epoch, interval_end_ms: f.epoch });
         expect(f.create().quarantinedDiagnostics[0].diagnostics).toEqual([invalid]);
     });
 
@@ -325,5 +325,317 @@ describe('durable behavior transport', () => {
         tracker.samplePresence(f.epoch + 305000);
         expect(tracker.events.at(-1).payload).toMatchObject({ interval_start_ms: f.epoch + 290000,
             interval_end_ms: f.epoch + 305000, idle_seconds: 135 });
+    });
+});
+
+describe('bounded behavior collection under classroom load', () => {
+    function acknowledgeAll(f) {
+        f.fetch.mockImplementation((url, options) => {
+            const body = JSON.parse(options.body);
+            return Promise.resolve(url.endsWith('/diagnostics')
+                ? { ok: true, status: 200, headers: { get: () => null }, json: async () => ({
+                    status: 'success', current_user_key: 'student:10',
+                    accepted_diagnostic_ids: body.diagnostics.map(item => item.diagnostic_id),
+                }) }
+                : receipt(body, { current_user_key: 'student:10' }));
+        });
+    }
+
+    it('bounds invalid options so configuration cannot create a zero-delay collection loop', () => {
+        const f = runtime();
+        const tiny = f.create('student:10', { heartbeatMs: 1, maxBatchSize: 0.1, requestTimeoutMs: 1, maxQueuedEvents: 1 });
+        expect(tiny.heartbeatMs).toBe(15000);
+        expect(tiny.maxBatchSize).toBe(1);
+        expect(tiny.requestTimeoutMs).toBe(3000);
+        expect(tiny.maxQueuedEvents).toBe(48);
+        const huge = f.create('student:11', { heartbeatMs: 1e9, maxBatchSize: 1000, requestTimeoutMs: 1e9, maxQueuedEvents: 1e9 });
+        expect([huge.heartbeatMs, huge.maxBatchSize, huge.requestTimeoutMs, huge.maxQueuedEvents]).toEqual([75000, 20, 30000, 512]);
+        expect(f.create('student:12', { heartbeatMs: NaN }).heartbeatMs).toBe(60000);
+    });
+
+    it('coalesces ordinary storage writes but persists pending work synchronously before beacon or fetch', async () => {
+        const f = runtime(); const tracker = f.create();
+        const store = vi.spyOn(f.window.sessionStorage, 'setItem');
+        for (let index = 0; index < 20; index += 1) tracker.logClick(`action ${index}`);
+        expect(store).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(100);
+        expect(store).toHaveBeenCalledTimes(1);
+        const pending = tracker.prepareBatch().body;
+        expect(store).toHaveBeenCalledTimes(2);
+        tracker.logClick('tail');
+        await tracker.flush({ sync: true });
+        const restored = f.create();
+        expect(restored.pendingBatch.body).toEqual(pending);
+        expect(restored.events).toHaveLength(5);
+        expect(f.navigator.sendBeacon).toHaveBeenCalledTimes(1);
+    });
+
+    it('caps total queued bytes and excludes the capacity gap when acknowledgements free the buffer', async () => {
+        const f = runtime(); const tracker = f.create(); tracker.start();
+        const pending = tracker.prepareBatch().body;
+        const immutable = JSON.stringify(pending);
+        for (let index = 0; index < 100; index += 1) tracker.logClick(`large ${index}`, { text: '测'.repeat(3000) });
+        expect(tracker.bufferBlocked).toBe(true);
+        expect(tracker.events.length).toBeLessThan(100);
+        expect(tracker.queuedBytes + tracker.pendingBytes).toBeLessThanOrEqual(256 * 1024);
+        expect(JSON.stringify(tracker.pendingBatch.body)).toBe(immutable);
+        f.advance(80000);
+        tracker.samplePresence(f.epoch + 80000);
+        expect(tracker.events.some(item => item.payload?.interval_start_ms !== undefined)).toBe(false);
+        acknowledgeAll(f);
+        for (let index = 0; index < 10 && tracker.bufferBlocked; index += 1) await tracker.flush();
+        expect(tracker.bufferBlocked).toBe(false);
+        expect(tracker.presenceAt).toBe(f.epoch + 80000);
+        f.advance(10000); tracker.samplePresence(f.epoch + 90000);
+        expect(tracker.events.at(-1).payload).toMatchObject({ interval_start_ms: f.epoch + 80000, interval_end_ms: f.epoch + 90000 });
+        tracker.stop();
+    });
+
+    it('rejects one oversized or unserializable sample without throwing into the business action', () => {
+        const f = runtime(); const tracker = f.create();
+        tracker.logClick('huge', { text: 'x'.repeat(20000) });
+        const circular = {}; circular.self = circular;
+        expect(() => tracker.logClick('circular', circular)).not.toThrow();
+        tracker.logClick('valid');
+        expect(tracker.events.map(item => item.summary_text)).toEqual(['valid']);
+        expect(tracker.diagnostics.map(item => item.error_code)).toEqual(['client_event_too_large', 'client_event_invalid']);
+    });
+
+    it('splits payload-heavy queues into bounded immutable batches without dropping events', async () => {
+        const f = runtime(); const tracker = f.create(); acknowledgeAll(f);
+        for (let index = 0; index < 6; index += 1) tracker.logClick(`item ${index}`, { text: 'x'.repeat(12000) });
+        await tracker.flush(); await tracker.flush();
+        const bodies = f.fetch.mock.calls.map(([, options]) => JSON.parse(options.body));
+        expect(bodies.flatMap(body => body.events).map(item => item.summary_text)).toEqual(Array.from({ length: 6 }, (_, index) => `item ${index}`));
+        expect(bodies.every(body => new Blob([JSON.stringify(body)]).size < 50 * 1024)).toBe(true);
+    });
+
+    it('gives diagnostics a turn after four behavior batches without delaying independent behavior on a diagnostic outage', async () => {
+        const f = runtime(); const tracker = f.create(); acknowledgeAll(f);
+        tracker.recordDiagnostic('client_observation_gap');
+        for (let index = 0; index < 100; index += 1) tracker.logClick(`action ${index}`);
+        for (let index = 0; index < 5; index += 1) await tracker.flush();
+        expect(f.fetch.mock.calls.slice(0, 4).every(([url]) => url.endsWith('/batch'))).toBe(true);
+        expect(f.fetch.mock.calls[4][0]).toMatch(/\/diagnostics$/);
+        expect(tracker.diagnostics).toHaveLength(0);
+        const prepared = JSON.stringify(tracker.pendingBatch.body);
+        await tracker.flush();
+        expect(f.fetch.mock.calls[5][1].body).toBe(prepared);
+    });
+
+    it('bounds active diagnostics and emits an immutable exact overflow delta after the original packet is acknowledged', async () => {
+        const f = runtime(); const tracker = f.create();
+        for (let index = 0; index < 32; index += 1) tracker.recordDiagnostic(`client_case_${index}`);
+        let resolve;
+        f.fetch.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+        const task = tracker.flush();
+        const wire = f.fetch.mock.calls[0][1].body;
+        const sent = JSON.parse(wire);
+        for (let index = 0; index < 100; index += 1) tracker.recordDiagnostic(`client_overflow_${index}`, { affected_batch_id: `b1_${Date.now()}_${index}` });
+        expect(tracker.diagnostics).toHaveLength(32);
+        expect(tracker.diagnosticOverflow).toMatchObject({ occurrence_count: 100, affected_batch_count: 100 });
+        expect(f.fetch.mock.calls[0][1].body).toBe(wire);
+        resolve({ ok: true, status: 200, headers: { get: () => null }, json: async () => ({ status: 'success',
+            accepted_diagnostic_ids: sent.diagnostics.map(item => item.diagnostic_id) }) });
+        await task;
+        const delta = tracker.diagnostics.find(item => item.error_code === 'client_diagnostic_overflow');
+        expect(delta).toMatchObject({ occurrence_count: 100, affected_batch_count: 100 });
+        expect(tracker.diagnosticOverflow.occurrence_count).toBe(0);
+        expect(f.create().diagnostics.find(item => item.diagnostic_id === delta.diagnostic_id)).toEqual(delta);
+    });
+
+    it('pauses at the raw archive cap, preserves the terminal pending packet, and resumes only after durable diagnostic evidence', async () => {
+        const f = runtime(); const tracker = f.create('student:10', { maxBatchSize: 1 });
+        for (let index = 0; index < 24; index += 1) tracker.logClick(`poison ${index}`);
+        f.fetch.mockResolvedValue(rejection(409, 'batch_payload_invalid', 'quarantine'));
+        for (let index = 0; index < 17; index += 1) await tracker.flush();
+        expect(tracker.quarantinedBatches).toHaveLength(16);
+        expect(tracker.archiveBlocked).toBe(true);
+        expect(tracker.pendingBatch.terminal_error_code).toBe('batch_payload_invalid');
+        const pending = JSON.stringify(tracker.pendingBatch.body);
+        const queued = tracker.events.map(item => item.summary_text);
+        tracker.logClick('must not invent capture while saturated');
+        expect(tracker.events.map(item => item.summary_text)).toEqual(queued);
+        expect(f.create().pendingBatch.body).toEqual(JSON.parse(pending));
+        acknowledgeAll(f);
+        await tracker.flush();
+        expect(tracker.pendingBatch).toBeNull();
+        expect(tracker.archiveBlocked).toBe(false);
+        expect(tracker.quarantinedBatches.length).toBeLessThanOrEqual(16);
+        expect(tracker.archiveSummaries.length).toBeGreaterThan(0);
+        expect(tracker.events.map(item => item.summary_text)).toEqual(queued);
+        expect(tracker.archiveSummaries.every(item => item.diagnostic_id && item.payload_fingerprint)).toBe(true);
+    });
+
+    it('does not let a successful behavior receipt release an unacknowledged full archive', async () => {
+        const f = runtime(); const tracker = f.create('student:10', { maxBatchSize: 1 });
+        for (let index = 0; index < 20; index += 1) tracker.logClick(`action ${index}`);
+        f.fetch.mockResolvedValue(rejection(409, 'batch_payload_invalid', 'quarantine'));
+        for (let index = 0; index < 16; index += 1) await tracker.flush();
+        f.fetch.mockImplementationOnce((_, options) => Promise.resolve(receipt(JSON.parse(options.body))));
+        await tracker.flush();
+        expect(tracker.transportState).toBe('healthy');
+        expect(tracker.archiveBlocked).toBe(true);
+        expect(tracker.quarantinedBatches.every(item => !item.diagnostic_acknowledged)).toBe(true);
+    });
+
+    it('reissues valid archive-release reports from a rejected mixed diagnostic packet and avoids a permanent capacity lock', async () => {
+        const f = runtime(); const tracker = f.create('student:10', { maxBatchSize: 1 });
+        for (let index = 0; index < 16; index += 1) tracker.logClick(`poison ${index}`);
+        f.fetch.mockResolvedValue(rejection(409, 'batch_payload_invalid', 'quarantine'));
+        for (let index = 0; index < 16; index += 1) await tracker.flush();
+        const oldIds = new Set(tracker.diagnostics.map(item => item.diagnostic_id));
+        f.fetch.mockResolvedValueOnce(rejection(422, 'diagnostic_payload_invalid', 'quarantine'));
+        await tracker.flush();
+        expect(tracker.quarantinedDiagnostics).toHaveLength(1);
+        expect(tracker.quarantinedDiagnostics[0].diagnostics.every(item => oldIds.has(item.diagnostic_id))).toBe(true);
+        expect(tracker.quarantinedBatches.every(item => item.diagnostic_id && !oldIds.has(item.diagnostic_id))).toBe(true);
+        acknowledgeAll(f); await tracker.flush();
+        expect(tracker.archiveBlocked).toBe(false);
+        expect(tracker.quarantinedBatches.every(item => item.diagnostic_acknowledged)).toBe(true);
+    });
+
+    it('bounds acknowledged archive summaries while retaining exact cumulative compaction counts', async () => {
+        const f = runtime(); const tracker = f.create('student:10', { maxBatchSize: 1 });
+        for (let index = 0; index < 120; index += 1) {
+            tracker.logClick(`poison ${index}`);
+            f.fetch.mockResolvedValueOnce(rejection(409, 'batch_payload_invalid', 'quarantine'));
+            await tracker.flush();
+            acknowledgeAll(f); await tracker.flush();
+        }
+        expect(tracker.quarantinedBatches.length).toBeLessThan(16);
+        expect(tracker.archiveSummaries).toHaveLength(64);
+        expect(tracker.archiveTotals.batches + tracker.quarantinedBatches.length).toBe(120);
+        expect(tracker.archiveTotals.events).toBe(tracker.archiveTotals.batches);
+        expect(tracker.archiveTotals.summaries_retired).toBe(tracker.archiveTotals.batches - 64);
+        expect(tracker.diagnostics.length).toBeLessThanOrEqual(64);
+        expect(f.values.get(tracker.storageKey).length).toBeLessThan(40 * 1024);
+        expect(f.create().archiveTotals).toEqual(tracker.archiveTotals);
+    });
+
+    it('preserves a saturated identity-isolated queue and never replays its events from a fresh old-account document', async () => {
+        const f = runtime(); const tracker = f.create();
+        for (let index = 0; index < 480; index += 1) tracker.logClick(`old ${index}`);
+        tracker.prepareBatch(); tracker.isolateIdentity();
+        expect(tracker.transportState).toBe('identity_changed');
+        expect(tracker.eventsQuarantined).toBe(true);
+        expect(tracker.quarantinedBatches).toHaveLength(16);
+        expect(tracker.events.length).toBeGreaterThan(0);
+        expect(f.create('student:11').events).toHaveLength(0);
+        const sameAccount = f.create();
+        acknowledgeAll(f); await sameAccount.flush();
+        expect(f.fetch.mock.calls.every(([url]) => url.endsWith('/diagnostics'))).toBe(true);
+        expect(sameAccount.events).toHaveLength(0);
+        expect(sameAccount.identityArchiveBatch).toBeNull();
+        const retained = sameAccount.quarantinedBatches.reduce((total, item) => total + item.body.events.length, 0);
+        expect(sameAccount.archiveTotals.events + retained).toBe(480);
+        expect(sameAccount.quarantinedBatches.length).toBeLessThanOrEqual(16);
+        expect(sameAccount.paused).toBe(false);
+    });
+
+    it('unblocks a bfcache document when its successor has durably reconciled and removed the shared normal buffer', async () => {
+        const f = runtime(); const old = f.create(); old.start();
+        for (let index = 0; index < 100; index += 1) old.logClick('large', { text: '测'.repeat(3000) });
+        expect(old.bufferBlocked).toBe(true);
+        old.stop({ resumeOnPageShow: true });
+        const successor = f.create(); acknowledgeAll(f);
+        for (let index = 0; index < 30 && (successor.events.length || successor.pendingBatch || successor.diagnostics.length); index += 1) await successor.flush();
+        expect(f.values.has(old.storageKey)).toBe(false);
+        f.advance(120000); old.handlePageShow({ persisted: true });
+        expect(old.isCollectionSuspended()).toBe(false);
+        expect(old.pendingBatch).toBeNull();
+        f.advance(5000); old.samplePresence(f.epoch + 125000);
+        expect(old.events.at(-1).payload).toMatchObject({ interval_start_ms: f.epoch + 120000, interval_end_ms: f.epoch + 125000 });
+        old.stop();
+    });
+
+    it('retains an in-memory unacknowledged archive if storage unexpectedly disappears', async () => {
+        const f = runtime(); const tracker = f.create(); tracker.logClick('old');
+        f.fetch.mockResolvedValueOnce(rejection(409, 'batch_expired', 'quarantine')); await tracker.flush();
+        const original = JSON.stringify(tracker.quarantinedBatches[0]);
+        f.values.delete(tracker.storageKey); tracker.restore(); tracker.persist();
+        expect(JSON.stringify(tracker.quarantinedBatches[0])).toBe(original);
+        expect(tracker.diagnostics.some(item => item.error_code === 'client_recovery_unavailable')).toBe(true);
+        expect(f.create().quarantinedBatches[0]).toEqual(JSON.parse(original));
+    });
+
+    it('can compact an oversized legacy pending packet only after its rejection diagnostic is durable', async () => {
+        const f = runtime(); const initial = f.create();
+        const body = initial.makeBatchBody([{ action_type: 'page_click', payload: { text: 'x'.repeat(200000) } }]);
+        f.values.set(initial.storageKey, JSON.stringify({ userKey: initial.userKey, events: [], pendingBatch: { body } }));
+        const tracker = f.create();
+        f.fetch.mockResolvedValueOnce(rejection(413, 'batch_payload_too_large', 'quarantine'));
+        await tracker.flush();
+        expect(tracker.pendingBatch.body).toEqual(body);
+        expect(tracker.archiveSummaries).toHaveLength(0);
+        acknowledgeAll(f); await tracker.flush();
+        expect(tracker.pendingBatch).toBeNull();
+        expect(tracker.archiveTotals).toMatchObject({ batches: 1, events: 1 });
+        expect(tracker.archiveSummaries[0].batch_id).toBe(body.batch_id);
+        expect(f.values.get(tracker.storageKey).length).toBeLessThan(5000);
+    });
+
+    it('bounds diagnostic envelope details instead of retaining arbitrary payloads in the control channel', () => {
+        const f = runtime(); const tracker = f.create();
+        const item = tracker.recordDiagnostic('invalid:'.repeat(10000), {
+            affected_batch_id: 'x'.repeat(100000), extra: 'private payload'.repeat(10000),
+            event_count: 1e9, occurrence_count: 1e9, affected_batch_count: 1e9,
+        });
+        expect(item).toMatchObject({ error_code: 'client_diagnostic_code_invalid', event_count: 512,
+            occurrence_count: 1000000, affected_batch_count: 1000000 });
+        expect(item).not.toHaveProperty('extra');
+        expect(item).not.toHaveProperty('affected_batch_id');
+        expect(JSON.stringify(item).length).toBeLessThan(1000);
+    });
+
+    it('keeps healthy start/stop cycles free of residual timers and shares no namespace queues', async () => {
+        const f = runtime(); const tracker = f.create();
+        for (let index = 0; index < 100; index += 1) { tracker.start(); tracker.stop(); }
+        expect(vi.getTimerCount()).toBe(0);
+        expect(f.listeners.size).toBe(0);
+        const material = f.create('student:10', { storageNamespace: 'material_1' });
+        material.logClick('material'); material.prepareBatch();
+        const other = f.create('student:10', { storageNamespace: 'material_2' });
+        expect(other.pendingBatch).toBeNull();
+        expect(f.create('student:10', { storageNamespace: 'material_1' }).pendingBatch.body).toEqual(material.pendingBatch.body);
+        expect(f.create('student:10', { storageNamespace: 'bad/key' }).storageKey).toBeNull();
+        expect(f.create('student:10', { storageNamespace: 'x'.repeat(65) }).diagnostics[0].error_code).toBe('client_namespace_invalid');
+    });
+
+    it('notifies a consumer only after a validated and persisted receipt and isolates consumer exceptions from retry', async () => {
+        const f = runtime(); let tracker;
+        const callback = vi.fn(() => {
+            expect(tracker.pendingBatch).toBeNull();
+            expect(f.values.has(tracker.storageKey)).toBe(false);
+            throw new Error('consumer failed');
+        });
+        tracker = f.create('student:10', { onReceipt: callback });
+        tracker.logClick('one');
+        f.fetch.mockImplementationOnce((_, options) => Promise.resolve(receipt(JSON.parse(options.body))));
+        await tracker.flush();
+        expect(callback).toHaveBeenCalledTimes(1);
+        expect(tracker.pendingBatch).toBeNull();
+        expect(tracker.retryAttempt).toBe(0);
+        expect(tracker.diagnostics[0].error_code).toBe('client_receipt_callback_failed');
+        acknowledgeAll(f); await tracker.flush();
+        expect(f.fetch.mock.calls[1][0]).toMatch(/\/diagnostics$/);
+        expect(callback).toHaveBeenCalledTimes(1);
+    });
+
+    it('never notifies a consumer or releases its packet for a missing, foreign, or degraded receipt', async () => {
+        const f = runtime(); const callback = vi.fn();
+        const tracker = f.create('student:10', { onReceipt: callback });
+        tracker.logClick('one');
+        const body = tracker.prepareBatch().body;
+        for (const extra of [{ batch_id: undefined }, { batch_id: 'b1_1794009600125_foreign' }, { degraded: true }]) {
+            tracker.retryAt = 0;
+            f.fetch.mockResolvedValueOnce(receipt(body, extra));
+            await tracker.flush();
+            expect(tracker.pendingBatch.body).toEqual(body);
+        }
+        expect(callback).not.toHaveBeenCalled();
+        tracker.retryAt = 0;
+        f.fetch.mockResolvedValueOnce(receipt(body)); await tracker.flush();
+        expect(callback).toHaveBeenCalledTimes(1);
     });
 });

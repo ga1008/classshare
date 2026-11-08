@@ -12,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 from tools.signature_visibility_rehearsal import valid_report_proof
 from tools.agent_authority_migration_rehearsal import valid_report_proof as valid_agent_proof
+from tools.behavior_capacity_migration_rehearsal import valid_report_proof as valid_behavior_capacity_proof
 REPORT_CONTRACT = "native-pg-rehearsal-v1"
 REQUIRED_MIGRATION_FILES = (
     "classroom_app/config.py", "classroom_app/database.py", "classroom_app/storage_paths.py",
@@ -23,6 +24,7 @@ REQUIRED_MIGRATION_FILES = (
     "classroom_app/services/session_learning_materials_service.py",
     "tools/assessment_postgres_rehearsal.py", "tools/signature_visibility_rehearsal.py",
     "tools/agent_authority_migration_rehearsal.py", "tools/deploy/validate_native_pg_rehearsal.py",
+    "tools/behavior_capacity_migration_rehearsal.py",
 )
 
 
@@ -47,6 +49,13 @@ def validate_report(report: dict[str, Any], *, repo_root: Path, backup_file: Pat
     def require(condition, code):
         if not condition:
             blockers.append(code)
+
+    def behavior_capacity_preserved(phase):
+        proofs = phase.get("behavior_capacity_migration_per_pass")
+        return (isinstance(proofs, list) and len(proofs) == 2
+                and all(valid_behavior_capacity_proof(proof) and proof["allowed_differences"] == []
+                        and proof["after"]["present"] is True for proof in proofs)
+                and proofs[0] == proofs[1])
 
     def preserved_phase(phase):
         raw = phase.get("old_differences_per_pass")
@@ -94,9 +103,11 @@ def validate_report(report: dict[str, Any], *, repo_root: Path, backup_file: Pat
     incremental = report.get("incremental") or {}
     require(incremental.get("status") == "ok" and incremental.get("database_preservation_passed") is True,
             "incremental_migration_not_passed")
+    require(behavior_capacity_preserved(incremental), "incremental_behavior_capacity_proof_missing_or_invalid")
     require(preserved_phase(incremental)
             and incremental.get("idempotency_differences") == [], "incremental_differences_or_missing_checks")
     startup = report.get("full_startup") or {}
+    require(behavior_capacity_preserved(startup), "full_startup_behavior_capacity_proof_missing_or_invalid")
     no_agent_changes = all(not proof.get("allowed_differences") for proof in startup.get("agent_authority_migration_per_pass", []) if isinstance(proof, dict))
     require(startup.get("strict_status") == "ok" and startup.get("fresh_process_per_pass") is True
             and ((startup.get("all_old_fields_and_sequences_unchanged") is True and startup.get("old_differences_per_pass") == [[], []])

@@ -25,6 +25,7 @@ if str(REPO_ROOT) not in sys.path:
 from tools.assessment_migration_rehearsal import file_digest, quote_identifier, row_bytes, update_digest
 from tools.signature_visibility_rehearsal import capture as capture_signature_visibility, prove as prove_signature_visibility
 from tools.agent_authority_migration_rehearsal import capture as capture_agent_authority, prove as prove_agent_authority
+from tools.behavior_capacity_migration_rehearsal import capture as capture_behavior_capacity, prove as prove_behavior_capacity
 
 
 def digest(value: Any) -> str:
@@ -193,8 +194,10 @@ def apply_assessment_migrations(conn) -> None:
     from classroom_app.db import schema_ai_jobs
     from classroom_app.db.schema_grade_publications import ensure_grade_publication_schema
     from classroom_app.db.schema_behavior_collection_health import ensure_behavior_collection_health_schema
+    from classroom_app.db.schema_behavior_inbox import ensure_behavior_inbox_schema
     from classroom_app.db.schema_retake import ensure_retake_schema
     from classroom_app.db.postgres import LanSharePostgresConnection
+    ensure_behavior_inbox_schema(LanSharePostgresConnection(conn), engine="postgres")
     ensure_behavior_collection_health_schema(LanSharePostgresConnection(conn), engine="postgres")
     ensure_retake_schema(LanSharePostgresConnection(conn), engine="postgres", force=True)
     for column, definition in POSTGRES_RUNTIME_COLUMN_DEFINITIONS["assignments"].items():
@@ -242,6 +245,7 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
         before = snapshot(conn)
         signature_before = capture_signature_visibility(conn, before["tables"])
         agent_before = capture_agent_authority(conn, before["tables"])
+        behavior_capacity_before = capture_behavior_capacity(conn, before)
     if not {"assignments", "submissions"}.issubset(before["tables"]):
         raise ValueError("Required restored application tables are missing")
     progress(f"Baseline: {len(before['tables'])} tables, {sum(t['row_count'] for t in before['tables'].values())} rows")
@@ -256,15 +260,19 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
                 full = snapshot(conn)
                 signature_after = capture_signature_visibility(conn, full["tables"])
                 agent_after = capture_agent_authority(conn, full["tables"])
+                behavior_capacity_after = capture_behavior_capacity(conn, full)
             changes = differences(before, preserved)
             signature_proof = prove_signature_visibility(signature_before, signature_after)
             agent_proof = prove_agent_authority(agent_before, agent_after)
-            allowed = set(signature_proof["allowed_differences"]) | set(agent_proof["allowed_differences"])
+            behavior_capacity_proof = prove_behavior_capacity(behavior_capacity_before, behavior_capacity_after)
+            allowed = (set(signature_proof["allowed_differences"]) | set(agent_proof["allowed_differences"])
+                       | set(behavior_capacity_proof["allowed_differences"]))
             unexpected = [change for change in changes if change not in allowed]
             stages.append({"migration": number, "old_field_differences": changes,
                            "unexpected_old_field_differences": unexpected,
                            "signature_visibility_migration": signature_proof,
                            "agent_authority_migration": agent_proof,
+                           "behavior_capacity_migration": behavior_capacity_proof,
                            "old_projection": preserved, "full_schema_sha256": full["schema_sha256"]})
             progress(f"Migration {number}: old-data/schema differences={len(changes)}")
             if number == 1:
@@ -279,6 +287,7 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
     passed = source_unchanged and not idempotency and all(
         not item["unexpected_old_field_differences"] and item["signature_visibility_migration"]["status"] == "ok"
         and item["agent_authority_migration"]["status"] == "ok"
+        and item["behavior_capacity_migration"]["status"] == "ok"
         for item in stages)
     return {
         "status": "ok" if passed else "failed", "engine": "postgres", "source_dump_sha256": source_hash,

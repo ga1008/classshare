@@ -101,15 +101,10 @@ def _diagnostics(value) -> str:
     return raw
 
 
-def record_collection_observation(conn, *, class_offering_id, user_pk, user_role, batch_id,
-                                  received_at, source, valid_sample_count, rejected_sample_count,
-                                  learning_delta_seconds, observed_start=None, observed_end=None,
-                                  reason_codes=None, diagnostics=None, ip_address=None) -> bool:
-    """Record one immutable batch fact; return whether inserted, never commit.
-
-    IP must be resolved by the authenticated route from its trusted Request,
-    never copied from diagnostic JSON. No observation updates business state.
-    """
+def _observation_values(*, class_offering_id, user_pk, user_role, batch_id,
+                        received_at, source, valid_sample_count, rejected_sample_count,
+                        learning_delta_seconds, observed_start=None, observed_end=None,
+                        reason_codes=None, diagnostics=None, ip_address=None):
     if (type(class_offering_id) is not int or not 0 < class_offering_id <= 2147483647
             or type(user_pk) is not int or not 0 < user_pk <= 2147483647):
         raise ValueError("A positive classroom and actor are required")
@@ -144,13 +139,36 @@ def record_collection_observation(conn, *, class_offering_id, user_pk, user_role
             raise ValueError("IP address must be one server-resolved address") from exc
     key = hashlib.sha256(json.dumps([user_role, user_pk, class_offering_id, batch_id],
                                    separators=(",", ":")).encode("utf-8")).hexdigest()
-    cursor = conn.execute("""INSERT INTO behavior_collection_observations (
+    return (key, batch_id, class_offering_id, user_pk, user_role, source, received.isoformat(),
+            start.isoformat() if start else None, end.isoformat() if end else None, valid, rejected, learning,
+            codes_json, int(source == "client_diagnostic"), diagnostics_json, ip_address)
+
+
+_INSERT_COLUMNS = """INSERT INTO behavior_collection_observations (
         observation_key, batch_id, class_offering_id, user_pk, user_role, source, received_at,
         observed_start, observed_end, valid_sample_count, rejected_sample_count, learning_delta_seconds,
         reason_codes_json, client_diagnostic_count, diagnostics_json, ip_address
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(user_role, user_pk, class_offering_id, batch_id) DO NOTHING""",
-        (key, batch_id, class_offering_id, user_pk, user_role, source, received.isoformat(),
-         start.isoformat() if start else None, end.isoformat() if end else None, valid, rejected, learning,
-         codes_json, int(source == "client_diagnostic"), diagnostics_json, ip_address))
+        ) VALUES """
+_ON_CONFLICT = " ON CONFLICT(user_role, user_pk, class_offering_id, batch_id) DO NOTHING"
+
+
+def record_collection_observation(conn, **observation) -> bool:
+    """Insert one immutable fact in the caller's transaction, without crediting activity."""
+    cursor = conn.execute(_INSERT_COLUMNS + "(" + ",".join("?" for _ in range(16)) + ")" + _ON_CONFLICT,
+                          _observation_values(**observation))
     return cursor.rowcount == 1
+
+
+def record_collection_observations(conn, observations: list[dict]) -> int:
+    """Validate a bounded batch before any write, then insert in one round trip.
+
+    Duplicate IDs retain their first fact. Commit and access/rate checks remain
+    the caller's responsibility. IP is a server-resolved field, never wire JSON.
+    """
+    if not isinstance(observations, list) or not 1 <= len(observations) <= 20:
+        raise ValueError("Collection observation batch must contain 1 to 20 facts")
+    values = [_observation_values(**item) for item in observations]
+    row_marks = "(" + ",".join("?" for _ in range(16)) + ")"
+    cursor = conn.execute(_INSERT_COLUMNS + ",".join(row_marks for _ in values) + _ON_CONFLICT,
+                          tuple(value for row in values for value in row))
+    return int(cursor.rowcount)
