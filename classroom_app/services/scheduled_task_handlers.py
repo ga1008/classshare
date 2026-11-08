@@ -9,6 +9,9 @@ string. New timed features register their handler here (or via
 from __future__ import annotations
 
 import html
+import json
+import re
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -377,7 +380,7 @@ from .learning_progress_service import (  # noqa: E402
     CULTIVATION_WEEKLY_SNAPSHOT_TASK_KIND,
     STAGE_EXAM_GENERATION_TASK_KIND,
     archive_cultivation_score_events,
-    capture_cultivation_weekly_snapshots,
+    capture_cultivation_weekly_snapshots_job,
     create_cultivation_weekly_reports,
     generate_personal_stage_exam_from_attempt,
     ensure_cultivation_snapshot_refresh_task,
@@ -419,21 +422,77 @@ def handle_cultivation_snapshot_refresh(task: dict[str, Any]) -> str:
 register_task_handler(CULTIVATION_SNAPSHOT_REFRESH_TASK_KIND, handle_cultivation_snapshot_refresh)
 
 
-def handle_cultivation_weekly_snapshot(task: dict[str, Any]) -> str:
-    payload = task.get("payload") or {}
-    class_offering_id = payload.get("class_offering_id")
+_WEEKLY_CAPTURE_EXECUTION = "_weekly_capture_execution"
+
+
+def _weekly_capture_execution(task):
+    """Bind one logical recurrence across retry, crash and a calendar boundary.
+
+    Only the scheduler's fenced success transition writes last_result. Keeping
+    the token until that acknowledgement avoids a clear-then-crash window;
+    final failure and an operator rearm keep the original unfinished week too.
+    """
+    from ..db.connection import begin_immediate_transaction, get_configured_db_engine
+    from .learning_progress_service import _week_window, now_iso
+
     with get_db_connection() as conn:
-        result = capture_cultivation_weekly_snapshots(
-            conn,
-            class_offering_id=int(class_offering_id) if class_offering_id else None,
-            week_start=payload.get("week_start"),
-            refresh_current=bool(payload.get("refresh_current", True)),
-        )
-        conn.commit()
-    return (
-        f"captured {result.get('captured', 0)} of {result.get('checked', 0)} "
-        f"weekly snapshot(s) for {result.get('week_start')}"
-    )
+        postgres = get_configured_db_engine() == "postgres"
+        if not postgres:
+            begin_immediate_transaction(conn)
+        row = conn.execute("SELECT * FROM scheduled_tasks WHERE id=?" +
+                           (" FOR UPDATE" if postgres else ""), (int(task["id"]),)).fetchone()
+        if (not row or row["task_kind"] != CULTIVATION_WEEKLY_SNAPSHOT_TASK_KIND
+                or row["status"] != "running" or row["locked_by"] != task.get("locked_by")
+                or row["locked_at"] != task.get("locked_at")):
+            raise RuntimeError("Weekly capture no longer owns its scheduled-task claim")
+        payload = json.loads(row["payload_json"] or "{}")
+        if not isinstance(payload, dict):
+            raise ValueError("Weekly capture payload is not an object")
+        execution = payload.get(_WEEKLY_CAPTURE_EXECUTION)
+        serialized = row["payload_json"] or "{}"
+        if execution is not None:
+            if (not isinstance(execution, dict) or re.fullmatch(r"[a-f0-9]{32}", str(execution.get("token", ""))) is None
+                    or _week_window(execution.get("week_start")) != (execution.get("week_start"), execution.get("week_end"))):
+                raise ValueError("Weekly capture recovery window is invalid; original payload retained")
+            datetime.fromisoformat(execution["captured_at"])
+            if str(row["last_result"] or "").startswith("weekly-capture:" + execution["token"] + " "):
+                execution = None  # The previous recurrence really finalized.
+        if execution is None:
+            week_start, week_end = _week_window(payload.get("week_start"))
+            execution = {"token": uuid.uuid4().hex, "week_start": week_start, "week_end": week_end,
+                         "captured_at": now_iso(), "class_offering_id": int(payload["class_offering_id"]) if payload.get("class_offering_id") else None,
+                         "refresh_current": bool(payload.get("refresh_current", True))}
+            payload[_WEEKLY_CAPTURE_EXECUTION] = execution
+            serialized = json.dumps(payload, ensure_ascii=False)
+            conn.execute("UPDATE scheduled_tasks SET payload_json=? WHERE id=?",
+                         (serialized, int(task["id"])))
+        elif (execution.get("class_offering_id") != (int(payload["class_offering_id"]) if payload.get("class_offering_id") else None)
+              or execution.get("refresh_current") != bool(payload.get("refresh_current", True))
+              or (str(payload.get("week_start") or "").strip() and _week_window(payload["week_start"])[0] != execution["week_start"])):
+            raise ValueError("Weekly capture target changed during an unfinished execution")
+    return execution, serialized
+
+
+def handle_cultivation_weekly_snapshot(task: dict[str, Any]) -> str:
+    from ..db.connection import get_configured_db_engine
+
+    execution, payload_json = _weekly_capture_execution(task)
+    def require_claim(conn):
+        # Parent locks precede this shared claim fence. A cancellation/transfer
+        # cannot overtake this actor's atomic publication; heartbeats continue
+        # between the short actor transactions and no new workers are created.
+        row = conn.execute("""SELECT id FROM scheduled_tasks
+            WHERE id=? AND task_kind=? AND status='running' AND locked_by=? AND locked_at=? AND payload_json=?""" +
+            (" FOR SHARE" if get_configured_db_engine() == "postgres" else ""),
+            (int(task["id"]), CULTIVATION_WEEKLY_SNAPSHOT_TASK_KIND,
+             task.get("locked_by"), task.get("locked_at"), payload_json)).fetchone()
+        if row is None:
+            raise RuntimeError("Weekly capture no longer owns its scheduled-task claim")
+    result = capture_cultivation_weekly_snapshots_job(
+        class_offering_id=execution["class_offering_id"], week_start=execution["week_start"],
+        refresh_current=execution["refresh_current"], captured_at=execution["captured_at"], before_actor=require_claim)
+    return (f"weekly-capture:{execution['token']} captured {result.get('captured', 0)} "
+            f"of {result.get('checked', 0)} weekly snapshot(s) for {result.get('week_start')}")
 
 
 register_task_handler(CULTIVATION_WEEKLY_SNAPSHOT_TASK_KIND, handle_cultivation_weekly_snapshot)

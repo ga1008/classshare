@@ -2186,6 +2186,83 @@ def _sparkline_payload(points: list[dict[str, Any]], *, value_key: str = "score"
     }
 
 
+def _weekly_snapshot_student_ids(conn, offering_id, student_id=None):
+    actor_filter = " AND s.id=?" if student_id is not None else ""
+    params = (offering_id, int(student_id)) if student_id is not None else (offering_id,)
+    return [int(row["id"]) for row in conn.execute(
+        """SELECT s.id FROM students s JOIN class_offerings o
+           ON (s.class_id=o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links l
+               WHERE l.offering_id=o.id AND l.class_id=s.class_id))
+           WHERE o.id=? AND COALESCE(s.enrollment_status,'active')='active'""" + actor_filter + " ORDER BY s.id",
+        params,
+    ).fetchall()]
+
+
+def _capture_weekly_snapshot_actor(conn, offering_id, student_id, *, week_start_text,
+                                    week_end_text, timestamp, refresh_current):
+    """Keep one actor's refresh, score events and weekly row in one transaction."""
+    result = {"checked": 1, "refreshed": 0, "captured": 0, "skipped": 0}
+    snapshot = _load_learning_progress_snapshot(conn, offering_id, student_id)
+    if refresh_current and (not snapshot or safe_int(snapshot.get("dirty"))):
+        refresh_student_learning_state(
+            conn,
+            offering_id,
+            student_id,
+            event_source_ref="snapshot:weekly",
+        )
+        result["refreshed"] += 1
+        snapshot = _load_learning_progress_snapshot(conn, offering_id, student_id)
+    if not snapshot:
+        result["skipped"] += 1
+        return result
+    snapshot_metadata = json_loads(snapshot.get("metadata_json"), {})
+    if not isinstance(snapshot_metadata, dict):
+        snapshot_metadata = {}
+    conn.execute(
+        """
+        INSERT INTO cultivation_weekly_snapshots (
+            class_offering_id, student_id, week_start, week_end,
+            score, progress_percent, components_json, level_key,
+            snapshot_source, created_at, metadata_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(class_offering_id, student_id, week_start)
+        DO UPDATE SET
+            week_end = excluded.week_end,
+            score = excluded.score,
+            progress_percent = excluded.progress_percent,
+            components_json = excluded.components_json,
+            level_key = excluded.level_key,
+            snapshot_source = excluded.snapshot_source,
+            created_at = excluded.created_at,
+            metadata_json = excluded.metadata_json
+        """,
+        (
+            offering_id,
+            student_id,
+            week_start_text,
+            week_end_text,
+            safe_float(snapshot.get("score")),
+            safe_int(snapshot.get("progress_percent")),
+            snapshot.get("components_json") or "{}",
+            normalize_level_key(snapshot.get("level_key") or "mortal"),
+            "scheduled" if refresh_current else "snapshot",
+            timestamp,
+            json.dumps(
+                {
+                    "snapshot_calculated_at": snapshot.get("calculated_at"),
+                    "snapshot_dirty": safe_int(snapshot.get("dirty")),
+                    "weight_version": snapshot_metadata.get("weight_version") or CULTIVATION_WEIGHT_VERSION_DEFAULT,
+                    "weights": snapshot_metadata.get("weights") or DEFAULT_CULTIVATION_WEIGHTS,
+                },
+                ensure_ascii=False,
+            ),
+        ),
+    )
+    result["captured"] += 1
+    return result
+
+
 def capture_cultivation_weekly_snapshots(
     conn,
     *,
@@ -2193,99 +2270,72 @@ def capture_cultivation_weekly_snapshots(
     week_start: Any | None = None,
     refresh_current: bool = True,
 ) -> dict[str, Any]:
+    """Preserve the caller's complete transaction, including explicit rollback."""
+    if get_configured_db_engine() == "sqlite" and not conn.in_transaction:
+        # RELEASE of an outermost SQLite SAVEPOINT would otherwise commit the
+        # first actor's projection before its caller chooses commit/rollback.
+        begin_immediate_transaction(conn)
     week_start_text, week_end_text = _week_window(week_start)
-    if class_offering_id:
-        offering_rows = [{"id": int(class_offering_id)}]
-    else:
-        offering_rows = [
-            dict(row)
-            for row in conn.execute("SELECT id FROM class_offerings ORDER BY id").fetchall()
-        ]
-
-    result = {
-        "week_start": week_start_text,
-        "week_end": week_end_text,
-        "offerings": len(offering_rows),
-        "checked": 0,
-        "refreshed": 0,
-        "captured": 0,
-        "skipped": 0,
-    }
+    offering_ids = ([int(class_offering_id)] if class_offering_id else
+                    [int(row["id"]) for row in conn.execute("SELECT id FROM class_offerings ORDER BY id").fetchall()])
+    result = {"week_start": week_start_text, "week_end": week_end_text, "offerings": len(offering_ids),
+              "checked": 0, "refreshed": 0, "captured": 0, "skipped": 0}
     timestamp = now_iso()
-    for offering_row in offering_rows:
-        offering_id = int(offering_row["id"])
-        students = conn.execute(
-            """
-            SELECT s.id
-            FROM students s
-            JOIN class_offerings o ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
-            WHERE o.id = ?
-              AND COALESCE(s.enrollment_status, 'active') = 'active'
-            ORDER BY s.id
-            """,
-            (offering_id,),
-        ).fetchall()
-        for student_row in students:
-            student_id = int(student_row["id"])
-            result["checked"] += 1
-            snapshot = _load_learning_progress_snapshot(conn, offering_id, student_id)
-            if refresh_current and (not snapshot or safe_int(snapshot.get("dirty"))):
-                refresh_student_learning_state(
-                    conn,
-                    offering_id,
-                    student_id,
-                    event_source_ref="snapshot:weekly",
-                )
-                result["refreshed"] += 1
-                snapshot = _load_learning_progress_snapshot(conn, offering_id, student_id)
-            if not snapshot:
-                result["skipped"] += 1
-                continue
-            snapshot_metadata = json_loads(snapshot.get("metadata_json"), {})
-            if not isinstance(snapshot_metadata, dict):
-                snapshot_metadata = {}
-            conn.execute(
-                """
-                INSERT INTO cultivation_weekly_snapshots (
-                    class_offering_id, student_id, week_start, week_end,
-                    score, progress_percent, components_json, level_key,
-                    snapshot_source, created_at, metadata_json
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(class_offering_id, student_id, week_start)
-                DO UPDATE SET
-                    week_end = excluded.week_end,
-                    score = excluded.score,
-                    progress_percent = excluded.progress_percent,
-                    components_json = excluded.components_json,
-                    level_key = excluded.level_key,
-                    snapshot_source = excluded.snapshot_source,
-                    created_at = excluded.created_at,
-                    metadata_json = excluded.metadata_json
-                """,
-                (
-                    offering_id,
-                    student_id,
-                    week_start_text,
-                    week_end_text,
-                    safe_float(snapshot.get("score")),
-                    safe_int(snapshot.get("progress_percent")),
-                    snapshot.get("components_json") or "{}",
-                    normalize_level_key(snapshot.get("level_key") or "mortal"),
-                    "scheduled" if refresh_current else "snapshot",
-                    timestamp,
-                    json.dumps(
-                        {
-                            "snapshot_calculated_at": snapshot.get("calculated_at"),
-                            "snapshot_dirty": safe_int(snapshot.get("dirty")),
-                            "weight_version": snapshot_metadata.get("weight_version") or CULTIVATION_WEIGHT_VERSION_DEFAULT,
-                            "weights": snapshot_metadata.get("weights") or DEFAULT_CULTIVATION_WEIGHTS,
-                        },
-                        ensure_ascii=False,
-                    ),
-                ),
-            )
-            result["captured"] += 1
+    for offering_id in offering_ids:
+        for student_id in _weekly_snapshot_student_ids(conn, offering_id):
+            actor = _capture_weekly_snapshot_actor(conn, offering_id, student_id,
+                week_start_text=week_start_text, week_end_text=week_end_text,
+                timestamp=timestamp, refresh_current=refresh_current)
+            for key in actor:
+                result[key] += actor[key]
+    return result
+
+
+def capture_cultivation_weekly_snapshots_job(
+    *, class_offering_id: int | None = None, week_start: Any | None = None,
+    refresh_current: bool = True, captured_at: str | None = None, before_actor=None,
+) -> dict[str, Any]:
+    """A sequential background runner with one committed transaction per actor.
+
+    The task owner persists the week and capture timestamp across retries. A
+    committed prefix is safe to revisit: same-week rows are updated, not skipped.
+    This function never commits a caller-supplied connection or starts workers.
+    """
+    week_start_text, week_end_text = _week_window(week_start)
+    timestamp = captured_at or now_iso()
+    with get_db_connection() as conn:
+        offering_ids = ([int(class_offering_id)] if class_offering_id else
+            [int(row["id"]) for row in conn.execute("SELECT id FROM class_offerings ORDER BY id").fetchall()])
+    result = {"week_start": week_start_text, "week_end": week_end_text, "offerings": len(offering_ids),
+              "checked": 0, "refreshed": 0, "captured": 0, "skipped": 0}
+    postgres = get_configured_db_engine() == "postgres"
+    for offering_id in offering_ids:
+        with get_db_connection() as conn:
+            student_ids = _weekly_snapshot_student_ids(conn, offering_id)
+        for student_id in student_ids:
+            with get_db_connection() as conn:
+                if not postgres and not conn.in_transaction:
+                    begin_immediate_transaction(conn)
+                # Same parent order as ordinary material/inbox writes. Deletion
+                # cannot strand a weekly row behind the actor transaction.
+                locked = True
+                for table, value in (("class_offerings", offering_id), ("students", student_id)):
+                    if conn.execute(f"SELECT id FROM {table} WHERE id=?" +
+                                    (" FOR KEY SHARE" if postgres else ""), (value,)).fetchone() is None:
+                        locked = False
+                        break
+                if not locked or not _weekly_snapshot_student_ids(conn, offering_id, student_id):
+                    result["checked"] += 1
+                    result["skipped"] += 1
+                    continue
+                if before_actor is not None:
+                    before_actor(conn)
+                actor = _capture_weekly_snapshot_actor(conn, offering_id, student_id,
+                    week_start_text=week_start_text, week_end_text=week_end_text,
+                    timestamp=timestamp, refresh_current=refresh_current)
+            # Increment only after the owned context has committed and closed.
+            for key in actor:
+                result[key] += actor[key]
     return result
 
 
