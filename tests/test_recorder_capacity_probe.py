@@ -146,6 +146,16 @@ class RecorderCapacityIsolationTests(unittest.TestCase):
             with self.subTest(nonce=nonce):
                 _assert_requires_explicit_nonce(self.owned, nonce)
 
+    def test_failed_legacy_request_cannot_disappear_from_expected_ledger(self):
+        from tools.recorder_capacity_facts import ledger_fully_acknowledged
+        ledger={"batches":[{"body":{"batch_id":"synthetic-batch"},"ack":True}],
+                "materials":[{"ack":False}]}
+        self.assertFalse(ledger_fully_acknowledged(ledger))
+        ledger["materials"][0]["ack"]=True
+        self.assertTrue(ledger_fully_acknowledged(ledger))
+        ledger["batches"].append(dict(ledger["batches"][0]))
+        self.assertFalse(ledger_fully_acknowledged(ledger))
+
 
 if __name__ == "__main__":
     unittest.main()

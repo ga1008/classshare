@@ -6,6 +6,12 @@ from datetime import datetime,timezone,timedelta
 from pathlib import Path
 from tools.platform_capacity_linux_lab import validate_container_boundary,_checked_pg_connection
 
+def ledger_fully_acknowledged(ledger):
+    batches=ledger['batches']
+    return (len({item['body']['batch_id'] for item in batches})==len(batches)
+            and all(item.get('ack') for item in batches)
+            and all(item.get('ack') for item in ledger.get('materials',[])))
+
 def merged_ms(entries):
     result=[]
     for start,end in sorted(entries):
@@ -103,10 +109,11 @@ def main(a):
             values=sorted(values)
             return {'count':len(values),**{f'p{p}_ms':values[min(len(values)-1,ceil(len(values)*p/100)-1)] for p in (50,95,99)},'max_ms':max(values)} if values else {}
         latencies.sort();d={f'p{p}_ms':latencies[min(len(latencies)-1,ceil(len(latencies)*p/100)-1)] for p in (50,95,99)} if latencies else {}
-        complete=(len(items)==len(ledger['batches']) and all(item.get('ack') for item in items.values())
-                  and len(states)==200 and len(material_rows)==200)
+        complete=ledger_fully_acknowledged(ledger) and len(states)==200 and len(material_rows)==200
         result={'status':'passed' if complete and not bad and not duration_bad and not material_bad and not payload_mismatches and actual_ops==dict(expected_ops) and not unresolved else 'failed',
                 'lab_nonce':identity['lab_nonce'],'run_id':ledger['run_id'],'client_batches':len(items),'received_batches':len(rows),'acked_batches':sum(i['ack'] for i in items.values()),
+                'planned_legacy_material_requests':len(ledger.get('materials',[])),
+                'acked_legacy_material_requests':sum(bool(item.get('ack')) for item in ledger.get('materials',[])),
                 'non_applied_batches':bad[:30],'payload_hash_mismatches':payload_mismatches[:30],'material_counter_mismatches':material_bad[:30],'material_progress_rows':len(material_rows),'operation_counts_equal':actual_ops==dict(expected_ops),'expected_operations':sum(expected_ops.values()),'actual_operations':sum(actual_ops.values()),
                 'duration_mismatches':duration_bad[:30],'duration_student_count':len(states),'expected_learning_seconds':sum(merged_ms(v)//1000 for v in ranges.values()),'actual_learning_seconds':sum(r[1] or 0 for r in states),
                 'receive_to_apply_latency':d,'receive_to_apply_by_phase':{phase:distribution(values) for phase,values in phase_latencies.items()},'unresolved':unresolved,'production_contacted':False}

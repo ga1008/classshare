@@ -95,12 +95,21 @@ async def main(args):
     if args.ws_connections not in (400,800):
         raise ValueError('Use the declared 400/800 resident connection profiles')
     run=uuid.uuid4().hex; out=work/run;out.mkdir()
-    process_begin=os.times();wall_begin=time.perf_counter();loop_stop=False;loop_lag=[]
+    process_begin=os.times();wall_begin=time.perf_counter();loop_stop=False;loop_lag=[];ws_open_samples=[];ws_expected_open=0
+    def open_ws_count():return sum(getattr(getattr(conn,"state",None),"name",None)=="OPEN" for conn in ws_connections)
     async def sample_loop():
         while not loop_stop:
             target=time.perf_counter()+.5;await asyncio.sleep(.5);loop_lag.append(max(0,(time.perf_counter()-target)*1000))
+            if ws_expected_open and not ws_planned and not ws_stopping:
+                ws_open_samples.append({"epoch":time.time(),"expected":ws_expected_open,"actual_open":open_ws_count()})
     loop_sampler=asyncio.create_task(sample_loop())
     stats=collections.defaultdict(list);statuses=collections.Counter(); ledger=[];phases=[];faults=[];materials=[]
+    # Preserve every planned/accepted item even if a later assertion aborts the
+    # run. An incomplete ledger is evidence of failure, never a passing result.
+    import atexit
+    def save_partial_ledger():
+        (out/'partial-request-ledger.json').write_text(json.dumps({'run_id':run,'offering_id':h['offering_id'],'users':h['users'],'batches':ledger,'materials':materials},ensure_ascii=False))
+    atexit.register(save_partial_ledger)
     tokens={};logins={};active=0;peak=0; scheduled=0;sent=0
     completed_seen=set();material_contracts=[]
     ws_connections=[];ws_tasks=[];ws_counts=collections.Counter();ws_planned=False;ws_stopping=False;ws_slots=asyncio.Semaphore(16)
@@ -156,11 +165,14 @@ async def main(args):
                 ws_tasks.append(asyncio.create_task(consume()))
                 await asyncio.wait_for(ready.wait(),30)
         async def open_all_ws():
+            nonlocal ws_expected_open
             began=time.perf_counter()
             paths=[(f"/ws/{h['offering_id']}",'classroom'),('/ws/social','social')]
             if args.ws_connections==800:paths += [(f"/ws/{companion['second_offering_id']}",'classroom'),('/ws/social','social')]
             await asyncio.gather(*(ws_connect(item,path,label) for item in h['users'] for path,label in paths))
-            print(json.dumps({'phase':'websocket_ready','connections':args.ws_connections,'seconds':time.perf_counter()-began,'counts':dict(ws_counts)}),flush=True)
+            ws_expected_open=args.ws_connections
+            assert open_ws_count()==args.ws_connections,'Not all requested WebSockets remain open after readiness'
+            print(json.dumps({'phase':'websocket_ready','actual_open':open_ws_count(),'connections':args.ws_connections,'seconds':time.perf_counter()-began,'counts':dict(ws_counts)}),flush=True)
         html_sizes=[]
         async def open_classroom(item,label='classroom_open_burst',identity=False):
             r=await req(label,'GET',f"/classroom/{h['offering_id']}",tokens[item['student_id']],**({'headers':{'Accept-Encoding':'identity','Cookie':f"access_token={tokens[item['student_id']]}"}} if identity else {}))
@@ -260,7 +272,7 @@ async def main(args):
             print(json.dumps({'phase':phase,'users':users,'duration':duration,'started_epoch':time.time()}),flush=True)
             await asyncio.gather(*(actor(item) for item in cohort),*(tabs(item,tab) for item in cohort for tab in range(3)),
                 *(material(item) for item in cohort),read_loop(phase,end),live_loop(phase,end))
-            phases.append({'name':phase,'users':users,'duration_actual':time.perf_counter()-began,'ended_epoch':time.time()})
+            phases.append({'name':phase,'users':users,'actual_open_websockets':open_ws_count(),'duration_actual':time.perf_counter()-began,'ended_epoch':time.time()})
             print(json.dumps({'phase':phase,'latency':{kind:dist(stats[phase+'_'+kind]) for kind in ('recorder','material_v2','material_legacy','read','classroom_read','snapshot_read','live')}}),flush=True)
         await steady(100,args.steady100,'steady100')
         await steady(200,args.steady200,'steady200')
@@ -292,14 +304,17 @@ async def main(args):
         if args.ws_connections==800:
             prior_count=len(ws_connections)
             prior_tasks=len(ws_tasks)
+            ws_expected_open=0
             await asyncio.gather(*(ws_connect(item,'/ws/social','social') for item in h['users']))
+            ws_expected_open=1000
+            assert open_ws_count()==1000,'Headroom phase did not retain 1000 real open WebSockets'
             end=time.perf_counter()+20
             await asyncio.gather(*(batch(item['student_id'],'headroom1000',tab) for item in h['users'] for tab in range(3)),read_loop('headroom1000',end),live_loop('headroom1000',end))
-            phases.append({'name':'headroom1000','resident_connections':1000,'seconds':20,'ended_epoch':time.time()})
+            phases.append({'name':'headroom1000','resident_connections':1000,'actual_open':open_ws_count(),'seconds':20,'ended_epoch':time.time()})
             ws_planned=True
             await asyncio.gather(*(conn.close() for conn in ws_connections[prior_count:]),return_exceptions=True)
             await asyncio.gather(*ws_tasks[prior_tasks:],return_exceptions=True)
-            del ws_connections[prior_count:];del ws_tasks[prior_tasks:];ws_planned=False
+            del ws_connections[prior_count:];del ws_tasks[prior_tasks:];ws_expected_open=800;ws_planned=False
             print(json.dumps({'phase':'headroom1000','latency':dist(stats['headroom1000_recorder']),'counts':dict(ws_counts)}),flush=True)
         ws_planned=True
         (work/'fault-ready').write_text(run)
@@ -324,7 +339,7 @@ async def main(args):
         await asyncio.sleep(15)
         await asyncio.gather(*(conn.close() for conn in ws_connections),return_exceptions=True)
         await asyncio.gather(*ws_tasks,return_exceptions=True)
-        ws_connections.clear();ws_tasks.clear();ws_planned=False
+        ws_connections.clear();ws_tasks.clear();ws_expected_open=0;ws_planned=False
         await open_all_ws();await asyncio.sleep(5)
         ws_stopping=True
         await asyncio.gather(*(conn.close() for conn in ws_connections),return_exceptions=True)
@@ -334,7 +349,7 @@ async def main(args):
     report={'client_event_loop_lag':dist(loop_lag),'client_cpu_one_core_percent':100*((process_end.user-process_begin.user)+(process_end.system-process_begin.system))/(time.perf_counter()-wall_begin),'run_id':run,'source_release':h['release_id'],'users':200,'synthetic':True,'production_contacted':False,
             'phases':phases,'latency':{name:dist(values) for name,values in stats.items()},
             'statuses':[{'flow':flow,'status':status,'count':count} for (flow,status),count in sorted(statuses.items())],
-            'material_contracts':material_contracts,'completed_material_students':len(completed_seen),'html_sizes':html_sizes,'websockets':dict(ws_counts),'resident_websocket_connections':args.ws_connections,'ws_handshake_limit':16,'requests_sent':sent,'in_flight_peak':peak,'batch_count':len(ledger),'acked_batches':sum(item['ack'] for item in ledger),'faults':faults,'planned_faults':['15s_apply_advisory_lock','application_process_restart_with_acked_queue']}
+            'material_contracts':material_contracts,'completed_material_students':len(completed_seen),'planned_legacy_material_requests':len(materials),'acked_legacy_material_requests':sum(bool(item.get('ack')) for item in materials),'html_sizes':html_sizes,'websocket_open_samples':ws_open_samples,'websocket_checks_passed':bool(ws_open_samples) and all(row['actual_open']==row['expected'] for row in ws_open_samples) and not any(value for key,value in ws_counts.items() if key.startswith('unexpected_')),'websockets':dict(ws_counts),'resident_websocket_connections':args.ws_connections,'ws_handshake_limit':16,'requests_sent':sent,'in_flight_peak':peak,'batch_count':len(ledger),'acked_batches':sum(item['ack'] for item in ledger),'faults':faults,'planned_faults':['15s_apply_advisory_lock','application_process_restart_with_acked_queue']}
     (out/'request-ledger.json').write_text(json.dumps({'run_id':run,'offering_id':h['offering_id'],'users':h['users'],'batches':ledger,'materials':materials},ensure_ascii=False))
     (out/'http-report.json').write_text(json.dumps(report,indent=2));(work/'latest-run').write_text(run)
     print(json.dumps({'status':'client_complete','run_id':run,'batch_count':len(ledger),'acked_batches':report['acked_batches']}),flush=True)
