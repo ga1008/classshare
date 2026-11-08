@@ -135,7 +135,7 @@ from .routers import academic_evaluations
 from .routers import wanderer_internal
 from .routers import social as social_router
 from .routers import social_ws as social_ws_router
-from .services import social_push_service
+from .services import social_push_service, presence_service
 
 
 def _probe_database():
@@ -239,6 +239,7 @@ async def startup_event():
     # （尽管 uvicorn reload 模式下可能不需要，但这是个好习惯）
     ensure_runtime_directories()
     init_database()
+    presence_service.start_presence_runtime()
     from .services.login_attendance_jobs import ensure_tasks as ensure_login_attendance_tasks
     with get_db_connection() as attendance_conn:
         ensure_login_attendance_tasks(attendance_conn)
@@ -391,6 +392,7 @@ async def shutdown_event():
     from .services.password_verification_service import stop_password_verifier
     await anyio.to_thread.run_sync(stop_password_verifier)
     await social_push_service.stop_outbound_writers()
+    presence_shutdown = await presence_service.stop_presence_runtime()
     await stop_discussion_mood_refresh_tasks()
     await stop_smart_attendance_advice_worker()
     await stop_durable_process_job_workers()
@@ -398,6 +400,11 @@ async def shutdown_event():
     await stop_behavior_profile_scheduler()
     stop_behavior_write_pipeline()
     await ai_client.__aexit__(None, None, None)  # 关闭 HTTP 客户端
+    if not presence_shutdown["clean"]:
+        # A timed-out waiter does not terminate its DB thread. Keep its pool
+        # alive and fail shutdown explicitly; process supervision owns the
+        # ultimate stop deadline if a driver never returns.
+        raise RuntimeError("Presence shutdown incomplete; PostgreSQL pool was not closed")
     close_connection_pool()  # 归还并关闭 PostgreSQL 连接池
     print("[SERVER] FastAPI 应用已关闭。")
 
@@ -448,9 +455,11 @@ async def internal_health():
     behavior_stats = get_behavior_write_pipeline_stats()
     snapshot = _health_snapshots.snapshot()
     diagnostics = snapshot["diagnostics"]
+    presence_stats = presence_service.runtime_snapshot()
     degraded = (not behavior_stats["alive"] or bool(behavior_stats.get("last_error"))
                 or bool(behavior_stats.get("quarantined_count")) or bool(diagnostics["errors"])
-                or bool(diagnostics["stale"]) or bool(diagnostics["pending"]))
+                or bool(diagnostics["stale"]) or bool(diagnostics["pending"])
+                or bool(presence_stats["degraded"]))
     thread_limiter = anyio.to_thread.current_default_thread_limiter()
     return {
         "status": "degraded" if degraded else "ok",
@@ -468,6 +477,7 @@ async def internal_health():
         "behavior_write_queue_capacity": behavior_stats["queue_capacity"],
         "behavior_write_pipeline": behavior_stats,
         "social_outbound": social_push_service.outbound_snapshot(),
+        "presence_runtime": presence_stats,
         "email_worker": snapshot.get("email_worker"),
         "background_tasks": snapshot.get("background_tasks"),
         "document_renderer": snapshot.get("document_renderer"),
@@ -508,6 +518,7 @@ async def internal_metrics():
         "database_backend": asdict(database_backend_state()),
         "runtime": get_runtime_metrics_snapshot(),
         "social_outbound": social_push_service.outbound_snapshot(),
+        "presence_runtime": presence_service.runtime_snapshot(),
         "background_tasks": _health_snapshots.snapshot().get("background_tasks"),
         "discussion_runtime": {
             "room_count": len(manager.rooms),
