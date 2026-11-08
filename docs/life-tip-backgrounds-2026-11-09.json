@@ -1,6 +1,6 @@
 {
   "batch_id": "2026-11-09",
-  "status": "validated_design_pending_release",
+  "status": "completed",
   "before": 330,
   "after": 332,
   "generation_calls": 2,
@@ -127,10 +127,23 @@
     "coverage_gap": "当前可恢复周更图仅6批，未找到第7、8批或11/02批记录；早期scratch已清理，未恢复的完整提示词不宣称已文本核验，改以全图库视觉复核补充。",
     "pair_difference": "夜间云上巨柱庭的殿内高视点半环形布局，对照日间校园水槽的贴水低视点斜线布局；主体、尺度、机位、材质及光源均不同。"
   },
-  "pending": [
-    "validation",
-    "release",
-    "push"
-  ],
-  "review_method": "查看全图库330张缩略图、两张原始生成图、压缩横幅以及nearest-old/new完整横幅和手机中心裁切；最终页面文字由冻结树正式构建验收。"
+  "pending": [],
+  "review_method": "查看全图库330张缩略图、两张原始生成图、压缩横幅以及nearest-old/new完整横幅和手机中心裁切；最终页面文字由冻结树正式构建验收。",
+  "completed_at": "2026-11-09T05:30:25.367642+08:00",
+  "validation": {
+    "isolated_tests": 35,
+    "browser_scenarios": 4,
+    "screenshots_reviewed": 8,
+    "old_manifest_image_files_preserved": 660,
+    "all_historical_image_hashes_preserved": 672,
+    "all_images_decoded": 676,
+    "public_new_image_hashes_verified": 4,
+    "formal_graph": "ef6ffbdb913f1b565a31876812ec5696b40e3759f2ea50d6847760a4874abd1c"
+  },
+  "deployment": {
+    "release_id": "20261109-051707-6a7bb9091b25",
+    "source_commit": "36accd4bf37cfe2dd0080a277a4772cd1b7defa3",
+    "content_remote_commit_verified": "36accd4bf37cfe2dd0080a277a4772cd1b7defa3",
+    "cutover_backup": "/tmp/lanshare-deploy-backups/db-cutover-20261109-051721.sql.gz"
+  }
 }

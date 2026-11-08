@@ -1,6 +1,6 @@
 {
   "batch_id": "2026-11-09",
-  "status": "reviewed_pending_transaction",
+  "status": "committed_and_verified",
   "verification": "原始附件PDF经本地pypdf提取，核验精确截止、页码及文件SHA；未以AI摘要替代原文；执行时再次匹配ID、学校、受众、来源及内容hash。",
   "retirements": [
     {
@@ -216,5 +216,11 @@
       ],
       "reason": "该条只描述10月28日至11月6日巡课自查时段；11月9日报送是不同阶段。"
     }
-  ]
+  ],
+  "release_id": "20261109-051707-6a7bb9091b25",
+  "committed_observed_at": "2026-11-08T21:19:54.761918+00:00",
+  "count": 16,
+  "feedback_and_identity_preserved": true,
+  "protected_existing_items": 369,
+  "cache_window_checked_at": "2026-11-08T21:30:10.128990+00:00"
 }
