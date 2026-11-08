@@ -2930,6 +2930,39 @@
       ],
       "luma": 145,
       "tone": "dark"
+    },
+    {
+      "file": "xianxia-night-jade-cloud-court-20261109-b206be62.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "思考",
+        "专注",
+        "学习",
+        "成长"
+      ],
+      "luma": 124,
+      "tone": "dark"
+    },
+    {
+      "file": "xueye-sunny-wave-basin-20261109-bbc6c4f9.webp",
+      "categories": [
+        "学业规则",
+        "职业路径",
+        "教学相长"
+      ],
+      "tags": [
+        "学习",
+        "研究",
+        "协作",
+        "目标",
+        "专注"
+      ],
+      "luma": 158,
+      "tone": "light"
     }
   ]
 }
