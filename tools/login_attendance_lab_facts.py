@@ -44,6 +44,20 @@ def read_lines(path):
             yield json.loads(line)
 
 
+def receipt_matches(row, batch, actor, offering, payload_hash):
+    return bool(row and row[0] == batch and row[1] == actor and row[2] == offering
+                and row[3] == "applied" and row[6] == payload_hash)
+
+
+def valid_client_completion(report):
+    mode, duration = report.get("mode"), report.get("duration_requested_seconds", 0)
+    return (report.get("client_status") == "passed"
+            and ((mode == "run" and duration >= 5400) or (mode == "diagnostic" and 300 <= duration <= 900))
+            and bool(report.get("due_ticks")) and report.get("due_ticks") == report.get("sent_ticks")
+            and not report.get("normal_errors") and not report.get("legacy_unknown_outcomes")
+            and report.get("websocket_checks_passed") is True)
+
+
 def prove(journal_path, report_path):
     identity = validate_container_boundary()
     artifacts = Path(identity["artifact_root"]).resolve()
@@ -51,6 +65,9 @@ def prove(journal_path, report_path):
     if any(not path.is_relative_to(artifacts) for path in (journal_path, report_path)):
         raise ValueError("Facts inputs must remain inside this nonce's artifacts")
     report = json.loads(report_path.read_text())
+    if report.get("mode") not in {"run", "diagnostic"}:
+        raise ValueError("Only a completed formal or explicitly separate diagnostic run has load facts")
+    formal = report["mode"] == "run"
     if report.get("lab_nonce") != identity["lab_nonce"] or report.get("source_release") != identity["marker"]["release_id"]:
         raise ValueError("Client run belongs to another release or nonce")
     fixture = json.loads((artifacts/"attendance-fixture.json").read_text())
@@ -66,12 +83,14 @@ def prove(journal_path, report_path):
     phases = defaultdict(lambda: {"count":0, "min_received_ms":None, "max_received_ms":None,
                                    "min_applied_ms":None, "max_applied_ms":None})
     problems = []
+    actual_applied_batches = 0
     conn, _ = _checked_pg_connection(identity["marker"])
     conn.execute("SET default_transaction_read_only=on")
     def problem(code, **details):
         if len(problems) < 40:
             problems.append({"code":code, **details})
     def flush():
+        nonlocal actual_applied_batches
         if not buffer:
             return
         keys = [hashlib.sha256(json.dumps(["student", actor, offering, body["batch_id"]]).encode()).hexdigest()
@@ -98,6 +117,11 @@ def prove(journal_path, report_path):
                 ensure_ascii=False,sort_keys=True,separators=(",",":"),default=str).encode()).hexdigest()
             if expected_hash != row[6]:
                 problem("payload_hash_mismatch", batch_id=batch)
+                continue
+            if not receipt_matches(row, batch, actor, offering, expected_hash):
+                problem("receipt_identity_mismatch", batch_id=batch)
+                continue
+            actual_applied_batches += 1
             received, applied = ms(row[4]), ms(row[5])
             phase = phases[flow]
             phase["count"] += 1
@@ -175,7 +199,7 @@ def prove(journal_path, report_path):
             if len(buffer) >= 500:
                 flush()
         flush()
-        if len(rejected_controls) != 1 or rejected_controls != rejected_control_attempts:
+        if len(rejected_controls) != (1 if formal else 0) or rejected_controls != rejected_control_attempts:
             problem("collision_control_attempt_missing")
         if set(fingerprints) != ack_ids:
             problem("logical_batch_ack_set_mismatch", planned=len(fingerprints), acked=len(ack_ids))
@@ -207,11 +231,25 @@ def prove(journal_path, report_path):
             "WHERE class_offering_id=%s AND student_id=ANY(%s)",(offering,list(students))).fetchall()
         if len(projections) != 200 or any(row[1] or row[2] != row[3] for row in projections):
             problem("derived_projection_not_drained")
+        global_projections = conn.execute("SELECT COUNT(*) FILTER (WHERE dirty<>0),"
+            "COUNT(*) FILTER (WHERE dirty_version IS DISTINCT FROM calculated_version) "
+            "FROM learning_progress_snapshots").fetchone()
+        pending_counts = dict(pending)
+        closed_queues = {"inbox_pending":pending_counts.get("pending",0),
+            "inbox_quarantined":pending_counts.get("quarantined",0),
+            "dirty_projections":global_projections[0],"projection_version_mismatches":global_projections[1],
+            "main_projection_count":len(projections),
+            "main_dirty_projections":sum(bool(item[1]) for item in projections),
+            "main_projection_version_mismatches":sum(item[2]!=item[3] for item in projections)}
+        if global_projections[0] or global_projections[1]:
+            problem("global_projection_not_drained")
         round_id = report.get("main_round_id")
         row = conn.execute("SELECT class_offering_id,session_id,state,baseline_json,watermark_json,window_start_ms,window_end_ms,"
                            "starts_at_ms,ends_at_ms,settle_at_ms,evaluated_at_ms "
                            "FROM login_attendance_rounds WHERE id=%s", (round_id,)).fetchone()
-        if not row or tuple(row[:3]) != (offering,fixture["sessions"]["main"],"published"):
+        if not row or tuple(row[:2]) != (offering,fixture["sessions"]["main"]):
+            problem("main_round_identity_mismatch")
+        elif formal and row[2] != "published":
             problem("main_round_not_published")
         records = conn.execute("SELECT student_id,status,manual_confirmed,first_seen_ms,last_seen_ms FROM login_attendance_records WHERE round_id=%s", (round_id,)).fetchall()
         if {r[0] for r in records} != students:
@@ -226,7 +264,7 @@ def prove(journal_path, report_path):
         if set(access_by_actor) != students:
             problem("fresh_ingress_observation_missing")
         for actor,status,manual,first_seen,last_seen in records:
-            if status != expected_manual.get(actor,"PRESENT") or bool(manual) != (actor in expected_manual):
+            if formal and (status != expected_manual.get(actor,"PRESENT") or bool(manual) != (actor in expected_manual)):
                 problem("attendance_decision_mismatch", student_id=actor)
             raw = access_by_actor.get(actor)
             if raw and (first_seen != raw[1] or last_seen != raw[2] or raw[3] < 1):
@@ -234,14 +272,15 @@ def prove(journal_path, report_path):
         baseline, watermark = (json.loads(row[3]),json.loads(row[4])) if row else ({},{})
         if baseline.get("valid_count") != 200 or baseline.get("main_count") != 200:
             problem("one_person_one_vote_baseline_mismatch", baseline=baseline)
-        if not watermark.get("complete") or watermark.get("pending_batch_count") or watermark.get("quarantined_batch_count"):
+        if formal and (not watermark.get("complete") or watermark.get("pending_batch_count") or watermark.get("quarantined_batch_count")):
             problem("attendance_watermark_incomplete")
-        if row and (row[8]-row[7] != report.get("duration_requested_seconds",0)*1000
+        if formal and row and (row[8]-row[7] != report.get("duration_requested_seconds",0)*1000
                 or row[6]-row[8] != 600000 or row[9]-row[8] != 720000 or (row[10] or 0) < row[9]
                 or watermark.get("observed_through_ms") != row[6] or watermark.get("receipt_cutoff_ms") != row[9]):
             problem("actual_server_window_or_settlement_tail_incomplete")
         burst_phases = {key:value for key,value in phases.items() if key.startswith(("burst600_","headroom1000"))}
-        if len(burst_phases) != 4 or any(value["count"] != 600 or value["max_applied_ms"]-value["max_received_ms"] > 30000
+        expected_bursts = {"burst600_r1_recorder","burst600_r2_recorder","burst600_r3_recorder","headroom1000_recorder"} if formal else {"burst600_r1_recorder"}
+        if set(burst_phases) != expected_bursts or any(value["count"] != 600 or not 0 <= value["max_applied_ms"]-value["max_received_ms"] <= 30000
                                         for value in burst_phases.values()):
             problem("burst_durable_drain_exceeded_or_missing")
         blocked = phases.get("blocked_apply_recorder",{})
@@ -256,13 +295,16 @@ def prove(journal_path, report_path):
                 or not 15 <= blocked_checks.get("hold_seconds_server",0) <= 17
                 or not 0 <= blocked_checks.get("drain_seconds_after_release",-1) <= 30):
             problem("blocked_apply_server_clock_proof_failed")
-        if (report.get("client_status") != "passed" or report.get("mode") != "run"
-                or report.get("duration_requested_seconds",0) < 5400
-                or report.get("due_ticks") != report.get("sent_ticks")
-                or report.get("normal_errors") or report.get("legacy_unknown_outcomes")
-                or not report.get("websocket_checks_passed")):
-            problem("client_capacity_gate_failed")
+        if not valid_client_completion(report):
+            problem("client_load_gate_failed")
+        server_window = ({"round_id":round_id,"starts_at_ms":row[7],"ends_at_ms":row[8],
+            "window_start_ms":row[5],"window_end_ms":row[6],"settle_at_ms":row[9],
+            "evaluated_at_ms":row[10],"published_state":row[2],
+            "observed_through_ms":watermark.get("observed_through_ms"),
+            "receipt_cutoff_ms":watermark.get("receipt_cutoff_ms"),
+            "watermark_complete":watermark.get("complete") is True} if row else {})
         result = {"status":"passed" if not problems else "failed", "lab_nonce":identity["lab_nonce"],
+            "mode":report["mode"],"capacity_result":False,"actual_applied_batches":actual_applied_batches,
             "run_id":report["run_id"], "source_release":report["source_release"], "logical_batches":len(fingerprints),
             "acked_unique_batches":len(ack_ids), "legacy_planned":sum(legacy_planned.values()), "legacy_acked":sum(legacy_acked.values()),
             "expected_operations":sum(expected_ops.values()), "actual_operations":sum(actual_ops.values()),
@@ -271,6 +313,7 @@ def prove(journal_path, report_path):
             "material_students":len(materials), "attendance_students":len(records),
             "attendance_status_counts":dict(Counter(row[1] for row in records)), "baseline":baseline,
             "watermark":watermark, "receipt_phase_server_times":dict(phases), "blocked_checks":blocked_checks,
+            "server_window":server_window,"closed_queues":closed_queues,
             "all_projection_generations_clean_and_current":not any(p["code"]=="derived_projection_not_drained" for p in problems),
             "problems":problems,
             "clock_domain":"Receipt and apply times are VM/server PG timestamps; no client epoch subtraction",
