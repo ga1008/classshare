@@ -188,6 +188,24 @@ def differences(before, after):
     return changes
 
 
+@contextlib.contextmanager
+def _runtime_schema_adapter(conn):
+    """Run a runtime helper with its real row contract, then restore the reader.
+
+    Snapshot/rehearsal SQL deliberately uses tuple rows. Runtime schema helpers
+    use the production facade's named sqlite-compatible rows instead. The
+    caller still owns the connection and its transaction throughout.
+    """
+    from classroom_app.db.postgres import LanSharePostgresConnection, sqlite_compatible_dict_row
+
+    original = conn.row_factory
+    conn.row_factory = sqlite_compatible_dict_row
+    try:
+        yield LanSharePostgresConnection(conn)
+    finally:
+        conn.row_factory = original
+
+
 def apply_assessment_migrations(conn) -> None:
     """Use this release's actual PG DDL, excluding unrelated old startup repairs."""
     from classroom_app.db.postgres_schema import POSTGRES_RUNTIME_COLUMN_DEFINITIONS, POSTGRES_RUNTIME_TABLE_DEFINITIONS
@@ -197,7 +215,8 @@ def apply_assessment_migrations(conn) -> None:
     from classroom_app.db.schema_behavior_inbox import ensure_behavior_inbox_schema
     from classroom_app.db.schema_retake import ensure_retake_schema
     from classroom_app.db.postgres import LanSharePostgresConnection
-    ensure_behavior_inbox_schema(LanSharePostgresConnection(conn), engine="postgres")
+    with _runtime_schema_adapter(conn) as adapter:
+        ensure_behavior_inbox_schema(adapter, engine="postgres")
     ensure_behavior_collection_health_schema(LanSharePostgresConnection(conn), engine="postgres")
     ensure_retake_schema(LanSharePostgresConnection(conn), engine="postgres", force=True)
     for column, definition in POSTGRES_RUNTIME_COLUMN_DEFINITIONS["assignments"].items():

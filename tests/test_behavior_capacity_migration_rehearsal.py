@@ -23,6 +23,24 @@ def migrated(before):
 
 
 class RecorderCapacityIndexProofTests(unittest.TestCase):
+    def test_runtime_schema_adapter_restores_tuple_reader_on_success_and_failure(self):
+        from classroom_app.db.postgres import sqlite_compatible_dict_row
+        from tools.assessment_postgres_rehearsal import _runtime_schema_adapter
+
+        class Connection:
+            row_factory = object()
+        connection = Connection()
+        original = connection.row_factory
+        with _runtime_schema_adapter(connection) as adapter:
+            self.assertIs(connection, adapter.raw_connection)
+            self.assertIs(sqlite_compatible_dict_row, connection.row_factory)
+        self.assertIs(original, connection.row_factory)
+        with self.assertRaisesRegex(RuntimeError, "synthetic migration failure"):
+            with _runtime_schema_adapter(connection):
+                self.assertIs(sqlite_compatible_dict_row, connection.row_factory)
+                raise RuntimeError("synthetic migration failure")
+        self.assertIs(original, connection.row_factory)
+
     def test_exact_index_additions_and_repeated_initialization_pass(self):
         before = baseline()
         after = migrated(before)
