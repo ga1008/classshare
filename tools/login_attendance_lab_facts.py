@@ -203,8 +203,13 @@ def prove(journal_path, report_path):
         pending = conn.execute("SELECT state,COUNT(*) FROM behavior_write_inbox WHERE state IN ('pending','quarantined') GROUP BY state").fetchall()
         if pending:
             problem("unresolved_inbox", states=pending)
+        projections = conn.execute("SELECT student_id,dirty,dirty_version,calculated_version FROM learning_progress_snapshots "
+            "WHERE class_offering_id=%s AND student_id=ANY(%s)",(offering,list(students))).fetchall()
+        if len(projections) != 200 or any(row[1] or row[2] != row[3] for row in projections):
+            problem("derived_projection_not_drained")
         round_id = report.get("main_round_id")
-        row = conn.execute("SELECT class_offering_id,session_id,state,baseline_json,watermark_json,window_start_ms,window_end_ms "
+        row = conn.execute("SELECT class_offering_id,session_id,state,baseline_json,watermark_json,window_start_ms,window_end_ms,"
+                           "starts_at_ms,ends_at_ms,settle_at_ms,evaluated_at_ms "
                            "FROM login_attendance_rounds WHERE id=%s", (round_id,)).fetchone()
         if not row or tuple(row[:3]) != (offering,fixture["sessions"]["main"],"published"):
             problem("main_round_not_published")
@@ -231,6 +236,26 @@ def prove(journal_path, report_path):
             problem("one_person_one_vote_baseline_mismatch", baseline=baseline)
         if not watermark.get("complete") or watermark.get("pending_batch_count") or watermark.get("quarantined_batch_count"):
             problem("attendance_watermark_incomplete")
+        if row and (row[8]-row[7] != report.get("duration_requested_seconds",0)*1000
+                or row[6]-row[8] != 600000 or row[9]-row[8] != 720000 or (row[10] or 0) < row[9]
+                or watermark.get("observed_through_ms") != row[6] or watermark.get("receipt_cutoff_ms") != row[9]):
+            problem("actual_server_window_or_settlement_tail_incomplete")
+        burst_phases = {key:value for key,value in phases.items() if key.startswith(("burst600_","headroom1000"))}
+        if len(burst_phases) != 4 or any(value["count"] != 600 or value["max_applied_ms"]-value["max_received_ms"] > 30000
+                                        for value in burst_phases.values()):
+            problem("burst_durable_drain_exceeded_or_missing")
+        blocked = phases.get("blocked_apply_recorder",{})
+        held_path, released_path = artifacts/"apply-held", artifacts/"apply-released"
+        blocked_checks = {}
+        if held_path.is_file() and released_path.is_file() and blocked:
+            held, released = float(held_path.read_text())*1000, float(released_path.read_text())*1000
+            blocked_checks = {"all_200_received_after_hold":blocked["count"]==200 and blocked["min_received_ms"]>=held,
+                "all_200_applied_after_release":blocked["min_applied_ms"]>=released,
+                "hold_seconds_server":(released-held)/1000,"drain_seconds_after_release":(blocked["max_applied_ms"]-released)/1000}
+        if (not blocked_checks.get("all_200_received_after_hold") or not blocked_checks.get("all_200_applied_after_release")
+                or not 15 <= blocked_checks.get("hold_seconds_server",0) <= 17
+                or not 0 <= blocked_checks.get("drain_seconds_after_release",-1) <= 30):
+            problem("blocked_apply_server_clock_proof_failed")
         if (report.get("client_status") != "passed" or report.get("mode") != "run"
                 or report.get("duration_requested_seconds",0) < 5400
                 or report.get("due_ticks") != report.get("sent_ticks")
@@ -245,7 +270,9 @@ def prove(journal_path, report_path):
             "actual_learning_seconds":sum(row[1] or 0 for row in states),
             "material_students":len(materials), "attendance_students":len(records),
             "attendance_status_counts":dict(Counter(row[1] for row in records)), "baseline":baseline,
-            "watermark":watermark, "receipt_phase_server_times":dict(phases), "problems":problems,
+            "watermark":watermark, "receipt_phase_server_times":dict(phases), "blocked_checks":blocked_checks,
+            "all_projection_generations_clean_and_current":not any(p["code"]=="derived_projection_not_drained" for p in problems),
+            "problems":problems,
             "clock_domain":"Receipt and apply times are VM/server PG timestamps; no client epoch subtraction",
             "production_accessed":False, "oracle":"Raw indexed PG receipts plus independent interval unions; streamed journal in batches of500"}
         output = artifacts/("attendance-facts-"+report["run_id"]+".json")
