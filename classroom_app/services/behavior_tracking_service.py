@@ -126,6 +126,11 @@ def get_behavior_write_pipeline_stats() -> dict[str, Any]:
     return pipeline.stats()
 
 
+def note_behavior_unknown_commit() -> None:
+    """Include receipt-backed business transactions in durable commit diagnostics."""
+    _get_behavior_write_pipeline()._increment("unknown_commit_count")
+
+
 def flush_behavior_write_pipeline(timeout: float = 10.0) -> None:
     pipeline = _behavior_write_pipeline
     if pipeline is None:
@@ -146,6 +151,7 @@ def _submit_behavior_write(
     batch_id: Optional[str] = None,
     require_durable: bool = False,
     conn=None,
+    received_at: str | None = None,
 ) -> dict[str, Any]:
     normalized_events = [item for item in events if isinstance(item, dict)]
     if not normalized_events:
@@ -158,7 +164,7 @@ def _submit_behavior_write(
         **({"batch_id": batch_id} if batch_id else {}),
     )
     try:
-        return _get_behavior_write_pipeline().submit(request, wait=wait, conn=conn)
+        return _get_behavior_write_pipeline().submit(request, wait=wait, conn=conn, received_at=received_at)
     except Exception as exc:
         if wait or require_durable:
             raise
@@ -691,6 +697,7 @@ def record_behavior_batch(
     batch_id: Optional[str] = None,
     require_durable: bool = False,
     conn=None,
+    received_at: str | None = None,
 ) -> dict[str, Any]:
     return _submit_behavior_write(
         class_offering_id=class_offering_id,
@@ -704,6 +711,7 @@ def record_behavior_batch(
         batch_id=batch_id,
         require_durable=require_durable,
         conn=conn,
+        received_at=received_at,
     )
 
 

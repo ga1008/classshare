@@ -627,7 +627,7 @@ def post_material_progress(
 ):
     if user["role"] != "student":
         raise HTTPException(403, "仅学生需要记录学习进度")
-    with get_db_connection() as conn:
+    def prepare(conn):
         from ..db.connection import begin_immediate_transaction, get_configured_db_engine
         if get_configured_db_engine() == "sqlite":
             begin_immediate_transaction(conn)
@@ -641,24 +641,23 @@ def post_material_progress(
                     raise HTTPException(404, "课堂或账号已不存在")
         _ensure_classroom_access(conn, class_offering_id, user)
         _ensure_material_in_classroom(conn, class_offering_id, int(payload.material_id), user)
-        if payload.progress_version == 2:
-            from ..services.material_progress_collection_service import MaterialCollectionError, collect_material_progress
-            from ..services.behavior_inbox_service import BehaviorBatchConflict
-            from ..services.behavior_event_validation import BehaviorValidationError
-            try:
-                result = collect_material_progress(conn, class_offering_id=class_offering_id, user=user, payload=payload.model_dump())
-                if result.get("degraded"):
-                    raise MaterialCollectionError("本批次已保留等待修复，不会重新编号入账。", "batch_payload_conflict", status=409)
-            except (MaterialCollectionError, BehaviorBatchConflict, BehaviorValidationError) as exc:
-                code = getattr(exc, "code", getattr(exc, "error_code", "batch_payload_invalid"))
-                retryable = bool(getattr(exc, "retryable", False))
-                raise HTTPException(getattr(exc, "status", 409 if isinstance(exc, BehaviorBatchConflict) else 422),
-                    detail={"error_code": code, "message": str(exc), "retryable": retryable,
-                            "batch_disposition": "retain" if retryable else "quarantine",
-                            "current_user_key": f"{user['role']}:{user['id']}"},
-                    headers={"Retry-After": "10"} if retryable else None) from exc
-            conn.commit()
-            return result
+    if payload.progress_version == 2:
+        from ..services.material_progress_collection_service import MaterialCollectionError, collect_material_progress_transaction
+        from ..services.behavior_inbox_service import BehaviorBatchConflict
+        from ..services.behavior_event_validation import BehaviorValidationError
+        try:
+            return collect_material_progress_transaction(class_offering_id=class_offering_id, user=user,
+                payload=payload.model_dump(), connection_factory=get_db_connection, prepare=prepare)
+        except (MaterialCollectionError, BehaviorBatchConflict, BehaviorValidationError) as exc:
+            code = getattr(exc, "code", getattr(exc, "error_code", "batch_payload_invalid"))
+            retryable = bool(getattr(exc, "retryable", False))
+            raise HTTPException(getattr(exc, "status", 409 if isinstance(exc, BehaviorBatchConflict) else 422),
+                detail={"error_code": code, "message": str(exc), "retryable": retryable,
+                        "batch_disposition": "retain" if retryable else "quarantine",
+                        "current_user_key": f"{user['role']}:{user['id']}"},
+                headers={"Retry-After": "10"} if retryable else None) from exc
+    with get_db_connection() as conn:
+        prepare(conn)
         result = record_material_learning_progress(
             conn,
             class_offering_id=class_offering_id,

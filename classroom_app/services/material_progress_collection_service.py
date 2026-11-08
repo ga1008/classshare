@@ -9,7 +9,7 @@ import re
 from ..db.connection import get_configured_db_engine
 from .behavior_event_validation import HEARTBEAT_ACTIONS, validate_behavior_payload
 from .behavior_presence_service import read_presence_sample, measure_presence, _load_coverage, COVERAGE_WINDOW_MS
-from .behavior_tracking_service import record_behavior_batch
+from .behavior_tracking_service import note_behavior_unknown_commit, record_behavior_batch
 from .learning_progress_service import (record_material_learning_progress, get_material_mastery_check_context, get_student_learning_state,
                                       MATERIAL_COMPLETE_ACTIVE_SECONDS, MATERIAL_COMPLETE_TOTAL_SECONDS)
 
@@ -22,6 +22,26 @@ class MaterialCollectionError(ValueError):
     def __init__(self, message, code="batch_payload_invalid", *, status=422, retryable=False):
         super().__init__(message)
         self.code, self.status, self.retryable = code, status, retryable
+
+
+def collect_material_progress_transaction(*, class_offering_id, user, payload, connection_factory, prepare):
+    """Retry the complete owned v2 transaction using one server receive time.
+
+    Every attempt repeats parent locks and authorization before any material
+    writes. The shared runner commits progress, dirty state and receipt together;
+    a successful but unacknowledged commit is reconciled by this same batch ID.
+    """
+    from .behavior_inbox_service import run_idempotent_behavior_transaction
+    received_at = datetime.now()
+    def collect(conn):
+        prepare(conn)
+        result = collect_material_progress(conn, class_offering_id=class_offering_id,
+            user=user, payload=payload, received_at=received_at)
+        if result.get("degraded"):
+            raise MaterialCollectionError("本批次已保留等待修复，不会重新编号入账。", "batch_payload_conflict", status=409)
+        return result
+    return run_idempotent_behavior_transaction(collect, connection_factory=connection_factory,
+                                               on_unknown_commit=note_behavior_unknown_commit)
 
 
 def _observed_ms(coverage, floor):
@@ -130,7 +150,8 @@ def collect_material_progress(conn, *, class_offering_id, user, payload, receive
     # immediately by the caller's commit. Both facts either persist or roll back.
     receipt = record_behavior_batch(class_offering_id=class_offering_id, user_pk=student_id, user_role="student",
         display_name=str(user.get("name") or f"student:{student_id}"), page_key=page_key, events=wire_events,
-        session_started_at=user.get("login_time"), batch_id=batch_id, require_durable=True, wait=False, conn=conn)
+        session_started_at=user.get("login_time"), batch_id=batch_id, require_durable=True, wait=False, conn=conn,
+        received_at=now.isoformat())
     return {**result, "batch_id": batch_id, "current_user_key": f"student:{student_id}",
             "write_mode": "durable_queued" if receipt.get("write_mode") == "transaction_pending" else receipt["write_mode"],
             "degraded": bool(receipt.get("degraded")), "duplicate": previous is not None}

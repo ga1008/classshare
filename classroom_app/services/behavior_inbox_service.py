@@ -150,6 +150,54 @@ def _restore_timeouts(conn, original: tuple[str, str]) -> None:
     conn.execute("SELECT set_config('lock_timeout', ?, true), set_config('statement_timeout', ?, true)", original)
 
 
+def run_idempotent_behavior_transaction(operation: Callable[[Any], Any], *, connection_factory=None,
+                                        retry_wait=None, on_unknown_commit=None):
+    """Own bounded retries only for writes reconciled by an immutable receipt.
+
+    The operation must use this connection without committing it. A failed
+    context rolls back and closes before backoff; an unknown commit is retried
+    with the original identity so the operation must read its receipt first.
+    Permission, validation and programming errors keep their original type.
+    This boundary must never wrap non-idempotent legacy business writes.
+    """
+    deadline = time.monotonic() + BEHAVIOR_WRITE_ENQUEUE_TIMEOUT_MS / 1000.0
+    connect = connection_factory or get_db_connection
+    pause = retry_wait or time.sleep
+    for attempt in range(3):
+        committing = False
+        committed = False
+        attempt_error = None
+        try:
+            with connect() as conn:
+                try:
+                    result = operation(conn)
+                    committing = True
+                    conn.commit()
+                    committed = True
+                except BaseException as exc:
+                    attempt_error = exc
+                    raise
+            return result
+        except ValueError:
+            raise
+        except Exception as exc:
+            # A rollback/close failure is not a confirmed clean retry boundary.
+            # Do not hide it behind the operation's earlier transient conflict.
+            if committed or (attempt_error is not None and exc is not attempt_error):
+                raise
+            if committing and on_unknown_commit is not None:
+                on_unknown_commit()
+            retryable = committing or isinstance(exc, (DatabaseBusyError, DatabaseConnectionError)) or is_retryable_conflict(exc)
+            if not retryable:
+                raise
+            if attempt == 2 or time.monotonic() >= deadline:
+                raise DatabaseBusyError("行为记录暂时无法确认，请使用原批次编号重试。") from exc
+            if pause(min(max(0.0, deadline - time.monotonic()),
+                         0.05 * (2 ** attempt) + random.uniform(0.0, 0.05))) is True:
+                raise DatabaseBusyError("行为写入服务正在停止，请稍后重试。") from exc
+    raise DatabaseBusyError("行为记录暂时无法确认。")
+
+
 def _event_count(row) -> int:
     try:
         events = json.loads(row["events_json"])
@@ -258,7 +306,8 @@ class BehaviorWritePipeline:
         with self._lock:
             self._stats[name] += amount
 
-    def submit(self, request: BehaviorWriteRequest, *, wait: bool = False, conn=None) -> dict[str, Any]:
+    def submit(self, request: BehaviorWriteRequest, *, wait: bool = False, conn=None,
+               received_at: str | None = None) -> dict[str, Any]:
         self.start()  # Restarts a dead thread, retains the database backlog.
         if self._stop_event.is_set():
             raise DatabaseBusyError("行为写入服务正在停止，请稍后重试。")
@@ -271,7 +320,7 @@ class BehaviorWritePipeline:
         payload_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         batch_key = hashlib.sha256(json.dumps([request.user_role, request.user_pk,
             request.class_offering_id, request.batch_id]).encode("utf-8")).hexdigest()
-        received_at = datetime.now().isoformat()
+        received_at = received_at or datetime.now().isoformat()
         if conn is not None:
             if wait:
                 raise ValueError("Cannot wait for behavior inside its uncommitted business transaction")
@@ -392,30 +441,20 @@ class BehaviorWritePipeline:
         raise DatabaseBusyError("行为记录暂时积压，请稍后使用原批次编号重试。")
 
     def _persist_request(self, request, batch_key, payload_hash, received_at) -> dict[str, Any]:
-        deadline = time.monotonic() + BEHAVIOR_WRITE_ENQUEUE_TIMEOUT_MS / 1000.0
-        for attempt in range(3):
-            committing = False
-            try:
-                with get_db_connection() as conn:
-                    begin_immediate_transaction(conn)
-                    if get_configured_db_engine() == "postgres":
-                        _bounded_timeouts(conn, lock_ms=BEHAVIOR_WRITE_LOCK_TIMEOUT_MS,
-                                          statement_ms=BEHAVIOR_WRITE_STATEMENT_TIMEOUT_MS)
-                    snapshot = self._persist_in_connection(conn, request, batch_key, payload_hash, received_at)
-                    committing = True
-                    conn.commit()
-                    return snapshot
-            except (BehaviorBatchConflict, ValueError):
-                raise
-            except Exception as exc:
-                if committing:
-                    self._increment("unknown_commit_count")
-                retryable = committing or isinstance(exc, (DatabaseBusyError, DatabaseConnectionError)) or is_retryable_conflict(exc)
-                if not retryable or attempt == 2 or time.monotonic() >= deadline:
-                    raise DatabaseBusyError("行为记录暂时无法确认，请使用原批次编号重试。") from exc
-                self._stop_event.wait(min(max(0.0, deadline - time.monotonic()),
-                                          0.05 * (2 ** attempt) + random.uniform(0.0, 0.05)))
-        raise DatabaseBusyError("行为记录暂时无法确认。")
+        def persist(conn):
+            begin_immediate_transaction(conn)
+            if get_configured_db_engine() == "postgres":
+                _bounded_timeouts(conn, lock_ms=BEHAVIOR_WRITE_LOCK_TIMEOUT_MS,
+                                  statement_ms=BEHAVIOR_WRITE_STATEMENT_TIMEOUT_MS)
+            return self._persist_in_connection(conn, request, batch_key, payload_hash, received_at)
+        try:
+            return run_idempotent_behavior_transaction(persist, retry_wait=self._stop_event.wait,
+                on_unknown_commit=lambda: self._increment("unknown_commit_count"))
+        except (BehaviorBatchConflict, ValueError, DatabaseBusyError):
+            raise
+        except Exception as exc:
+            # Preserve the standalone recorder's established failure boundary.
+            raise DatabaseBusyError("行为记录暂时无法确认，请使用原批次编号重试。") from exc
 
     def _select_next_receipt(self, conn, *, postgres: bool):
         # Preserve actor order across classrooms too. Daily streaks/rewards
