@@ -1,0 +1,220 @@
+{
+  "batch_id": "2026-11-09",
+  "status": "reviewed_pending_transaction",
+  "verification": "原始附件PDF经本地pypdf提取，核验精确截止、页码及文件SHA；未以AI摘要替代原文；执行时再次匹配ID、学校、受众、来源及内容hash。",
+  "retirements": [
+    {
+      "id": 37516,
+      "document_id": 2103,
+      "content_hash": "2cc96710af57d6930b539aad20bfc2798543117b3fe608dfd9d127671f1acf26",
+      "source_file_sha256": "e4f33663919805defb72489a67559c177af8a122875e3cc38ea62d3823be8959",
+      "source_published_at": "2026-06-09 17:05:20",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-06-17T17:30:00+08:00",
+      "evidence_pages": [
+        2
+      ],
+      "reason": "初赛2026年6月5日至10日；决赛6月17日14:30–17:30，均已结束。"
+    },
+    {
+      "id": 37517,
+      "document_id": 2103,
+      "content_hash": "802f7d6a274b883939b353c6ce4eee171f3b1d902afe20beba1bc3597c78455d",
+      "source_file_sha256": "e4f33663919805defb72489a67559c177af8a122875e3cc38ea62d3823be8959",
+      "source_published_at": "2026-06-09 17:05:20",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-06-17T17:30:00+08:00",
+      "evidence_pages": [
+        2
+      ],
+      "reason": "本条为该届决赛队数、奖项和晋级安排；决赛2026年6月17日已结束。"
+    },
+    {
+      "id": 54853,
+      "document_id": 32035,
+      "content_hash": "bfae3caf14c381ef2eda32df7b534a6cb5fe2ac96a613532d99540b2a666562c",
+      "source_file_sha256": "21cc78a2c76f952675af8307cffd893a4eec51c722a85f408607d59b21cb45c4",
+      "source_published_at": "2026-10-12 15:15:47",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-10-17T16:00:00+08:00",
+      "evidence_pages": [
+        2
+      ],
+      "reason": "2026年10月17日该批普通话测试已经结束。"
+    },
+    {
+      "id": 54854,
+      "document_id": 32035,
+      "content_hash": "64a21ed17196fba202bc7c0e246b88dccdb6acc4ad0b0aba381acc5139971f0d",
+      "source_file_sha256": "21cc78a2c76f952675af8307cffd893a4eec51c722a85f408607d59b21cb45c4",
+      "source_published_at": "2026-10-12 15:15:47",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-10-18T15:30:00+08:00",
+      "evidence_pages": [
+        3
+      ],
+      "reason": "2026年10月18日该批普通话测试已经结束。"
+    },
+    {
+      "id": 54855,
+      "document_id": 32035,
+      "content_hash": "fe6bea8eba84ccc76831bbad29a0c683206baa95b1c01c0a647389c7bdf2362b",
+      "source_file_sha256": "21cc78a2c76f952675af8307cffd893a4eec51c722a85f408607d59b21cb45c4",
+      "source_published_at": "2026-10-12 15:15:47",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-10-18T15:30:00+08:00",
+      "evidence_pages": [
+        2,
+        3,
+        10
+      ],
+      "reason": "10月12日准考证发放仅指本次10月17–18日已结束测试。"
+    },
+    {
+      "id": 57370,
+      "document_id": 32486,
+      "content_hash": "adc69f1804365ecaf090cd4107d3acdcbb9f4201fbf202aa3a799b0cd027ada7",
+      "source_file_sha256": "056aaaad660ca3f3caa0d5bc040b019004b8f7e7d19b66fe43e4ffbc89d25887",
+      "source_published_at": "2026-10-14 09:26:50",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-10-18T23:59:59+08:00",
+      "evidence_pages": [
+        1
+      ],
+      "reason": "原文要求学院于2026年10月18日晚前报送该批退费表格，窗口已过。"
+    },
+    {
+      "id": 57658,
+      "document_id": 32585,
+      "content_hash": "25a24581aac02314a08ddd169a3f3fa53e0f3da26c472217d1029232da8ef738",
+      "source_file_sha256": "dcaf8fd031d7771fec41445840043f2cced6a25ce3702a184bcef6946fa401b2",
+      "source_published_at": "2026-10-14 16:18:06",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-10-27T00:00:00+08:00",
+      "evidence_pages": [
+        3
+      ],
+      "reason": "原文2026年10月27日前报送该批信息员推荐表，窗口已过。"
+    },
+    {
+      "id": 57667,
+      "document_id": 32885,
+      "content_hash": "5d196dd2d2d620d60ae7c8f78defa0aa8e599577728656a1a40a1a807ce92e32",
+      "source_file_sha256": "66e804ac2ece0f7e90ec1c9934c5125f4833a49572cb6cb6432c777deb621799",
+      "source_published_at": "2026-10-15 15:17:33",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-10-19T00:00:00+08:00",
+      "evidence_pages": [
+        1,
+        3
+      ],
+      "reason": "原文2026年10月18日24:00补选截止，窗口已过。"
+    },
+    {
+      "id": 58231,
+      "document_id": 33085,
+      "content_hash": "74f1871361be54f77bb7c0c4b1d7e8585c8a10383b94ff4806ae8e4d4abd8dda",
+      "source_file_sha256": "775768949b6b7a584329ecf34bc639d9624b5e11efbed120c1f9a69f383f0d3c",
+      "source_published_at": "2026-10-16 11:36:35",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-10-22T12:00:00+08:00",
+      "evidence_pages": [
+        1,
+        2
+      ],
+      "reason": "本批学籍更正登记须2026年10月22日12:00前完成。"
+    },
+    {
+      "id": 60466,
+      "document_id": 33737,
+      "content_hash": "c94fbc006e97282850aac1ba66661c4f70e2fcce28763d55d3cff0d824e4ad07",
+      "source_file_sha256": "0c510f307d183df8a8b9b78874b9aa94c9cc3d0a8e552bebbaff857d0542541a",
+      "source_published_at": "2026-10-19 11:07:02",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-10-30T15:00:00+08:00",
+      "evidence_pages": [
+        3
+      ],
+      "reason": "原文缴费10月26日15:00至30日15:00；过期缴费无效。"
+    },
+    {
+      "id": 60467,
+      "document_id": 33737,
+      "content_hash": "8771f0b4fd2c0ef1bdcceb3ac580ae59614420fa8a94f90d1552adfa23ab49e3",
+      "source_file_sha256": "0c510f307d183df8a8b9b78874b9aa94c9cc3d0a8e552bebbaff857d0542541a",
+      "source_published_at": "2026-10-19 11:07:02",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-11-05T12:00:00+08:00",
+      "evidence_pages": [
+        3
+      ],
+      "reason": "原文班级确认11月5日12:00前；不是11月10日学院最终汇总时间。"
+    },
+    {
+      "id": 60471,
+      "document_id": 33835,
+      "content_hash": "5f9cfbd154aef25da9a4b6772b71693b82533fd276912ee5a014e398fbe066c7",
+      "source_file_sha256": "f709f9abc3b861915d5276d83a1c845a0201c4ce62ded3a0f5e52c71c439bd59",
+      "source_published_at": "2026-10-19 16:45:39",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-10-25T17:00:00+08:00",
+      "evidence_pages": [
+        2,
+        19
+      ],
+      "reason": "2026年10月24、25日自考场次已结束。"
+    },
+    {
+      "id": 62879,
+      "document_id": 34385,
+      "content_hash": "beb4edcc356a2ad4ac563a02b8b7789039b00ce753ed6bda219e78d711a6c83a",
+      "source_file_sha256": "53c230da920792c2c43365d8aba62e3f4b2e9baa94a0d3c6dcd736aa8426f15c",
+      "source_published_at": "2026-10-21 17:00:38",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-10-27T23:59:59+08:00",
+      "evidence_pages": [
+        1
+      ],
+      "reason": "结业换毕业该批公示期2026年10月21日至27日已结束。"
+    },
+    {
+      "id": 62880,
+      "document_id": 34385,
+      "content_hash": "5347106751cfc6f88111c16bfaad0f24760d75f4d6b33b108855204b74664355",
+      "source_file_sha256": "53c230da920792c2c43365d8aba62e3f4b2e9baa94a0d3c6dcd736aa8426f15c",
+      "source_published_at": "2026-10-21 17:00:38",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-10-27T23:59:59+08:00",
+      "evidence_pages": [
+        1
+      ],
+      "reason": "本次换证名单核对属于该批10月21日至27日公示；不扩散名单。"
+    },
+    {
+      "id": 63487,
+      "document_id": 34785,
+      "content_hash": "bace64c1b233b99b484ee5e1706dd7aa6731b8d60744386976472093cc226b21",
+      "source_file_sha256": "fc2d35d6180737b5c0e525a23b1bd8cf834245e30c5d515fd61a15c0c2049dee",
+      "source_published_at": "2026-10-23 10:04:45",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-10-29T23:59:59+08:00",
+      "evidence_pages": [
+        1
+      ],
+      "reason": "该批补授学位公示期2026年10月23日至29日已结束。"
+    },
+    {
+      "id": 73151,
+      "document_id": 35987,
+      "content_hash": "998ba54620aaab74424fe452ae49bb77ff3ca2004d96f041bb038815694d1fb4",
+      "source_file_sha256": "0ecd983965fea91db23308827f34291113a32600e3c7036287e0dbedfe0d6eeb",
+      "source_published_at": "2026-10-28 09:34:43",
+      "verified_at": "2026-11-09",
+      "valid_until": "2026-11-06T23:59:59+08:00",
+      "evidence_pages": [
+        1
+      ],
+      "reason": "该条只描述10月28日至11月6日巡课自查时段；11月9日报送是不同阶段。"
+    }
+  ]
+}
