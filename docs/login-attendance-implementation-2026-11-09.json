@@ -28,13 +28,16 @@
     "start_end_student_write": "disabled until actual school write protocol is verified; cannot be enabled by user flags or environment",
     "confirmed_scope": "student status readback only; not proof of remotely starting or ending a round",
     "legacy_compatibility": "existing Smart Classroom button, imports, PDF archives and published grade sources preserved",
-    "remote_test": "user authorized week 2 Sunday periods 8 and 9 Computer Networks combined class; investigation still in progress, evidence contains no credentials in Git"
+    "remote_test": "authorized week 2 Sunday periods 8 and 9 Computer Networks six-class group: official client start, end, one student adjustment and full 51-student readback verified; only the newly created temporary round was removed after testing; original 16 rounds and all 816 student statuses remained unchanged",
+    "remote_write_boundary": "official interface behavior is verified, but the actual mini-program start/end/student-write wire contracts are not. Public web assets expose a generic attendance-header form, not enough to implement these operations. All three automatic write capabilities remain disabled; credentials and private school evidence are excluded from Git"
   },
   "verification": {
     "ui": "login-attendance-ui-validation-2026-11-09.json",
     "local_backend": "isolated SQLite and blocked dotenv/production PG; rules, service, ASGI, auth, claims, appeal, scheduler recovery, settlement-tail quality, merge and deletion tests passed",
     "postgres_native_rehearsal": "pending final candidate-bound run",
-    "vmware_200_users": "pending final candidate-bound 5400-second load plus actual settlement period",
+    "vmware_200_users": "new candidate-bound 5400-second load plus actual settlement period required; the 239bc5d1 / 0054 baseline was stopped after about 24.5 minutes because burst drain and recovery exceeded the 30-second limit, and is not accepted as a capacity pass",
+    "failed_baseline_conservation": "52243 unique acknowledged batches all applied, 29716 operations and 116841 measured learning seconds matched independent calculation; accepted queues and projections were drained before preserving the stopped environment",
+    "recorder_state_optimization": "within-receipt state reads/writes merged without changing event order or transaction boundaries; 68 regressions and 7 native PostgreSQL checks passed, plus 10 old/new parity scenarios over 27 batches and all fields of 8 affected tables; this is not a substitute for the VMware capacity gate",
     "production_deployment": "not performed for this candidate yet",
     "git_push": "not performed for this candidate yet"
   }

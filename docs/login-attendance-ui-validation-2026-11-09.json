@@ -193,5 +193,65 @@
       "resolution": "matching current request claim/ack 404 destroys only stale layer; no acknowledgement and no navigation; other teacher attention remains active",
       "scenario": "LQ stale teacher attention loses ownership with 404 and releases the page without acknowledging"
     }
-  ]
+  ],
+  "card_material_baseline": {
+    "status": "passed",
+    "passed": 12,
+    "source_css_changed": false,
+    "previous_css_already_passed": true,
+    "variants": [
+      "default",
+      "flat",
+      "stat",
+      "hero"
+    ],
+    "renderers": [
+      "jinja",
+      "html",
+      "element"
+    ],
+    "material_tones": [
+      "auto",
+      "light",
+      "dark"
+    ],
+    "palettes": [
+      "teal",
+      "indigo",
+      "sky",
+      "mint",
+      "violet",
+      "rose"
+    ],
+    "appearances": [
+      "light",
+      "dark"
+    ],
+    "widths": [
+      390,
+      1440
+    ],
+    "samples_per_case": 36,
+    "suite": "tests/e2e/components/lq-card-material-ink.spec.ts",
+    "result_json": ".codex-temp/lq-card-title-ink-baseline.json",
+    "clarification": "The real VM initial black-title capture sampled an unfinished light-to-dark transition. Stable initial dark and settled transition states had correct light title/card/value ink. No product CSS/JS/layout was changed for that observation; no red-to-green fix is claimed.",
+    "suite_sha256": "f6ad1d770c19df141b1c6e4aed3eadfb3e048bbad06eb23993d852b6d4401b0a",
+    "tested_local_asset_revision": "768509cc4187d513a7e2337ddb14fa0f947c0bbaff89a6c2fbc7d48ee1576561",
+    "css_sha256": "f82fb6a3c966480f750f54c137f9d33b72f995b0f61ad3bd7539291db43c94ea"
+  },
+  "actual_vm_239bc_0054": {
+    "ui_status": "passed_after_probe_correction",
+    "capacity_status": "failed_as_reported_by_controller",
+    "source_commit": "239bc5d1e0b7d1fa947636221cb327e5ba800660",
+    "lab_nonce": "0054d664e8f64c089938970c03a70964",
+    "runtime_graph_revision": "d2a687c5083819eb873038ac8758c584ef675fb718a6eb9c78ef307e682f118a",
+    "proof": ".codex-temp/vm-attendance-review-239bc-0054-corrected/proof.json",
+    "cases": 12,
+    "teacher_ids": [
+      2,
+      3
+    ],
+    "requires_new_backend_candidate_binding": true,
+    "scope": "Shared harness teacher cookies only; real HTTP and complete React/LQ; no route mocking, login/logout, student sessions or attendance writes. Automatic teacher recorder beacons and extra teacher websocket contexts are independently accounted by the lab controller."
+  }
 }
