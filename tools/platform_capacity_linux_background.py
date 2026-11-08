@@ -27,6 +27,114 @@ from tools import platform_capacity_background as background
 MARKER = Path("/lab/lab-marker.json")
 INTAKE_STOP = "stop-background-intake"
 STATE = "background-worker-state.json"
+DIRTY_RETRY_SQLSTATES = frozenset({"55P03", "40P01", "40001"})
+DIRTY_MAX_ATTEMPTS = 5
+# Admission deadline for retries, pool checkout and SQL. Already-started driver
+# calls and rollback/close still finish normally; this is not a thread kill.
+DIRTY_BUDGET_SECONDS = 10.0
+DISPATCHER_READY_SECONDS = 60.0
+
+
+class _RolledBackDirtyConflict(RuntimeError):
+    def __init__(self, sqlstate):
+        super().__init__("Synthetic dirty transaction rolled back: " + sqlstate)
+        self.sqlstate = sqlstate
+
+
+def _dirty_timeout(conn, deadline):
+    remaining_ms = int((deadline - time.monotonic()) * 1000)
+    if remaining_ms < 1:
+        raise TimeoutError("Synthetic dirty batch exhausted its time budget")
+    # Local only; retain an already stricter session setting. The single-row
+    # production mark has one SQL statement, so check the budget before each.
+    conn.execute("""SELECT set_config(name,
+        LEAST(COALESCE(NULLIF(setting::integer, 0), ?),
+              CASE WHEN name='lock_timeout' THEN 250 ELSE 1000 END, ?)::text || 'ms', true)
+        FROM pg_settings WHERE name IN ('lock_timeout','statement_timeout')""",
+        (remaining_ms, remaining_ms))
+
+
+def _dirty_transaction(selected, offering, get_connection, mark_dirty, deadline, outcome):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Synthetic dirty batch exhausted its time budget")
+    conn = get_connection(checkout_timeout=remaining)
+    try:
+        outcome["phase"] = "transaction"
+        for student in selected:
+            _dirty_timeout(conn, deadline)
+            mark_dirty(conn, offering, student, source_ref="capacity:synthetic-background")
+        _dirty_timeout(conn, deadline)
+        placeholders = ",".join("?" for _ in selected)
+        versions = conn.execute("SELECT student_id,dirty_version FROM learning_progress_snapshots "
+            f"WHERE class_offering_id=? AND student_id IN ({placeholders})", (offering, *selected)).fetchall()
+        _dirty_timeout(conn, deadline)
+        outcome["phase"] = "commit"
+        conn.commit()  # Own this boundary explicitly; no implicit second commit.
+        outcome["phase"] = "committed"
+        return versions
+    except Exception as exc:
+        # A transport error during commit can describe accepted work. Even a
+        # successful cleanup rollback cannot make that outcome safe to retry.
+        conn.rollback()  # If this fails, never wrap/retry the original conflict.
+        outcome["rollback_confirmed"] = True
+        code = str(getattr(exc, "sqlstate", "") or "")
+        if code in DIRTY_RETRY_SQLSTATES:
+            raise _RolledBackDirtyConflict(code) from exc
+        raise
+    finally:
+        conn.close()
+
+
+def _apply_dirty_batch(index, manifest, get_connection, mark_dirty, record):
+    """Retry only a server-rejected, explicitly rolled-back whole transaction."""
+    students = manifest["student_ids"]
+    selected = tuple(sorted({students[(index * 10 + i) % len(students)] for i in range(10)}))
+    admitted_at = datetime.now().isoformat()
+    began = time.monotonic()
+    deadline = began + DIRTY_BUDGET_SECONDS
+    for attempt in range(1, DIRTY_MAX_ATTEMPTS + 1):
+        outcome = {"phase": "acquire", "rollback_confirmed": False}
+        try:
+            versions = _dirty_transaction(selected, manifest["class_offering_id"], get_connection,
+                                          mark_dirty, deadline, outcome)
+        except _RolledBackDirtyConflict as exc:
+            delay = min(.4, .05 * (2 ** (attempt - 1)))
+            retry = attempt < DIRTY_MAX_ATTEMPTS and time.monotonic() + delay < deadline
+            record("projection_dirty_conflict", batch_index=index, attempt=attempt, student_ids=selected,
+                   sqlstate=exc.sqlstate, rollback_confirmed=True, will_retry=retry,
+                   elapsed_seconds=time.monotonic() - began)
+            if not retry:
+                raise
+            time.sleep(delay)
+        except Exception as exc:
+            record("projection_dirty_failed", batch_index=index, attempt=attempt, student_ids=selected,
+                   error_type=type(exc).__name__, sqlstate=str(getattr(exc, "sqlstate", "") or ""),
+                   commit_outcome_unknown=outcome["phase"] == "commit",
+                   **outcome, elapsed_seconds=time.monotonic() - began)
+            raise
+        else:
+            # Audit failure after confirmed commit is fatal, never a reason to
+            # increment the same selected students' dirty generations again.
+            record("projection_dirty_batch_committed", batch_index=index, attempt=attempt,
+                   student_ids=selected, elapsed_seconds=time.monotonic() - began)
+            for row in versions:
+                record("projection_dirty", student_id=row["student_id"], version=row["dirty_version"],
+                       at=admitted_at, batch_index=index)
+            return
+
+
+async def _wait_dispatcher_ready(ready, shutdown, stop, runtime):
+    deadline = time.monotonic() + DISPATCHER_READY_SECONDS
+    while not ready.is_set():
+        if shutdown.is_set() or stop.get("requested") or (runtime / INTAKE_STOP).exists():
+            return
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Real dispatcher did not commit a running heartbeat")
+        try:
+            await asyncio.wait_for(shutdown.wait(), timeout=.05)
+        except TimeoutError:
+            pass
 
 
 def _identity_binding(identity):
@@ -154,8 +262,7 @@ def run_lab_worker(identity):
     from classroom_app.services import scheduled_task_handlers  # noqa: F401 - real registrations
     from classroom_app.services import scheduled_task_service as scheduler
     from classroom_app.services import learning_progress_service as progress
-    from classroom_app.database import get_db_connection
-    from classroom_app.db.postgres import LanSharePostgresConnection
+    from classroom_app.db.postgres import LanSharePostgresConnection, connect_postgres
     import scheduled_task_dispatcher as dispatcher
 
     lock = threading.Lock()
@@ -165,6 +272,18 @@ def run_lab_worker(identity):
             output.write(json.dumps(item, ensure_ascii=False) + "\n")
 
     dispatch, publish, original_run = scheduler._dispatch_task, progress._publish_learning_metrics, dispatcher._run
+    heartbeat = scheduler.update_scheduler_heartbeat
+    ready = threading.Event()
+
+    def observed_heartbeat(worker_id, *, status, last_error=""):
+        result = heartbeat(worker_id, status=status, last_error=last_error)
+        if status == "running" and worker_id == "capacity-linux-background" and not ready.is_set():
+            # The real heartbeat returns only after its own commit succeeded.
+            record("dispatcher_ready", worker_id=worker_id)
+            state.update(status="running", dispatcher_ready=True, ready_at=datetime.now().isoformat())
+            state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+            ready.set()
+        return result
     async def measured_dispatch(task):
         record("task_started", task_id=task["id"], kind=task["task_kind"], run_at=task["run_at"])
         try:
@@ -186,26 +305,15 @@ def run_lab_worker(identity):
         return "controlled supplier wait completed; no grading effects"
 
     def dirty_batch(index):
-        admitted_at = datetime.now().isoformat()
-        students = manifest["student_ids"]
-        selected = sorted({students[(index * 10 + i) % len(students)] for i in range(10)})
-        with get_db_connection() as conn:
-            for student in selected:
-                progress.mark_student_learning_progress_dirty(conn, manifest["class_offering_id"], student,
-                                                             source_ref="capacity:synthetic-background")
-            placeholders = ",".join("?" for _ in selected)
-            versions = conn.execute(f"SELECT student_id,dirty_version FROM learning_progress_snapshots "
-                                    f"WHERE class_offering_id=? AND student_id IN ({placeholders})",
-                                    (manifest["class_offering_id"], *selected)).fetchall()
-        for row in versions:
-            record("projection_dirty", student_id=row["student_id"], version=row["dirty_version"], at=admitted_at)
+        _apply_dirty_batch(index, manifest, connect_postgres, progress.mark_student_learning_progress_dirty, record)
 
     async def with_pressure(args, *, stop):
         async def producer(shutdown, current_stop):
+            await _wait_dispatcher_ready(ready, shutdown, current_stop, runtime)
             await _dirty_producer(manifest, runtime, shutdown, current_stop, dirty_batch)
         await _run_with_producer(original_run, args, stop, producer)
 
-    state = {"status": "running", "pid": os.getpid(), "run_id": manifest["run_id"],
+    state = {"status": "starting", "dispatcher_ready": False, "pid": os.getpid(), "run_id": manifest["run_id"],
              "lab_identity": manifest["lab_identity"], "started_at": datetime.now().isoformat(),
              "dispatcher_entrypoint": "scheduled_task_dispatcher.main"}
     state_path = runtime / STATE
@@ -214,6 +322,7 @@ def run_lab_worker(identity):
         staged_publication = patches.enter_context(background._committed_projection_recorder(LanSharePostgresConnection, record))
         patches.enter_context(patch.object(scheduler, "_dispatch_task", measured_dispatch))
         patches.enter_context(patch.object(progress, "_publish_learning_metrics", measured_publish))
+        patches.enter_context(patch.object(scheduler, "update_scheduler_heartbeat", observed_heartbeat))
         patches.enter_context(patch.dict(scheduler._HANDLERS, {background.ELASTIC_KIND: controlled_wait}))
         # Actual in-app notifications run; external email delivery is excluded.
         patches.enter_context(patch("classroom_app.services.message_center_service.queue_notification_email_if_applicable", return_value=False))
