@@ -20,7 +20,14 @@ export function initAttendanceAttention({ enabled = true, navigate = url => wind
         const abort = () => controller.abort(); options.signal?.addEventListener('abort', abort, { once: true });
         if (options.signal?.aborted) controller.abort();
         try { return await apiFetch(base + path, { silent: true, ...options, signal: controller.signal }); }
-        catch (error) { if (error.status === 401 || error.status === 403) dispose(); throw error; }
+        catch (error) {
+            if (error.status === 401 || error.status === 403) dispose();
+            const affected = /^\/(\d+)\/(?:claim|ack)$/.exec(path)?.[1];
+            // Ownership changes deliberately return 404. Release this stale
+            // layer without acknowledging a request we can no longer manage.
+            if (error.status === 404 && affected && String(item?.request_id) === affected) handle?.destroy();
+            throw error;
+        }
         finally { window.clearTimeout(deadline); options.signal?.removeEventListener('abort', abort); requests.delete(controller); }
     }
     const canOpen = () => !stopped && !document.hidden && !composing && Date.now() - lastEdit > 10000 && !getLayerSystem(document).top()

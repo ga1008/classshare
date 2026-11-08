@@ -221,7 +221,7 @@ test('LQ measured learning is healthy evidence and does not enter the collection
   const current=round(3);current.records[1].evidence.collection.status='measured';current.records[1].evidence.learning.measured_seconds=45;
   (current.records[1].evidence as any).network_access={first_ip:'192.0.2.14',last_ip:'192.0.2.15',distinct_ips:['192.0.2.14','192.0.2.15'],source_types:['login'],observation_count:3};
   const errors=await fixture(page,async(route,url)=>url.includes('/students/')?json(route,{record:current.records[1],history:[]}):json(route,{session,policy:current.policy,round:current}));
-  await open(page);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await d.getByRole('button',{name:'查看详情',exact:true}).nth(1).click();await expect(d.getByText('已采集有效学习',{exact:false})).toBeVisible();await expect(d.getByText('课堂接入 IP：首次 192.0.2.14；末次 192.0.2.15。')).toBeVisible();
+  await open(page);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await d.getByRole('button',{name:'查看详情',exact:true}).nth(1).click();await expect(d.getByText('已采集有效学习',{exact:false})).toBeVisible();await expect(d.getByText('平台接入 IP（本轮时间窗）：首次 192.0.2.14；末次 192.0.2.15。')).toBeVisible();
   await choose(page,d,'筛选','采集待核对');await expect(d.locator('[data-student-id]')).toHaveCount(1);await expect(d.locator('[data-student-id]')).toHaveAttribute('data-student-id','3');expect(errors).toEqual([]);
 });
 
@@ -233,4 +233,42 @@ test('LQ durable teacher attention resumes after a persisted page lifecycle with
   await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true})));await expect(d).not.toBeVisible();
   await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));await expect(d).toBeVisible();expect(reads).toBeGreaterThanOrEqual(2);expect(acks).toBe(0);
   await page.evaluate(()=>(window as any).disposeAttention());expect(errors).toEqual([]);
+});
+
+test('LQ lesson can restart after void and refresh, while an older void link cannot replace a newer live round',async({page})=>{
+  let current=round(2), old:any=null;const creates:any[]=[];
+  const errors=await fixture(page,async(route,url,body)=>{
+    if(url.endsWith('/sessions/12'))return json(route,{session,policy:current.policy,round:current});
+    if(url.endsWith('/void')){current={...current,state:'void',is_current:0 as any,revision:2};old=current;return json(route,current);}
+    if(url.endsWith('/sessions/12/rounds')){creates.push(body);current={...round(2),id:10};return json(route,current);}
+    if(url.endsWith('/rounds/9'))return json(route,old);
+    if(url.endsWith('/rounds/10'))return json(route,current);
+    return json(route,{detail:'unexpected '+url},500);
+  });
+  await open(page);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await expect(d.locator('[data-student-id]')).toHaveCount(2);
+  await d.getByRole('button',{name:'作废本轮',exact:true}).click();await d.getByLabel('修改理由').fill('教师核对后作废，重新确认本轮网络');await d.getByRole('button',{name:'作废本轮',exact:true}).click();
+  await page.getByRole('dialog',{name:'作废本轮点名？',exact:true}).getByRole('button',{name:'作废本轮',exact:true}).click();
+  await expect(d.getByRole('button',{name:'开启本地点名',exact:true})).toBeVisible();await d.getByRole('button',{name:'刷新记录',exact:true}).click();await expect(d.getByRole('button',{name:'开启本地点名',exact:true})).toBeVisible();
+  await d.getByText('教室网络与本课时段',{exact:true}).click();await d.getByLabel('我已核对以上为本次课堂使用的网络',{exact:true}).check();await d.getByRole('button',{name:'开启本地点名',exact:true}).click();await expect(d.getByRole('status')).toContainText('本地点名已开启');expect(creates).toHaveLength(1);expect(creates[0].supersedes_id).toBeUndefined();
+  await page.evaluate(()=>(window as any).attendance.destroy());await page.getByRole('button',{name:'自动点名',exact:true}).click();await expect(d.locator('[data-student-id]')).toHaveCount(2);
+  await page.evaluate(async(url)=>{(window as any).attendance.destroy();const m=await import(url);(window as any).attendance=m.openLoginAttendance({classOfferingId:2,session:{id:12},userRole:'teacher',trigger:document.querySelector('#attendance'),attendanceId:9});},asset('js/login_attendance.js'));
+  await expect(d.getByText('已作废',{exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'开启本地点名',exact:true})).toHaveCount(0);expect(errors).toEqual([]);
+});
+
+test('LQ stale teacher attention loses ownership with 404 and releases the page without acknowledging',async({page})=>{
+  const row={request_id:70,student_id:4,name:'合成同学4',round_id:9,class_offering_id:2,session_id:12};let lost=false,ackAttempts=0;
+  const errors=await fixture(page,async(route,url)=>{if(url.endsWith('/attention'))return json(route,{items:lost?[]:[row]});if(url.endsWith('/claim'))return json(route,{claimed:true,item:row});if(url.endsWith('/ack')){lost=true;ackAttempts++;return json(route,{detail:'提醒不存在或当前无权处理。'},404);}return json(route,{});});
+  await page.evaluate(async(url)=>{const m=await import(url);(window as any).disposeAttention=m.initAttendanceAttention();},asset('js/login_attendance_attention.js'));
+  const d=page.getByRole('dialog',{name:'待处理签到申诉'});await expect(d).toBeVisible();await d.getByRole('button',{name:'查看并处理'}).click();await expect(d).not.toBeVisible();
+  await page.getByRole('button',{name:'进入课次',exact:true}).click();await expect(page.getByRole('dialog',{name:'课次详情',exact:true})).toBeVisible();expect(ackAttempts).toBe(1);expect(page.url()).toBe(origin+'/');await page.evaluate(()=>(window as any).disposeAttention());expect(errors).toEqual([]);
+});
+
+test('LQ generic attendance approval keeps its note across a revision conflict and refreshes the displayed revision before approval',async({page})=>{
+  let revision=2,approved=false;const submitted:any[]=[];
+  const item=()=>({id:70,request_type:'login_attendance_appeal',title:'合成签到申诉',status:approved?'approved':'pending',status_label:approved?'已通过':'待审批',reason:'请核对本人的课堂记录',applicant_name:'合成同学4',created_at:'2026-11-09T10:00:00',can_decide:!approved,payload:{record_revision:1},detail:{attendance:{record:{...record(4),revision}}},events:[]});
+  const markup=`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><link rel="stylesheet" href="${asset('css/tailwind-app.css')}"></head><body><div id="approvals"></div><script type="module">import {mountPanel} from '${asset('js/approval_workflow.js')}';window.panel=mountPanel(document.querySelector('#approvals'),{startOpen:true});window.ready=true;</script></body></html>`;
+  const errors=await fixture(page,async(route,url,body)=>{if(url==='/api/approvals')return json(route,{items:[item()],pending_count:approved?0:1});if(url.endsWith('/70/approve')){submitted.push(body);if(body.decision_payload.record_revision!==revision)return json(route,{detail:'学生考勤已变化，请打开最新详情后处理'},409);approved=true;return json(route,{request:item()});}if(url.endsWith('/70'))return json(route,{request:item()});return json(route,{detail:'unexpected'},500);},'teacher','',markup);
+  await page.locator('[data-apr-open="70"]').click();await page.locator('[data-apr-field="note"]').fill('教师已核对签到证据，保留此审批说明');
+  expect(await page.locator('[data-apr-field="attendance_status"] option').count()).toBe(6);revision=3;await page.locator('[data-apr-decide="approve"]').click();await expect.poll(()=>submitted.length).toBe(1);expect(submitted[0].decision_payload.record_revision).toBe(2);await expect(page.locator('[data-apr-field="note"]')).toHaveValue('教师已核对签到证据，保留此审批说明');
+  await page.locator('[data-apr-attendance-refresh]').click();await expect(page.locator('[data-apr-field="note"]')).toHaveValue('教师已核对签到证据，保留此审批说明');await page.locator('[data-apr-decide="approve"]').click();await expect.poll(()=>submitted.length).toBe(2);expect(submitted[1].decision_payload).toEqual({status:'PRESENT',record_revision:3});await expect(page.locator('[data-apr-modal-body]')).toContainText('已通过');expect(errors).toEqual([]);
 });

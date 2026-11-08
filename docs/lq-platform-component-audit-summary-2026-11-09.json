@@ -1,19 +1,19 @@
 {
   "acceptance": "pending",
   "summary": {
-    "files": 594,
+    "files": 595,
     "htmlTemplates": 209,
-    "entries": 5685,
+    "entries": 5687,
     "byKind": {
       "toolbar": 137,
       "surface": 769,
       "choice": 214,
-      "button": 2263,
+      "button": 2264,
       "field": 777,
       "unknown": 831,
       "menu": 38,
       "layer": 137,
-      "select": 305,
+      "select": 306,
       "content-slot": 39,
       "tab": 40,
       "domain": 18,
@@ -26,14 +26,14 @@
       "jinja-component-call": 542,
       "jinja-html": 2516,
       "dynamic-html-sink": 688,
-      "js-html-candidate": 1383,
+      "js-html-candidate": 1385,
       "create-element": 187,
       "component-factory-call": 186,
       "react-jsx": 158,
       "python-generated-jinja-html": 25
     },
     "byCanonicalContract": {
-      "not-declared": 1854,
+      "not-declared": 1856,
       "canonical-declared-pending": 3739,
       "declared-missing-canonical": 6,
       "canonical-resolution-pending": 5,
@@ -44,14 +44,14 @@
       "lq-marked-native": 136,
       "component-declared": 3749,
       "runtime-output-unknown": 688,
-      "legacy-or-native": 139,
+      "legacy-or-native": 141,
       "shared-definition": 54,
       "shared-adapter-call-candidate": 81,
       "factory-ownership-unknown": 49,
       "external-icon-content-slot": 28
     },
     "byStatus": {
-      "pending": 4854,
+      "pending": 4856,
       "unknown": 831
     },
     "largestFiles": [
@@ -116,15 +116,15 @@
         "entries": 59
       },
       {
+        "file": "static/js/approval_workflow.js",
+        "entries": 58
+      },
+      {
         "file": "templates/dashboard_teacher.html",
         "entries": 56
       },
       {
         "file": "templates/manage/classes.html",
-        "entries": 56
-      },
-      {
-        "file": "static/js/approval_workflow.js",
         "entries": 56
       },
       {

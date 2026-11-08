@@ -13,6 +13,7 @@
 import { showToast, escapeHtml } from './ui.js';
 import { adoptDomainControl } from './lq/domain-controls.js';
 import { getLayerSystem } from './lq/layer.js';
+import { ATTENDANCE_STATES } from './login_attendance_states.js';
 
 const API = '/api/approvals';
 const STATUS_TONE = { pending: 'warning', approved: 'success', rejected: 'danger', cancelled: 'muted', expired: 'muted' };
@@ -72,6 +73,14 @@ function statusBadge(item) {
 
 /* ------------------------------------------------------------------ detail renderers */
 const DETAIL_RENDERERS = {
+    login_attendance_appeal(item) {
+        const attendance = item.detail?.attendance || {}, record = attendance.record || attendance;
+        const seconds = record.evidence?.learning?.measured_seconds ?? record.participation?.measured_seconds;
+        const rows = [['学生',record.name || item.applicant_name],['学号',record.student_number],['班级',record.class_name],
+            ['当前签到',record.status_label || ATTENDANCE_STATES.find(([key])=>key===record.status)?.[1] || '待确认'],
+            ['首次平台接入',record.first_seen_ms ? fmtDate(new Date(Number(record.first_seen_ms)).toISOString()) : '暂无'],['有效学习',seconds==null?'无法完整观察':`${Math.floor(Number(seconds)/60)} 分 ${Math.floor(Number(seconds)%60)} 秒`]];
+        return `<div class="apr-kv-grid">${rows.map(([label,value])=>`<div class="apr-kv"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value ?? '暂无'))}</strong></div>`).join('')}</div>`;
+    },
     submission_withdraw(item) {
         const d = item.detail || {};
         const rows = [
@@ -415,6 +424,21 @@ function bindLateForm(body, d) {
 
 /* ------------------------------------------------------------------ decision forms */
 const DECISION_FORMS = {
+    login_attendance_appeal(item) {
+        const revision = item.detail?.attendance?.record?.revision;
+        return {
+            html: `<label class="form-group"><span class="form-label">签到更正为</span><select class="form-control" data-apr-field="attendance_status">${ATTENDANCE_STATES.map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></label>
+                <small class="text-muted">提交依据当前展示的签到详情。补报更新后，请先刷新核对；审批说明会保留。</small>
+                <button type="button" class="btn btn-outline" data-apr-attendance-refresh>读取最新签到详情</button>`,
+            validate(form) {
+                if (!Number.isSafeInteger(revision) || revision < 0) return '签到详情尚未完整读取，请刷新后处理。';
+                if (!form.querySelector('[data-apr-field="note"]')?.value.trim()) return '请填写本次签到核对的审批说明。';
+                return '';
+            },
+            collect(form) { return { status:form.querySelector('[data-apr-field="attendance_status"]')?.value || 'PRESENT', record_revision:revision }; },
+            bind(body,{refresh}) { body.querySelector('[data-apr-attendance-refresh]')?.addEventListener('click',()=>refresh()); },
+        };
+    },
     submission_withdraw(item) {
         const recommended = item.detail?.recommended_resubmission_due_at || '';
         return {
@@ -952,6 +976,8 @@ export function mountPanel(root, options) {
         if (!section) return;
         const note = section.querySelector('[data-apr-field="note"]')?.value.trim() || '';
         if (decision === 'reject' && !note) { showToast('拒绝时请填写审批意见', 'warning'); return; }
+        const validationError = modalBody._decisionForm?.validate?.(section,decision);
+        if (validationError) { showToast(validationError,'warning'); return; }
         const decisionPayload = modalBody._decisionForm ? modalBody._decisionForm.collect(section) : {};
         const originalLabel = button.textContent;
         captureDraft(); busy = true;

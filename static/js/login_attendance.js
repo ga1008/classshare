@@ -9,12 +9,9 @@ import { createForm } from './lq/forms.js';
 import { enhanceDropdowns } from './lq/dropdown.js';
 import { createTable } from './lq/tables.js';
 import { createAmbientPoll } from './ambient_poll.js';
+import { ATTENDANCE_STATES } from './login_attendance_states.js';
 export { resolveAttendanceLink } from './login_attendance_link.js';
-
-export const ATTENDANCE_STATES = Object.freeze([
-    ['PRESENT', '出勤'], ['ABSENT', '缺课'], ['SICK_LEAVE', '病假'],
-    ['PERSONAL_LEAVE', '事假'], ['LATE', '迟到'], ['EARLY', '早退'],
-]);
+export { ATTENDANCE_STATES } from './login_attendance_states.js';
 const ROUND_LABELS = { scheduled: '待开始', running: '进行中', settling: '等待补报结算', published: '已结束', void: '已作废' };
 const HEALTH_LABELS = { no_observation: '暂不可观察', observed_zero: '可靠记录为零', measured:'已采集有效学习', partial: '部分记录', error: '采集异常', gap: '记录不完整', collection_error: '采集异常', healthy: '采集正常', pending: '记录处理中' };
 const active = new Map();
@@ -41,6 +38,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     let data = null, round = null, closed = false, busy = false, dirty = false, epoch = 0, handle, focusedStudent = studentId || null;
     let page = 0, formInitialized = false, createKey = crypto.randomUUID(), selected = new Map();
     let detailEpoch = 0, externalCleanup = null, appealData = null;
+    let latestLessonRoundId = null;
     const appealDrafts = new Map();
     let detailDropdowns = [];
     const isCurrent = () => round && (round.is_current === undefined || Boolean(round.is_current));
@@ -157,8 +155,13 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         const result = await call(teacher ? (attendanceId ? `/rounds/${attendanceId}` : `/sessions/${lesson}`) : `/sessions/${lesson}/me`, { signal });
         if (closed || generation !== epoch) return;
         if (teacher) {
-            data = attendanceId ? { round: result, policy: result.policy, session } : result;
+            // A voided exact link can point behind a newer live round. Only
+            // the actual lesson projection can authorize showing a restart.
+            const latest = attendanceId && !historyOnly && result.state === 'void' ? await call(`/sessions/${lesson}`, { signal }) : null;
+            if (closed || generation !== epoch) return;
+            data = attendanceId ? { ...latest, round: result, policy: latest?.policy || result.policy, session } : result;
             round = data.round;
+            latestLessonRoundId = attendanceId ? (latest?.round?.id ?? (round?.is_current ? round.id : null)) : round?.id ?? null;
             if (!historyOnly && round && Number(round.session_id) !== lesson) throw new Error('指定点名不属于本课次，未改选其他课次。');
         } else { data = result; round = result.round; if (studentId && result.student_id !== Number(studentId)) throw new Error('此签到链接不属于当前账号。'); if (attendanceId && round?.id !== Number(attendanceId)) throw new Error('指定点名已变更，请从本人课次记录核对。'); }
         paint();
@@ -175,7 +178,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         summary.replaceChildren(...[['出勤', counts.PRESENT || 0], ['待确认', counts.PENDING || 0], ['应到', round?.summary?.expected ?? '—'], ['免考勤', round?.summary?.exempt ?? 0]].map(([label, value]) => createContent('card', { title: label, variant: 'stat', value })));
         stateCounts.replaceChildren(...ATTENDANCE_STATES.map(([key,label])=>chip(`${label} ${counts[key]||0} 人`,key==='PRESENT'?'success':'neutral')));
         actions.replaceChildren(button('刷新记录', () => load().catch(fail)), button('历史点名', async event => { const trigger=event.currentTarget; trigger.disabled=true; try { const mod=await import('./login_attendance_history.js'); if(!closed && trigger.isConnected) mod.openAttendanceHistory({classOfferingId:offering,trigger,parentLayer:handle}); } catch(error){fail(error);} finally{if(trigger.isConnected)trigger.disabled=busy;} }), button('账号与同步设置', () => { window.open('/manage/academic/smart-classroom', '_blank', 'noopener'); }, 'ghost'));
-        if (!historyOnly && (!round || (round.state === 'void' && isCurrent()))) actions.prepend(button('开启本地点名', createRound, 'prominent'));
+        if (!historyOnly && (!round || (round.state === 'void' && latestLessonRoundId === round.id))) actions.prepend(button('开启本地点名', createRound, 'prominent'));
         if (isCurrent() && ['running', 'scheduled'].includes(round?.state)) actions.append(button('结束本地点名', endRound));
         if (isCurrent() && round.state !== 'void') actions.append(button('重新核算', () => mutate(async () => { round = await call(`/rounds/${round.id}/recalculate`, { method: 'POST', body: { revision: round.revision } }); paint(); setNotice('已读取最新核算结果。'); })), button('作废本轮', voidRound, 'destructive'));
         if (isCurrent() && round.state !== 'void') actions.append(button('智慧课堂核对', () => showExternal().catch(fail)));
@@ -200,10 +203,10 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     }
     async function createRound() { await mutate(async () => {
         const body = { request_key: createKey, networks: networks() };
-        if (round?.id) body.supersedes_id = round.id;
+        if (round?.id && round.state !== 'void' && isCurrent()) body.supersedes_id = round.id;
         if (fields.starts.value) body.starts_at = `${fields.starts.value}:00+08:00`;
         if (fields.ends.value) body.ends_at = `${fields.ends.value}:00+08:00`;
-        round = await call(`/sessions/${lesson}/rounds`, { method: 'POST', body }); attendanceId = round.id; dirty = false; createKey = crypto.randomUUID(); paint(); setNotice('本地点名已开启；关闭页面不会取消后台定时结束。');
+        round = await call(`/sessions/${lesson}/rounds`, { method: 'POST', body }); attendanceId = round.id; latestLessonRoundId = round.id; dirty = false; createKey = crypto.randomUUID(); paint(); setNotice('本地点名已开启；关闭页面不会取消后台定时结束。');
     }); }
     async function savePolicy() { await mutate(async () => { data.policy = await call('/policy', { method: 'PUT', body: { ...data.policy, revision: data.policy.revision, networks: networks() } }); dirty = false; setNotice('课堂网络设置已保存。'); }); }
     async function endRound() {
@@ -213,14 +216,14 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     async function voidRound() {
         if (!fields.reason.value.trim()) { setNotice('请在修改理由中填写作废原因。', true); bulk.hidden = false; fields.reason.focus(); return; }
         if (!await confirmDialog({ title: '作废本轮点名？', message: '原记录和操作审计会保留。不会自动删除或修改学校端点名。', confirmLabel: '作废本轮', danger: true }, { parentLayer: handle })) return;
-        await mutate(async () => { round = await call(`/rounds/${round.id}/void`, { method: 'POST', body: { revision: round.revision, reason: fields.reason.value.trim() } }); dirty = false; selected.clear(); fields.reason.value = ''; paint(); setNotice('本轮已作废，历史记录仍可查看。'); });
+        await mutate(async () => { const wasCurrent=isCurrent(); round = await call(`/rounds/${round.id}/void`, { method: 'POST', body: { revision: round.revision, reason: fields.reason.value.trim() } }); if(wasCurrent)latestLessonRoundId=round.id; dirty = false; selected.clear(); fields.reason.value = ''; paint(); setNotice('本轮已作废，历史记录仍可查看。'); });
     }
     function recordFacts(record) {
         const facts = record.evidence || {};
         const box = node('div', 'la-facts');
         for (const [label, value] of [['签到', record.status_label || statusLabel(record.status)], ['班级',record.class_name||'暂无'], ['说明', record.reason || '暂无'], ['平台登录', `${facts.login?.successful_count ?? '—'} 次（独立于课堂访问）`], ['登录网络', `${facts.login?.distinct_ip_count ?? '—'} 个 IP`], ['首次接入', time(record.first_seen_ms)], ['末次接入', time(record.last_seen_ms)], ['课堂访问', `${facts.classroom_access?.page_view_count ?? '—'} 次`], ['平台操作', `${facts.classroom_access?.operation_record_count ?? '—'} 次`], ['有效学习', duration(facts.learning?.measured_seconds)], ['采集情况', HEALTH_LABELS[facts.collection?.status] || '请结合时间线核对']]) { const p = node('p'); p.append(node('strong', '', `${label}：`), document.createTextNode(String(value))); box.append(p); }
         const network=facts.network_access;
-        if(network){box.append(node('p','',`课堂接入 IP：首次 ${network.first_ip||'暂无'}；末次 ${network.last_ip||'暂无'}。`),node('p','',`接入佐证：${network.observation_count??0} 条；已记录 ${network.distinct_ips?.length??0} 个 IP。`));if(network.distinct_ips?.length)box.append(node('p','',network.distinct_ips.slice(0,16).join('、')));}
+        if(network){box.append(node('p','',`平台接入 IP（本轮时间窗）：首次 ${network.first_ip||'暂无'}；末次 ${network.last_ip||'暂无'}。`),node('p','',`接入佐证：${network.observation_count??0} 条；已记录 ${network.distinct_ips?.length??0} 个 IP。`));if(network.distinct_ips?.length)box.append(node('p','',network.distinct_ips.slice(0,16).join('、')));}
         return box;
     }
     async function showDetail(id) {
