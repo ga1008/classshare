@@ -35,6 +35,12 @@ function receipt(body, extra = {}) {
         json: async () => ({ status: 'success', write_mode: 'durable_queued', batch_id: body.batch_id, ...extra }) };
 }
 
+function rejection(status, errorCode, disposition = 'retain', extra = {}) {
+    return { ok: false, status, headers: { get: () => null }, json: async () => ({ detail: {
+        error_code: errorCode, batch_disposition: disposition, retryable: disposition === 'retain', ...extra,
+    } }) };
+}
+
 afterEach(() => vi.useRealTimers());
 
 describe('durable behavior transport', () => {
@@ -89,14 +95,175 @@ describe('durable behavior transport', () => {
         tracker.started = false;
     });
 
-    it('pauses foreign-account or forbidden receipts with work retained', async () => {
+    it('retains an unknown 409 and permits a later retry instead of permanently pausing', async () => {
         const f = runtime(); const tracker = f.create(); tracker.logClick('one');
         f.fetch.mockResolvedValueOnce({ ok: false, status: 409, headers: { get: () => null } });
         await tracker.flush(); await tracker.flush();
-        expect(tracker.paused).toBe(true);
+        expect(tracker.paused).toBe(false);
         expect(f.fetch).toHaveBeenCalledTimes(1);
         expect(tracker.pendingBatch.body.user_key).toBe('student:10');
         expect(f.values.size).toBe(1);
+        tracker.retryAt = 0;
+        f.fetch.mockImplementationOnce((_, options) => Promise.resolve(receipt(JSON.parse(options.body))));
+        await tracker.flush();
+        expect(tracker.pendingBatch).toBeNull();
+    });
+
+    it('recovers the same immutable batch after a 401 and excludes the unauthenticated interval', async () => {
+        const f = runtime(); const tracker = f.create(); tracker.start();
+        f.fetch.mockResolvedValueOnce({ ok: false, status: 401, headers: { get: () => null } });
+        await tracker.flush();
+        const pending = JSON.stringify(tracker.pendingBatch.body);
+        expect(tracker.transportState).toBe('auth_required');
+        f.advance(45000);
+        tracker.samplePresence(f.epoch + 45000);
+        expect(tracker.events.filter(item => item.payload?.interval_start_ms !== undefined)).toHaveLength(0);
+        tracker.retryAt = 0;
+        f.fetch.mockImplementationOnce((_, options) => Promise.resolve(receipt(JSON.parse(options.body))));
+        await tracker.flush();
+        expect(JSON.stringify(JSON.parse(f.fetch.mock.calls[1][1].body))).toBe(pending);
+        expect(tracker.transportState).toBe('healthy');
+        f.advance(12000); tracker.samplePresence(f.epoch + 57000);
+        expect(tracker.events.at(-1).payload).toMatchObject({ interval_start_ms: f.epoch + 45000,
+            interval_end_ms: f.epoch + 57000 });
+        tracker.stop();
+    });
+
+    it.each(['batch_expired', 'batch_payload_conflict', 'batch_timestamp_invalid', 'batch_payload_invalid'])
+    ('quarantines %s once and sends only the independent legal queue afterward', async code => {
+        const f = runtime(); const tracker = f.create(); tracker.logClick('old');
+        const original = JSON.stringify(tracker.prepareBatch().body);
+        tracker.logClick('new');
+        f.fetch.mockResolvedValueOnce(rejection(409, code, 'quarantine'));
+        await tracker.flush();
+        expect(tracker.pendingBatch).toBeNull();
+        expect(tracker.paused).toBe(false);
+        expect(JSON.stringify(tracker.quarantinedBatches[0].body)).toBe(original);
+        expect(tracker.diagnostics[0]).toMatchObject({ error_code: code, event_count: 1 });
+        f.fetch.mockImplementationOnce((_, options) => Promise.resolve(receipt(JSON.parse(options.body))));
+        await tracker.flush();
+        const legal = JSON.parse(f.fetch.mock.calls[1][1].body);
+        expect(legal.events.map(event => event.summary_text)).toEqual(['new']);
+        expect(legal.batch_id).not.toBe(JSON.parse(original).batch_id);
+        expect(f.create().quarantinedBatches[0].body).toEqual(JSON.parse(original));
+    });
+
+    it('locks the old document after identity change, isolates all work, and never beacons it', async () => {
+        const f = runtime(); const tracker = f.create(); tracker.start();
+        const original = JSON.stringify(tracker.prepareBatch().body);
+        tracker.logClick('also old');
+        f.fetch.mockResolvedValueOnce(rejection(409, 'identity_changed', 'retain', { current_user_key: 'student:11' }));
+        await tracker.flush();
+        expect(tracker.transportState).toBe('identity_changed');
+        expect(tracker.events).toHaveLength(0);
+        expect(tracker.quarantinedBatches).toHaveLength(2);
+        expect(JSON.stringify(tracker.quarantinedBatches[0].body)).toBe(original);
+        f.advance(20000); tracker.flushHeartbeat(true); tracker.handleOnline(); tracker.handleFocus();
+        await tracker.flush();
+        expect(f.fetch).toHaveBeenCalledTimes(1);
+        expect(f.navigator.sendBeacon).not.toHaveBeenCalled();
+        expect(f.create('student:11').diagnostics).toHaveLength(0);
+        // A fresh server-rendered document for the old account can collect new work; it does not replay the archive.
+        const sameAccount = f.create();
+        expect(sameAccount.transportState).toBe('healthy');
+        expect(sameAccount.pendingBatch).toBeNull();
+        expect(sameAccount.quarantinedBatches).toHaveLength(2);
+        tracker.stop();
+    });
+
+    it('sends diagnostics separately with stable IDs and removes them only after durable acknowledgement', async () => {
+        const f = runtime(); const tracker = f.create();
+        tracker.recordDiagnostic('client_observation_gap', { interval_start_ms: f.epoch, interval_end_ms: f.epoch + 120000 });
+        tracker.persist();
+        const original = structuredClone(tracker.diagnostics);
+        f.fetch.mockRejectedValueOnce(new Error('lost diagnostic receipt'));
+        await tracker.flush();
+        expect(f.fetch.mock.calls[0][0]).toBe('/api/classrooms/1/behavior/diagnostics');
+        expect(tracker.diagnostics[0]).toEqual(original[0]);
+        expect(f.create().diagnostics[0]).toEqual(original[0]);
+        tracker.retryAt = 0; tracker.diagnosticRetryAt = 0;
+        f.fetch.mockImplementationOnce((_, options) => {
+            const body = JSON.parse(options.body);
+            return Promise.resolve({ ok: true, status: 200, headers: { get: () => null }, json: async () => ({
+                status: 'success', current_user_key: 'student:10', accepted_diagnostic_ids: body.diagnostics.map(item => item.diagnostic_id),
+            }) });
+        });
+        await tracker.flush();
+        expect(tracker.diagnostics).toHaveLength(0);
+        expect(tracker.transportState).toBe('healthy');
+        expect(JSON.parse(f.fetch.mock.calls[1][1].body).diagnostics[0]).toEqual(original[0]);
+    });
+
+    it('does not let a diagnostic outage postpone an independent behavior batch', async () => {
+        const f = runtime(); const tracker = f.create();
+        tracker.recordDiagnostic('client_storage_unavailable');
+        f.fetch.mockResolvedValueOnce({ ok: false, status: 503, headers: { get: () => '90' } });
+        await tracker.flush();
+        expect(tracker.diagnosticRetryAt - Date.now()).toBeGreaterThanOrEqual(90000);
+        tracker.logClick('valid action');
+        f.fetch.mockImplementationOnce((_, options) => Promise.resolve(receipt(JSON.parse(options.body))));
+        await tracker.flush();
+        expect(f.fetch.mock.calls[1][0]).toBe('/api/classrooms/1/behavior/batch');
+        expect(tracker.pendingBatch).toBeNull();
+        expect(tracker.diagnostics.length).toBeGreaterThan(0);
+    });
+
+    it('isolates rejected diagnostics unchanged and lets a current failure report continue', async () => {
+        const f = runtime(); const tracker = f.create();
+        tracker.recordDiagnostic('client_observation_gap', { interval_start_ms: 1, interval_end_ms: 1000 });
+        const invalid = structuredClone(tracker.diagnostics[0]);
+        f.fetch.mockResolvedValueOnce(rejection(422, 'diagnostic_interval_invalid', 'quarantine'));
+        await tracker.flush();
+        expect(tracker.quarantinedDiagnostics[0].diagnostics).toEqual([invalid]);
+        expect(tracker.diagnostics).toHaveLength(1);
+        expect(tracker.diagnostics[0].error_code).toBe('diagnostic_interval_invalid');
+        expect(tracker.diagnostics[0]).not.toHaveProperty('interval_start_ms');
+        expect(f.create().quarantinedDiagnostics[0].diagnostics).toEqual([invalid]);
+    });
+
+    it('keeps in-memory recovery when storage is unavailable without generating a diagnostic loop', async () => {
+        const f = runtime(); const tracker = f.create();
+        f.window.sessionStorage.setItem = () => { throw new Error('synthetic quota'); };
+        tracker.logClick('valid action'); tracker.persist();
+        expect(tracker.diagnostics).toHaveLength(1);
+        f.fetch.mockImplementationOnce((_, options) => Promise.resolve(receipt(JSON.parse(options.body))));
+        await tracker.flush();
+        f.fetch.mockImplementationOnce((_, options) => {
+            const body = JSON.parse(options.body);
+            return Promise.resolve({ ok: true, status: 200, headers: { get: () => null }, json: async () => ({
+                status: 'success', accepted_diagnostic_ids: body.diagnostics.map(item => item.diagnostic_id),
+            }) });
+        });
+        await tracker.flush();
+        expect(tracker.diagnostics).toHaveLength(0);
+        expect(tracker.events).toHaveLength(0);
+    });
+
+    it('honors an HTTP-date Retry-After even when online and focus try to wake recovery', async () => {
+        const f = runtime(); const tracker = f.create(); tracker.start();
+        const retryDate = new Date(Date.now() + 120000).toUTCString();
+        f.fetch.mockResolvedValueOnce({ ok: false, status: 503, headers: { get: () => retryDate } });
+        await tracker.flush();
+        tracker.handleOnline(); tracker.handleFocus(); await tracker.flush();
+        expect(f.fetch).toHaveBeenCalledTimes(1);
+        expect(tracker.retryAt).toBeGreaterThanOrEqual(Date.parse(retryDate));
+        tracker.stop();
+    });
+
+    it('aborts a hung request and retries its exact original body', async () => {
+        const f = runtime(); const tracker = f.create(); tracker.logClick('one');
+        f.fetch.mockImplementationOnce((_, options) => new Promise((resolve, reject) => {
+            options.signal.addEventListener('abort', () => reject(new Error('synthetic abort')));
+        }));
+        const task = tracker.flush();
+        const body = f.fetch.mock.calls[0][1].body;
+        await vi.advanceTimersByTimeAsync(12000); await task;
+        expect(tracker.flushing).toBe(false);
+        expect(tracker.diagnostics[0].error_code).toBe('client_request_timeout');
+        tracker.retryAt = 0;
+        f.fetch.mockImplementationOnce((_, options) => Promise.resolve(receipt(JSON.parse(options.body))));
+        await tracker.flush();
+        expect(f.fetch.mock.calls[1][1].body).toBe(body);
     });
 
     it('closes the focused interval at blur and sends an unmeasured status at the boundary', () => {

@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import patch
 
@@ -11,6 +12,69 @@ class OfferingMergeConfirmationTests(OfferingMergeServiceTests):
     def preview(self, conn):
         return merge.build_merge_preview(conn, teacher_id=self.teacher_id,
             target_offering_id=self.target_id, source_offering_ids=[self.source_id])
+
+    def _observe_collection(self, conn, offering_id, batch_id, *, source="browser", seconds=30):
+        from classroom_app.services.behavior_collection_health_service import record_collection_observation
+        diagnostic = source == "client_diagnostic"
+        return record_collection_observation(conn, class_offering_id=offering_id,
+            user_pk=self.student_b, user_role="student", batch_id=batch_id,
+            received_at="2026-11-08T08:01:00", source=source,
+            valid_sample_count=0 if diagnostic else 1, rejected_sample_count=0,
+            learning_delta_seconds=0 if diagnostic else seconds,
+            observed_start=None if diagnostic else "2026-11-08T08:00:00",
+            observed_end=None if diagnostic else "2026-11-08T08:00:30",
+            reason_codes=["auth_required"] if diagnostic else [],
+            diagnostics={"error_code": "auth_required"} if diagnostic else {"sample": "original"},
+            ip_address="192.0.2.10")
+
+    def test_collection_observations_preserve_original_scope_despite_cross_course_batch_collision(self):
+        with database.get_db_connection() as conn:
+            # The same actor and client batch ID remain distinct facts in their original courses.
+            for offering_id, seconds in ((self.target_id, 20), (self.source_id, 30)):
+                self.assertTrue(self._observe_collection(conn, offering_id, "b1_shared", seconds=seconds))
+            self._observe_collection(conn, self.source_id, "d1_auth_failure", source="client_diagnostic")
+            self._observe_collection(conn, self.source_id, "b1_server", source="server", seconds=10)
+            conn.commit()
+            before = [dict(row) for row in conn.execute(
+                "SELECT * FROM behavior_collection_observations ORDER BY observation_key").fetchall()]
+            self.assertEqual([], merge.find_unregistered_offering_tables(conn))
+            preview = self.preview(conn)
+            self.assertTrue(preview["can_execute"])
+            entry = next(item for item in preview["tables"] if item["table"] == "behavior_collection_observations")
+            self.assertEqual(3, entry["source_rows"])
+            self.assertEqual(merge.STRATEGY_COLLECTION_OBSERVATIONS, entry["strategy"])
+            self.assertTrue(any("原课堂编号、账号和批次" in warning for warning in preview["warnings"]))
+            result = self._execute(conn)
+            self.assertEqual(3, result["summary"]["behavior_collection_observations.observation_scope_preserved"])
+            after = [dict(row) for row in conn.execute(
+                "SELECT * FROM behavior_collection_observations ORDER BY observation_key").fetchall()]
+            self.assertEqual(before, after, "Merging must not re-key, collapse or re-credit immutable observations")
+            self.assertIsNone(conn.execute("SELECT id FROM class_offerings WHERE id=?", (self.source_id,)).fetchone())
+            archived = json.loads(conn.execute("SELECT payload_json FROM offering_merge_archives ORDER BY id DESC LIMIT 1").fetchone()[0])
+            self.assertEqual(before, sorted(archived["tables"]["behavior_collection_observations"], key=lambda row: row["observation_key"]))
+            # Original-scope idempotency is preserved even after the source offering is removed.
+            self.assertFalse(self._observe_collection(conn, self.source_id, "b1_shared", seconds=90))
+            self.assertEqual(60, conn.execute("SELECT SUM(learning_delta_seconds) FROM behavior_collection_observations").fetchone()[0])
+            conn.rollback()
+            self.assertIsNotNone(conn.execute("SELECT id FROM class_offerings WHERE id=?", (self.source_id,)).fetchone())
+            self.assertEqual(before, [dict(row) for row in conn.execute(
+                "SELECT * FROM behavior_collection_observations ORDER BY observation_key").fetchall()])
+
+    def test_collection_observation_content_changes_invalidate_review_without_mutating_evidence(self):
+        with database.get_db_connection() as conn:
+            self._observe_collection(conn, self.source_id, "d1_auth_failure", source="client_diagnostic")
+            conn.commit()
+            before = self.preview(conn)
+            conn.execute("UPDATE behavior_collection_observations SET diagnostics_json=? WHERE class_offering_id=?",
+                         ('{"error_code":"client_request_timeout"}', self.source_id))
+            after = self.preview(conn)
+            self.assertEqual(before["total_source_rows"], after["total_source_rows"])
+            self.assertNotEqual(before["review_hash"], after["review_hash"])
+            with self.assertRaisesRegex(merge.OfferingMergeError, "确认已失效"):
+                merge.execute_offering_merge(conn, teacher_id=self.teacher_id,
+                    target_offering_id=self.target_id, source_offering_ids=[self.source_id],
+                    confirm_class_name="软工2401班", expected_review_hash=before["review_hash"])
+            self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM offering_merge_archives").fetchone()[0])
 
     def test_pending_behavior_blocks_merge_and_applied_receipt_keeps_immutable_scope(self):
         with database.get_db_connection() as conn:

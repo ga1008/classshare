@@ -161,7 +161,13 @@
 .mx__git-actions .lq-btn { gap: 4px; }
 .mx__statusbar { padding: 6px 14px; color: hsl(var(--lq-material-muted, var(--ls-ink-2))); font-size: 0.74rem; min-height: 28px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 1100px) { .mx__body, .mx__body[data-details="closed"] { grid-template-columns: minmax(200px, 230px) minmax(0, 1fr); } .mx__details { display: none; } .mx__body[data-details="open"] .mx__details { display: block; grid-column: 1 / -1; max-height: 40vh; } }
-@media (max-width: 760px) { .mx__body, .mx__body[data-details="closed"] { grid-template-columns: minmax(0, 1fr); } .mx__tree { display: none; } }
+@media (max-width: 760px) {
+    .mx__body, .mx__body[data-details="closed"] { grid-template-columns: minmax(0, 1fr); }
+    .mx__tree { display: none; }
+    .mx__content-head { flex-wrap: wrap; align-items: flex-start; }
+    .mx__content-tools { flex-basis: 100%; }
+    .mx__content-body { flex-shrink: 0; }
+}
 /* ---------- 渲染器 ---------- */
 .material-renderer__status, .material-renderer__empty { padding: 28px 16px; color: hsl(var(--lq-material-muted, var(--ls-ink-2))); text-align: center; }
 .material-renderer__empty-actions { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }

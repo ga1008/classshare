@@ -308,12 +308,22 @@ def _owner_teacher_id(conn: Any) -> int | None:
 
 def _ensure_folder(conn: Any, teacher_id: int) -> int:
     row = conn.execute(
-        "SELECT id FROM course_materials WHERE name = ? AND parent_id IS NULL AND node_type = 'folder' "
+        "SELECT id, root_id FROM course_materials WHERE name = ? AND parent_id IS NULL AND node_type = 'folder' "
         "AND teacher_id = ? ORDER BY id LIMIT 1",
         (MANUAL_FOLDER_NAME, int(teacher_id)),
     ).fetchone()
     if row is not None:
-        return int(_row_value(row, "id", 0))
+        folder_id = int(_row_value(row, "id", 0))
+        # The original PostgreSQL seeder inserted the folder before failing to
+        # read cursor.lastrowid. Its caller could then commit a NULL root_id.
+        # Repair that legacy row in place, even when both manuals are unchanged.
+        if _row_value(row, "root_id", 1) is None:
+            conn.execute(
+                "UPDATE course_materials SET root_id = ? "
+                "WHERE id = ? AND parent_id IS NULL AND root_id IS NULL",
+                (folder_id, folder_id),
+            )
+        return folder_id
     now = _local_iso()
     folder_id = int(execute_insert_returning_id(
         conn,

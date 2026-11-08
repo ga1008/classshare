@@ -192,6 +192,11 @@ def apply_assessment_migrations(conn) -> None:
     from classroom_app.db.postgres_schema import POSTGRES_RUNTIME_COLUMN_DEFINITIONS, POSTGRES_RUNTIME_TABLE_DEFINITIONS
     from classroom_app.db import schema_ai_jobs
     from classroom_app.db.schema_grade_publications import ensure_grade_publication_schema
+    from classroom_app.db.schema_behavior_collection_health import ensure_behavior_collection_health_schema
+    from classroom_app.db.schema_retake import ensure_retake_schema
+    from classroom_app.db.postgres import LanSharePostgresConnection
+    ensure_behavior_collection_health_schema(LanSharePostgresConnection(conn), engine="postgres")
+    ensure_retake_schema(LanSharePostgresConnection(conn), engine="postgres", force=True)
     for column, definition in POSTGRES_RUNTIME_COLUMN_DEFINITIONS["assignments"].items():
         if column.startswith("assessment_kind"):
             conn.execute(f"ALTER TABLE assignments ADD COLUMN IF NOT EXISTS {quote_identifier(column)} {definition}")

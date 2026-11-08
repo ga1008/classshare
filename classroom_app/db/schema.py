@@ -20,6 +20,8 @@ from .schema_feedback_conversations import ensure_feedback_conversation_schema
 from .schema_ai_workspace import ensure_ai_workspace_schema
 from .schema_ai_search import ensure_ai_search_schema
 from .schema_behavior_inbox import ensure_behavior_inbox_schema
+from .schema_behavior_collection_health import ensure_behavior_collection_health_schema
+from .schema_retake import ensure_retake_schema
 from .schema_assignments import ensure_assignment_schema
 from .schema_classroom_activity import ensure_classroom_activity_schema
 from .schema_cultivation_progress import ensure_cultivation_progress_schema
@@ -97,6 +99,8 @@ def _init_database_unlocked():
             ensure_cultivation_progress_schema(conn, engine="postgres")
             runtime_table_report = ensure_postgres_runtime_tables(conn)
             ensure_behavior_inbox_schema(conn, engine="postgres")
+            ensure_behavior_collection_health_schema(conn, engine="postgres")
+            ensure_retake_schema(conn, engine="postgres", force=True)
             from ..services.cultivation_display_service import ensure_cultivation_display_schema
             ensure_cultivation_display_schema(conn)
             ensure_academic_schedule_prediction_schema(conn, engine="postgres")
@@ -457,6 +461,8 @@ def _init_database_unlocked():
             ensure_attendance_report_schema(conn, engine="sqlite")
             ensure_learning_blog_signature_schema(conn)
             ensure_behavior_inbox_schema(conn, engine="sqlite")
+            ensure_behavior_collection_health_schema(conn, engine="sqlite")
+            ensure_retake_schema(conn, engine="sqlite", force=True)
             from ..services.cultivation_display_service import ensure_cultivation_display_schema
             ensure_cultivation_display_schema(conn)
             ensure_feedback_conversation_schema(conn, engine="sqlite")

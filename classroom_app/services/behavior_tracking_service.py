@@ -437,11 +437,14 @@ def _record_behavior_batch_in_connection(
     events: list[dict[str, Any]],
     session_started_at: Optional[str] = None,
     recorded_at: Optional[str] = None,
+    batch_id: Optional[str] = None,
 ) -> dict[str, Any]:
     now = datetime.fromisoformat(recorded_at) if recorded_at else datetime.now()
     now_text = now.isoformat()
     logged_event_ids: list[int] = []
     learning_seconds = 0
+    collection = {"valid_sample_count": 0, "rejected_sample_count": 0,
+                  "reason_codes": [], "observed_start": None, "observed_end": None}
     has_receipt_presence = any(
         _normalize_action_type(str(item.get("action_type") or "page_action")) not in HEARTBEAT_ACTIONS
         or not is_measured_presence(item["payload"] if isinstance(item.get("payload"), dict) else {})
@@ -478,6 +481,7 @@ def _record_behavior_batch_in_connection(
                 page_key=item_page_key,
                 session_started_at=session_started_at,
                 payload=payload,
+                collection=collection,
             )
             if not summary_text:
                 continue
@@ -549,6 +553,15 @@ def _record_behavior_batch_in_connection(
                               ref=str(streak_state.get("last_active_date") or ""), note="当日首次学习")
     snapshot["logged_event_ids"] = logged_event_ids
     snapshot["accepted_event_count"] = len(logged_event_ids)
+    snapshot["collection"] = collection
+    if batch_id:
+        from .behavior_collection_health_service import record_collection_observation
+        record_collection_observation(
+            conn, class_offering_id=class_offering_id, user_pk=user_pk, user_role=user_role,
+            batch_id=batch_id, received_at=now_text,
+            source="browser" if any(is_measured_presence(item.get("payload") or {}) for item in events) else "server",
+            learning_delta_seconds=learning_seconds, **collection,
+        )
     return snapshot
 
 
@@ -601,10 +614,24 @@ def _apply_presence_heartbeat(
     page_key: Optional[str],
     session_started_at: Optional[str],
     payload: dict,
+    collection: Optional[dict] = None,
 ) -> int:
-    sample = read_presence_sample(payload, now, session_started_at)
+    reasons: list[str] = []
+    sample = read_presence_sample(payload, now, session_started_at, diagnostics=reasons)
+
+    def finish(seconds=0, *, measured=False):
+        if collection is not None and is_measured_presence(payload):
+            collection["valid_sample_count"] += int(measured and sample is not None and sample.interval is not None)
+            collection["rejected_sample_count"] += int(bool(reasons))
+            collection["reason_codes"] = sorted(set(collection["reason_codes"]) | set(reasons))
+            if measured and sample is not None and sample.interval is not None:
+                start, end = [datetime.fromtimestamp(value / 1000, tz=now.tzinfo).isoformat() for value in sample.interval]
+                collection["observed_start"] = min(collection["observed_start"] or start, start)
+                collection["observed_end"] = max(collection["observed_end"] or end, end)
+        return seconds
+
     if sample is None:
-        return 0
+        return finish()
     state = conn.execute(
         """
         SELECT last_presence_at, current_session_started_at, last_profiled_at, presence_coverage_json
@@ -618,16 +645,18 @@ def _apply_presence_heartbeat(
     ).fetchone()
 
     if state is None:
-        return 0
+        reasons.append("presence_state_missing")
+        return finish()
     session_since = timestamp_ms(state["current_session_started_at"])
     measured = measure_presence(
         state["presence_coverage_json"], sample,
         session_since=session_since,
         rolling_since=max(session_since, timestamp_ms(state["last_profiled_at"])),
         page_key=page_key,
+        diagnostics=reasons,
     )
     if measured is None:
-        return 0
+        return finish()
     coverage, deltas, fresh_status = measured
     update_presence = fresh_status and sample.observed_ms >= timestamp_ms(state["last_presence_at"])
     observed_at = datetime.fromtimestamp(sample.observed_ms / 1000, tz=now.tzinfo).isoformat() if update_presence else None
@@ -678,7 +707,7 @@ def _apply_presence_heartbeat(
             user_role,
         ),
     )
-    return deltas["learning"]
+    return finish(deltas["learning"], measured=True)
 
 
 def record_behavior_batch(

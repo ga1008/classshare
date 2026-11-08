@@ -53,6 +53,83 @@ class ManualLibraryTest(WandererDbTestCase):
             self.assertEqual(again["status"], "ok")
             self.assertEqual((again["created"], again["updated"]), (0, 0))
 
+    def test_reseeding_repairs_legacy_null_root_without_replacing_manuals(self):
+        with self.connect() as conn:
+            seeded = self._seed(conn)
+            folder_id = seeded["folder_id"]
+            root_before = dict(conn.execute("SELECT * FROM course_materials WHERE id = ?", (folder_id,)).fetchone())
+            files_before = [dict(row) for row in conn.execute(
+                "SELECT id, file_hash, updated_at FROM course_materials WHERE parent_id = ? ORDER BY id",
+                (folder_id,),
+            ).fetchall()]
+            documents_before = [dict(row) for row in conn.execute(
+                "SELECT d.* FROM material_search_documents d JOIN course_materials m ON m.id = d.material_id "
+                "WHERE m.parent_id = ? ORDER BY d.material_id", (folder_id,),
+            ).fetchall()]
+            chunks_before = [dict(row) for row in conn.execute(
+                "SELECT c.* FROM material_search_chunks c JOIN course_materials m ON m.id = c.material_id "
+                "WHERE m.parent_id = ? ORDER BY c.id", (folder_id,),
+            ).fetchall()]
+            self.assertEqual(len(files_before), 2)
+            self.assertEqual(len(documents_before), 2)
+            self.assertTrue(chunks_before)
+            conn.execute("UPDATE course_materials SET root_id = NULL WHERE id = ?", (folder_id,))
+            conn.commit()
+
+            repaired = self._seed(conn)
+            root = conn.execute("SELECT id, root_id FROM course_materials WHERE id = ?", (folder_id,)).fetchone()
+            self.assertEqual(root["root_id"], folder_id)
+            self.assertEqual(root_before, dict(conn.execute(
+                "SELECT * FROM course_materials WHERE id = ?", (folder_id,),
+            ).fetchone()))
+            self.assertEqual(repaired["folder_id"], folder_id)
+            self.assertEqual((repaired["created"], repaired["updated"]), (0, 0))
+            self.assertEqual(files_before, [dict(row) for row in conn.execute(
+                "SELECT id, file_hash, updated_at FROM course_materials WHERE parent_id = ? ORDER BY id",
+                (folder_id,),
+            ).fetchall()])
+            self.assertEqual(documents_before, [dict(row) for row in conn.execute(
+                "SELECT d.* FROM material_search_documents d JOIN course_materials m ON m.id = d.material_id "
+                "WHERE m.parent_id = ? ORDER BY d.material_id", (folder_id,),
+            ).fetchall()])
+            self.assertEqual(chunks_before, [dict(row) for row in conn.execute(
+                "SELECT c.* FROM material_search_chunks c JOIN course_materials m ON m.id = c.material_id "
+                "WHERE m.parent_id = ? ORDER BY c.id", (folder_id,),
+            ).fetchall()])
+            again = self._seed(conn)
+            self.assertEqual((again["created"], again["updated"]), (0, 0))
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) FROM course_materials WHERE name = ? AND node_type = 'folder'", (MANUAL_FOLDER_NAME,),
+            ).fetchone()[0], 1)
+
+    def test_reseeding_completes_legacy_empty_null_root_folder(self):
+        with self.connect() as conn:
+            folder_id = self._seed(conn)["folder_id"]
+            conn.execute("DELETE FROM material_search_chunks WHERE material_id IN "
+                         "(SELECT id FROM course_materials WHERE parent_id = ?)", (folder_id,))
+            conn.execute("DELETE FROM material_search_documents WHERE material_id IN "
+                         "(SELECT id FROM course_materials WHERE parent_id = ?)", (folder_id,))
+            conn.execute("DELETE FROM course_materials WHERE parent_id = ?", (folder_id,))
+            conn.execute("UPDATE course_materials SET root_id = NULL WHERE id = ?", (folder_id,))
+            conn.commit()
+
+            repaired = self._seed(conn)
+            self.assertEqual(repaired["folder_id"], folder_id)
+            self.assertEqual((repaired["created"], repaired["updated"]), (2, 0))
+            self.assertEqual(conn.execute(
+                "SELECT root_id FROM course_materials WHERE id = ?", (folder_id,),
+            ).fetchone()[0], folder_id)
+            rows = conn.execute(
+                "SELECT m.name, m.root_id, d.status, d.chunk_count FROM course_materials m "
+                "JOIN material_search_documents d ON d.material_id = m.id WHERE m.parent_id = ? ORDER BY m.name",
+                (folder_id,),
+            ).fetchall()
+            self.assertEqual([row["name"] for row in rows], ["平台与天道手册.md", "散修进阶手册.md"])
+            self.assertTrue(all(row["root_id"] == folder_id and row["status"] == "ready" and row["chunk_count"] > 0
+                                for row in rows))
+            again = self._seed(conn)
+            self.assertEqual((again["created"], again["updated"]), (0, 0))
+
     def test_stage_band_controls_visibility(self):
         with self.connect() as conn:
             self._seed(conn)

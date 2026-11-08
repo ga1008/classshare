@@ -31,6 +31,10 @@ def new_batch_id() -> str:
 class BehaviorBatchConflict(ValueError):
     """A previously used batch ID has a different immutable payload."""
 
+    def __init__(self, message: str, error_code: str = "batch_payload_conflict"):
+        super().__init__(message)
+        self.error_code = error_code
+
 
 class BehaviorDeletionPending(ValueError):
     """Accepted behavior must finish before its actor or classroom can be removed."""
@@ -38,7 +42,7 @@ class BehaviorDeletionPending(ValueError):
 
 def _actor_table(role: str) -> str:
     if role not in {"student", "teacher"}:
-        raise BehaviorBatchConflict("行为记录的账号类型无效。")
+        raise BehaviorBatchConflict("行为记录的账号类型无效。", "actor_unavailable")
     return "students" if role == "student" else "teachers"
 
 
@@ -82,6 +86,9 @@ def prepare_behavior_deletion(conn, *, user_role: str | None = None, user_pk: in
         marks = ",".join("?" for _ in batch)
         conn.execute(f"UPDATE behavior_write_inbox SET result_json=CASE batch_key {cases} END WHERE batch_key IN ({marks})",
                      tuple(value for pair in batch for value in pair) + tuple(key for key, _value in batch))
+    # Collection metadata follows the same actor/classroom lifecycle as its
+    # retired business records; it must not leave personal IP evidence behind.
+    conn.execute(f"DELETE FROM behavior_collection_observations WHERE {predicate}", values)
 
 
 @dataclass(slots=True)
@@ -238,11 +245,11 @@ class BehaviorWritePipeline:
         offering = conn.execute("SELECT id FROM class_offerings WHERE id = ?" +
                                 (" FOR KEY SHARE" if postgres else ""), (request.class_offering_id,)).fetchone()
         if offering is None:
-            raise BehaviorBatchConflict("课堂已变更，请刷新页面后查看行为记录状态。")
+            raise BehaviorBatchConflict("课堂已变更，请刷新页面后查看行为记录状态。", "classroom_unavailable")
         actor = conn.execute(f"SELECT id FROM {_actor_table(request.user_role)} WHERE id = ?" +
                              (" FOR KEY SHARE" if postgres else ""), (request.user_pk,)).fetchone()
         if actor is None:
-            raise BehaviorBatchConflict("账号已变更，请刷新页面后查看行为记录状态。")
+            raise BehaviorBatchConflict("账号已变更，请刷新页面后查看行为记录状态。", "actor_unavailable")
         if postgres:
             conn.execute("SELECT pg_advisory_xact_lock(?, ?)", CAPACITY_LOCK)
         # Another intake can have committed while this one waited for capacity.
@@ -255,10 +262,10 @@ class BehaviorWritePipeline:
             try:
                 created = datetime.fromtimestamp(int(request.batch_id.split("_", 2)[1]) / 1000.0)
             except (ValueError, OverflowError, OSError) as exc:
-                raise BehaviorBatchConflict("行为批次编号无效。") from exc
+                raise BehaviorBatchConflict("行为批次编号无效。", "batch_timestamp_invalid") from exc
             age = datetime.now() - created
             if age > timedelta(days=CLIENT_RETRY_DAYS) or age < -timedelta(days=1):
-                raise BehaviorBatchConflict("行为批次已超过重试期限，请刷新页面查看记录状态。")
+                raise BehaviorBatchConflict("行为批次已超过重试期限，请刷新页面查看记录状态。", "batch_expired")
         count = conn.execute("SELECT COUNT(*) AS n FROM behavior_write_inbox WHERE state IN ('pending','quarantined')").fetchone()["n"]
         if int(count) >= int(BEHAVIOR_WRITE_QUEUE_SIZE):
             raise DatabaseBusyError("行为记录暂时积压，请稍后使用原批次编号重试。")
@@ -331,7 +338,7 @@ class BehaviorWritePipeline:
                 snapshot = self._apply_batch(conn, class_offering_id=int(row["class_offering_id"]),
                     user_pk=int(row["user_pk"]), user_role=row["user_role"], display_name=row["display_name"],
                     page_key=row["page_key"], events=events,
-                    session_started_at=row["session_started_at"], recorded_at=row["received_at"])
+                    session_started_at=row["session_started_at"], recorded_at=row["received_at"], batch_id=row["batch_id"])
                 snapshot.update(queued_event_count=0, durable_event_count=len(json.loads(row["events_json"])))
                 audit = json.loads(row["result_json"] or "{}").get("recovery_actions")
                 if audit:

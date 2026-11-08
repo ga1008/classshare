@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from classroom_app.db.schema_behavior_inbox import ensure_behavior_inbox_schema
+from classroom_app.db.schema_behavior_collection_health import ensure_behavior_collection_health_schema
 from classroom_app.db.errors import DatabaseBusyError
 from classroom_app.services import behavior_inbox_service as inbox
 
@@ -44,6 +45,7 @@ class BehaviorInboxTests(unittest.TestCase):
         self.guard.start()
         with connect() as conn:
             ensure_behavior_inbox_schema(conn)
+            ensure_behavior_collection_health_schema(conn)
             conn.execute("CREATE TABLE class_offerings (id INTEGER PRIMARY KEY)")
             conn.execute("INSERT INTO class_offerings VALUES (1)")
             conn.execute("INSERT INTO class_offerings VALUES (2)")

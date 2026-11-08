@@ -48,7 +48,11 @@ class PresenceSample:
     status_rank: int = 0
 
 
-def read_presence_sample(payload: dict, received_at: datetime, session_started_at) -> PresenceSample | None:
+def read_presence_sample(payload: dict, received_at: datetime, session_started_at, *, diagnostics: list[str] | None = None) -> PresenceSample | None:
+    def note(code):
+        if diagnostics is not None and code not in diagnostics:
+            diagnostics.append(code)
+
     received = _epoch_ms(received_at)
     if not is_measured_presence(payload):
         return PresenceSample(received, received, "visible" if str(payload.get("visibility_state") or "visible") == "visible" else "hidden",
@@ -58,7 +62,11 @@ def read_presence_sample(payload: dict, received_at: datetime, session_started_a
     focused, idle = payload.get("focused"), payload.get("idle_seconds")
     observed = payload.get("presence_observed_ms", payload.get("interval_end_ms"))
     if (visibility not in ("visible", "hidden") or type(focused) is not bool or type(idle) is not int or idle < 0
-            or type(observed) is not int or not received - MAX_SAMPLE_AGE_MS <= observed <= received + MAX_FUTURE_SKEW_MS):
+            or type(observed) is not int):
+        note("presence_payload_invalid")
+        return None
+    if not received - MAX_SAMPLE_AGE_MS <= observed <= received + MAX_FUTURE_SKEW_MS:
+        note("presence_clock_out_of_range")
         return None
 
     session = timestamp_ms(session_started_at)
@@ -66,10 +74,14 @@ def read_presence_sample(payload: dict, received_at: datetime, session_started_a
     interval, learning_end = None, 0
     if (session > 0 and type(start) is int and type(end) is int and end == observed
             and 0 < start < end and end - start <= MAX_INTERVAL_MS):
+        if start < session:
+            note("presence_session_clipped")
         start, end = max(start, session), min(end, received)
         if start < end:
             interval = start, end
             learning_end = min(end, observed - max(0, idle - ACTIVE_PRESENCE_WINDOW_SECONDS) * 1000)
+    elif "interval_start_ms" in payload or "interval_end_ms" in payload:
+        note("presence_session_missing" if session <= 0 else "presence_interval_invalid")
     status_rank = 2 if "interval_start_ms" not in payload and "interval_end_ms" not in payload else 1
     return PresenceSample(received, min(observed, received), visibility, focused, idle,
                           payload.get("ai_panel_open") is True, interval, learning_end, status_rank)
@@ -106,7 +118,7 @@ def _load_coverage(raw: str) -> dict | None:
     return data
 
 
-def _add_interval(ranges, start: int, end: int, rolling_start: int) -> tuple[list, int, int]:
+def _add_interval(ranges, start: int, end: int, rolling_start: int, diagnostics=None) -> tuple[list, int, int]:
     """Merge half-open intervals and return newly covered full and rolling milliseconds."""
     added, rolling_added = end - start, max(0, end - rolling_start)
     merged, left, right = [], start, end
@@ -123,6 +135,8 @@ def _add_interval(ranges, start: int, end: int, rolling_start: int) -> tuple[lis
     merged.append([left, right])
     if len(merged) > MAX_RANGES_PER_SIGNAL:
         # Never forget still-replayable coverage to make room for a new range.
+        if diagnostics is not None and "presence_coverage_capacity" not in diagnostics:
+            diagnostics.append("presence_coverage_capacity")
         return ranges, 0, 0
     return merged, added, rolling_added
 
@@ -132,9 +146,11 @@ def _whole_seconds(remainders: dict, key: str, added_ms: int) -> int:
     return seconds
 
 
-def measure_presence(raw_coverage: str, sample: PresenceSample, *, session_since: int, rolling_since: int, page_key: str | None):
+def measure_presence(raw_coverage: str, sample: PresenceSample, *, session_since: int, rolling_since: int, page_key: str | None, diagnostics=None):
     coverage = _load_coverage(raw_coverage)
     if coverage is None:
+        if diagnostics is not None:
+            diagnostics.append("presence_coverage_invalid")
         return None
     reference = max(coverage["reference"], sample.received_ms)
     coverage["reference"] = reference
@@ -158,7 +174,7 @@ def measure_presence(raw_coverage: str, sample: PresenceSample, *, session_since
         start = max(start, floor)
         if sample.visibility == "visible" and sample.focused and start < sample.learning_end_ms:
             ranges["learning"], added, rolling_added = _add_interval(ranges.get("learning", []), start,
-                                                                     sample.learning_end_ms, max(start, rolling_since))
+                                                                     sample.learning_end_ms, max(start, rolling_since), diagnostics)
             deltas["learning"] = _whole_seconds(remainders, "learning", added)
             deltas["rolling_learning"] = _whole_seconds(remainders, "rolling_learning", rolling_added)
 
@@ -172,6 +188,6 @@ def measure_presence(raw_coverage: str, sample: PresenceSample, *, session_since
             if sample.ai_open:
                 signals.append("ai")
             for signal in signals:
-                ranges[signal], added, _ = _add_interval(ranges.get(signal, []), start, end, end)
+                ranges[signal], added, _ = _add_interval(ranges.get(signal, []), start, end, end, diagnostics)
                 deltas[signal] = _whole_seconds(remainders, signal, added)
     return json.dumps(coverage, separators=(",", ":")), deltas, fresh_status

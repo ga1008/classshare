@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from classroom_app.db.errors import DatabaseBusyError
 from classroom_app.dependencies import get_current_user
 from classroom_app.routers import behavior
-from classroom_app.services.behavior_inbox_service import new_batch_id
+from classroom_app.services.behavior_inbox_service import new_batch_id, BehaviorBatchConflict
 from classroom_app.services.behavior_event_validation import BehaviorValidationError
 
 
@@ -43,6 +43,8 @@ class BehaviorIntakeRouteTests(unittest.TestCase):
         self.body["user_key"] = "student:11"
         response, record = self.request({})
         self.assertEqual(409, response.status_code)
+        self.assertEqual("identity_changed", response.json()["detail"]["error_code"])
+        self.assertEqual("student:10", response.json()["detail"]["current_user_key"])
         record.assert_not_called()
 
     def test_capacity_failure_propagates_to_shared_503_handler(self):
@@ -55,6 +57,8 @@ class BehaviorIntakeRouteTests(unittest.TestCase):
         self.body["batch_id"] = "opaque-unbounded-lifetime-id"
         response = self.client.post("/api/classrooms/1/behavior/batch", json=self.body)
         self.assertEqual(422, response.status_code)
+        self.assertEqual("batch_payload_invalid", response.json()["detail"]["error_code"])
+        self.assertEqual("quarantine", response.json()["detail"]["batch_disposition"])
 
     def test_malformed_new_data_is_422_and_existing_quarantine_is_an_explicit_409(self):
         response, _record = self.request(error=BehaviorValidationError("synthetic invalid heartbeat"))
@@ -66,3 +70,12 @@ class BehaviorIntakeRouteTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 409)
                 self.assertEqual(response.json()["status"], "error")
                 self.assertEqual(response.json()["accepted_event_count"], 0)
+                self.assertEqual("quarantine", response.json()["collection_error"]["batch_disposition"])
+
+    def test_known_conflict_codes_are_terminal_without_rekeying_the_batch(self):
+        for code in ("batch_payload_conflict", "batch_expired", "batch_timestamp_invalid"):
+            response, record = self.request(error=BehaviorBatchConflict("synthetic conflict", code))
+            self.assertEqual(409, response.status_code)
+            self.assertEqual(code, response.json()["detail"]["error_code"])
+            self.assertEqual("quarantine", response.json()["detail"]["batch_disposition"])
+            self.assertEqual(self.body["batch_id"], record.call_args.kwargs["batch_id"])

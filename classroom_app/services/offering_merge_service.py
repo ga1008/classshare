@@ -38,6 +38,7 @@ STRATEGY_ASSIGNMENT_COEXIST = "assignment_coexist"
 STRATEGY_GRADE_PUBLICATIONS = "grade_publications"  # 保留快照，迁入目标版本序列
 STRATEGY_KEEP_BILLING_SCOPE = "keep_billing_scope"  # 账单范围不随课堂归并变化
 STRATEGY_BEHAVIOR_RECEIPTS = "immutable_behavior_receipts"
+STRATEGY_COLLECTION_OBSERVATIONS = "immutable_collection_observations"
 STRATEGY_SCOPE_REVIEW = "scope_review"  # 读者/参与者范围尚无安全迁移规则，预检阻断
 STRATEGY_SCHEDULE_REVIEW = "schedule_review"  # 教务课次身份不可按本地序号猜测重绑
 STRATEGY_LINKS = "links"                      # 收尾统一处理
@@ -109,6 +110,7 @@ def _rules() -> dict[str, MergeRule]:
     rules["grade_publications"] = MergeRule(STRATEGY_GRADE_PUBLICATIONS)
     rules["ai_review_reservations"] = MergeRule(STRATEGY_KEEP_BILLING_SCOPE)
     rules["behavior_write_inbox"] = MergeRule(STRATEGY_BEHAVIOR_RECEIPTS)
+    rules["behavior_collection_observations"] = MergeRule(STRATEGY_COLLECTION_OBSERVATIONS)
     rules["class_offering_sessions"] = MergeRule(STRATEGY_SESSION_STRUCTURE)
     rules["class_offering_class_links"] = MergeRule(STRATEGY_LINKS, offering_column="offering_id")
     # 课次引用列（这三张的 offering 列策略见各自条目）
@@ -150,6 +152,7 @@ MERGE_RULES: dict[str, MergeRule] = _rules()
 MERGE_TABLE_LABELS = {
     "ai_chat_sessions": "AI课堂对话", "ai_psychology_profiles": "AI学习分析", "ai_usage_log": "AI用量历史",
     "behavior_write_inbox": "行为写入回执",
+    "behavior_collection_observations": "计时采集证据",
     "session_knowledge_trees": "课堂知识树",
     "wanderer_action_log": "散修课堂行为历史",
     "wanderer_social_inbox": "散修课堂消息任务",
@@ -505,6 +508,11 @@ def build_merge_preview(
                 f"{label}：被并课堂有 {source_rows} 条教务课次关联，暂不支持自动迁移。"
                 "按本地课次序号合并可能使后续调停课改错课次；请先核对教务课次身份并完成关联迁移，"
                 "本次不会改绑或删除这些记录。"
+            )
+        if source_rows and rule.strategy == STRATEGY_COLLECTION_OBSERVATIONS:
+            warnings.append(
+                f"{label}：{source_rows} 条证据保留原课堂编号、账号和批次标识，并纳入合班快照。"
+                "不会改写为主课堂的新观测或重新累计学时；历史证据须结合合班来源核对。"
             )
         if source_rows and rule.strategy == STRATEGY_REPOINT_GUARDED:
             conflicts = _conflict_count(
@@ -865,6 +873,13 @@ def execute_offering_merge(
             # Tombstones have no offering FK. Their original scope participates
             # in the immutable client batch key throughout the retry horizon.
             summary[f"{table}.receipt_scope_preserved"] = _count_rows(conn, table, column, source_ids)
+            continue
+        if rule.strategy == STRATEGY_COLLECTION_OBSERVATIONS:
+            # Like receipt tombstones, these immutable facts have no offering FK.
+            # Repointing can collide on (actor, offering, batch), while re-keying
+            # would invent a second fact for an already received/applied batch.
+            # Keep the original scope and full snapshot for lineage-based review.
+            summary[f"{table}.observation_scope_preserved"] = _count_rows(conn, table, column, source_ids)
             continue
         if rule.strategy == STRATEGY_KEEP_BILLING_SCOPE:
             count = _count_rows(conn, table, column, source_ids)

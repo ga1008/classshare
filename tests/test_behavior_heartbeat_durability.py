@@ -167,6 +167,35 @@ class BehaviorHeartbeatDurabilityTests(unittest.TestCase):
             self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM student_point_ledger WHERE student_id = ?",
                                              (self.student,)).fetchone()[0])
 
+    def test_zero_observation_and_rejected_sample_have_distinct_durable_quality(self):
+        zero = self.enqueue(65, self.heartbeat(60, start=0, end=60, focused=False))
+        bad = self.enqueue(130, self.heartbeat(125, start=0, end=125))
+        self.drain(140)
+        self.drain(141)
+        zero_quality = self.post(142, zero).json()["collection"]
+        bad_quality = self.post(143, bad).json()["collection"]
+        self.assertEqual((1, 0), (zero_quality["valid_sample_count"], zero_quality["rejected_sample_count"]))
+        self.assertEqual((0, 1), (bad_quality["valid_sample_count"], bad_quality["rejected_sample_count"]))
+        self.assertIn("presence_interval_invalid", bad_quality["reason_codes"])
+        self.assertEqual((0, 0), self.durations())
+        with get_db_connection() as conn:
+            self.assertEqual(2, conn.execute("SELECT COUNT(*) FROM behavior_collection_observations").fetchone()[0])
+
+    def test_client_failure_evidence_is_idempotent_and_cannot_create_learning_or_activity(self):
+        body = {"user_key": "student:501", "diagnostics": [{"diagnostic_id": "d1_synthetic_failure",
+                "error_code": "auth_required", "observed_ms": self.ms(60), "event_count": 2}]}
+        for _ in range(2):
+            response = self.client.post(f"/api/classrooms/{self.offering}/behavior/diagnostics", json=body)
+            self.assertEqual(200, response.status_code, response.text)
+        self.assertIsNone(self.state())
+        with get_db_connection() as conn:
+            self.assertEqual(1, conn.execute("SELECT COUNT(*) FROM behavior_collection_observations").fetchone()[0])
+            self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM classroom_behavior_events").fetchone()[0])
+            self.assertEqual(0, conn.execute("SELECT COUNT(*) FROM student_point_ledger").fetchone()[0])
+        body["user_key"] = "student:502"
+        response = self.client.post(f"/api/classrooms/{self.offering}/behavior/diagnostics", json=body)
+        self.assertEqual(409, response.status_code)
+
     def test_distinct_batches_in_two_tabs_credit_union_and_keep_classrooms_separate(self):
         self.enqueue(65, self.heartbeat(60, start=0, end=60))
         self.enqueue(96, self.heartbeat(90, start=30, end=90))
