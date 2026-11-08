@@ -22,7 +22,12 @@ def main(a):
     if marker.get('kind') != 'lanshare-capacity-linux-lab' or marker.get('synthetic') is not True or marker.get('lab_nonce') != nonce or marker.get('release_id') != 'capacity-linux-'+nonce or a.nginx_ip != marker.get('network',{}).get('addresses',{}).get('nginx'):
         raise ValueError('Remote marker differs from the explicit owned lab')
     deadline=time.monotonic()+1800
-    while not (work/'fault-ready').exists() and time.monotonic()<deadline:time.sleep(.2)
+    while time.monotonic()<deadline:
+        if (work/'stop-attendance-probe').exists():
+            report={'status':'cancelled','lab_nonce':nonce,'reason':'owned_stop_file_before_phase','lock_held':False,'app_restarted':False}
+            (work/'fault-coordinator-cancelled.json').write_text(json.dumps(report,indent=2));print(json.dumps(report));return
+        if (work/'fault-ready').exists():break
+        time.sleep(.2)
     assert (work/'fault-ready').exists()
     old=json.loads(command('docker inspect '+name))[0]
     assert old['Config']['Labels']['io.lanshare.capacity-lab.nonce']==nonce

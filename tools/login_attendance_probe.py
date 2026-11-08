@@ -46,6 +46,25 @@ def round_value(value):
     return candidate
 
 
+async def gather_owned(*awaitables):
+    """Retain every in-flight outcome before propagating a group failure."""
+    tasks = [asyncio.ensure_future(item) for item in awaitables]
+    try:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
+        return results
+    finally:
+        # Only an external cancellation can leave children here. An ordinary
+        # HTTP/assertion failure first waits for all siblings' bounded retries.
+        unfinished = [task for task in tasks if not task.done()]
+        for task in unfinished:
+            task.cancel()
+        if unfinished:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+
 class Probe:
     def __init__(self, args):
         self.args = args
@@ -92,6 +111,14 @@ class Probe:
         self.manual_expected = {}
         self.recorder_successes = 0
         self.discarded_ack_replays = 0
+        self.cancelled = False
+        self.stop_reason = None
+        self.failure_type = None
+        self.stop_event = asyncio.Event()
+        self.stop_watcher_done = False
+        self.last_scheduled_offset_ms = None
+        self.active_fault_phase = None
+        self.intent_offsets = {}
         self.prefix = f"/api/classrooms/{self.fixture['offering_id']}/login-attendance"
         self.client = None
 
@@ -99,15 +126,44 @@ class Probe:
         self.journal.write(json.dumps({"run_id": self.run_id, **event}, ensure_ascii=False)+"\n")
         self.journal.flush()
 
+    def observe_stop_file(self):
+        if not self.cancelled and (self.work/"stop-attendance-probe").exists():
+            self.cancelled = True
+            self.stop_reason = "owned_stop_file_requested"
+            self.stop_event.set()
+            self.write({"event":"stop_requested","reason":self.stop_reason,"client_epoch":time.time()})
+        return self.cancelled
+
+    async def watch_stop_file(self):
+        while not self.stop_watcher_done:
+            if self.observe_stop_file():
+                return
+            await asyncio.sleep(.1)
+
+    async def wait_until(self, target):
+        """Stop future work while letting already-started operations finish."""
+        if self.stop_event.is_set():
+            return False
+        delay = max(0,target-time.perf_counter())
+        if delay:
+            try:
+                await asyncio.wait_for(self.stop_event.wait(),timeout=delay)
+                return False
+            except asyncio.TimeoutError:
+                pass
+        return not self.stop_event.is_set()
+
     def prepare_intent(self, flow, method, path, *, body=None, form=None, actor=None, scheduled_ms=None,
                        declared_burst=False):
         logical_id = uuid.uuid4().hex
         canonical = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) if body is not None else None
         self.logical[flow] += 1
+        due_offset = self.tick_offset.get() if scheduled_ms is None else scheduled_ms
+        self.intent_offsets[logical_id] = due_offset
         self.write({"event": "intent", "id": logical_id, "flow": flow, "method": method,
             "path": path, "actor": actor, "body": body,
             "body_sha256": hashlib.sha256(canonical.encode()).hexdigest() if canonical else None,
-            "form_redacted": form is not None, "scheduled_offset_ms": self.tick_offset.get() if scheduled_ms is None else scheduled_ms,
+            "form_redacted": form is not None, "scheduled_offset_ms": due_offset,
             "declared_burst": declared_burst is True,
             "client_epoch": time.time()})
         return logical_id
@@ -122,9 +178,13 @@ class Probe:
         # normal-error gate even if a later retry succeeds.
         retries = max(retries, 7 if method == "GET" and self.in_steady else 0)
         response = None
+        due_offset = self.intent_offsets.get(logical_id)
         for attempt in range(retries+1):
             began = time.perf_counter()
+            began_epoch = time.time()
+            steady_at_start = self.in_steady
             planned_at_start = self.planned_outage
+            fault_at_start = self.active_fault_phase
             try:
                 response = await self.client.request(method, path,
                     headers={"Cookie": f"access_token={token}" if token else "",
@@ -140,16 +200,21 @@ class Probe:
             self.latency[flow].append(elapsed)
             self.statuses[flow, status] += 1
             planned_attempt = planned_at_start or self.planned_outage
-            if self.in_steady and not planned_attempt and not acceptable_attempt_status(
+            if steady_at_start and not planned_attempt and not acceptable_attempt_status(
                     status, declared_burst=declared_burst, expected_statuses=expected_statuses):
                 self.normal_errors[flow, status] += 1
             self.write({"event": "attempt", "id": logical_id, "flow": flow,
                         "attempt": attempt+1, "status": status, "latency_ms": elapsed,
-                        "planned_outage": planned_attempt, "declared_burst":declared_burst is True})
+                        "planned_outage": planned_attempt, "declared_burst":declared_burst is True,
+                        "steady":steady_at_start,"scheduled_offset_ms":due_offset,
+                        "phase":fault_at_start or self.active_fault_phase or ("declared_burst" if declared_burst else "steady" if steady_at_start else "setup_or_settlement"),
+                        "client_epoch_started":began_epoch,"client_epoch_finished":time.time()})
             if response is not None and (response.status_code < 500 and response.status_code != 429):
+                self.intent_offsets.pop(logical_id,None)
                 return response
             if attempt < retries:
                 await asyncio.sleep(min(8, 2**attempt))
+        self.intent_offsets.pop(logical_id,None)
         return response
 
     async def overview(self, session="lifecycle"):
@@ -194,7 +259,7 @@ class Probe:
             self.login_times[user["student_id"]] = claim.get("login_time")
             self.write({"event": "authenticated", "actor": user["student_id"], "role": "student",
                         "login_time": claim.get("login_time")})
-        await asyncio.gather(*(login(user) for user in (users or self.fixture["students"])))
+        await gather_owned(*(login(user) for user in (users or self.fixture["students"])))
         self.client.cookies.clear()
 
     async def create_round(self, session="lifecycle", minutes=3):
@@ -280,7 +345,7 @@ class Probe:
                 body={"owner": self.run_id+suffix})
             assert result is not None and result.status_code == 200
             return result.json()["claimed"]
-        claims = await asyncio.gather(claim("-tab-a"), claim("-tab-b"))
+        claims = await gather_owned(claim("-tab-a"), claim("-tab-b"))
         assert sum(claims) == 1, "More than one teacher tab claimed the same durable reminder"
         current = round_value(await self.overview())
         record = next(row for row in current["records"] if row["student_id"] == applicant)
@@ -321,6 +386,8 @@ class Probe:
         context = ssl.create_default_context(cafile=self.work/"client-handoff/capacity-lab.crt")
         async def connect(user, route, kind):
             async with slots:
+                if self.cancelled:
+                    return
                 conn = await websockets.connect(self.args.base.replace("https:", "wss:")+route,
                     ssl=context, additional_headers={"Cookie": f"access_token={self.tokens[user['student_id']]}"},
                     open_timeout=30, close_timeout=2, max_queue=32, ping_interval=20, proxy=None)
@@ -341,7 +408,9 @@ class Probe:
                             self.ws_counts[("planned_" if self.ws_planned else "unexpected_")+kind+"_closed"] += 1
                 self.ws_tasks.append(asyncio.create_task(consume()))
                 await asyncio.wait_for(ready.wait(), 30)
-        await asyncio.gather(*(connect(user, route, kind) for user in self.fixture["students"] for route,kind in paths))
+        await gather_owned(*(connect(user, route, kind) for user in self.fixture["students"] for route,kind in paths))
+        if self.cancelled:
+            return
         self.ws_expected = 1000 if count == 200 else 800
         assert self.open_ws_count() == self.ws_expected
         print(json.dumps({"phase": "websocket_ready", "actual_open": self.open_ws_count()}), flush=True)
@@ -401,9 +470,11 @@ class Probe:
         self.due_ticks[name] += len(offsets)
         for offset in offsets:
             target = self.started_monotonic+offset/1000
-            await asyncio.sleep(max(0, target-time.perf_counter()))
+            if not await self.wait_until(target):
+                return
             self.schedule_lateness.append(max(0, (time.perf_counter()-target)*1000))
             self.sent_ticks[name] += 1
+            self.last_scheduled_offset_ms = max(self.last_scheduled_offset_ms or 0,offset)
             token = self.tick_offset.set(offset)
             try:
                 await operation()
@@ -413,6 +484,14 @@ class Probe:
     async def main_run(self):
         if self.args.duration < 5400:
             raise ValueError("Formal capacity evidence requires at least 90 minutes")
+        await self._run_load(diagnostic=False)
+
+    async def diagnostic_run(self):
+        if not 300 <= self.args.duration <= 900:
+            raise ValueError("Diagnostic input must be bounded to300..900seconds; never capacity acceptance")
+        await self._run_load(diagnostic=True)
+
+    async def _run_load(self, *, diagnostic):
         now = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=8)))
         starts = now+timedelta(seconds=60)
         payload = {"request_key": self.run_id+"-main", "networks": self.fixture["networks"],
@@ -427,13 +506,16 @@ class Probe:
             response = await self.request("classroom_initial_200", "GET",
                 f"/classroom/{self.fixture['offering_id']}", token=self.tokens[user["student_id"]])
             assert response is not None and response.status_code == 200 and "data-classroom-page-app" in response.text
-        await asyncio.gather(*(initial_page(user) for user in self.fixture["students"]))
+        await gather_owned(*(initial_page(user) for user in self.fixture["students"]))
+        if self.cancelled:
+            return
         await self.open_websockets()
-        await asyncio.sleep(max(0, main_round["starts_at_ms"]/1000-time.time()))
+        if not await self.wait_until(time.perf_counter()+max(0,main_round["starts_at_ms"]/1000-time.time())):
+            return
         self.started_monotonic = time.perf_counter()
         self.main_started_client_epoch_ms = int(time.time()*1000)
         self.in_steady = True
-        print(json.dumps({"phase": "steady200", "duration_seconds": self.args.duration,
+        print(json.dumps({"phase": "diagnostic200" if diagnostic else "steady200", "duration_seconds": self.args.duration,
                           "main_round_id": self.main_round_id, "started_client_epoch": time.time()}), flush=True)
         self.sample_stop = False
         async def sample_sockets():
@@ -540,23 +622,25 @@ class Probe:
             assert view["id"] == viewer["round_id"] and len(view["records"]) == 200
             assert view["state"] == "published" and view["summary"]["expected"] == 200
         async def at(seconds):
-            await asyncio.sleep(max(0, self.started_monotonic+seconds-time.perf_counter()))
+            return await self.wait_until(self.started_monotonic+seconds)
         async def burst(seconds, phase):
-            await at(seconds)
+            if not await at(seconds):
+                return
             began = time.perf_counter()
-            await asyncio.gather(*(self.recorder_batch(index, phase, tab=tab)
+            await gather_owned(*(self.recorder_batch(index, phase, tab=tab)
                                   for index in range(200) for tab in range(3)))
             self.phase_results.append({"phase": phase, "batches": 600,
                 "duration_monotonic_seconds": time.perf_counter()-began,
                 "latency": distribution(self.latency[phase+"_recorder"])})
             print(json.dumps(self.phase_results[-1]), flush=True)
         async def headroom():
-            await at(80*60)
+            if not await at(80*60):
+                return
             prior, prior_tasks = len(self.ws), len(self.ws_tasks)
             self.ws_expected = 0
             await self.open_websockets(200)
             began = time.perf_counter()
-            await asyncio.gather(*(self.recorder_batch(index, "headroom1000", tab=tab)
+            await gather_owned(*(self.recorder_batch(index, "headroom1000", tab=tab)
                                   for index in range(200) for tab in range(3)), asyncio.sleep(20))
             self.phase_results.append({"phase": "headroom1000", "actual_open": self.open_ws_count(),
                                        "duration_monotonic_seconds": time.perf_counter()-began})
@@ -572,7 +656,8 @@ class Probe:
                 await asyncio.sleep(.1)
             assert (self.work/name).exists(), "Owned fault coordinator did not acknowledge "+name
         async def application_fault():
-            await at(15*60)
+            if not await at(150 if diagnostic else 15*60):
+                return
             self.legacy_gate.clear()
             paused = time.perf_counter()
             while self.legacy_inflight and time.perf_counter()-paused < 60:
@@ -583,12 +668,14 @@ class Probe:
             (self.work/"fault-ready").write_text(self.run_id)
             await wait_marker("fault-held")
             self.planned_outage = True
+            self.active_fault_phase = "apply_hold_app_restart"
+            self.write({"event":"fault_phase_started","phase":self.active_fault_phase,"client_epoch":time.time()})
             self.ws_planned = True
             self.ws_expected = 0
-            bodies = await asyncio.gather(*(self.recorder_batch(index, "blocked_apply") for index in range(200)))
+            bodies = await gather_owned(*(self.recorder_batch(index, "blocked_apply") for index in range(200)))
             (self.work/"fault-acked").write_text(self.run_id)
             await wait_marker("fault-restarted")
-            await asyncio.gather(*(self.recorder_batch(index, "blocked_replay", body=body)
+            await gather_owned(*(self.recorder_batch(index, "blocked_replay", body=body)
                                   for index,body in enumerate(bodies)))
             await asyncio.gather(*(conn.close() for conn in self.ws), return_exceptions=True)
             await asyncio.gather(*self.ws_tasks, return_exceptions=True)
@@ -596,6 +683,8 @@ class Probe:
             await self.open_websockets()
             self.ws_planned = False
             self.planned_outage = False
+            self.write({"event":"fault_phase_finished","phase":self.active_fault_phase,"client_epoch":time.time()})
+            self.active_fault_phase = None
             self.legacy_gate.set()
             self.write({"event": "legacy_resumed_after_fault", "queued": self.legacy_queue.qsize(),
                         "pause_monotonic_seconds": time.perf_counter()-paused})
@@ -603,12 +692,18 @@ class Probe:
                                        "same_id_replays": len(bodies), "client_epoch": time.time()})
             print(json.dumps(self.phase_results[-1]), flush=True)
         async def scheduler_fault():
-            await at(50*60)
+            if not await at(50*60):
+                return
+            self.active_fault_phase = "scheduler_inflight_restart"
+            self.write({"event":"fault_phase_started","phase":self.active_fault_phase,"client_epoch":time.time()})
             (self.work/"attendance-worker-restart-ready").write_text(json.dumps({"run_id":self.run_id,"round_id":self.main_round_id}))
             await wait_marker("attendance-worker-restarted",seconds=180)
+            self.write({"event":"fault_phase_finished","phase":self.active_fault_phase,"client_epoch":time.time()})
+            self.active_fault_phase = None
             self.phase_results.append({"phase": "scheduler_restarted", "client_epoch": time.time()})
         async def teacher_manual_during_load():
-            await at(25*60)
+            if not await at(25*60):
+                return
             view = round_value(await self.overview("main"))
             student = self.fixture["students"][0]["student_id"]
             record = next(row for row in view["records"] if row["student_id"] == student)
@@ -636,7 +731,8 @@ class Probe:
             self.contracts.append({"contract": "manual_lock_survives_recalculate_under_200_load",
                                    "passed": True, "student_id": student})
         async def client_recovery_contract():
-            await at(20*60)
+            if not await at(20*60):
+                return
             index = 150
             user = self.fixture["students"][index]
             body = await self.recorder_batch(index,"auth_recovery_seed")
@@ -670,10 +766,10 @@ class Probe:
         tasks += [self.periodic("blog_read", 200, 0, blog_read),
                   self.periodic("classroom_read", 10000, 5000, classroom_read),
                   self.periodic("teacher_main", 15000, 0, teacher_read),
-                  self.periodic("teacher_second_tab", 15000, 7500, teacher_read),
-                  burst(10*60, "burst600_r1"), burst(35*60, "burst600_r2"),
-                  burst(70*60, "burst600_r3"), headroom(), application_fault(), scheduler_fault(),
-                  teacher_manual_during_load(), client_recovery_contract()]
+                  self.periodic("teacher_second_tab", 15000, 7500, teacher_read)]
+        tasks += ([burst(60,"burst600_r1"),application_fault()] if diagnostic else [
+                  burst(10*60,"burst600_r1"),burst(35*60,"burst600_r2"),burst(70*60,"burst600_r3"),
+                  headroom(),application_fault(),scheduler_fault(),teacher_manual_during_load(),client_recovery_contract()])
         for index, viewer in enumerate(self.fixture.get("viewers", [])):
             tasks.append(self.periodic("other_teacher_view", 15000, index*5000+2000,
                                       lambda viewer=viewer: viewer_read(viewer)))
@@ -682,12 +778,19 @@ class Probe:
             await asyncio.gather(*scheduled_tasks)
             await asyncio.wait_for(self.legacy_queue.join(), timeout=120)
             assert not self.legacy_failures, "Legacy transport/commit outcome unknown; no blind replay was performed"
+            if self.cancelled:
+                self.in_steady = False
+                self.phase_results.append({"phase":"cancelled_input","duration_monotonic_seconds":time.perf_counter()-self.started_monotonic,
+                    "due_ticks":dict(self.due_ticks),"sent_ticks":dict(self.sent_ticks),"stop_reason":self.stop_reason})
+                return
             assert self.due_ticks == self.sent_ticks, "A due tick was silently omitted"
-            await asyncio.sleep(max(0, self.started_monotonic+self.args.duration-time.perf_counter()))
+            if not await self.wait_until(self.started_monotonic+self.args.duration):
+                self.in_steady = False
+                return
             elapsed = time.perf_counter()-self.started_monotonic
             assert elapsed >= self.args.duration, "Formal steady duration was shortened"
             self.in_steady = False
-            self.phase_results.append({"phase": "steady200", "duration_monotonic_seconds": elapsed,
+            self.phase_results.append({"phase": "diagnostic200" if diagnostic else "steady200", "duration_monotonic_seconds": elapsed,
                                        "due_ticks": dict(self.due_ticks), "sent_ticks": dict(self.sent_ticks)})
             print(json.dumps(self.phase_results[-1]), flush=True)
         finally:
@@ -700,10 +803,14 @@ class Probe:
             await asyncio.gather(*legacy_workers, return_exceptions=True)
             self.sample_stop = True
             await sampler
+        if diagnostic or self.cancelled:
+            return
         # Finalizing is a genuine E+10/E+12 wait. A run may not force an early
         # end or change the application clock to make this gate appear passed.
         deadline = time.perf_counter()+15*60
         while time.perf_counter() < deadline:
+            if self.cancelled:
+                return
             view = round_value(await self.overview("main"))
             if view["state"] == "published":
                 assert len(view["records"]) == 200
@@ -712,7 +819,8 @@ class Probe:
                 self.phase_results.append({"phase": "final_published", "round_id": view["id"],
                                            "summary": view["summary"], "watermark": view.get("watermark")})
                 break
-            await asyncio.sleep(10)
+            if not await self.wait_until(time.perf_counter()+10):
+                return
         else:
             raise AssertionError("Attendance round did not settle/publish within the real-clock budget")
         self.ws_stopping = True
@@ -720,34 +828,61 @@ class Probe:
         await asyncio.gather(*self.ws_tasks, return_exceptions=True)
 
     async def execute(self):
-        context = ssl.create_default_context(cafile=self.work/"client-handoff/capacity-lab.crt")
+        watcher = asyncio.create_task(self.watch_stop_file())
         try:
+            await asyncio.sleep(0)
+            if self.cancelled:
+                return False
+            context = ssl.create_default_context(cafile=self.work/"client-handoff/capacity-lab.crt")
             async with httpx.AsyncClient(base_url=self.args.base, verify=context, trust_env=False,
                     timeout=httpx.Timeout(60, pool=30), follow_redirects=False,
                     limits=httpx.Limits(max_connections=350, max_keepalive_connections=250)) as client:
                 self.client = client
                 live = await client.get("/api/internal/live")
                 assert live.status_code == 200 and live.headers.get("x-lanshare-release") == self.handoff["release_id"]
+                if self.cancelled:
+                    return False
                 await self.authenticate()
+                if self.cancelled:
+                    return False
                 await self.lifecycle()
+                if self.cancelled:
+                    return False
                 if self.args.mode == "run":
                     await self.main_run()
-            self.write({"event": "finished", "status": "passed", "mode": self.args.mode})
-            self.completed = True
-            return True
+                elif self.args.mode == "diagnostic":
+                    await self.diagnostic_run()
+            self.completed = not self.observe_stop_file()
+        except BaseException as exc:
+            self.failure_type = type(exc).__name__
+            raise
         finally:
+            self.stop_watcher_done = True
+            await watcher
             if self.ws:
                 self.ws_stopping = True
                 await asyncio.gather(*(conn.close() for conn in self.ws), return_exceptions=True)
                 await asyncio.gather(*self.ws_tasks, return_exceptions=True)
+            # The final synchronous read closes the watcher's100ms polling
+            # boundary. A stop already on disk must never become a passed run.
+            if self.observe_stop_file():
+                self.completed = False
+            status = "cancelled" if self.cancelled else "passed" if self.completed else "failed"
+            self.write({"event":"finished","status":status,"mode":self.args.mode,"stop_reason":self.stop_reason})
             report = {"run_id": self.run_id, "mode": self.args.mode, "lab_nonce": self.args.lab_nonce,
-                "client_status": "passed" if self.completed else "failed",
+                "client_status": status,"cancelled":self.cancelled,"stop_reason":self.stop_reason,
+                "failure_type":self.failure_type,
+                "stop_drain_completed":self.cancelled and self.failure_type is None and not self.intent_offsets
+                    and not self.legacy_queue.qsize() and not self.legacy_inflight and not self.legacy_failures
+                    and not any(count for (kind,ack),count in self.batch_acks.items() if not ack),
                 "source_release": self.handoff["release_id"], "production_accessed": False,
                 "logical_requests": dict(self.logical), "latency": {k:distribution(v) for k,v in self.latency.items()},
                 "statuses": [{"flow":flow,"status":status,"count":count} for (flow,status),count in sorted(self.statuses.items())],
                 "contracts": self.contracts, "capacity_result": False}
             report.update(phases=self.phase_results, due_ticks=dict(self.due_ticks), sent_ticks=dict(self.sent_ticks),
                 duration_requested_seconds=self.args.duration, main_round_id=getattr(self, "main_round_id", None),
+                last_scheduled_offset_ms=self.last_scheduled_offset_ms,
+                not_issued_after_cancel={key:self.due_ticks[key]-self.sent_ticks[key] for key in self.due_ticks} if self.cancelled else {},
                 real_teacher_identities=1+len(self.viewer_tokens), manual_expected=self.manual_expected,
                 legacy_queue_peak=self.legacy_queue_peak, legacy_queue_remaining=self.legacy_queue.qsize(),
                 legacy_inflight=self.legacy_inflight, legacy_defer_latency=distribution(self.legacy_delay),
@@ -762,13 +897,14 @@ class Probe:
                 server_facts_required=True)
             (self.output/"http-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2))
             self.journal.close()
+        return self.completed
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("work", "source-root", "base", "lab-nonce", "release-id", "fixture-sha256"):
         parser.add_argument("--"+name, required=True)
-    parser.add_argument("--mode", choices=("smoke", "run"), default="smoke")
+    parser.add_argument("--mode", choices=("smoke", "diagnostic", "run"), default="smoke")
     parser.add_argument("--duration", type=int, default=5400)
     args = parser.parse_args()
     asyncio.run(Probe(args).execute())

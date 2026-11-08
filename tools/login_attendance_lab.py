@@ -247,7 +247,15 @@ def coordinate_worker_fault(args):
     if output.exists():
         raise LabManifestError("Preserve an existing worker fault run")
     deadline = time.monotonic()+7200
-    while time.monotonic() < deadline and not (work/"attendance-worker-restart-ready").exists():
+    while time.monotonic() < deadline:
+        if (work/"stop-attendance-probe").exists():
+            result={"status":"cancelled","lab_nonce":args.lab_nonce,"reason":"owned_stop_file_before_phase",
+                    "worker_killed":False,"lock_held":False}
+            (work/"attendance-worker-coordinator-cancelled.json").write_text(json.dumps(result,indent=2))
+            print(json.dumps(result))
+            return result
+        if (work/"attendance-worker-restart-ready").exists():
+            break
         time.sleep(.2)
     if not (work/"attendance-worker-restart-ready").exists():
         raise RuntimeError("Client did not reach the declared worker fault phase")
