@@ -8,7 +8,7 @@ import unittest
 from tests.test_recorder_capacity_probe import make_owned
 from tools.platform_capacity_lab_manifest import LabManifestError, fingerprint, source_hashes
 from tools.login_attendance_lab import (FIXTURE_KIND, check_student_dto,
-                                        load_attendance_fixture, periodic_offsets)
+                                        load_attendance_fixture, periodic_offsets, acceptable_attempt_status, validate_scan_round)
 from tools.login_attendance_lab_facts import add_union
 
 
@@ -116,6 +116,27 @@ class AttendanceCapacityGuardsTests(unittest.TestCase):
         self.assertEqual(entries,[[0,4000],[5000,6000]])
         add_union(entries,4500,4500)
         self.assertEqual(sum(end-start for start,end in entries),5000)
+
+    def test_burst_exemption_is_request_specific_and_only429_503(self):
+        for status in (429,503,"429","503"):
+            self.assertTrue(acceptable_attempt_status(status,declared_burst=True))
+            self.assertFalse(acceptable_attempt_status(status))
+        for status in (500,502,"ReadTimeout","ConnectError",401,409):
+            self.assertFalse(acceptable_attempt_status(status,declared_burst=True))
+        self.assertTrue(acceptable_attempt_status(200))
+        self.assertFalse(acceptable_attempt_status(503,declared_burst=1))
+        self.assertTrue(acceptable_attempt_status(401,expected_statuses=(401,)))
+
+    def test_inflight_fault_only_targets_exact_main_round_and_run(self):
+        run = "a"*32
+        row = (1,1,run+"-main","running")
+        validate_scan_round(self.fixture,row,10,run)
+        for bad in ((1,2,run+"-main","running"),(2,1,run+"-main","running"),
+                    (1,1,"other-main","running"),(1,1,run+"-main","published"),None):
+            with self.subTest(row=bad),self.assertRaises(LabManifestError):
+                validate_scan_round(self.fixture,bad,10,run)
+        with self.assertRaises(LabManifestError):
+            validate_scan_round(self.fixture,row,0,run)
 
 
 if __name__ == "__main__":

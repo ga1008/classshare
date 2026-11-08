@@ -29,7 +29,7 @@ import httpx
 import websockets
 
 from tools.login_attendance_lab import (check_student_dto, load_attendance_fixture,
-                                        periodic_offsets)
+                                        periodic_offsets, acceptable_attempt_status)
 
 
 def distribution(values):
@@ -99,7 +99,8 @@ class Probe:
         self.journal.write(json.dumps({"run_id": self.run_id, **event}, ensure_ascii=False)+"\n")
         self.journal.flush()
 
-    def prepare_intent(self, flow, method, path, *, body=None, form=None, actor=None, scheduled_ms=None):
+    def prepare_intent(self, flow, method, path, *, body=None, form=None, actor=None, scheduled_ms=None,
+                       declared_burst=False):
         logical_id = uuid.uuid4().hex
         canonical = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")) if body is not None else None
         self.logical[flow] += 1
@@ -107,13 +108,15 @@ class Probe:
             "path": path, "actor": actor, "body": body,
             "body_sha256": hashlib.sha256(canonical.encode()).hexdigest() if canonical else None,
             "form_redacted": form is not None, "scheduled_offset_ms": self.tick_offset.get() if scheduled_ms is None else scheduled_ms,
+            "declared_burst": declared_burst is True,
             "client_epoch": time.time()})
         return logical_id
 
     async def request(self, flow, method, path, *, token=None, body=None, form=None,
-                      actor=None, retries=0, scheduled_ms=None, intent_id=None, expected_statuses=(200,201,202)):
+                      actor=None, retries=0, scheduled_ms=None, intent_id=None, expected_statuses=(200,201,202),
+                      declared_burst=False):
         logical_id = intent_id or self.prepare_intent(flow, method, path, body=body, form=form,
-                                                       actor=actor, scheduled_ms=scheduled_ms)
+                                                       actor=actor, scheduled_ms=scheduled_ms, declared_burst=declared_burst)
         # Reads are safe to retry during a controlled app outage. Every failed
         # attempt is retained; outside that declared window it still fails the
         # normal-error gate even if a later retry succeeds.
@@ -137,11 +140,12 @@ class Probe:
             self.latency[flow].append(elapsed)
             self.statuses[flow, status] += 1
             planned_attempt = planned_at_start or self.planned_outage
-            if self.in_steady and not planned_attempt and status not in {str(code) for code in expected_statuses}:
+            if self.in_steady and not planned_attempt and not acceptable_attempt_status(
+                    status, declared_burst=declared_burst, expected_statuses=expected_statuses):
                 self.normal_errors[flow, status] += 1
             self.write({"event": "attempt", "id": logical_id, "flow": flow,
                         "attempt": attempt+1, "status": status, "latency_ms": elapsed,
-                        "planned_outage": planned_attempt})
+                        "planned_outage": planned_attempt, "declared_burst":declared_burst is True})
             if response is not None and (response.status_code < 500 and response.status_code != 429):
                 return response
             if attempt < retries:
@@ -366,7 +370,8 @@ class Probe:
                     "events": events}
         response = await self.request(phase+"_recorder", "POST",
             f"/api/classrooms/{self.fixture['offering_id']}/behavior/batch",
-            token=self.tokens[user["student_id"]], actor=user["student_id"], body=body, retries=7)
+            token=self.tokens[user["student_id"]], actor=user["student_id"], body=body, retries=7,
+            declared_burst=phase in {"burst600_r1","burst600_r2","burst600_r3","headroom1000"})
         valid = response is not None and response.status_code in (200, 202)
         receipt = response.json() if valid else {}
         valid = valid and receipt.get("status") == "success" and receipt.get("batch_id") == body["batch_id"]
@@ -380,7 +385,8 @@ class Probe:
                 self.write({"event":"controlled_ack_discard", "batch_id":body["batch_id"],"phase":phase})
                 replay = await self.request(phase+"_discarded_ack_replay", "POST",
                     f"/api/classrooms/{self.fixture['offering_id']}/behavior/batch",
-                    token=self.tokens[user["student_id"]], actor=user["student_id"], body=body, retries=7)
+                    token=self.tokens[user["student_id"]], actor=user["student_id"], body=body, retries=7,
+                    declared_burst=phase in {"burst600_r1","burst600_r2","burst600_r3","headroom1000"})
                 ack = replay.json() if replay is not None and replay.status_code in (200,202) else {}
                 valid = ack.get("status") == "success" and ack.get("batch_id") == body["batch_id"]
                 self.discarded_ack_replays += int(valid)
@@ -598,8 +604,8 @@ class Probe:
             print(json.dumps(self.phase_results[-1]), flush=True)
         async def scheduler_fault():
             await at(50*60)
-            (self.work/"attendance-worker-restart-ready").write_text(self.run_id)
-            await wait_marker("attendance-worker-restarted")
+            (self.work/"attendance-worker-restart-ready").write_text(json.dumps({"run_id":self.run_id,"round_id":self.main_round_id}))
+            await wait_marker("attendance-worker-restarted",seconds=180)
             self.phase_results.append({"phase": "scheduler_restarted", "client_epoch": time.time()})
         async def teacher_manual_during_load():
             await at(25*60)
