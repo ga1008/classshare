@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import json
 import re
 from pathlib import Path
 import sys
@@ -21,6 +22,37 @@ from tools.recorder_capacity_probe import load_owned_handoff
 FIXTURE_KIND = "login-attendance-capacity-fixture"
 NONCE = re.compile(r"[a-f0-9]{32}")
 SHA256 = re.compile(r"[a-f0-9]{64}")
+
+
+def http_error_diagnostic(status, content):
+    """Retain retry codes and hash HTTP-client-decoded bytes, not wire gzip."""
+    if type(status) is not int or status < 400:
+        return None
+    result = {"body_sha256": hashlib.sha256(content).hexdigest(), "body_bytes": len(content)}
+    if len(content) > 65536:
+        result["detail_kind"] = "oversized"
+        return result
+    try:
+        value = json.loads(content)
+    except (UnicodeError, ValueError, RecursionError):
+        result["detail_kind"] = "non_json"
+        return result
+    detail = value.get("detail", value) if isinstance(value, dict) else value
+    result["detail_kind"] = type(detail).__name__
+    if isinstance(detail, dict):
+        for key in ("error_code", "code"):
+            code = detail.get(key)
+            if isinstance(code, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,79}", code):
+                result["error_code"] = code
+                break
+        if type(detail.get("retryable")) is bool:
+            result["retryable"] = detail["retryable"]
+        disposition = detail.get("batch_disposition")
+        if isinstance(disposition, str) and disposition in {"retain", "quarantine", "discard"}:
+            result["batch_disposition"] = disposition
+    # Message/current_user_key and arbitrary validation inputs deliberately do
+    # not enter this diagnostic. The body hash preserves response identity.
+    return result
 
 
 def acceptable_attempt_status(status, *, declared_burst=False, expected_statuses=(200,201,202)):

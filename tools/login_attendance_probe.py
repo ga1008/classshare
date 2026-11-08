@@ -29,7 +29,7 @@ import httpx
 import websockets
 
 from tools.login_attendance_lab import (check_student_dto, load_attendance_fixture,
-                                        periodic_offsets, acceptable_attempt_status)
+                                        periodic_offsets, acceptable_attempt_status, http_error_diagnostic)
 
 
 def distribution(values):
@@ -208,7 +208,8 @@ class Probe:
                         "planned_outage": planned_attempt, "declared_burst":declared_burst is True,
                         "steady":steady_at_start,"scheduled_offset_ms":due_offset,
                         "phase":fault_at_start or self.active_fault_phase or ("declared_burst" if declared_burst else "steady" if steady_at_start else "setup_or_settlement"),
-                        "client_epoch_started":began_epoch,"client_epoch_finished":time.time()})
+                        "client_epoch_started":began_epoch,"client_epoch_finished":time.time(),
+                        "response_error":http_error_diagnostic(response.status_code,response.content) if response is not None else None})
             if response is not None and (response.status_code < 500 and response.status_code != 429):
                 self.intent_offsets.pop(logical_id,None)
                 return response

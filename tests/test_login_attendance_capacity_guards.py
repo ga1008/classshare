@@ -17,7 +17,7 @@ from tests.test_recorder_capacity_probe import make_owned
 from tools.platform_capacity_lab_manifest import LabManifestError, fingerprint, source_hashes
 from tools.login_attendance_lab import (FIXTURE_KIND, check_student_dto,
                                         load_attendance_fixture, periodic_offsets, acceptable_attempt_status, validate_scan_round,
-                                        coordinate_worker_fault)
+                                        coordinate_worker_fault, http_error_diagnostic)
 from tools.login_attendance_lab_facts import add_union
 from tools.login_attendance_probe import Probe, gather_owned
 from tools.recorder_capacity_fault import main as coordinate_app_fault, restart_identity_report
@@ -55,6 +55,41 @@ class AttendanceCapacityGuardsTests(unittest.TestCase):
 
     def test_owned_new_runtime_fixture(self):
         self.assertEqual(len(self.load()[1]["students"]), 200)
+
+    def test_error_diagnostic_retains_actual_retry_contract_without_opaque_fields(self):
+        body=json.dumps({"detail":{"error_code":"collection_busy","retryable":True,
+            "batch_disposition":"retain","message":"private message","current_user_key":"student:4",
+            "access_token":"private token"}}).encode()
+        result=http_error_diagnostic(503,body)
+        self.assertEqual(result,{"body_sha256":hashlib.sha256(body).hexdigest(),"body_bytes":len(body),
+            "detail_kind":"dict","error_code":"collection_busy","retryable":True,"batch_disposition":"retain"})
+        self.assertIsNone(http_error_diagnostic(200,body))
+
+    def test_error_diagnostic_does_not_echo_validation_input_or_unstructured_messages(self):
+        bodies=(b'{"detail":"opaque private input"}',b'{"detail":[{"input":"private"}]}',
+                b'{"detail":{"error_code":"eyJ.private.token","message":"private","batch_disposition":[]}}',
+                b'<h1>private upstream error</h1>')
+        for body in bodies:
+            with self.subTest(body=body):
+                result=http_error_diagnostic(422,body)
+                self.assertEqual(result["body_sha256"],hashlib.sha256(body).hexdigest())
+                self.assertNotIn("private",json.dumps(result))
+                self.assertNotIn("error_code",result)
+
+    def test_error_diagnostic_bounds_parsing_but_hashes_the_actual_error_body(self):
+        body=b'x'*65537
+        self.assertEqual(http_error_diagnostic(502,body),{"body_sha256":hashlib.sha256(body).hexdigest(),
+            "body_bytes":len(body),"detail_kind":"oversized"})
+        deep_body=b'['*2000+b'0'+b']'*2000
+        self.assertLess(len(deep_body),65536)
+        parsed=http_error_diagnostic(503,deep_body)
+        self.assertEqual(parsed["body_sha256"],hashlib.sha256(deep_body).hexdigest())
+        self.assertIn(parsed["detail_kind"],{"list","non_json"})
+        # CPython versions differ in whether this small nested body exceeds
+        # their decoder stack. Exercise its failure contract deterministically.
+        with patch("tools.login_attendance_lab.json.loads",side_effect=RecursionError("deep response")):
+            self.assertEqual(http_error_diagnostic(503,deep_body),{"body_sha256":hashlib.sha256(deep_body).hexdigest(),
+                "body_bytes":len(deep_body),"detail_kind":"non_json"})
 
     def test_refuses_public_target_even_with_valid_fixture(self):
         with self.assertRaises(LabManifestError):
