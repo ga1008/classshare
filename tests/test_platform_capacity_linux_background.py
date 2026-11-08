@@ -46,7 +46,15 @@ class LinuxBackgroundIdentityTests(unittest.TestCase):
                                        {"id": 3, "kind": bg.background.ELASTIC_KIND}]}
         (self.runtime / bg.background.MANIFEST).write_text(json.dumps(self.manifest), encoding="utf-8")
         self.state = {"run_id": self.manifest["run_id"], "lab_identity": binding, "status": "stopped"}
+        self.state["dirty_producer"] = {"status": "stopped", "final_pending": 0,
+            "pending_state": "none", "committed_batches": 1, "scope": "process_segment",
+            "segment_started_at": "synthetic-segment-1", "deferred_cycles": 0}
         (self.runtime / bg.STATE).write_text(json.dumps(self.state), encoding="utf-8")
+        pressure = self.state["dirty_producer"]
+        self.events = [{"run_id": "owned-run", "event": event, "pressure": dict(pressure)} for event in (
+            "projection_dirty_producer_started", "projection_dirty_batch_committed",
+            "projection_dirty_producer_progress", "projection_dirty_producer_stopped")]
+        (self.runtime / bg.background.EVENTS).write_text("".join(json.dumps(event) + "\n" for event in self.events), encoding="utf-8")
         self.report = {"run_id": "owned-run", "scheduled_task_facts": [
             {**item, "status": "done"} for item in self.manifest["scheduled"]]}
 
@@ -139,7 +147,7 @@ class LinuxBackgroundIdentityTests(unittest.TestCase):
                 await asyncio.Future()
             finally:
                 order.append("workers_drained")
-        async def producer(manifest, runtime, shutdown, stop, dirty_batch):
+        async def producer(manifest, runtime, shutdown, stop, dirty_batch, *, record=None):
             await shutdown.wait()
             order.append("producer_drained")
         with patch.object(dispatcher, "_run", original), patch.object(bg, "_dirty_producer", producer), \

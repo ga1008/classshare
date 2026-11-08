@@ -192,15 +192,65 @@ def report_lab_background(identity):
     """Controller-side DB verification, never a claim by the HTTP load client."""
     runtime, manifest = _read_bound_manifest(identity)
     report = background._report_validated_background(runtime)
-    report.update(_background_integrity(manifest, report, json.loads((runtime / STATE).read_text(encoding="utf-8"))))
+    events = [json.loads(line) for line in (runtime / background.EVENTS).read_text(encoding="utf-8").splitlines() if line]
+    report.update(_background_integrity(manifest, report,
+        json.loads((runtime / STATE).read_text(encoding="utf-8")), events))
     report.update(lab_identity=manifest["lab_identity"],
                   dispatcher_entrypoint="scheduled_task_dispatcher.main",
                   verification_origin="verified Linux lab controller")
+    report["status"] = ("passed" if report["pressure_verification"]["status"] == "passed" else "incomplete")
     (runtime / "background-report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    if report["status"] != "passed":
+        raise RuntimeError("Synthetic pressure is incomplete; preserved background-report.json")
     return report
 
 
-def _background_integrity(manifest, report, state):
+def _pressure_run_integrity(run_id, events, state):
+    """A later healthy process segment must not hide earlier unfinished input."""
+    segments, committed_events = {}, 0
+    names = {"projection_dirty_producer_started", "projection_dirty_deferred",
+             "projection_dirty_producer_progress", "projection_dirty_producer_stopped",
+             "projection_dirty_producer_failed"}
+    for event in events:
+        if event.get("run_id") != run_id:
+            continue
+        name = event.get("event")
+        if name == "projection_dirty_batch_committed":
+            committed_events += 1
+        if name not in names:
+            continue
+        pressure = event.get("pressure") or {}
+        key = pressure.get("segment_started_at")
+        if not key or pressure.get("scope") != "process_segment":
+            raise ValueError("Synthetic producer lifecycle event lacks process segment identity")
+        segment = segments.setdefault(key, {"events": [], "pressure": {}})
+        segment["events"].append(name)
+        segment["pressure"] = pressure
+    checks = []
+    for key, segment in segments.items():
+        pressure, names_seen = segment["pressure"], segment["events"]
+        completed = (names_seen[0] == "projection_dirty_producer_started"
+            and names_seen[-1] == "projection_dirty_producer_stopped"
+            and names_seen.count("projection_dirty_producer_started") == 1
+            and names_seen.count("projection_dirty_producer_stopped") == 1
+            and "projection_dirty_producer_failed" not in names_seen
+            and pressure.get("status") == "stopped" and pressure.get("final_pending") == 0
+            and pressure.get("pending_state") == "none" and pressure.get("committed_batches", 0) > 0
+            and pressure.get("committed_batches") == names_seen.count("projection_dirty_producer_progress")
+            and pressure.get("deferred_cycles") == names_seen.count("projection_dirty_deferred"))
+        checks.append({**pressure, "producer_status": pressure.get("status"),
+                       "status": "passed" if completed else "incomplete"})
+    latest_matches = bool(segments) and next(reversed(segments.values()))["pressure"] == state.get("dirty_producer")
+    committed = sum(item.get("committed_batches", 0) for item in checks)
+    complete = bool(checks) and all(item["status"] == "passed" for item in checks) and latest_matches and committed == committed_events
+    return {"scope": "run", "status": "passed" if complete else "incomplete", "segment_count": len(checks),
+            "committed_batches": committed, "committed_batch_events": committed_events,
+            "deferred_cycles": sum(item.get("deferred_cycles", 0) for item in checks),
+            "final_pending": sum(item.get("final_pending", 0) for item in checks),
+            "latest_segment_matches_worker_state": latest_matches, "segments": checks}
+
+
+def _background_integrity(manifest, report, state, events=()):
     """An absent controlled job must not disappear from an aggregate count."""
     finite = {"todo_due_reminder", "assignment_due_reminder", background.ELASTIC_KIND}
     expected = {int(item["id"]): item["kind"] for item in manifest["scheduled"] if item["kind"] in finite}
@@ -210,26 +260,88 @@ def _background_integrity(manifest, report, state):
     missing = sorted(set(expected) - set(facts))
     unfinished = [facts[task_id] for task_id in sorted(expected.keys() & facts.keys()) if facts[task_id]["status"] != "done"]
     mismatched = sorted(task_id for task_id in expected.keys() & facts.keys() if facts[task_id]["kind"] != expected[task_id])
-    return {"finite_task_verification": {"expected_count": len(expected), "missing_task_ids": missing,
+    return {"pressure_verification": _pressure_run_integrity(manifest["run_id"], events, state),
+            "finite_task_verification": {"expected_count": len(expected), "missing_task_ids": missing,
                 "unfinished_tasks": unfinished, "mismatched_task_kind_ids": mismatched,
                 "all_present_and_done": not missing and not unfinished and not mismatched},
             "worker_identity_matches_run": state.get("run_id") == manifest["run_id"] == report.get("run_id")
                 and state.get("lab_identity") == manifest["lab_identity"]}
 
 
-async def _dirty_producer(manifest, runtime, shutdown, stop, dirty_batch):
-    index = 0
-    until = time.monotonic() + manifest["duration"]
-    while (not shutdown.is_set() and not stop.get("requested")
-           and not (runtime / INTAKE_STOP).exists() and time.monotonic() < until):
-        # The owner wrapper never cancels this task. On shutdown an accepted
-        # short transaction finishes and remains visible to final DB checks.
-        await asyncio.to_thread(dirty_batch, index)
-        index += 1
+def _producer_stop_reason(runtime, shutdown, stop, until):
+    if shutdown.is_set():
+        return "dispatcher_shutdown"
+    if stop.get("requested"):
+        return "stop_requested"
+    if (runtime / INTAKE_STOP).exists():
+        return "intake_stop_marker"
+    if time.monotonic() >= until:
+        return "duration_elapsed"
+    return None
+
+
+async def _producer_pause(seconds, runtime, shutdown, stop, until):
+    deadline = min(until, time.monotonic() + seconds)
+    while not _producer_stop_reason(runtime, shutdown, stop, until):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
         try:
-            await asyncio.wait_for(shutdown.wait(), timeout=manifest["dirty_every_seconds"])
+            await asyncio.wait_for(shutdown.wait(), timeout=min(.25, remaining))
         except TimeoutError:
             pass
+
+
+async def _dirty_producer(manifest, runtime, shutdown, stop, dirty_batch, *, record=None):
+    index = 0
+    until = time.monotonic() + manifest["duration"]
+    pending_state, deferred_cycles, consecutive_deferrals = "none", 0, 0
+    segment_started_at = datetime.now().isoformat()
+
+    def observe(event, *, status="running", **values):
+        if record is not None:
+            # Worker restarts intentionally retain the append-only event log;
+            # these counters describe this process segment, never a run total.
+            pressure = {"status": status, "scope": "process_segment", "segment_started_at": segment_started_at,
+                        "committed_batches": index,
+                        "next_batch_index": index, "last_committed_batch_index": index - 1,
+                        "final_pending": int(pending_state != "none"), "pending_state": pending_state,
+                        "deferred_cycles": deferred_cycles}
+            record(event, pressure=pressure, **values)
+
+    observe("projection_dirty_producer_started")
+    try:
+        while not _producer_stop_reason(runtime, shutdown, stop, until):
+            # One frozen index owns at most one executing thread. The five
+            # bounded transaction attempts stay unchanged; a confirmed abort
+            # defers that same work instead of terminating the real dispatcher.
+            pending_state = "inflight"
+            try:
+                await asyncio.to_thread(dirty_batch, index)
+            except _RolledBackDirtyConflict as exc:
+                pending_state = "rolled_back"
+                deferred_cycles += 1
+                consecutive_deferrals += 1
+                cooldown = (1, 2, 4, 5)[min(consecutive_deferrals - 1, 3)]
+                selected = tuple(sorted({manifest["student_ids"][(index * 10 + i) % len(manifest["student_ids"])]
+                                         for i in range(10)}))
+                observe("projection_dirty_deferred", batch_index=index, student_ids=selected,
+                        accepted=False, rollback_confirmed=True, sqlstate=exc.sqlstate,
+                        cooldown_seconds=cooldown)
+                await _producer_pause(cooldown, runtime, shutdown, stop, until)
+                continue
+            pending_state = "none"
+            index += 1
+            consecutive_deferrals = 0
+            observe("projection_dirty_producer_progress")
+            await _producer_pause(manifest["dirty_every_seconds"], runtime, shutdown, stop, until)
+    except BaseException as exc:
+        # Unknown commit, permanent error, failed rollback/close and audit I/O
+        # failures remain fatal. Do not interpret any of them as safe deferral.
+        observe("projection_dirty_producer_failed", status="error", error_type=type(exc).__name__)
+        raise
+    observe("projection_dirty_producer_stopped", status="stopped",
+            reason=_producer_stop_reason(runtime, shutdown, stop, until))
     await shutdown.wait()
 
 
@@ -308,9 +420,13 @@ def run_lab_worker(identity):
         _apply_dirty_batch(index, manifest, connect_postgres, progress.mark_student_learning_progress_dirty, record)
 
     async def with_pressure(args, *, stop):
+        def observed_pressure(event, **values):
+            record(event, **values)  # Audit failure is fatal, even after commit.
+            state["dirty_producer"] = values["pressure"]
+            state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
         async def producer(shutdown, current_stop):
             await _wait_dispatcher_ready(ready, shutdown, current_stop, runtime)
-            await _dirty_producer(manifest, runtime, shutdown, current_stop, dirty_batch)
+            await _dirty_producer(manifest, runtime, shutdown, current_stop, dirty_batch, record=observed_pressure)
         await _run_with_producer(original_run, args, stop, producer)
 
     state = {"status": "starting", "dispatcher_ready": False, "pid": os.getpid(), "run_id": manifest["run_id"],
