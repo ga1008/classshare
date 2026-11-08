@@ -5,27 +5,33 @@ from classroom_app.services import behavior_tracking_service
 
 
 class FakeCursor:
+    def __init__(self, row=None):
+        self.row = row
+
     def fetchone(self):
-        return None
+        return self.row
 
 
 class FakeConnection:
     def __init__(self):
         self.execute_calls = []
+        self.state = {key: 0 for key in behavior_tracking_service._BEHAVIOR_SNAPSHOT_FIELDS}
+        self.state.update(class_offering_id=20, user_pk=10, user_role="student",
+                          next_profile_due_at=None, presence_coverage_json=None)
 
     def cursor(self):
         raise AssertionError("behavior write paths must not use raw cursor()")
 
     def execute(self, sql, params=()):
         self.execute_calls.append((" ".join(str(sql).split()), tuple(params)))
-        return FakeCursor()
+        return FakeCursor(self.state)
 
 
 class BehaviorPostgresWriteTests(unittest.TestCase):
     def test_behavior_event_batch_uses_insert_returning_helper(self):
         conn = FakeConnection()
 
-        with patch.object(behavior_tracking_service, "_ensure_behavior_state_row", return_value=None), patch.object(
+        with patch.object(behavior_tracking_service, "_ensure_behavior_state_row", return_value=conn.state), patch.object(
             behavior_tracking_service,
             "execute_insert_returning_id",
             return_value=777,

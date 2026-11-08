@@ -16,7 +16,7 @@ from ..config import (
 )
 from ..core import ai_client
 from ..database import get_db_connection
-from ..db.connection import begin_immediate_transaction, execute_insert_returning_id
+from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
 from .ai_gateway_service import ai_gateway_post
 from .behavior_event_validation import HEARTBEAT_ACTIONS, is_measured_presence
 from .behavior_inbox_service import BehaviorWritePipeline as _BehaviorWritePipeline
@@ -250,6 +250,85 @@ def _should_start_new_behavior_session(current_anchor_text: Any, session_started
     return next_anchor > 0 and (current_anchor == 0 or next_anchor > current_anchor + 1000)
 
 
+_BEHAVIOR_SNAPSHOT_FIELDS = tuple("""
+    class_offering_id user_pk user_role total_activity_count last_profiled_activity_count
+    profile_generation_pending last_event_at last_profiled_at next_profile_interval_seconds
+    next_profile_due_at online_accumulated_seconds current_session_started_at last_presence_at
+    last_page_key last_visibility_state last_focus_state last_idle_seconds focus_total_seconds
+    blur_total_seconds visible_total_seconds hidden_total_seconds discussion_lurk_total_seconds
+    ai_panel_open_total_seconds learning_online_seconds learning_focus_seconds created_at updated_at
+""".split())
+_BEHAVIOR_MUTABLE_FIELDS = tuple(field for field in _BEHAVIOR_SNAPSHOT_FIELDS if field not in {
+    "class_offering_id", "user_pk", "user_role", "last_profiled_activity_count", "last_profiled_at", "created_at",
+}) + ("presence_coverage_json",)
+
+
+def _merge_behavior_session_state(
+    state: dict[str, Any],
+    *,
+    now: str,
+    session_started_at: Optional[str] = None,
+    last_presence_at: Optional[str] = None,
+    page_key: Optional[str] = None,
+) -> None:
+    """The existing session transition, on one receipt-local locked row."""
+    if timestamp_ms(last_presence_at) < timestamp_ms(state["last_presence_at"]):
+        last_presence_at = None
+    if _should_start_new_behavior_session(
+        _safe_row_value(state, "current_session_started_at"),
+        session_started_at,
+    ):
+        next_interval = build_random_profile_interval_seconds()
+        for lifetime, rolling in (("learning_online_seconds", "online_accumulated_seconds"),
+                                  ("learning_focus_seconds", "focus_total_seconds")):
+            if state[lifetime] is None:
+                state[lifetime] = state[rolling]
+        state.update(
+            current_session_started_at=session_started_at,
+            profile_generation_pending=0,
+            next_profile_interval_seconds=next_interval,
+            next_profile_due_at=_build_next_profile_due_at(session_started_at, next_interval, fallback=now),
+            last_visibility_state=None,
+            last_focus_state=None,
+            last_idle_seconds=0,
+        )
+        for key in ("online_accumulated_seconds", "focus_total_seconds", "blur_total_seconds", "visible_total_seconds",
+                    "hidden_total_seconds", "discussion_lurk_total_seconds", "ai_panel_open_total_seconds"):
+            state[key] = 0
+    else:
+        current_interval = int(_safe_row_value(state, "next_profile_interval_seconds") or 0)
+        if current_interval <= 0:
+            current_interval = build_random_profile_interval_seconds()
+        current_anchor = str(_safe_row_value(state, "current_session_started_at") or session_started_at or now)
+        current_due_at = str(_safe_row_value(state, "next_profile_due_at") or "").strip()
+        if not current_due_at:
+            due_anchor_text = _latest_timestamp_text(
+                _safe_row_value(state, "last_profiled_at"), current_anchor, fallback=current_anchor,
+            )
+            current_due_at = _build_next_profile_due_at(due_anchor_text, current_interval, fallback=now)
+        if state["current_session_started_at"] is None:
+            state["current_session_started_at"] = current_anchor
+        state.update(next_profile_interval_seconds=current_interval, next_profile_due_at=current_due_at)
+    if last_presence_at is not None:
+        state["last_presence_at"] = last_presence_at
+    if page_key is not None:
+        state["last_page_key"] = page_key
+    state["updated_at"] = now
+
+
+def _load_behavior_state_for_update(
+    conn, *, class_offering_id: int, user_pk: int, user_role: str,
+) -> Optional[dict[str, Any]]:
+    columns = ",".join((*_BEHAVIOR_SNAPSHOT_FIELDS, "presence_coverage_json"))
+    suffix = " FOR UPDATE" if get_configured_db_engine() == "postgres" else ""
+    row = conn.execute(
+        f"SELECT {columns} FROM classroom_behavior_states "
+        "WHERE class_offering_id=? AND user_pk=? AND user_role=? LIMIT 1" + suffix,
+        (class_offering_id, user_pk, user_role),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 @retry_on_locked()
 def _ensure_behavior_state_row(
     conn,
@@ -261,138 +340,60 @@ def _ensure_behavior_state_row(
     session_started_at: Optional[str] = None,
     last_presence_at: Optional[str] = None,
     page_key: Optional[str] = None,
-) -> None:
-    state = conn.execute(
-        """
-        SELECT current_session_started_at, last_profiled_at, last_presence_at,
-               next_profile_interval_seconds, next_profile_due_at
-        FROM classroom_behavior_states
-        WHERE class_offering_id = ?
-          AND user_pk = ?
-          AND user_role = ?
-        LIMIT 1
-        """,
-        (class_offering_id, user_pk, user_role),
-    ).fetchone()
-
-    if not state:
-        next_interval = build_random_profile_interval_seconds()
-        anchor_text = str(session_started_at or now)
-        next_due_at = _build_next_profile_due_at(anchor_text, next_interval, fallback=now)
-        conn.execute(
-            """
-            INSERT INTO classroom_behavior_states (
-                class_offering_id, user_pk, user_role, total_activity_count,
-                last_profiled_activity_count, profile_generation_pending,
-                last_event_at, next_profile_interval_seconds, next_profile_due_at,
-                current_session_started_at, last_presence_at, last_page_key,
-                created_at, updated_at
-            )
-            VALUES (?, ?, ?, 0, 0, 0, NULL, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                class_offering_id,
-                user_pk,
-                user_role,
-                next_interval,
-                next_due_at,
-                anchor_text,
-                last_presence_at,
-                page_key,
-                now,
-                now,
-            ),
-        )
-        return
-
-    if timestamp_ms(last_presence_at) < timestamp_ms(state["last_presence_at"]):
-        last_presence_at = None
-
-    if _should_start_new_behavior_session(
-        _safe_row_value(state, "current_session_started_at"),
-        session_started_at,
-    ):
-        next_interval = build_random_profile_interval_seconds()
-        next_due_at = _build_next_profile_due_at(session_started_at, next_interval, fallback=now)
-        conn.execute(
-            """
-            UPDATE classroom_behavior_states
-            SET current_session_started_at = ?,
-                last_presence_at = COALESCE(?, last_presence_at),
-                last_page_key = COALESCE(?, last_page_key),
-                profile_generation_pending = 0,
-                next_profile_interval_seconds = ?,
-                next_profile_due_at = ?,
-                learning_online_seconds = COALESCE(learning_online_seconds, online_accumulated_seconds),
-                learning_focus_seconds = COALESCE(learning_focus_seconds, focus_total_seconds),
-                online_accumulated_seconds = 0,
-                focus_total_seconds = 0,
-                blur_total_seconds = 0,
-                visible_total_seconds = 0,
-                hidden_total_seconds = 0,
-                discussion_lurk_total_seconds = 0,
-                ai_panel_open_total_seconds = 0,
-                last_visibility_state = NULL,
-                last_focus_state = NULL,
-                last_idle_seconds = 0,
-                updated_at = ?
-            WHERE class_offering_id = ?
-              AND user_pk = ?
-              AND user_role = ?
-            """,
-            (
-                session_started_at,
-                last_presence_at,
-                page_key,
-                next_interval,
-                next_due_at,
-                now,
-                class_offering_id,
-                user_pk,
-                user_role,
-            ),
-        )
-        return
-
-    current_interval = int(_safe_row_value(state, "next_profile_interval_seconds") or 0)
-    if current_interval <= 0:
-        current_interval = build_random_profile_interval_seconds()
-
-    current_anchor = str(_safe_row_value(state, "current_session_started_at") or session_started_at or now)
-    current_due_at = str(_safe_row_value(state, "next_profile_due_at") or "").strip()
-    if not current_due_at:
-        due_anchor_text = _latest_timestamp_text(
-            _safe_row_value(state, "last_profiled_at"),
-            current_anchor,
-            fallback=current_anchor,
-        )
-        current_due_at = _build_next_profile_due_at(due_anchor_text, current_interval, fallback=now)
-
-    conn.execute(
-        """
-        UPDATE classroom_behavior_states
-        SET current_session_started_at = COALESCE(current_session_started_at, ?),
-            last_presence_at = COALESCE(?, last_presence_at),
-            last_page_key = COALESCE(?, last_page_key),
-            next_profile_interval_seconds = ?,
-            next_profile_due_at = ?,
-            updated_at = ?
-        WHERE class_offering_id = ?
-          AND user_pk = ?
-          AND user_role = ?
-        """,
-        (
-            current_anchor,
-            last_presence_at,
-            page_key,
-            current_interval,
-            current_due_at,
-            now,
-            class_offering_id,
-            user_pk,
-            user_role,
-        ),
+    defer_write: bool = False,
+) -> dict[str, Any]:
+    state = _load_behavior_state_for_update(
+        conn, class_offering_id=class_offering_id, user_pk=user_pk, user_role=user_role,
     )
+    if state is None:
+        interval = build_random_profile_interval_seconds()
+        anchor = str(session_started_at or now)
+        columns = ",".join((*_BEHAVIOR_SNAPSHOT_FIELDS, "presence_coverage_json"))
+        row = conn.execute(
+            "INSERT INTO classroom_behavior_states (class_offering_id,user_pk,user_role,total_activity_count,"
+            "last_profiled_activity_count,profile_generation_pending,last_event_at,next_profile_interval_seconds,next_profile_due_at,"
+            "current_session_started_at,last_presence_at,last_page_key,created_at,updated_at) "
+            "VALUES (?,?,?,0,0,0,NULL,?,?,?,?,?,?,?) ON CONFLICT(class_offering_id,user_pk,user_role) DO NOTHING RETURNING " + columns,
+            (class_offering_id, user_pk, user_role, interval,
+             _build_next_profile_due_at(anchor, interval, fallback=now),
+             anchor, last_presence_at, page_key, now, now),
+        ).fetchone()
+        if row:
+            return dict(row)
+        state = _load_behavior_state_for_update(
+            conn, class_offering_id=class_offering_id, user_pk=user_pk, user_role=user_role,
+        )
+    if state is None:
+        raise RuntimeError("Behavior state disappeared during receipt application")
+    _merge_behavior_session_state(
+        state, now=now, session_started_at=session_started_at,
+        last_presence_at=last_presence_at, page_key=page_key,
+    )
+    if not defer_write:
+        _store_behavior_state(conn, state)
+    return state
+
+
+def _state_snapshot(state: Optional[dict[str, Any]]) -> dict[str, Any]:
+    snapshot = {key: state[key] for key in _BEHAVIOR_SNAPSHOT_FIELDS} if state else {}
+    remaining = _seconds_until_due_timestamp(snapshot.get("next_profile_due_at"))
+    if remaining <= 0 and not snapshot.get("next_profile_due_at"):
+        remaining = int(snapshot.get("next_profile_interval_seconds") or 0) - int(snapshot.get("online_accumulated_seconds") or 0)
+    snapshot["seconds_until_next_profile"] = max(0, remaining)
+    return snapshot
+
+
+def _store_behavior_state(conn, state: dict[str, Any]) -> dict[str, Any]:
+    assignments = ",".join(key + "=?" for key in _BEHAVIOR_MUTABLE_FIELDS)
+    row = conn.execute(
+        "UPDATE classroom_behavior_states SET " + assignments +
+        " WHERE class_offering_id=? AND user_pk=? AND user_role=? RETURNING " + ",".join(_BEHAVIOR_SNAPSHOT_FIELDS),
+        tuple(state[key] for key in _BEHAVIOR_MUTABLE_FIELDS) +
+        (state["class_offering_id"], state["user_pk"], state["user_role"]),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("Behavior state disappeared before receipt completion")
+    return _state_snapshot(dict(row))
 
 
 def _load_behavior_state_snapshot(
@@ -418,12 +419,7 @@ def _load_behavior_state_snapshot(
         """,
         (class_offering_id, user_pk, user_role),
     ).fetchone()
-    snapshot = dict(row) if row else {}
-    remaining = _seconds_until_due_timestamp(snapshot.get("next_profile_due_at"))
-    if remaining <= 0 and not snapshot.get("next_profile_due_at"):
-        remaining = int(snapshot.get("next_profile_interval_seconds") or 0) - int(snapshot.get("online_accumulated_seconds") or 0)
-    snapshot["seconds_until_next_profile"] = max(0, remaining)
-    return snapshot
+    return _state_snapshot(dict(row) if row else None)
 
 
 def _record_behavior_batch_in_connection(
@@ -451,7 +447,7 @@ def _record_behavior_batch_in_connection(
         for item in events if isinstance(item, dict)
     )
 
-    _ensure_behavior_state_row(
+    state = _ensure_behavior_state_row(
         conn,
         class_offering_id=class_offering_id,
         user_pk=user_pk,
@@ -460,6 +456,7 @@ def _record_behavior_batch_in_connection(
         session_started_at=session_started_at,
         last_presence_at=now_text if has_receipt_presence else None,
         page_key=page_key if has_receipt_presence else None,
+        defer_write=True,
     )
 
     for item in events:
@@ -472,11 +469,8 @@ def _record_behavior_batch_in_connection(
         item_page_key = str(item.get("page_key") or page_key or "").strip() or None
 
         if event_type in HEARTBEAT_ACTIONS:
-            learning_seconds += _apply_presence_heartbeat(
-                conn,
-                class_offering_id=class_offering_id,
-                user_pk=user_pk,
-                user_role=user_role,
+            learning_seconds += _merge_presence_heartbeat(
+                state,
                 now=now,
                 page_key=item_page_key,
                 session_started_at=session_started_at,
@@ -507,33 +501,13 @@ def _record_behavior_batch_in_connection(
             ),
         )
         logged_event_ids.append(event_id)
-        conn.execute(
-            """
-            UPDATE classroom_behavior_states
-            SET total_activity_count = total_activity_count + 1,
-                last_event_at = ?,
-                last_page_key = COALESCE(?, last_page_key),
-                updated_at = ?
-            WHERE class_offering_id = ?
-              AND user_pk = ?
-              AND user_role = ?
-            """,
-            (
-                now_text,
-                item_page_key,
-                now_text,
-                class_offering_id,
-                user_pk,
-                user_role,
-            ),
-        )
+        state["total_activity_count"] = None if state["total_activity_count"] is None else state["total_activity_count"] + 1
+        state["last_event_at"] = now_text
+        if item_page_key is not None:
+            state["last_page_key"] = item_page_key
+        state["updated_at"] = now_text
 
-    snapshot = _load_behavior_state_snapshot(
-        conn,
-        class_offering_id=class_offering_id,
-        user_pk=user_pk,
-        user_role=user_role,
-    )
+    snapshot = _store_behavior_state(conn, state)
     if user_role == "student" and (logged_event_ids or learning_seconds):
         from .learning_progress_service import mark_student_learning_progress_dirty
 
@@ -604,12 +578,9 @@ def record_behavior_event(
     return snapshot
 
 
-def _apply_presence_heartbeat(
-    conn,
+def _merge_presence_heartbeat(
+    state: Optional[dict[str, Any]],
     *,
-    class_offering_id: int,
-    user_pk: int,
-    user_role: str,
     now: datetime,
     page_key: Optional[str],
     session_started_at: Optional[str],
@@ -632,18 +603,6 @@ def _apply_presence_heartbeat(
 
     if sample is None:
         return finish()
-    state = conn.execute(
-        """
-        SELECT last_presence_at, current_session_started_at, last_profiled_at, presence_coverage_json
-        FROM classroom_behavior_states
-        WHERE class_offering_id = ?
-          AND user_pk = ?
-          AND user_role = ?
-        LIMIT 1
-        """,
-        (class_offering_id, user_pk, user_role),
-    ).fetchone()
-
     if state is None:
         reasons.append("presence_state_missing")
         return finish()
@@ -662,52 +621,61 @@ def _apply_presence_heartbeat(
     observed_at = datetime.fromtimestamp(sample.observed_ms / 1000, tz=now.tzinfo).isoformat() if update_presence else None
     focus_state = "focused" if sample.focused else "blurred"
 
-    conn.execute(
-        """
-        UPDATE classroom_behavior_states
-        SET last_presence_at = COALESCE(?, last_presence_at),
-            last_page_key = COALESCE(?, last_page_key),
-            last_visibility_state = COALESCE(?, last_visibility_state),
-            last_focus_state = COALESCE(?, last_focus_state),
-            last_idle_seconds = COALESCE(?, last_idle_seconds),
-            learning_online_seconds = COALESCE(learning_online_seconds, online_accumulated_seconds) + ?,
-            learning_focus_seconds = COALESCE(learning_focus_seconds, focus_total_seconds) + ?,
-            presence_coverage_json = ?,
-            online_accumulated_seconds = online_accumulated_seconds + ?,
-            focus_total_seconds = focus_total_seconds + ?,
-            blur_total_seconds = blur_total_seconds + ?,
-            visible_total_seconds = visible_total_seconds + ?,
-            hidden_total_seconds = hidden_total_seconds + ?,
-            discussion_lurk_total_seconds = discussion_lurk_total_seconds + ?,
-            ai_panel_open_total_seconds = ai_panel_open_total_seconds + ?,
-            updated_at = ?
-        WHERE class_offering_id = ?
-          AND user_pk = ?
-          AND user_role = ?
-        """,
-        (
-            observed_at,
-            page_key if update_presence else None,
-            sample.visibility if fresh_status else None,
-            focus_state if fresh_status else None,
-            min(sample.idle_seconds, ACTIVE_PRESENCE_WINDOW_SECONDS) if fresh_status else None,
-            deltas["learning"],
-            deltas["learning"],
-            coverage,
-            deltas["rolling_learning"],
-            deltas["rolling_learning"],
-            deltas["blur"],
-            deltas["visible"],
-            deltas["hidden"],
-            deltas["lurk"],
-            deltas["ai"],
-            now.isoformat(),
-            class_offering_id,
-            user_pk,
-            user_role,
-        ),
-    )
+    for key, value in (
+        ("last_presence_at", observed_at),
+        ("last_page_key", page_key if update_presence else None),
+        ("last_visibility_state", sample.visibility if fresh_status else None),
+        ("last_focus_state", focus_state if fresh_status else None),
+        ("last_idle_seconds", min(sample.idle_seconds, ACTIVE_PRESENCE_WINDOW_SECONDS) if fresh_status else None),
+    ):
+        if value is not None:
+            state[key] = value
+
+    # Preserve legacy NULL versus zero, and evaluate the lifetime fallback
+    # before changing the rolling counters, just as the original SQL did.
+    for lifetime, rolling in (("learning_online_seconds", "online_accumulated_seconds"),
+                              ("learning_focus_seconds", "focus_total_seconds")):
+        previous = state[lifetime] if state[lifetime] is not None else state[rolling]
+        state[lifetime] = None if previous is None else previous + deltas["learning"]
+    for key, delta in (
+        ("online_accumulated_seconds", "rolling_learning"),
+        ("focus_total_seconds", "rolling_learning"),
+        ("blur_total_seconds", "blur"),
+        ("visible_total_seconds", "visible"),
+        ("hidden_total_seconds", "hidden"),
+        ("discussion_lurk_total_seconds", "lurk"),
+        ("ai_panel_open_total_seconds", "ai"),
+    ):
+        state[key] = None if state[key] is None else state[key] + deltas[delta]
+    state["presence_coverage_json"] = coverage
+    state["updated_at"] = now.isoformat()
     return finish(deltas["learning"], measured=True)
+
+
+def _apply_presence_heartbeat(
+    conn,
+    *,
+    class_offering_id: int,
+    user_pk: int,
+    user_role: str,
+    now: datetime,
+    page_key: Optional[str],
+    session_started_at: Optional[str],
+    payload: dict,
+    collection: Optional[dict] = None,
+) -> int:
+    """Compatibility entry point; batch application shares the same pure merge."""
+    state = _load_behavior_state_for_update(
+        conn, class_offering_id=class_offering_id, user_pk=user_pk, user_role=user_role,
+    )
+    previous = state.copy() if state is not None else None
+    seconds = _merge_presence_heartbeat(
+        state, now=now, page_key=page_key, session_started_at=session_started_at,
+        payload=payload, collection=collection,
+    )
+    if state != previous:
+        _store_behavior_state(conn, state)
+    return seconds
 
 
 def record_behavior_batch(
