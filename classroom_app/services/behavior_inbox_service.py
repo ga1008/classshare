@@ -375,14 +375,23 @@ class BehaviorWritePipeline:
     def _select_next_receipt(self, conn, *, postgres: bool):
         # Preserve actor order across classrooms too. Daily streaks/rewards
         # share the actor, whereas heartbeat state is scoped to the classroom.
-        return conn.execute("""SELECT q.* FROM behavior_write_inbox q
-            WHERE q.state = 'pending' AND (q.retry_at IS NULL OR q.retry_at <= ?)
-              AND NOT EXISTS (SELECT 1 FROM behavior_write_inbox previous
-                  WHERE previous.state = 'pending' AND previous.user_role = q.user_role
-                    AND previous.user_pk = q.user_pk
-                    AND (previous.received_at < q.received_at OR
-                         (previous.received_at = q.received_at AND previous.batch_key < q.batch_key)))
-            ORDER BY q.received_at, q.batch_key LIMIT 1""" + (" FOR UPDATE SKIP LOCKED" if postgres else ""),
+        # Materialize heads once: after a quiet period PostgreSQL can estimate
+        # just one pending row, turning a correlated predecessor lookup into
+        # repeated scans of the whole backlog. Carry state through the fence
+        # so the locked row is rechecked without a second pending-only scan.
+        # Rank before retry filtering: a future retry blocks only its actor.
+        return conn.execute("""WITH actor_heads AS MATERIALIZED (
+                SELECT batch_key, state FROM (
+                    SELECT batch_key, state, ROW_NUMBER() OVER (
+                        PARTITION BY user_role, user_pk ORDER BY received_at, batch_key
+                    ) AS actor_rank
+                    FROM behavior_write_inbox WHERE state = 'pending'
+                ) ranked WHERE actor_rank = 1
+            )
+            SELECT q.* FROM actor_heads h JOIN behavior_write_inbox q
+                ON q.batch_key = h.batch_key AND q.state = h.state
+            WHERE q.retry_at IS NULL OR q.retry_at <= ?
+            ORDER BY q.received_at, q.batch_key LIMIT 1""" + (" FOR UPDATE OF q SKIP LOCKED" if postgres else ""),
             (datetime.now().isoformat(),)).fetchone()
 
     def _apply_receipt(self, conn, row) -> tuple[bool, int, str]:
