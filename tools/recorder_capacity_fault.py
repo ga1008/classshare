@@ -29,13 +29,16 @@ def main(a):
     log=(work/'fault-holder.log').open('w')
     hold=subprocess.Popen([*ssh,f'cd {runtime} && docker compose -f compose.json run --rm --no-deps --entrypoint python controller /app/tools/recorder_capacity_facts.py hold --seconds 15'],stdout=log,stderr=subprocess.STDOUT,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     poll=f"python3 -c \"from pathlib import Path;import time;p=Path('{runtime}/artifacts/apply-held');end=time.monotonic()+10;exec('while not p.exists() and time.monotonic()<end: time.sleep(.05)');assert p.exists();print(p.read_text())\""
-    held=float(command(poll));(work/'fault-held').write_text(str(held))
+    held=float(command(poll));held_observed_monotonic=time.monotonic();held_observed_client_epoch=time.time()
+    (work/'fault-held').write_text(str(held))
     deadline=time.monotonic()+30
     while not (work/'fault-acked').exists() and time.monotonic()<deadline:time.sleep(.05)
     assert (work/'fault-acked').exists()
     # Stop/start only this explicitly owned app container. PG/queue volumes and
     # all other roles remain running. No general restart or production target.
-    restart_began=time.time();assert restart_began-held<13,'Admission took too long to retain a blocked queue for restart'
+    # The held timestamp belongs to the VM. Compare local monotonic clocks for
+    # the restart guard; Windows and VM wall clocks need not be synchronized.
+    restart_began=time.time();assert time.monotonic()-held_observed_monotonic<13,'Admission took too long to retain a blocked queue for restart'
     command('docker restart --time 5 '+name,timeout=30)
     deadline=time.monotonic()+60
     while time.monotonic()<deadline:
@@ -51,6 +54,8 @@ def main(a):
     assert hold.wait(timeout=40)==0;log.close()
     release=float(command('cat '+runtime+'/artifacts/apply-released'))
     report={'status':'injected','lab_nonce':nonce,'hold_acquired_server_epoch':held,'hold_released_server_epoch':release,'hold_seconds':release-held,
+            'hold_observed_client_epoch':held_observed_client_epoch,
+            'timestamp_domains':{'hold_acquired_server_epoch':'VM','hold_released_server_epoch':'VM','hold_observed_client_epoch':'external_client','planned_app_restart_began_epoch':'external_client','app_ready_epoch':'external_client'},
             'planned_app_restart_began_epoch':restart_began,'app_ready_epoch':float((work/'fault-restarted').read_text()),
             'same_container_and_image':True,'old_pid':old['State']['Pid'],'new_pid':after['State']['Pid'],'other_roles_restarted':False,'production_contacted':False}
     (work/'fault-injection.json').write_text(json.dumps(report,indent=2));print(json.dumps(report))

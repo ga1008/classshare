@@ -1,0 +1,233 @@
+{
+  "status": "core_recorder_capacity_gates_passed_with_explicit_limits",
+  "lab_nonce": "84e5cbb7938b4082a29625d1c25ea629",
+  "run_id": "fc49755d7ab7434299c814eb1c8b83b9",
+  "source_commit": "2e44e4920f05bb783b184a1801dca4828b62d9c3",
+  "runtime_commit": "c35e20e1 (included in final source)",
+  "image": "sha256:10ffd3e761f12d6513fd70d828a4822eccf20879e58b6a2023dd1c7c37b43a5c",
+  "batch_counts": {
+    "steady100": 900,
+    "steady200": 17993,
+    "steady200_material_v2": 3000,
+    "contract_visible_overlap": 1,
+    "contract_hidden_overlap": 1,
+    "contract_completed_status_only": 1,
+    "burst600_r1": 600,
+    "burst600_r2": 600,
+    "burst600_r3": 600,
+    "headroom1000": 600,
+    "blocked_apply": 200
+  },
+  "facts_status": "passed",
+  "websocket_checks_passed": true,
+  "actual_open_samples": 1466,
+  "actual_1000_open_samples": 33,
+  "whole_vm_cpus": 2,
+  "whole_vm_ram_mib": 3915,
+  "whole_vm_swap": 0,
+  "all_finite_jobs_done": true,
+  "finite_jobs_count": 336,
+  "all_200_projection_generations_current": true,
+  "all_collector_drains_le_30s": true,
+  "last_dirty_to_all_clean_seconds": 2.2991816997528076,
+  "no_oom": true,
+  "normal_steady_http_errors": [],
+  "planned_restart_http_502": 45,
+  "http_429_503": 0,
+  "limitations": [
+    "Cold 200-person classroom HTML default encoding p95=6238.05ms exceeds recommended3-5s; identity second wave is cache-warm diagnostic, p95=4871.54ms.",
+    "600 simultaneous recorder batch bursts p95=5289.52/6948.72/7247.85ms; the heavier6-role+800WS case is not a code-only latency comparison with the old baseline.",
+    "200 steady phase mathematically has18000 boundary ticks; while-cutoff actually dispatched17993,7(.039%) edge ticks were not dispatched. All actually planned ledger requests are strictly accounted; no claim of18000.",
+    "One intentionally forced app restart caused45 HTTP502 on read/live probes; all200 durable accepted blocked batches survived and same-ID replays succeeded.",
+    "VM/server epoch and Windows client epoch differ; locked PG timing proof uses exclusively VM/server domain.",
+    "Background projection publication p95=40.954s/max43.636s under load; final last dirty to clean2.299s.",
+    "10-minute warmed slopes are observational, not an indefinite no-leak guarantee; PGcgroup+21.43MiB/min, appanon+.152MiB/min.",
+    "Actual external AI supplier throughput, external mail delivery and unmeasured platform workflows are not certified."
+  ],
+  "schema": 1,
+  "steady_seconds": 600.5962765000295,
+  "latency_ms": {
+    "login_burst": {
+      "count": 200,
+      "p50_ms": 1884.43,
+      "p95_ms": 2612.89,
+      "p99_ms": 2651.0,
+      "max_ms": 2660.13
+    },
+    "classroom_open_burst": {
+      "count": 200,
+      "p50_ms": 4411.72,
+      "p95_ms": 6238.05,
+      "p99_ms": 6638.87,
+      "max_ms": 6682.83
+    },
+    "steady100_recorder": {
+      "count": 900,
+      "p50_ms": 11.92,
+      "p95_ms": 23.95,
+      "p99_ms": 168.02,
+      "max_ms": 499.44
+    },
+    "steady200_recorder": {
+      "count": 17993,
+      "p50_ms": 11.78,
+      "p95_ms": 21.35,
+      "p99_ms": 30.37,
+      "max_ms": 256.28
+    },
+    "steady200_material_v2": {
+      "count": 3000,
+      "p50_ms": 19.81,
+      "p95_ms": 32.77,
+      "p99_ms": 50.29,
+      "max_ms": 284.71
+    },
+    "steady200_read": {
+      "count": 2747,
+      "p50_ms": 9.02,
+      "p95_ms": 15.42,
+      "p99_ms": 22.57,
+      "max_ms": 220.19
+    },
+    "steady200_classroom_read": {
+      "count": 109,
+      "p50_ms": 43.79,
+      "p95_ms": 68.41,
+      "p99_ms": 93.41,
+      "max_ms": 95.56
+    },
+    "burst600_r1_recorder": {
+      "count": 600,
+      "p50_ms": 4055.27,
+      "p95_ms": 5289.52,
+      "p99_ms": 5427.34,
+      "max_ms": 5460.25
+    },
+    "burst600_r2_recorder": {
+      "count": 600,
+      "p50_ms": 5879.61,
+      "p95_ms": 6948.72,
+      "p99_ms": 7058.55,
+      "max_ms": 7082.7
+    },
+    "burst600_r3_recorder": {
+      "count": 600,
+      "p50_ms": 6200.3,
+      "p95_ms": 7247.85,
+      "p99_ms": 7419.4,
+      "max_ms": 7458.01
+    }
+  },
+  "conservation": {
+    "client_batches": 24496,
+    "received_batches": 24496,
+    "acked_batches": 24496,
+    "planned_legacy_material_requests": 1200,
+    "acked_legacy_material_requests": 1200,
+    "expected_operations": 15193,
+    "actual_operations": 15193,
+    "expected_learning_seconds": 124056,
+    "actual_learning_seconds": 124056,
+    "duration_student_count": 200,
+    "material_progress_rows": 200
+  },
+  "resources": {
+    "vm_min_available_bytes": 1786142720,
+    "app_peak_cgroup_bytes": 606556160,
+    "app_processes_max": 3,
+    "app_tasks_max": 65,
+    "pg_connections_max": 24,
+    "inbox_pending_peak": 549,
+    "quarantine_peak": 0
+  },
+  "server_timing": {
+    "status": "passed",
+    "lab_nonce": "84e5cbb7938b4082a29625d1c25ea629",
+    "clock_domain": "All timestamps in this report derive from VM/server PG TEXT interpreted as Asia/Shanghai, or VM time.time holder; no Windows probe epochs are compared",
+    "held_server_epoch": 1794131540.481023,
+    "released_server_epoch": 1794131555.4822292,
+    "blocked_checks": {
+      "all_200_received_after_lock_acquired": true,
+      "all_200_applied_after_lock_released": true,
+      "held_seconds": 15.001206159591675,
+      "drain_seconds_after_release": 0.8017706871032715
+    },
+    "phases": {
+      "burst600_r1": {
+        "count": 600,
+        "min_received_server_epoch": 1794131450.237,
+        "max_received_server_epoch": 1794131455.379,
+        "min_applied_server_epoch": 1794131450.303,
+        "max_applied_server_epoch": 1794131472.653,
+        "drain_seconds_after_last_server_received": 17.274,
+        "all_applied": true
+      },
+      "burst600_r2": {
+        "count": 600,
+        "min_received_server_epoch": 1794131473.442,
+        "max_received_server_epoch": 1794131478.309,
+        "min_applied_server_epoch": 1794131473.52,
+        "max_applied_server_epoch": 1794131485.524,
+        "drain_seconds_after_last_server_received": 7.215,
+        "all_applied": true
+      },
+      "burst600_r3": {
+        "count": 600,
+        "min_received_server_epoch": 1794131496.653,
+        "max_received_server_epoch": 1794131501.637,
+        "min_applied_server_epoch": 1794131496.904,
+        "max_applied_server_epoch": 1794131502.249,
+        "drain_seconds_after_last_server_received": 0.612,
+        "all_applied": true
+      },
+      "headroom1000": {
+        "count": 600,
+        "min_received_server_epoch": 1794131520.559,
+        "max_received_server_epoch": 1794131525.658,
+        "min_applied_server_epoch": 1794131520.661,
+        "max_applied_server_epoch": 1794131527.053,
+        "drain_seconds_after_last_server_received": 1.395,
+        "all_applied": true
+      },
+      "blocked_apply": {
+        "count": 200,
+        "min_received_server_epoch": 1794131540.828,
+        "max_received_server_epoch": 1794131542.078,
+        "min_applied_server_epoch": 1794131555.519,
+        "max_applied_server_epoch": 1794131556.284,
+        "drain_seconds_after_last_server_received": 14.206,
+        "all_applied": true
+      }
+    }
+  },
+  "evidence_root": ".codex-temp/recorder-capacity-20261108/final-result",
+  "evidence_sha256": {
+    "apply-held": "ca5fdc1d13e31555657035a8efde9e99a9ff2d35db067de95703accf1ccccccd",
+    "apply-released": "4964f23efca881f9fc4f02163241341940ac52d198d183f9839f6ff228e8288b",
+    "background-events.jsonl": "b6a109dbc4eb61589e1170a9227f6d726d157ab31f247b727a6fb5f51c80147e",
+    "background-report.json": "78858856d75c65a39e327866e1f1bca377da1df75c386c7a5143cf6cef8d10df",
+    "background-worker-state.json": "c4581559cb5731fbd1f46cde6d08041bbaf2324878809b3236bf917ad96dc2e3",
+    "build-state.json": "709055b80af1869a0d46253a2f85a7e92ce3299a99b5f4fc4bb25be0530adbf8",
+    "fault-injection.json": "9fedca8b061bc1530eb1728150f9f70299243334e388c1f5956c6c11219251d5",
+    "final-gate-summary.json": "91ef09e1e5308fd62ddbe606fa5b8a24bdf06e8751c74ae28e04573db57c912d",
+    "final-runtime-attestation.json": "178ad5c2092d9f6153241cef2d67c4951628c4ba830b3f6058289304f2a1b76a",
+    "final-sampler-checks.json": "fd94d51a3d47c887aa53c5c7d7049222d0783df2ec68d4fd20ac73e00a0ed84d",
+    "first-v2-smoke.json": "a803265154f91928f7ab4388beaed689abe2e6a091ab42cac51243814b7e72ee",
+    "http-report.json": "8bbae4dfc4c120d53d0599bb08e9299654a3b1749ccf7a625ccda910aafa9c42",
+    "login-summary.json": "80288d22af75cb6b5dfe38a76b9ee88a2bf05477ec34bac13cf3901f96e748f0",
+    "native-timeout-contracts.json": "3eeeed69b6f10f9a8ab985221d0a9ab26332cc930f597d21892eb47ea885316c",
+    "partial-request-ledger.json": "a9b41b5b89ff28da3a05f0d8c05ef35df69e35c4606454adaa19812531a05add",
+    "phase-timing-server.json": "6705a9bc2719b2bfa83d44b776e26d7a4d9f616f882942d7519c60824c98433a",
+    "recorder-facts-fc49755d7ab7434299c814eb1c8b83b9.json": "ad49fc1df463eb723bfe32a59ec217182655b784e6502d922754043931c92959",
+    "recorder-host-observations.jsonl": "f2754813aa2528d9fa290a076ae9640a20131f2a9f676fbe5c403b5a6513f8b1",
+    "recorder-pg-observations.jsonl": "6c7e3074af7327e81053ede6d2ff0cb2a794c27fa24fb6133cb507780ccb3a85",
+    "recorder-second-offering.json": "bfd36045f6c81daa85c2b975f372b73f80218e3cb80b0eb1c5b8534e70208a78",
+    "request-ledger.json": "a9b41b5b89ff28da3a05f0d8c05ef35df69e35c4606454adaa19812531a05add",
+    "resident-roles.json": "a1e1dcc5a1828eae09ff7fcafbad293d465fa730117935c58c927dfde5eafea2",
+    "resident-safety.json": "a6c1db57296e379133f1fc062739d72b1f1a00497fffae3362c3ddcaaaa7e273",
+    "resource-summary.json": "7bfe99b8945f58468d0caf02ac6944a0846d6e8e8248a9f8a0cabc40a5ecf908",
+    "server-inventory.json": "402b855b7b7357ec6e97ed0b725b985a32d4bb8b965c040ed2d650697cc1d785",
+    "source-export-proof.json": "5602b56160d7ba3c3610ef997767a392a97d5db10d818f48208f2f7da92cc50c"
+  },
+  "subsequent_tool_correction": "Fault coordinator guard now compares external-client monotonic timestamps and labels VM/client wall clock domains; this does not change the frozen runtime or original run evidence."
+}
