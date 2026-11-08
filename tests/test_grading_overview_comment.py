@@ -44,14 +44,14 @@ class OverviewSanitizerTest(unittest.TestCase):
         self.assertEqual(ai_assistant._sanitize_overview_comment("这次不错，接下来补第 8 题。"),
                          "这次不错，接下来补第 8 题。")
 
-    def test_message_includes_profile_and_forbids_disclosure(self):
+    def test_legacy_profile_is_not_sent_to_the_feedback_model(self):
         profile = ai_assistant._build_hidden_grading_profile_prompt("学习支持摘要：全勤，偏好分步引导。")
         messages = ai_assistant._build_overview_comment_messages(_job(), _result(), profile)
         self.assertEqual(messages[0]["role"], "system")
         self.assertIn("严禁出现", messages[0]["content"])
-        self.assertIn("内部个性化支持参考", messages[1]["content"])
+        self.assertNotIn("内部个性化支持参考", messages[1]["content"])
         self.assertIn("第8题", messages[1]["content"])
-        self.assertIn("全勤", messages[1]["content"])
+        self.assertNotIn("全勤", messages[1]["content"])
 
 
 class EnsureOverviewCommentTest(unittest.TestCase):
@@ -73,7 +73,7 @@ class EnsureOverviewCommentTest(unittest.TestCase):
         self.assertEqual(caller.await_count, 1)
         self.assertIn("第 8 题", output["summary"])
         payload = caller.await_args.args[0]
-        self.assertIn("全勤", payload[1]["content"])
+        self.assertNotIn("全勤", payload[1]["content"])
 
     def test_slogan_only_summary_is_rewritten(self):
         output, caller = self._run(

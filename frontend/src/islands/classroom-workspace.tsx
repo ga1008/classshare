@@ -6,6 +6,8 @@ import { classroomReadiness } from '@/lib/classroom-bootstrap-ready';
 import { parseClassroomDate, taskCategoryLabel, taskConstraintLabel, taskDeadlineLabel, taskMatchesFilter, taskPresentation, taskPreview, taskHistory, type ClassroomSession, type ClassroomTask } from '@/lib/classroom-workspace';
 // @ts-expect-error Shared native module is also used by the legacy classroom controller.
 import { resolveClassroomSessionLink } from '../../../static/js/classroom_workspace.js';
+// @ts-expect-error Shared native parser keeps exact attendance intent identical in both hosts.
+import { resolveAttendanceLink } from '../../../static/js/login_attendance_link.js';
 
 type Panel = 'tasks' | 'materials' | 'timeline' | 'session-detail' | 'material-detail';
 type SavedState = { panel?: Panel; filter?: string; category?: string; query?: string; scroll?: number; restore?: boolean; sessionOrder?: string | number; previewFilter?: string; taskId?: string; openerKind?: 'history' | 'tasks'; returnPanel?: Panel; returnScroll?: number; timelineQuery?: string };
@@ -78,6 +80,8 @@ export function ClassroomWorkspace() {
   const plan = config.teachingPlan as { timeline_entries?: ClassroomSession[]; sessions?: ClassroomSession[]; anchor_session?: ClassroomSession } | undefined;
   const sessions = plan?.timeline_entries || plan?.sessions || [];
   const explicitSession = useRef(resolveClassroomSessionLink(window.location.search, sessions));
+  const attendanceIntent = useRef(resolveAttendanceLink(window.location.search));
+  const hasAttendanceIntent = attendanceIntent.current.kind !== 'none';
   const storageKey = `classroom-workspace:${teacher ? 'teacher' : 'student'}:${classroomId}:${(config.userInfo as { id?: number })?.id || ''}`;
   const saved = useRef<SavedState>({});
   const [tasks, setTasks] = useState<ClassroomTask[]>((config.assignmentWorkspaceItems || []) as ClassroomTask[]);
@@ -175,12 +179,13 @@ export function ClassroomWorkspace() {
     // Both StrictMode setups need the same original intent; only the surviving
     // setup may deliver it once readiness resolves.
     saved.current = { ...initialRestore.current.state };
-    config.workspaceSelectedOrder = explicitSession.current.kind === 'none' ? saved.current.sessionOrder : explicitSession.current.session?.order_index;
+    config.workspaceSelectedOrder = explicitSession.current.kind === 'none' && !hasAttendanceIntent ? saved.current.sessionOrder : explicitSession.current.session?.order_index;
+    if (hasAttendanceIntent && explicitSession.current.kind === 'none') { saved.current.restore = false; consumeReturnState(); }
     if (explicitSession.current.kind === 'valid') {
       saved.current.restore = false; consumeReturnState();
       void classroomReadiness.wait().then(() => { if (!cancelled) document.dispatchEvent(new CustomEvent('classroom:select-session', { detail: { order: explicitSession.current.session.order_index } })); }).catch(() => { if (!cancelled) window.UI?.showToast?.('指定课次尚未就绪，请刷新重试。', 'error'); });
     }
-    if (saved.current.restore && explicitSession.current.kind === 'none') {
+    if (saved.current.restore && explicitSession.current.kind === 'none' && !hasAttendanceIntent) {
       opener.current = document.querySelector<HTMLElement>(saved.current.openerKind === 'history' ? '[data-cw-history]' : '[data-cw-task-collection]');
       setFilter(saved.current.filter || 'all'); setCategory(saved.current.category || 'all'); setQuery(saved.current.query || ''); setPreviewFilter(saved.current.previewFilter || 'actionable');
       setRestoreScroll(saved.current.scroll || 0); returnPanel.current = saved.current.returnPanel || null;
@@ -225,7 +230,7 @@ export function ClassroomWorkspace() {
     };
     window.addEventListener('lanshare:assessment-kind-updated', classificationChanged);
     const pageShown = (event: PageTransitionEvent) => {
-      if (!event.persisted || explicitSession.current.kind !== 'none') return;
+      if (!event.persisted || explicitSession.current.kind !== 'none' || hasAttendanceIntent) return;
       try { const previous = JSON.parse(sessionStorage.getItem(storageKey) || '{}') as SavedState;
         if (previous.restore && previous.panel === 'session-detail') document.dispatchEvent(new CustomEvent('classroom:select-session', { detail: { order: previous.sessionOrder, resume: true } }));
       } catch { /* optional */ }

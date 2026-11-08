@@ -77,6 +77,8 @@ services:
       MAIN_HOST: 0.0.0.0
       MAIN_PORT: "8000"
       MAIN_LIMIT_CONCURRENCY: ${LANSHARE_APP_MAX_CONNECTIONS:-2048}
+      TRUSTED_PROXY_HOSTS: nginx
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-127.0.0.1/32,::1/128}
       AI_ASSISTANT_URL: http://ai:8001
       MAIN_APP_CALLBACK_URL: http://app:8000/api/internal/grading-complete
       # Bound DB fan-out on the shared 2c/4G host. HTTP concurrency is much

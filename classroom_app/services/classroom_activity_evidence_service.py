@@ -319,7 +319,7 @@ def _finish_student(item: dict) -> None:
 
 def build_classroom_activity_evidence(
     conn, class_offering_id: int, window_start: datetime | str, window_end: datetime | str,
-    *, include_login_ips: bool = False,
+    *, include_login_ips: bool = False, roster_rows: list[dict] | None = None,
 ) -> dict[str, Any]:
     """Batch read one authorized classroom and one explicit <=24h local window.
 
@@ -331,7 +331,8 @@ def build_classroom_activity_evidence(
     if end <= start or end - start > timedelta(hours=24):
         raise ValueError("统计时间窗须大于0且不超过24小时")
     offering_id = int(class_offering_id)
-    roster = _roster(conn, offering_id)
+    # Attendance freezes its roster. Other callers retain the live-roster API.
+    roster = _roster(conn, offering_id) if roster_rows is None else roster_rows
     students: dict[int, dict] = {}
     for row in roster:
         login = {"successful_count": 0, "first_at": None, "last_at": None, "distinct_ip_count": 0}

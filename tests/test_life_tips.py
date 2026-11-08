@@ -377,13 +377,14 @@ class PersonalGreetingTests(unittest.TestCase):
     def test_ready_row_returns_text(self) -> None:
         from classroom_app.services.personal_greeting_service import (
             get_or_request_personal_greeting,
+            GREETING_CONTEXT_VERSION,
         )
 
         get_or_request_personal_greeting(self.conn, user_role="student", user_pk=7)
         self.conn.execute(
             "UPDATE personal_greetings SET status = 'ready', "
-            "greeting_text = '测试生，本座已把今天的三件事排好了。', persona = '霸道总裁' "
-            "WHERE user_pk = 7"
+            "greeting_text = '测试生，本座已把今天的三件事排好了。', persona = ? "
+            "WHERE user_pk = 7", (GREETING_CONTEXT_VERSION + '霸道总裁',)
         )
         result = get_or_request_personal_greeting(self.conn, user_role="student", user_pk=7)
         self.assertEqual(result["status"], "ready")

@@ -62,11 +62,15 @@ class _Settlement:
 
 
 def _public(row):
+    from .student_public_projection_service import public_student_legacy_tool_result
+    result = json.loads(row['result_json'])
+    if dict(row).get('actor_role') == 'student':
+        result = public_student_legacy_tool_result(result)
     return {'request_id': row['id'], 'operation_id': row['operation_id'], 'capability_key': row['capability_key'],
             'status': row['status'], 'verified_business': False,
             'mutates': bool(row['mutates']), 'host_execution_finished': row['host_execution_finished_at'] is not None,
             'reconciliation_status': row['reconciliation_status'], 'reconciliation_resolution': row['reconciliation_resolution'],
-            'result': json.loads(row['result_json']), 'automatic_retry_allowed': False}
+            'result': result, 'automatic_retry_allowed': False}
 
 
 def _admit(token, operation, operation_id, path, query, body, normalized):

@@ -41,10 +41,25 @@ ACADEMIC_ALLOWED_PATH_PREFIXES = (
     "/cjlrgl/jscjlr_",
     "/xtgl/index_",
 )
-SMART_ALLOWED_PATH_PREFIXES = (
-    "/teaching/checkinCourse/",
-    "/user/getUserInfo",
-)
+SMART_READ_OPERATIONS = frozenset({
+    ("GET", "/user/getUserInfo"),
+    ("POST", "/teaching/checkinCourse/teacherScheduleList"),
+    ("POST", "/teaching/checkinCourse/page"),
+    ("POST", "/teaching/checkinCourse/checkinRecord"),
+    ("POST", "/teaching/teacherSchedule/list"),
+})
+# Kept as an import-compatible name; the smart provider additionally checks
+# method + exact canonical path, never merely this prefix membership.
+SMART_ALLOWED_PATH_PREFIXES = tuple(sorted({path for _, path in SMART_READ_OPERATIONS}))
+
+
+def resolve_smart_read_probe(raw_url: Any, method: str, *, allowed_base_url: str) -> str:
+    path = _resolve_probe_path(raw_url, allowed_base_url=allowed_base_url,
+                               allowed_prefixes=SMART_ALLOWED_PATH_PREFIXES)
+    parsed = urlparse(path)
+    if (method, parsed.path) not in SMART_READ_OPERATIONS or parsed.fragment:
+        raise ValueError("该方法或地址不在智慧课堂已验证的只读接口清单中。")
+    return path
 
 
 def _clean_preview_text(value: Any) -> str:
@@ -226,6 +241,12 @@ async def probe_integration_request(teacher_id: int, payload: dict[str, Any]) ->
         raise ValueError("请求载荷格式仅支持 form、json 或 raw。")
     body = _body_for_preview(payload.get("body"), body_mode=body_mode)
 
+    if provider == "smart_classroom":
+        from .smart_classroom_integration_service import get_smart_classroom_profile
+        # Refuse mutations before opening a client (and therefore before login).
+        resolve_smart_read_probe(payload.get("url"), method,
+                                allowed_base_url=get_smart_classroom_profile("gxufl_smart_classroom").api_base_url)
+
     with get_db_connection() as conn:
         if provider == "academic":
             access_payload = load_teacher_academic_access_method(conn, int(teacher_id), school_code="gxufl")
@@ -273,11 +294,7 @@ async def probe_integration_request(teacher_id: int, payload: dict[str, Any]) ->
             }
 
     async with open_authenticated_smart_classroom_client(access_payload) as (client, profile, login_result):
-        path = _resolve_probe_path(
-            payload.get("url"),
-            allowed_base_url=profile.api_base_url,
-            allowed_prefixes=SMART_ALLOWED_PATH_PREFIXES,
-        )
+        path = resolve_smart_read_probe(payload.get("url"), method, allowed_base_url=profile.api_base_url)
         return {
             "status": "success",
             "provider": provider,

@@ -49,7 +49,11 @@ class NativePostgresRehearsalTests(unittest.TestCase):
         with self.conn.transaction():
             self.conn.execute("DROP SCHEMA public CASCADE")
             self.conn.execute("CREATE SCHEMA public")
-            self.conn.execute("""CREATE TABLE assignments(id TEXT PRIMARY KEY, title TEXT, ordinary_grade_kind_override TEXT);
+            self.conn.execute("""CREATE TABLE class_offerings(id BIGINT PRIMARY KEY);
+                CREATE TABLE class_offering_sessions(id BIGINT PRIMARY KEY,class_offering_id BIGINT REFERENCES class_offerings(id));
+                INSERT INTO class_offerings VALUES(11);
+                INSERT INTO class_offering_sessions VALUES(21,11);
+                CREATE TABLE assignments(id TEXT PRIMARY KEY, title TEXT, ordinary_grade_kind_override TEXT);
                 CREATE TABLE submissions(id BIGINT PRIMARY KEY, assignment_id TEXT REFERENCES assignments(id),
                     score DOUBLE PRECISION, feedback_md TEXT, answers_json TEXT);
                 CREATE TABLE submission_files(id BIGINT PRIMARY KEY, submission_id BIGINT REFERENCES submissions(id), relative_path TEXT);
@@ -80,6 +84,11 @@ class NativePostgresRehearsalTests(unittest.TestCase):
         self.assertEqual([(None, "assignment"), (None, None)], self.conn.execute(
             "SELECT assessment_kind,ordinary_grade_kind_override FROM assignments ORDER BY id").fetchall())
         self.assertEqual(0, self.conn.execute("SELECT COUNT(*) FROM assignment_classification_revisions").fetchone()[0])
+        from classroom_app.db.schema_login_attendance import TABLES as local_tables
+        from classroom_app.db.schema_smart_classroom_write import SMART_CLASSROOM_WRITE_TABLES as remote_tables
+        for table in (*local_tables,*remote_tables):
+            self.assertIn(table,result["added_tables"])
+            self.assertEqual(0,self.conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0])
 
     def test_grade_changes_and_non_idempotent_new_rows_are_failed_gates(self):
         def destructive(conn):

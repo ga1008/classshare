@@ -1,0 +1,21 @@
+/* Attendance owns geometry/data layout. LQ owns all control/surface materials. */
+.la-workspace { display:grid; gap:1rem; min-width:0; }
+.la-heading { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1rem; }
+.la-heading h3,.la-heading p { margin:0; }
+.la-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem; }
+.la-stat { font-size:1.7rem; font-variant-numeric:tabular-nums; }
+.la-actions,.la-filters,.la-bulk-fields { display:flex; flex-wrap:wrap; align-items:center; gap:.65rem; }
+.la-filters>.lq-field { flex:1 1 12rem; }
+.la-bulk-fields>.lq-field { flex:1 1 12rem; }
+.la-content { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(17rem,1fr); gap:1rem; align-items:start; }
+.la-list-pane,.la-detail,.la-form { display:grid; gap:.85rem; min-width:0; }
+.la-students { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; }
+.la-student-body { display:grid; gap:.5rem; }
+.la-student-body p,.la-facts p { margin:0; overflow-wrap:anywhere; }
+.la-notice:empty { display:none; }
+.la-detail { position:sticky; top:0; overflow-wrap:anywhere; }
+.la-dialog .lq-dialog__body { min-height:0; overflow:auto; }
+.la-dialog .lq-table { width:100%; }
+.la-appeal { display:grid; gap:.65rem; }
+@media(max-width:800px) { .la-content { grid-template-columns:1fr; } .la-detail { position:static; } .la-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:480px) { .la-students { grid-template-columns:1fr; } .la-actions>.lq-btn { min-height:2.75rem; } }

@@ -48,6 +48,7 @@ DEADLINE_TASK_KINDS = (
     "signature_request_reminder", "approval_request_reminder", "late_window_expiry",
     "late_window_reminder", "assignment_close_sweep", "resubmission_window_expiry",
     "mp_deadline_reminder_scan", "mp_subscribe_dispatch",
+    "login_attendance_scan",
 )
 ELASTIC_TASK_KINDS = (
     "stage_exam_generation", "session_material_generate", "personal_greeting_generate",

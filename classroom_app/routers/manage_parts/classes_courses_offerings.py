@@ -618,6 +618,8 @@ def api_delete_class_offering(offering_id: int, user: dict = Depends(get_current
                 raise HTTPException(409, "本课堂仍有正在公布的课程成绩。请先在成绩材料中撤回公布，再删除课堂；历史公布快照会保留。")
 
             # 删除 (依赖于 ON DELETE CASCADE)
+            from ...services.login_attendance_lifecycle_service import prepare_deletion
+            prepare_deletion(conn,int(offering_id),user)
             # 1. 删除 chat_logs (通过外键)
             # 2. 删除 ai_class_configs (通过外键)
             # 3. 删除 class_offering

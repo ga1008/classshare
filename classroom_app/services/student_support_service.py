@@ -339,6 +339,7 @@ def build_student_support_signal_prompt(
     class_offering_id: int | None = None,
     include_teacher_note: bool = True,
     include_course_signals: bool = True,
+    include_legacy_description: bool = False,
 ) -> str:
     student = conn.execute(
         """
@@ -363,7 +364,7 @@ def build_student_support_signal_prompt(
         lines.append(f"学生主动设置昵称：{_clip_inline(student['nickname'], limit=60)}")
     if student["today_mood"]:
         lines.append(f"学生主动设置今日心情：{_clip_inline(student['today_mood'], limit=80)}")
-    if student["description"]:
+    if include_legacy_description and student["description"]:
         lines.append(f"长期学习支持摘要：{_clip_inline(student['description'], limit=220)}")
 
     teacher_names = load_student_teacher_names(conn, int(student_id))

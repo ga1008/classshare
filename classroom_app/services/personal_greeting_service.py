@@ -30,6 +30,7 @@ from ..db.connection import get_configured_db_engine
 PERSONAL_GREETING_TASK_KIND = "personal_greeting_generate"
 GREETING_MIN_CHARS = 8
 GREETING_MAX_CHARS = 64
+GREETING_CONTEXT_VERSION = "facts-v1:"
 
 # 人设文风池：每天随机一个，让欢迎语"不经意地"变换性格。
 PERSONAS: tuple[tuple[str, str], ...] = (
@@ -80,9 +81,19 @@ def get_or_request_personal_greeting(
         (role, int(user_pk), today),
     ).fetchone()
     if row:
-        if row["status"] == "ready" and row["greeting_text"]:
-            return {"status": "ready", "text": row["greeting_text"], "persona": row["persona"]}
-        return {"status": str(row["status"] or "pending")}
+        current = role != "student" or str(row["persona"] or "").startswith(GREETING_CONTEXT_VERSION)
+        if row["status"] == "ready" and row["greeting_text"] and current:
+            from .psych_profile_service import sanitize_hidden_profile_leaks
+            persona = str(row["persona"] or "")
+            return {"status": "ready", "text": sanitize_hidden_profile_leaks(row["greeting_text"]),
+                    "persona": persona.removeprefix(GREETING_CONTEXT_VERSION)}
+        if current:
+            return {"status": str(row["status"] or "pending")}
+        # An old ready message may have been generated from private inputs.
+        # Replace only this day's derived cache; preserve source records.
+        conn.execute("UPDATE personal_greetings SET status='pending', greeting_text='', persona=? "
+                     "WHERE user_role=? AND user_pk=? AND greet_date=?",
+                     (GREETING_CONTEXT_VERSION, role, int(user_pk), today))
 
     sql = (
         "INSERT INTO personal_greetings (user_role, user_pk, greet_date, status) "
@@ -104,7 +115,7 @@ def get_or_request_personal_greeting(
             "greet_date": today,
             "display_name": str(display_name or "")[:40],
         },
-        dedupe_key=f"personal-greeting:{role}:{int(user_pk)}:{today}",
+        dedupe_key=f"personal-greeting:{role}:{int(user_pk)}:{today}:{GREETING_CONTEXT_VERSION}",
         recurrence_seconds=None,
         owner_role="system",
         title="个性化欢迎语生成",
@@ -152,6 +163,8 @@ def _load_teacher_context(conn: Any, user_pk: int) -> dict[str, str]:
 
 def _load_profiler_hint(conn: Any, user_role: str, user_pk: int) -> str:
     """取最近一次课堂侧写的支持要点（仅用于喂给 AI，绝不外显）。"""
+    if user_role == "student":
+        return ""
     try:
         row = conn.execute(
             """
@@ -283,7 +296,8 @@ async def handle_personal_greeting_task(task: dict[str, Any]) -> str:
                 SET status = 'ready', greeting_text = ?, persona = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE user_role = ? AND user_pk = ? AND greet_date = ?
                 """,
-                (greeting, persona_name, user_role, user_pk, greet_date),
+                (greeting, (GREETING_CONTEXT_VERSION + persona_name) if user_role == "student" else persona_name,
+                 user_role, user_pk, greet_date),
             )
             result = f"ready ({persona_name}): {greeting[:24]}"
         else:

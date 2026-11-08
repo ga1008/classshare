@@ -42,6 +42,7 @@ STRATEGY_COLLECTION_OBSERVATIONS = "immutable_collection_observations"
 STRATEGY_SCOPE_REVIEW = "scope_review"  # 读者/参与者范围尚无安全迁移规则，预检阻断
 STRATEGY_SCHEDULE_REVIEW = "schedule_review"  # 教务课次身份不可按本地序号猜测重绑
 STRATEGY_LINKS = "links"                      # 收尾统一处理
+STRATEGY_ATTENDANCE_HISTORY = "attendance_history"
 MAX_SNAPSHOT_ROWS = 100000
 MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024
 
@@ -111,6 +112,10 @@ def _rules() -> dict[str, MergeRule]:
     rules["ai_review_reservations"] = MergeRule(STRATEGY_KEEP_BILLING_SCOPE)
     rules["behavior_write_inbox"] = MergeRule(STRATEGY_BEHAVIOR_RECEIPTS)
     rules["behavior_collection_observations"] = MergeRule(STRATEGY_COLLECTION_OBSERVATIONS)
+    rules["login_attendance_rounds"] = MergeRule(STRATEGY_ATTENDANCE_HISTORY)
+    rules["smart_attendance_write_bindings"] = MergeRule(STRATEGY_ATTENDANCE_HISTORY)
+    rules["login_attendance_policies"] = MergeRule(STRATEGY_KEEP_TARGET)
+    rules["approval_requests"] = MergeRule(STRATEGY_REPOINT)
     rules["class_offering_sessions"] = MergeRule(STRATEGY_SESSION_STRUCTURE)
     rules["class_offering_class_links"] = MergeRule(STRATEGY_LINKS, offering_column="offering_id")
     # 课次引用列（这三张的 offering 列策略见各自条目）
@@ -476,6 +481,8 @@ def build_merge_preview(
     tables: list[dict[str, Any]] = []
     blockers: list[str] = []
     warnings: list[str] = []
+    from .login_attendance_lifecycle_service import blockers as attendance_blockers
+    blockers.extend(attendance_blockers(conn,[int(target["id"]),*source_ids],merging=True))
     for table, rule in sorted(MERGE_RULES.items()):
         if rule.strategy == STRATEGY_LINKS or not _table_exists(conn, table):
             continue
@@ -487,6 +494,8 @@ def build_merge_preview(
             "strategy": rule.strategy,
             "source_rows": source_rows,
         }
+        if source_rows and rule.strategy == STRATEGY_ATTENDANCE_HISTORY:
+            warnings.append(f"{label}：{source_rows} 条历史保留稳定记录编号与原课次时间，迁入主课堂历史点名；不会按课次序号改绑远端课程。")
         if source_rows and rule.strategy == STRATEGY_SCOPE_REVIEW:
             blockers.append(
                 f"{label}：{source_rows} 条记录仍使用原课堂作为读者或参与者范围。"
@@ -846,6 +855,9 @@ def execute_offering_merge(
     summary: dict[str, Any] = {}
     src_placeholders = ",".join("?" for _ in source_ids)
 
+    from .login_attendance_lifecycle_service import archive_for_merge
+    summary["login_attendance_rounds.archived"] = archive_for_merge(conn,int(target["id"]),source_ids,int(teacher_id))
+
     # 2. 课次映射（在任何 repoint 前算好并改写引用）
     session_map = _session_id_map(conn, int(target["id"]), source_ids)
     for table, rule in MERGE_RULES.items():
@@ -864,7 +876,7 @@ def execute_offering_merge(
 
     # 3. 按目录迁移
     for table, rule in sorted(MERGE_RULES.items(), key=lambda item: (item[0] != "assignments", item[0])):
-        if rule.strategy in (STRATEGY_LINKS, STRATEGY_SESSION_STRUCTURE):
+        if rule.strategy in (STRATEGY_LINKS, STRATEGY_SESSION_STRUCTURE, STRATEGY_ATTENDANCE_HISTORY):
             continue
         if not _table_exists(conn, table):
             continue

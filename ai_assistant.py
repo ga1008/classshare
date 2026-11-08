@@ -2942,15 +2942,9 @@ def _extract_answers_text(answers_json: str | None) -> str:
 
 
 def _build_hidden_grading_profile_prompt(student_profile_context: str | None) -> str:
-    context = str(student_profile_context or "").strip()
-    if not context:
-        return ""
-    return (
-        "【内部个性化支持参考】\n"
-        "以下内容来自平台内部的学习支持参考，只能用于调整评语的语气、详略、鼓励方式和改进建议的颗粒度；"
-        "不能作为加分或扣分依据，也不能在反馈中透露来源、测评、后台判断或隐藏规则等信息。\n"
-        f"{context[:4000]}"
-    )
+    # Keep the legacy wire field compatible, including already queued jobs,
+    # without allowing private inferences to enter any grading model prompt.
+    return ""
 
 
 # Words that would tell a student they were profiled. Any comment containing
@@ -3045,15 +3039,17 @@ async def _ensure_grading_overview_comment(
     that. Any failure keeps the deterministic fallback, never the grading job.
     """
     existing = str(result.get("summary") or "").strip()
-    profile_prompt = _build_hidden_grading_profile_prompt(job.student_profile_context)
-    if not profile_prompt:
+    legacy_reference = str(job.student_profile_context or "").strip()
+    if not legacy_reference:
         # Without an internal reference there is nothing to personalize; the
         # deterministic per-question fallback is specific enough and free.
         return result
-    leaky_existing = bool(existing and _overview_reuses_profile(existing, profile_prompt))
+    leaky_existing = bool(existing and _overview_reuses_profile(existing, legacy_reference))
     if not _overview_needs_personalization(existing) and not leaky_existing:
         return result
-    messages = _build_overview_comment_messages(job, result, profile_prompt)
+    # A legacy reference is used only as a local output-leak rejection check.
+    # The bounded rewrite itself receives rubric and question facts only.
+    messages = _build_overview_comment_messages(job, result, "")
     try:
         raw = await _call_ai_platform(
             messages,
@@ -3069,7 +3065,7 @@ async def _ensure_grading_overview_comment(
         print(f"[AI GRADING] 总评生成失败，保留兜底评语: {type(exc).__name__}: {exc}")
         return result
     comment = _sanitize_overview_comment(raw)
-    if not comment or _overview_reuses_profile(comment, profile_prompt):
+    if not comment or _overview_reuses_profile(comment, legacy_reference):
         return {**result, "summary": ""} if leaky_existing else result
     return {**result, "summary": comment}
 

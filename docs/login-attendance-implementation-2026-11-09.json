@@ -1,0 +1,38 @@
+{
+  "date": "2026-11-09",
+  "status": "candidate_A_pending_capacity_and_release",
+  "design": "login-auto-attendance-design-2026-11-09.html",
+  "local_contract": {
+    "authority": "current offering teacher; archived deleted histories are read-only for the teacher captured at deletion",
+    "inference": "positive-only; immutable first authenticated classroom-network observation; one person one vote; strict less-than-20-minute cohort tolerance; no study-duration/action-count attendance gate",
+    "class_window": "verified session dates and school periods, default minus 10 / plus 10 minutes; automatic final settlement at actual end plus 12 minutes",
+    "manual_decisions": "six formal statuses, per-student revision checks, required reason, never overwritten by re-evaluation",
+    "evidence": "login, authenticated classroom access, measured learning, collection quality separated; absent/failed observations never converted to measured zero or automatic absence",
+    "network": "transport peer retained; forwarded addresses and TLS metadata accepted only from configured proxy; no inferred public /24",
+    "collection_budget": "one per-minute platform observation per student, session and IP across paths/tabs; concurrent duplicates do not acquire extra connections; optional PG checkout 250 ms, lock 250 ms, statement 1000 ms; failed collection does not revoke login",
+    "retention": "90-day raw access horizon; bounded 5000-row cleanup every 10 minutes; pending appeals pin related windows; sealed lesson evidence is not recalculated after the raw replay horizon",
+    "appeals": "after end, own record, default 7-day submission window; accepted cases do not expire; current teacher inbox plus durable cross-tab popup and existing email outbox; delivery failure is visible",
+    "lifecycle": "course close persists a no-new-round boundary; merge archives stable round and student identities with original slot/roster instead of guessing a target slot; active or unresolved work blocks merge; deletion resolves local work, pauses remote work and preserves historical records"
+  },
+  "p0": {
+    "student_boundary_audit": "student-data-boundary-2026-11-09.json",
+    "private_inference": "not added to student-visible DTOs, prompts, greetings or new grades; published historical scores and source records retained",
+    "remote_probe": "exact read-only method and path allowlist before authentication",
+    "tls": "CA and hostname verification retained; only built-in edu_api.gxufl.com uses fixed gxufl.com SNI because its certificate wildcard cannot match the underscore hostname"
+  },
+  "school_sync": {
+    "candidate_A_capabilities": "verified read sources, exact binding, safe account configuration, durable preview and readback, three-way conflicts, account lease, official client handoff",
+    "start_end_student_write": "disabled until actual school write protocol is verified; cannot be enabled by user flags or environment",
+    "confirmed_scope": "student status readback only; not proof of remotely starting or ending a round",
+    "legacy_compatibility": "existing Smart Classroom button, imports, PDF archives and published grade sources preserved",
+    "remote_test": "user authorized week 2 Sunday periods 8 and 9 Computer Networks combined class; investigation still in progress, evidence contains no credentials in Git"
+  },
+  "verification": {
+    "ui": "login-attendance-ui-validation-2026-11-09.json",
+    "local_backend": "isolated SQLite and blocked dotenv/production PG; rules, service, ASGI, auth, claims, appeal, scheduler recovery, settlement-tail quality, merge and deletion tests passed",
+    "postgres_native_rehearsal": "pending final candidate-bound run",
+    "vmware_200_users": "pending final candidate-bound 5400-second load plus actual settlement period",
+    "production_deployment": "not performed for this candidate yet",
+    "git_push": "not performed for this candidate yet"
+  }
+}

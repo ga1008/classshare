@@ -803,3 +803,8 @@ from .ai_search_quota_service import (  # noqa: E402
 )
 
 register_task_handler(AI_SEARCH_CACHE_CLEANUP_TASK_KIND, handle_ai_search_cache_cleanup)
+
+from .login_attendance_jobs import register_handlers as register_login_attendance_handlers
+from .smart_classroom_write_jobs import register_handlers as register_smart_classroom_write_handlers
+register_login_attendance_handlers()
+register_smart_classroom_write_handlers()

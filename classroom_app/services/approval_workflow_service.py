@@ -98,6 +98,14 @@ class ApprovalRequestType:
     approve_label: str = "同意"
     reject_label: str = "拒绝"
     description: str = ""
+    # Optional domain lock/authorization hooks keep a single lock order without
+    # changing existing workflows. Attendance locks parent/round before this
+    # service's request-row CAS, and checks the current teacher assignment.
+    before_decision: Optional[Callable[..., None]] = None
+    authorize_reviewer: Optional[Callable[..., bool]] = None
+    never_expire: bool = False
+    # Optional domain parent/subject lock before prepare and request insertion.
+    before_create: Optional[Callable[..., None]] = None
 
 
 _REGISTRY: dict[str, ApprovalRequestType] = {}
@@ -181,6 +189,31 @@ def _load_reviewers(conn, request_id: int) -> list[dict[str, Any]]:
         (int(request_id),),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def _reviewers_for_request(conn, request) -> list[dict[str, Any]]:
+    """Attendance authority follows the current assignment, not an old inbox.
+
+    Original reviewer rows remain in the audit store. Other approval types
+    retain their existing nominated-reviewer contract unchanged.
+    """
+    previous = _load_reviewers(conn, int(request["id"]))
+    if request.get("request_type") != "login_attendance_appeal":
+        return previous
+    owner = conn.execute("SELECT t.id,t.name FROM class_offerings o JOIN teachers t ON t.id=o.teacher_id WHERE o.id=?",
+                         (request.get("class_offering_id"),)).fetchone()
+    if not owner:
+        return []
+    found = next((r for r in previous if r["reviewer_role"]=="teacher" and int(r["reviewer_user_pk"])==int(owner["id"])),None)
+    return [found or {"reviewer_role":"teacher","reviewer_user_pk":int(owner["id"]),"reviewer_name":owner["name"],"notified_at":None,"reminded_at":None}]
+
+
+def _incoming_scope(role, user_pk):
+    ordinary = "EXISTS (SELECT 1 FROM approval_request_reviewers v WHERE v.request_id=r.id AND v.reviewer_role=? AND v.reviewer_user_pk=?)"
+    current = "EXISTS (SELECT 1 FROM class_offerings o WHERE o.id=r.class_offering_id AND o.teacher_id=?)"
+    return (f"((r.request_type<>'login_attendance_appeal' AND {ordinary}) OR "
+            f"(r.request_type='login_attendance_appeal' AND ?='teacher' AND {current}))",
+            [role,user_pk,role,user_pk])
 
 
 def _is_reviewer(reviewers: list[dict[str, Any]], user: Mapping[str, Any]) -> bool:
@@ -303,10 +336,14 @@ def create_request(conn, applicant: Mapping[str, Any], *, request_type: str, sub
     if role not in spec.applicant_roles or user_pk <= 0:
         raise ApprovalWorkflowError(403, "当前身份不能发起该申请")
     reason_text = _clean_text(reason, limit=REASON_MAX_CHARS, field_name="申请理由", required=True)
+    if spec.before_create:
+        begin_immediate_transaction(conn)
+        spec.before_create(conn,applicant,str(subject_id or "").strip(),reason_text,dict(payload or {}))
     prepared = spec.prepare(conn, applicant, str(subject_id or "").strip(), reason_text, dict(payload or {}))
     if not prepared.reviewers:
         raise ApprovalWorkflowError(422, "找不到可以审批该申请的教师")
-    begin_immediate_transaction(conn)
+    if not spec.before_create:
+        begin_immediate_transaction(conn)
     existing = conn.execute(
         "SELECT id FROM approval_requests WHERE dedupe_key = ? AND status = 'pending' LIMIT 1",
         (prepared.dedupe_key,),
@@ -349,7 +386,7 @@ def create_request(conn, applicant: Mapping[str, Any], *, request_type: str, sub
     if spec.after_create:
         spec.after_create(conn, request)
         request = _load_request_row(conn, request_id)
-    reviewers = _load_reviewers(conn, request_id)
+    reviewers = _reviewers_for_request(conn, request)
     _notify(
         conn,
         recipients=[{"role": r["reviewer_role"], "id": r["reviewer_user_pk"]} for r in reviewers],
@@ -376,11 +413,12 @@ def list_requests(conn, user: Mapping[str, Any], *, scope: str = "incoming", sta
         where.append("r.applicant_role = ? AND r.applicant_user_pk = ?")
         params.extend([role, user_pk])
     elif scope == "all" and _is_super_admin(conn, user):
-        pass
+        where.append("(r.request_type<>'login_attendance_appeal' OR (?='teacher' AND EXISTS (SELECT 1 FROM class_offerings o WHERE o.id=r.class_offering_id AND o.teacher_id=?)))")
+        params.extend([role,user_pk])
     else:
-        where.append("EXISTS (SELECT 1 FROM approval_request_reviewers v WHERE v.request_id = r.id "
-                     "AND v.reviewer_role = ? AND v.reviewer_user_pk = ?)")
-        params.extend([role, user_pk])
+        clause, values = _incoming_scope(role,user_pk)
+        where.append(clause)
+        params.extend(values)
     if status:
         where.append("r.status = ?")
         params.append(str(status).strip().lower())
@@ -400,7 +438,12 @@ def list_requests(conn, user: Mapping[str, Any], *, scope: str = "incoming", sta
     items = []
     for row in rows:
         row = dict(row)
-        items.append(serialize_request(row, reviewers=_load_reviewers(conn, int(row["id"])), viewer=viewer))
+        item=serialize_request(row, reviewers=_reviewers_for_request(conn,row), viewer=viewer)
+        spec=_REGISTRY.get(str(row.get("request_type") or ""))
+        if spec and spec.authorize_reviewer:
+            item["can_decide"]=bool(spec.authorize_reviewer(conn,row,user)) and row["status"]==APPROVAL_STATUS_PENDING
+            item["can_review"]=item["can_decide"]
+        items.append(item)
     return items
 
 
@@ -409,9 +452,8 @@ def count_pending_requests(conn, user: Mapping[str, Any], *, assignment_id: Any 
     role, user_pk = _identity(user)
     if user_pk <= 0:
         return 0
-    params: list[Any] = [role, user_pk]
-    sql = ("SELECT COUNT(*) AS n FROM approval_requests r WHERE r.status = 'pending' AND EXISTS ("
-           "SELECT 1 FROM approval_request_reviewers v WHERE v.request_id = r.id AND v.reviewer_role = ? AND v.reviewer_user_pk = ?)")
+    clause, params = _incoming_scope(role,user_pk)
+    sql = "SELECT COUNT(*) AS n FROM approval_requests r WHERE r.status='pending' AND "+clause
     if assignment_id not in (None, ""):
         sql += " AND r.assignment_id = ?"
         params.append(str(assignment_id))
@@ -422,12 +464,17 @@ def count_pending_requests(conn, user: Mapping[str, Any], *, assignment_id: Any 
 def get_request(conn, user: Mapping[str, Any], request_id: int | str) -> dict[str, Any]:
     ensure_approval_workflow_schema(conn)
     request = _load_request_row(conn, request_id)
-    reviewers = _load_reviewers(conn, int(request["id"]))
+    reviewers = _reviewers_for_request(conn, request)
     viewer = {**dict(user), "_is_super_admin": _is_super_admin(conn, user)}
-    if not (_is_applicant(request, user) or _is_reviewer(reviewers, user) or viewer["_is_super_admin"]):
+    spec = _REGISTRY.get(str(request.get("request_type") or ""))
+    reviewer_allowed = (spec.authorize_reviewer(conn, request, user) if spec and spec.authorize_reviewer
+                        else (_is_reviewer(reviewers, user) or viewer["_is_super_admin"]))
+    if not (_is_applicant(request, user) or reviewer_allowed):
         raise ApprovalWorkflowError(403, "无权查看该申请")
     item = serialize_request(request, reviewers=reviewers, viewer=viewer)
-    spec = _REGISTRY.get(str(request.get("request_type") or ""))
+    if spec and spec.authorize_reviewer:
+        item["can_review"] = reviewer_allowed and request["status"] == APPROVAL_STATUS_PENDING
+        item["can_decide"] = item["can_review"]
     if spec and spec.detail:
         item["detail"] = spec.detail(conn, request, user)
     events = conn.execute(
@@ -435,7 +482,7 @@ def get_request(conn, user: Mapping[str, Any], request_id: int | str) -> dict[st
         "WHERE request_id = ? ORDER BY id",
         (int(request["id"]),),
     ).fetchall()
-    reviewer_view = _is_reviewer(reviewers, user) or viewer["_is_super_admin"]
+    reviewer_view = reviewer_allowed
     item["events"] = [
         {"event_type": e["event_type"], "actor_role": e["actor_role"], "actor_name": e["actor_name"],
          "note": e["note"], "payload": _json_loads(e["payload_json"]), "created_at": e["created_at"]}
@@ -467,8 +514,10 @@ def decide_request(conn, reviewer: Mapping[str, Any], request_id: int | str, *, 
         raise ApprovalWorkflowError(400, "决定只能是通过或拒绝")
     request = _load_request_row(conn, request_id)
     spec = get_request_type(request["request_type"])
-    reviewers = _load_reviewers(conn, int(request["id"]))
-    if not (_is_reviewer(reviewers, reviewer) or _is_super_admin(conn, reviewer)):
+    reviewers = _reviewers_for_request(conn, request)
+    authorized = (spec.authorize_reviewer(conn, request, reviewer) if spec.authorize_reviewer
+                  else (_is_reviewer(reviewers, reviewer) or _is_super_admin(conn, reviewer)))
+    if not authorized:
         raise ApprovalWorkflowError(403, "你不是该申请的审批人")
     if request["status"] != APPROVAL_STATUS_PENDING:
         raise ApprovalWorkflowError(409, f"该申请已{STATUS_LABELS.get(request['status'], '处理')}，不能重复处理")
@@ -477,6 +526,8 @@ def decide_request(conn, reviewer: Mapping[str, Any], request_id: int | str, *, 
     new_status = APPROVAL_STATUS_APPROVED if decision == "approve" else APPROVAL_STATUS_REJECTED
     now = _now_iso()
     begin_immediate_transaction(conn)
+    if spec.before_decision:
+        spec.before_decision(conn, request, reviewer, dict(decision_payload or {}))
     cursor = conn.execute(
         "UPDATE approval_requests SET status = ?, decision_note = ?, decided_by_role = ?, decided_by_user_pk = ?, "
         "decided_by_name = ?, decided_at = ?, updated_at = ? WHERE id = ? AND status = 'pending'",
@@ -530,7 +581,7 @@ def cancel_request(conn, applicant: Mapping[str, Any], request_id: int | str, *,
     if spec and spec.on_cancel:
         spec.on_cancel(conn, request, applicant, note_text)
     _record_event(conn, int(request["id"]), "cancelled", actor=applicant, note=note_text)
-    reviewers = _load_reviewers(conn, int(request["id"]))
+    reviewers = _reviewers_for_request(conn, request)
     _notify(conn, recipients=[{"role": r["reviewer_role"], "id": r["reviewer_user_pk"]} for r in reviewers],
             actor=applicant, title=f"申请已撤销：{request['title']}", body=note_text or "申请人已撤销该申请。",
             request=request, ref_suffix="cancelled")
@@ -608,7 +659,7 @@ def remind_stale_requests(conn, *, now: datetime | None = None) -> dict[str, int
         created = created.replace(tzinfo=None)
         age = now_dt - created
         expire_after = timedelta(hours=spec.expire_hours) if spec.expire_hours else timedelta(days=spec.expire_days)
-        if age >= expire_after:
+        if not spec.never_expire and age >= expire_after:
             stamp = now_dt.isoformat()
             cursor = conn.execute(
                 "UPDATE approval_requests SET status = 'expired', decision_note = ?, decided_at = ?, updated_at = ? "
@@ -626,9 +677,13 @@ def remind_stale_requests(conn, *, now: datetime | None = None) -> dict[str, int
                         body="教师超过处理期限未审批，申请已自动过期，如仍需要可重新发起。", request=request, ref_suffix="expired")
             continue
         if age >= timedelta(hours=spec.reminder_hours):
-            reviewers = [r for r in _load_reviewers(conn, int(request["id"])) if not r.get("reminded_at")]
+            reviewers = [r for r in _reviewers_for_request(conn,request) if not r.get("reminded_at")]
             if not reviewers:
                 continue
+            if request.get("request_type")=="login_attendance_appeal":
+                for reviewer in reviewers:
+                    conn.execute("INSERT INTO approval_request_reviewers(request_id,reviewer_role,reviewer_user_pk,reviewer_name,created_at) VALUES(?,?,?,?,?) ON CONFLICT(request_id,reviewer_role,reviewer_user_pk) DO NOTHING",
+                                 (int(request["id"]),reviewer["reviewer_role"],reviewer["reviewer_user_pk"],reviewer["reviewer_name"],now_dt.isoformat()))
             reminded += _notify(
                 conn, recipients=[{"role": r["reviewer_role"], "id": r["reviewer_user_pk"]} for r in reviewers],
                 actor=None, title=f"待处理提醒：{request['title']}",

@@ -121,6 +121,7 @@ from .routers import cultivation_display
 from .routers import polls
 from .routers import material_whiteboards
 from .routers import classroom_closeout
+from .routers import login_attendance, smart_classroom_write
 from .routers import classroom_group_qr
 from .routers import classroom_retake
 from .routers import lesson_plans
@@ -170,6 +171,7 @@ class StreamingAwareGZipMiddleware(GZipMiddleware):
 
 
 app.add_middleware(StreamingAwareGZipMiddleware, minimum_size=1024, compresslevel=HTTP_GZIP_COMPRESSION_LEVEL)
+from .services.trusted_network_service import TrustedProxySchemeMiddleware
 
 
 @app.middleware("http")
@@ -237,6 +239,10 @@ async def startup_event():
     # （尽管 uvicorn reload 模式下可能不需要，但这是个好习惯）
     ensure_runtime_directories()
     init_database()
+    from .services.login_attendance_jobs import ensure_tasks as ensure_login_attendance_tasks
+    with get_db_connection() as attendance_conn:
+        ensure_login_attendance_tasks(attendance_conn)
+        attendance_conn.commit()
     from .services.life_tip_service import warm_life_tip_runtime
 
     try:
@@ -434,6 +440,8 @@ async def runtime_metrics_middleware(request: Request, call_next):
     )
     response.headers["X-Request-ID"] = request.state.request_id
     return response
+
+app.add_middleware(TrustedProxySchemeMiddleware)
 
 @app.get("/api/internal/health")
 async def internal_health():
@@ -854,6 +862,10 @@ app.include_router(document_renderer.router)
 app.include_router(prompt_pool.router)
 app.include_router(academic_evaluations.router)
 app.include_router(smart_classroom.router)
+app.include_router(login_attendance.router)
+app.include_router(login_attendance.attention_router)
+app.include_router(login_attendance.archive_router)
+app.include_router(smart_classroom_write.router)
 from .routers import attendance_reports
 app.include_router(attendance_reports.router)
 app.include_router(signatures.router)

@@ -16,6 +16,7 @@
 {% from "macros/lq/chip-row.html" import lq_chip_row %}
 {% from "macros/lq/forms.html" import lq_field %}
 <section class="smart-classroom-shell">
+    <p>本地点名从课堂课次的“自动点名”进入；此处单独管理本人学校账号。学校端开始、结束和改签须在官方微信小程序完成，再回课堂绑定准确点名并回读核对。逐人状态一致不等于完整远端流程已完成。</p>
     {{ page_head('广外智慧课堂对接', eyebrow='SMART CLASSROOM', description='保存账号前会先登录校验。校验通过后，系统会顺序同步教师可见的授课班点名记录，并按课程编号、教学班、学期和课次日期对齐到本平台课堂。',
         actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'smart-account-manage-btn'}, {'label': '一键同步', 'variant': 'primary', 'id': 'smart-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'smart-sync-capability-refresh-btn'}], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
     {% if _smart_lq_enabled %}

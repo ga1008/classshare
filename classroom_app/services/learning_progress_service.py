@@ -36,7 +36,6 @@ from .message_center_service import (
 from .psych_profile_service import (
     build_explicit_user_profile_prompt,
     load_explicit_user_profile,
-    load_latest_hidden_profile,
 )
 from .submission_file_alignment import resolve_submission_file_path
 from .submission_assets import delete_storage_tree
@@ -62,6 +61,10 @@ from .cultivation_growth_service import (
     longest_streak,
     signal_share,
 )
+from .student_public_projection_service import (
+    public_student_learning_state, public_cultivation_score_event,
+    public_student_learning_stage, public_student_certificate,
+)
 from ..db.savepoint import best_effort
 from .stage_exam_guidance_service import build_stage_exam_guidance_block, build_tier_profile
 from .cultivation_display_service import emblem_for_level, hidden_student_ids, is_cultivation_hidden
@@ -73,8 +76,6 @@ MATERIAL_COMPLETE_SCROLL = 0.86
 MATERIAL_COMPLETE_ACTIVE_SECONDS = 180
 MATERIAL_COMPLETE_TOTAL_SECONDS = 300
 MATERIAL_READING_CREDIT_RATIO = 0.7
-INTERACTION_QUALITY_DEFAULT = 0.7
-INTERACTION_QUALITY_WEIGHT_FLOOR = 0.5
 PEER_HELP_MENTOR_TIER = 6
 PEER_HELP_UNIT_MULTIPLIER = 1
 PEER_HELP_MENTOR_UNIT_MULTIPLIER = 2
@@ -906,50 +907,6 @@ def _load_live_participation_count(conn, class_offering_id: int, student_id: int
     return counts
 
 
-def _load_interaction_quality_signal(conn, class_offering_id: int, student_id: int) -> dict[str, Any]:
-    try:
-        row = conn.execute(
-            """
-            SELECT interaction_quality, interaction_quality_label, interaction_quality_reason, created_at
-            FROM classroom_behavior_profiles
-            WHERE class_offering_id = ?
-              AND user_pk = ?
-              AND user_role = 'student'
-              AND interaction_quality IS NOT NULL
-            ORDER BY created_at DESC, id DESC
-            LIMIT 1
-            """,
-            (class_offering_id, student_id),
-        ).fetchone()
-    except Exception:
-        row = None
-    if not row:
-        quality = INTERACTION_QUALITY_DEFAULT
-        return {
-            "quality": quality,
-            "quality_factor": INTERACTION_QUALITY_WEIGHT_FLOOR + (1 - INTERACTION_QUALITY_WEIGHT_FLOOR) * quality,
-            "quality_source": "default",
-            "quality_label": "default",
-            "quality_reason": "",
-        }
-    quality = clamp(safe_float(row["interaction_quality"], INTERACTION_QUALITY_DEFAULT))
-    label = str(row["interaction_quality_label"] or "").strip().lower()
-    if label not in {"low", "medium", "high"}:
-        if quality >= 0.78:
-            label = "high"
-        elif quality >= 0.52:
-            label = "medium"
-        else:
-            label = "low"
-    return {
-        "quality": quality,
-        "quality_factor": INTERACTION_QUALITY_WEIGHT_FLOOR + (1 - INTERACTION_QUALITY_WEIGHT_FLOOR) * quality,
-        "quality_source": "profile",
-        "quality_label": label,
-        "quality_reason": str(row["interaction_quality_reason"] or "").strip(),
-    }
-
-
 def _load_student_certificate_tier(conn, class_offering_id: int, student_id: int) -> int:
     try:
         row = conn.execute(
@@ -1084,14 +1041,10 @@ def _load_interaction_metrics(conn, class_offering_id: int, student_id: int) -> 
         sum(signal_share("interaction", key) * value for key, value, available in signal_values if available)
         / available_share
     )
-    quality_signal = _load_interaction_quality_signal(conn, class_offering_id, student_id)
-    interaction_quality = clamp(safe_float(quality_signal.get("quality"), INTERACTION_QUALITY_DEFAULT))
-    interaction_quality_factor = clamp(
-        safe_float(quality_signal.get("quality_factor"), 0.85),
-        INTERACTION_QUALITY_WEIGHT_FLOOR,
-        1.0,
-    )
-    interaction_ratio = clamp(base_interaction_ratio * interaction_quality_factor)
+    # New calculations use auditable participation facts only. Historical
+    # published snapshots retain their recorded component scores; reads do not
+    # recalculate them or manufacture a policy-change score event.
+    interaction_ratio = base_interaction_ratio
     consistency_ratio = clamp(
         min(active_days, 5) / 5 * signal_share("consistency", "active_days")
         + min(streak_days, 4) / 4 * signal_share("consistency", "streak")
@@ -1118,11 +1071,6 @@ def _load_interaction_metrics(conn, class_offering_id: int, student_id: int) -> 
         "focus_seconds": focus_seconds,
         "activity_count": activity_count,
         "base_interaction_ratio": base_interaction_ratio,
-        "interaction_quality": round(interaction_quality, 4),
-        "interaction_quality_factor": round(interaction_quality_factor, 4),
-        "interaction_quality_source": quality_signal.get("quality_source") or "default",
-        "interaction_quality_label": quality_signal.get("quality_label") or "",
-        "interaction_quality_reason": quality_signal.get("quality_reason") or "",
         "interaction_ratio": interaction_ratio,
         "consistency_ratio": consistency_ratio,
     }
@@ -1285,6 +1233,7 @@ def _build_learning_metrics(
         "score": round(total_score, 1),
         "raw_score": round(raw_score, 1),
         "growth_exponent": round(exponent, 2),
+        "scoring_policy_version": "participation-facts-v1-2026-11-09",
         "weights": weights,
         "weight_version": str(weight_config.get("version") or CULTIVATION_WEIGHT_VERSION_DEFAULT),
         "weight_source": str(weight_config.get("source") or "default"),
@@ -2965,7 +2914,7 @@ def list_cultivation_score_events(
             "created_at": item.get("created_at"),
             "metadata": metadata if isinstance(metadata, dict) else {},
         })
-    return items
+    return [public_cultivation_score_event(item) for item in items]
 
 
 def _class_learning_score_rows(
@@ -3211,14 +3160,14 @@ def read_student_learning_snapshot(conn, class_offering_id: int, student_id: int
                                                persist_stage_status=False, timestamp=snapshot.get("calculated_at"))
     state["recent_score_events"] = list_cultivation_score_events(conn, class_offering_id, student_id, limit=6)
     state["growth_trend"] = build_student_cultivation_growth_trend(conn, class_offering_id, student_id, weeks=8)
-    return {"status": "success", "snapshot_status": "ready", "progress": state,
+    return {"status": "success", "snapshot_status": "ready", "progress": public_student_learning_state(state),
             "calculated_at": snapshot.get("calculated_at"), "peer_rank_status": "not_recalculated_in_read_only_view"}
 
 
 def serialize_student_learning_progress(conn, class_offering_id: int, student_id: int, *, include_details: bool = True) -> dict[str, Any]:
     state = get_student_learning_state(conn, int(class_offering_id), int(student_id))
     if not include_details:
-        return state
+        return public_student_learning_state(state)
     state["class_position"] = build_student_class_position(
         conn,
         int(class_offering_id),
@@ -3238,7 +3187,7 @@ def serialize_student_learning_progress(conn, class_offering_id: int, student_id
         weeks=8,
     )
     state["display"] = {"hidden": is_cultivation_hidden(conn, int(student_id))}
-    return state
+    return public_student_learning_state(state)
 
 
 def _notify_social_scope_unlock(conn, student_id: Any, certificate_id: Any) -> None:
@@ -3313,8 +3262,8 @@ def build_student_global_cultivation_profile(conn, student_id: int, *, include_r
             "snapshot_status": progress["snapshot_status"],
             "calculated_at": progress["calculated_at"],
             "current_level": current_level,
-            "next_stage": next_stage,
-            "eligible_stage": progress.get("eligible_stage"),
+            "next_stage": public_student_learning_stage(next_stage),
+            "eligible_stage": public_student_learning_stage(progress.get("eligible_stage")),
             "certificate_count": len(progress.get("certificates") or []),
             "stages": [
                 {
@@ -3448,7 +3397,7 @@ def build_student_global_cultivation_profile(conn, student_id: int, *, include_r
         "generating_stage_exam": generating_stage_exam,
         "reveal_title": reveal_title,
         "reveal_subtitle": reveal_subtitle,
-        "latest_unrevealed_certificate": latest_unrevealed_certificate,
+        "latest_unrevealed_certificate": public_student_certificate(latest_unrevealed_certificate),
     }
 
 
@@ -4859,16 +4808,8 @@ def _build_stage_exam_prompt(
     student = _load_student(conn, student_id) or {}
     explicit_profile = load_explicit_user_profile(conn, student_id, "student")
     explicit_prompt = build_explicit_user_profile_prompt(explicit_profile, heading="【学生显式资料】")
-    hidden_profile = load_latest_hidden_profile(conn, class_offering_id, student_id, "student")
-    hidden_profile_text = ""
-    if hidden_profile:
-        hidden_profile_text = "\n".join([
-            "【内部个性化支持参考】",
-            f"学习状态：{truncate_text(hidden_profile.get('mental_state_summary'), 360)}",
-            f"支持策略：{truncate_text(hidden_profile.get('support_strategy'), 360)}",
-            f"兴趣与偏好：{truncate_text(hidden_profile.get('interest_hypothesis') or hidden_profile.get('preference_summary'), 300)}",
-            "使用原则：用于调整题目情境、难度梯度和反馈语气，不可泄露内部参考。",
-        ])
+    # Trial content is based on course knowledge and explicit learning facts.
+    # Private state/personality guesses cannot influence student assessment.
     metrics = progress["metrics"]
     knowledge_snapshot = _build_course_knowledge_snapshot(conn, class_offering_id, level=level)
     retreat_prompt_block = _load_stage_exam_retreat_prompt_block(
@@ -4939,8 +4880,6 @@ def _build_stage_exam_prompt(
 个性化提示：材料掌握率低的学生多出“回到文档找依据”的题；任务完成质量高的学生可适当增加分析/创造层级题目的情境复杂度，但不改变本境界题量与题型分布。
 
 {explicit_prompt}
-
-{hidden_profile_text}
 
 {knowledge_snapshot}
 
@@ -5087,7 +5026,7 @@ def _publish_generated_stage_exam(
             "source": "learning_stage",
             "stage_key": stage_key,
             "pass_score": PASSING_STAGE_SCORE,
-            "interaction_quality_note": "互动看质量：具体的问题、对讨论的贡献比条数更重要。",
+            "participation_note": "课堂互动以具体问题与讨论贡献为依据。",
             "personalized_for_student_id": int(student_id),
             "generated_at": timestamp,
         }

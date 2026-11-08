@@ -214,9 +214,13 @@ def apply_assessment_migrations(conn) -> None:
     from classroom_app.db.schema_behavior_collection_health import ensure_behavior_collection_health_schema
     from classroom_app.db.schema_behavior_inbox import ensure_behavior_inbox_schema
     from classroom_app.db.schema_retake import ensure_retake_schema
+    from classroom_app.db.schema_login_attendance import ensure_login_attendance_schema
+    from classroom_app.db.schema_smart_classroom_write import ensure_smart_classroom_write_schema
     from classroom_app.db.postgres import LanSharePostgresConnection
     with _runtime_schema_adapter(conn) as adapter:
         ensure_behavior_inbox_schema(adapter, engine="postgres")
+        ensure_login_attendance_schema(adapter, engine="postgres")
+        ensure_smart_classroom_write_schema(adapter, engine="postgres")
     ensure_behavior_collection_health_schema(LanSharePostgresConnection(conn), engine="postgres")
     ensure_retake_schema(LanSharePostgresConnection(conn), engine="postgres", force=True)
     for column, definition in POSTGRES_RUNTIME_COLUMN_DEFINITIONS["assignments"].items():
@@ -311,7 +315,7 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
     return {
         "status": "ok" if passed else "failed", "engine": "postgres", "source_dump_sha256": source_hash,
         "source_unchanged": source_unchanged, "database_preservation_passed": passed,
-        "migration_scope": "assessment classification, durable AI/review ledger, grade publication, signature visibility, Agent actor/delegation/key/budget schema, school-scoped teacher employee identity",
+        "migration_scope": "assessment classification, durable AI/review ledger, grade publication, signature visibility, Agent actor/delegation/key/budget schema, school-scoped teacher employee identity, local login attendance and school handoff/readback ledger",
         "before": before, "stages": stages, "idempotency_differences": idempotency,
         "added_tables": sorted(set(first_full["tables"]) - set(before["tables"])),
         "added_columns": {table: added for table, meta in before["tables"].items()

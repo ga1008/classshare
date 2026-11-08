@@ -483,6 +483,9 @@ async def bridge_mcp(request: Request, authorization: Optional[str] = Header(def
                 value = await bridge_web_search(BridgeWebSearchPayload(**arguments), authorization)
             else:
                 raise HTTPException(404, "工具不存在。")
+            if grant.actor.role == "student" and name in {"platform_task_context", "platform_request_status"}:
+                from ..services.student_public_projection_service import public_student_legacy_tool_result
+                value = public_student_legacy_tool_result(value)
             text = json.dumps(value, ensure_ascii=False, allow_nan=False)
             if len(text.encode("utf-8")) > 2 * 1024 * 1024:
                 raise HTTPException(413, "工具结果过大，请缩小范围。")

@@ -125,6 +125,9 @@ class ClassroomCloseoutServiceTests(unittest.TestCase):
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
+        from classroom_app.db.schema_login_attendance import ensure_login_attendance_schema
+        self.conn.execute("CREATE TABLE class_offering_sessions(id INTEGER PRIMARY KEY)")
+        ensure_login_attendance_schema(self.conn, engine="sqlite")
 
         self.conn.execute("INSERT INTO courses (id, name) VALUES (10, '课程')")
         self.conn.execute("INSERT INTO classes (id, name) VALUES (101, '班级')")

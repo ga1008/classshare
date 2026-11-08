@@ -11,6 +11,7 @@ import { enhanceNavMenus } from './lq/nav-menu.js';
 import { getLayerSystem } from './lq/layer.js';
 import { openKnowledgeTree, lifecycleLabel } from './session_knowledge_tree.js';
 import { openKnowledgeTreeManager } from './session_knowledge_tree_manager.js';
+import { resolveAttendanceLink } from './login_attendance_link.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
 
@@ -945,6 +946,7 @@ function initTeachingTimeline() {
     const sessionModalOpenMaterialBtn = document.getElementById('teachingSessionOpenMaterialBtn');
     const sessionModalCheckinBtn = document.getElementById('teachingSessionCheckinBtn');
     const sessionModalKnowledgeTreeBtn = document.getElementById('teachingSessionKnowledgeTreeBtn');
+    const sessionModalAutoAttendanceBtn = document.getElementById('teachingSessionAutoAttendanceBtn');
     const sessionCheckinPanel = document.getElementById('teachingSessionCheckinPanel');
     const sessionCheckinMessage = document.getElementById('teachingSessionCheckinMessage');
     const sessionCheckinStats = document.getElementById('teachingSessionCheckinStats');
@@ -962,6 +964,8 @@ function initTeachingTimeline() {
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const resolveBehavior = (behavior) => (prefersReducedMotion ? 'auto' : behavior);
     const explicitSession = resolveClassroomSessionLink(window.location.search, sessions);
+    const attendanceLink = resolveAttendanceLink(window.location.search);
+    let attendanceIntentDelivered = false, attendanceOpening = false;
     let selectedOrder = explicitSession.kind === 'invalid' ? '' : String(
         explicitSession.session?.order_index ??
         (sessions.some(session => String(session.order_index) === String(window.APP_CONFIG?.workspaceSelectedOrder)) ? window.APP_CONFIG.workspaceSelectedOrder : null)
@@ -1205,6 +1209,10 @@ function initTeachingTimeline() {
             sessionModalCheckinBtn.disabled = isHome || isExam;
         }
         syncKnowledgeEntry(session);
+        if (sessionModalAutoAttendanceBtn) {
+            sessionModalAutoAttendanceBtn.hidden = isHome || isExam || !session?.id;
+            sessionModalAutoAttendanceBtn.disabled = isHome || isExam || !session?.id;
+        }
         renderCheckinEmpty(isExam ? '考试卡片不关联课堂点名记录。' : (isHome ? '课程首页没有点名记录。' : '点击“点名统计”读取本次课签到情况。'));
         if (sessionCheckinPanel) sessionCheckinPanel.hidden = true;
         if (compactWorkspace && !isExam) void prepareSessionMaterials(session, Boolean(options.resume));
@@ -2212,6 +2220,35 @@ function initTeachingTimeline() {
             onChange: applyKnowledgeProgress,
         });
     });
+    async function openAttendance(intent = null) {
+        const session = activeModalSession;
+        const trigger = sessionModalAutoAttendanceBtn;
+        if (attendanceOpening || !session?.id || !trigger?.isConnected || trigger.hidden || trigger.disabled || isHomeEntry(session) || isAcademicExamEntry(session)) return;
+        const parent = getLayerSystem(document).top();
+        if (!parent?.root.contains(trigger)) return;
+        attendanceOpening = true;
+        try {
+            const mod = await import('./login_attendance.js');
+            if (activeModalSession !== session || !trigger.isConnected || getLayerSystem(document).top() !== parent) return;
+            mod.openLoginAttendance({ classOfferingId: window.APP_CONFIG.classOfferingId, session, userRole: window.APP_CONFIG?.userInfo?.role,
+                trigger, attendanceId: intent?.attendance_id, studentId: intent?.student_id, appealId: intent?.appeal_id });
+        } catch (error) { showToast(error.message || '签到界面加载失败，请重试。', 'error'); }
+        finally { attendanceOpening = false; }
+    }
+    sessionModalAutoAttendanceBtn?.addEventListener('click', () => openAttendance());
+    function deliverAttendanceIntent() {
+        if (attendanceIntentDelivered || attendanceLink.kind !== 'valid' || explicitSession.kind !== 'valid') return;
+        let attempts = 0;
+        const waitForParent = () => {
+            if (attendanceIntentDelivered || Number(activeModalSession?.id) !== attendanceLink.session_id) return;
+            if (getLayerSystem(document).top()?.root.contains(sessionModalAutoAttendanceBtn) && !sessionModalAutoAttendanceBtn.hidden) {
+                attendanceIntentDelivered = true; void openAttendance(attendanceLink); return;
+            }
+            if (++attempts < 30) window.requestAnimationFrame(waitForParent);
+        };
+        window.requestAnimationFrame(waitForParent);
+    }
+    document.addEventListener('classroom:workspace-surface-visible', event => { if (event.detail?.panel === 'session-detail') deliverAttendanceIntent(); });
     sessionSyncCheckinBtn?.addEventListener('click', () => {
         fetchSessionCheckin({ sync: true });
     });
@@ -2238,6 +2275,7 @@ function initTeachingTimeline() {
     if (isTeacher) loadLessonDocPack();
 
     window.requestAnimationFrame(() => {
+        if (attendanceLink.kind === 'invalid') showToast('签到链接参数无效，未自动打开其他点名。', 'error');
         if (explicitSession.kind === 'invalid') {
             showToast('指定课次无效或不属于当前课堂，请从课次列表重新选择。', 'error');
             const notice = document.createElement('p'); notice.className = 'ls-error'; notice.setAttribute('role', 'alert');
@@ -2254,7 +2292,7 @@ function initTeachingTimeline() {
         const selectedSession = getSessionByOrder(selectedOrder);
         sessionMaterialAssistant?.syncSelectedSession((isHomeEntry(selectedSession) || isAcademicExamEntry(selectedSession)) ? null : selectedSession);
         sessionMaterialAssistant?.startPolling();
-        if (explicitSession.kind === 'valid' && !compactWorkspace) openSessionModal(selectedSession);
+        if (explicitSession.kind === 'valid' && !compactWorkspace) { openSessionModal(selectedSession); deliverAttendanceIntent(); }
         window.requestAnimationFrame(scheduleProjectionSync);
     });
 }
@@ -3165,6 +3203,7 @@ export function initClassroomPage() {
     initWorkspaceNav();
     initClassroomActivitySidebar();
     initTeachingTimeline();
+    initLoginAttendanceHistory();
     initAcademicCourseExamPanel();
     initAssignmentClocks({
         onStateChange: timeStates => document.dispatchEvent(new CustomEvent('classroom:assignment-time-states', { detail: timeStates })),
@@ -3173,4 +3212,21 @@ export function initClassroomPage() {
     document.addEventListener('classroom:alias-change', (event) => {
         personalizeClassroomCopy(event.detail || {});
     });
+}
+
+function initLoginAttendanceHistory() {
+    const trigger=document.getElementById('cw-attendance-history');
+    const intent=resolveAttendanceLink(window.location.search);
+    const teacher=window.APP_CONFIG?.userInfo?.role==='teacher';
+    let opening=false;
+    async function openHistory(deep=false){
+        if(!teacher||opening)return;opening=true;if(trigger)trigger.disabled=true;
+        try{
+            if(deep){const mod=await import('./login_attendance.js');mod.openLoginAttendance({classOfferingId:window.APP_CONFIG.classOfferingId,session:null,userRole:'teacher',trigger:trigger||document.activeElement,historyOnly:true,attendanceId:intent.attendance_id,studentId:intent.student_id,appealId:intent.appeal_id});}
+            else{const mod=await import('./login_attendance_history.js');mod.openAttendanceHistory({classOfferingId:window.APP_CONFIG.classOfferingId,trigger});}
+        }catch(error){showToast(error.message||'历史点名加载失败，请重试。','error');}
+        finally{opening=false;if(trigger)trigger.disabled=false;}
+    }
+    trigger?.addEventListener('click',()=>openHistory());
+    if(intent.kind==='valid'&&intent.history_only){if(teacher)void openHistory(true);else showToast('此历史记录入口仅供任课教师使用。','error');}
 }

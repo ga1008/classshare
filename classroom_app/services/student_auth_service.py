@@ -269,6 +269,8 @@ def record_student_login(
             datetime.now().isoformat(),
         ),
     )
+    from .login_attendance_access_service import record_login_observation
+    record_login_observation(conn, student_id=student_row["id"], client_ip=normalize_ip(client_ip), login_method=login_method)
     return next_sequence
 
 

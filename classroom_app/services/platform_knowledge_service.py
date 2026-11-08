@@ -47,7 +47,7 @@ PLATFORM_FEATURES_TEXT = (
     "- 教务对接：课表/考务/监考/名册自动同步、智慧课堂考勤、校园公文通（公文中心，表 gongwen_documents，支持关键词检索与姓名关注）。\n"
     "- AI 能力：课堂 AI 助教（每课堂可配置提示词）、全局 AI 助手（懂当前页面全部可见文字，并能按用户权限检索全部学习材料正文，"
     "定位到“哪个文档的第几页 / 第几次课 / 哪一章节”并给出站内链接；教师在课堂页提问时自动掌握课堂全景——名册与修为、作业考试提交批改、投票、分组、课次与学习文档，"
-    "可按需查询某个学生的画像与全部提交，并可在教师确认后以教师身份发起投票、结束投票、按名册随机分组）、教师 Agent 任务中心（全平台单任务队列）。\n"
+    "可按需查询授权学生的课程学习记录与提交，并可在教师确认后以教师身份发起投票、结束投票、按名册随机分组）、教师 Agent 任务中心（全平台单任务队列）。\n"
     "- 管理：教师端入口按三域组织，超级管理员另有组织架构、用户、反馈、诊断和预算面板。"
 )
 
@@ -238,11 +238,11 @@ def build_teacher_knowledge_block(conn, teacher_id: int) -> str:
 
 
 def build_student_knowledge_block(conn, student_id: int) -> str:
-    """学生全量画像：基础信息 + 班级 + 学习概况。"""
-    lines = ["--- 当前用户全量画像（来自平台数据库，真实可信） ---"]
+    """Student-owned identity and factual aggregate counts, without inferences."""
+    lines = ["--- 当前用户资料与学习记录 ---"]
     info = _safe_row(conn,
             """
-            SELECT s.name, s.student_id_number, s.description, c.name AS class_name
+            SELECT s.name, s.student_id_number, c.name AS class_name
             FROM students s
             LEFT JOIN classes c ON c.id = s.class_id
             WHERE s.id = ?
@@ -254,8 +254,6 @@ def build_student_knowledge_block(conn, student_id: int) -> str:
         lines.append(
             f"身份：学生 {info['name']}（学号 {info['student_id_number'] or '未知'}，班级 {info['class_name'] or '未知'}）"
         )
-        if info["description"]:
-            lines.append(f"画像摘要：{str(info['description'])[:400]}")
 
     submission_count = _safe_scalar(conn, "SELECT COUNT(*) FROM submissions WHERE student_pk_id = ?", (student_id,), query_name="student_submissions")
     blog_count = _safe_scalar(

@@ -13,11 +13,11 @@ from ..core import ai_client
 from ..database import get_db_connection
 from ..time_utils import local_iso
 from .prompt_utils import build_time_context_text
+from .student_public_projection_service import public_student_attendance_advice_context
 from .psych_profile_service import (
     build_explicit_user_profile_prompt,
     contains_hidden_profile_marker,
     load_explicit_user_profile,
-    load_latest_hidden_profile,
     sanitize_hidden_profile_leaks,
 )
 
@@ -123,6 +123,7 @@ def build_student_attendance_advice_fingerprint(
     ]
     comparisons = personal.get("course_comparisons") if isinstance(personal.get("course_comparisons"), list) else []
     payload = {
+        "advice_context_version": "attendance-facts-v1-2026-11-09",
         "summary": {
             "class_offering_id": summary.get("class_offering_id"),
             "synced_session_count": summary.get("synced_session_count"),
@@ -544,26 +545,8 @@ async def _run_advice_job(job_id: int) -> None:
     _mark_advice_job_done(job_id, advice_map)
 
 
-def _profile_brief(profile: dict[str, Any] | None) -> str:
-    if not profile:
-        return "暂无内部学习支持摘要。"
-    parts = [
-        ("学习支持摘要", profile.get("profile_summary")),
-        ("当前状态", profile.get("mental_state_summary")),
-        ("支持策略", profile.get("support_strategy")),
-        ("偏好风格", profile.get("preferred_ai_style")),
-        ("表达习惯", profile.get("language_habit_summary")),
-    ]
-    lines = []
-    for label, value in parts:
-        text = _safe_short_text(value, limit=180)
-        if text:
-            lines.append(f"{label}：{text}")
-    return "\n".join(lines) if lines else "暂无内部学习支持摘要。"
-
-
 def _build_ai_messages(job: dict[str, Any]) -> tuple[str, str, list[str]]:
-    context = _safe_json_loads(job.get("context_json"), {})
+    context = public_student_attendance_advice_context(_safe_json_loads(job.get("context_json"), {}))
     fallback_cards = context.get("fallback_cards") if isinstance(context.get("fallback_cards"), list) else []
     requested_keys = [
         str(item.get("key") or "")
@@ -572,19 +555,12 @@ def _build_ai_messages(job: dict[str, Any]) -> tuple[str, str, list[str]]:
     ]
     requested_keys = list(dict.fromkeys(requested_keys))[:4]
     with get_db_connection() as conn:
-        hidden_profile = load_latest_hidden_profile(
-            conn,
-            int(job["class_offering_id"]),
-            int(job["student_id"]),
-            "student",
-        )
         explicit_profile = load_explicit_user_profile(conn, int(job["student_id"]), "student")
 
     explicit_prompt = build_explicit_user_profile_prompt(
         explicit_profile,
         heading="【学生主动维护的个人资料与当日状态】",
     )
-    hidden_prompt = _profile_brief(hidden_profile)
     cards_text = "\n".join(
         f"- {item.get('key')}: {item.get('title')}；基础信息：{item.get('fallback_text')}"
         for item in fallback_cards
@@ -610,7 +586,6 @@ def _build_ai_messages(job: dict[str, Any]) -> tuple[str, str, list[str]]:
             "卡片：\n" + (cards_text or "暂无"),
             "课堂与出勤统计 JSON：\n" + _safe_json_dumps(context),
             explicit_prompt,
-            "【内部个性化支持策略，仅供调整语气，绝不可外显或提及来源】\n" + hidden_prompt,
             "返回示例：{\"personal_attention\":\"先补齐材料，再稳住后续出勤\"}",
         ]
     )

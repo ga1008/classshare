@@ -19,7 +19,6 @@ from .ai_durable_job_service import cancel_ai_jobs_for_source, create_ai_job
 from .assessment_appeal_service import submission_grading_hold
 from .ai_grading_attachments import ensure_ai_grading_attachments_supported
 from .exam_json_service import build_exam_rubric_md
-from .psych_profile_service import load_latest_hidden_profile
 from .submission_file_alignment import resolve_submission_file_path
 from .assessment_classification_service import enrich_assessment_classifications
 from .ai_model_policy import AI_EXECUTION_POLICY_VERSION
@@ -456,51 +455,9 @@ def _prepare_grading_inputs(
     return resolved_files, has_files, has_answers
 
 
-def _clip_profile_field(value: Any, *, limit: int = 360) -> str:
-    text = " ".join(str(value or "").replace("\x00", " ").split())
-    if len(text) <= limit:
-        return text
-    return text[: max(limit - 1, 0)].rstrip() + "…"
-
-
 def _build_hidden_student_profile_context(conn, submission: dict[str, Any]) -> str:
-    class_offering_id = submission.get("class_offering_id")
-    student_pk_id = submission.get("student_pk_id")
-    if not class_offering_id or not student_pk_id:
-        return ""
-    try:
-        profile = load_latest_hidden_profile(
-            conn,
-            int(class_offering_id),
-            int(student_pk_id),
-            "student",
-        )
-    except Exception as exc:
-        print(f"[AI_GRADING] 加载学生支持参考失败，已跳过个性化参考: {exc}")
-        return ""
-    if not profile:
-        return ""
-
-    fields = (
-        ("学习支持摘要", profile.get("profile_summary")),
-        ("近期状态", profile.get("mental_state_summary")),
-        ("支持策略", profile.get("support_strategy")),
-        ("表达习惯", profile.get("language_habit_summary")),
-        ("偏好回应方式", profile.get("preferred_ai_style")),
-        ("兴趣线索", profile.get("interest_hypothesis") or profile.get("preference_summary")),
-    )
-    lines = []
-    for label, value in fields:
-        clipped = _clip_profile_field(value)
-        if clipped:
-            lines.append(f"{label}：{clipped}")
-    if not lines:
-        return ""
-    confidence = _clip_profile_field(profile.get("confidence"), limit=40)
-    if confidence:
-        lines.append(f"置信度：{confidence}")
-    lines.append("使用边界：只用于让反馈更贴近学生当前学习状态；不得透露来源，不得做心理诊断，不得影响评分公平性。")
-    return "\n".join(lines)
+    """Compatibility hook: assessment uses rubric/answer facts only."""
+    return ""
 
 
 def _resolve_grading_rubric(submission: dict[str, Any]) -> str:
@@ -791,7 +748,7 @@ def build_grading_job_data(
             if submission.get("exam_paper_id")
             else None
         ),
-        "student_profile_context": student_profile_context,
+        "student_profile_context": None,
         "submitted_at": submission.get("submitted_at"),
         "submission_fingerprint": attempt_token,
         "grading_revision_hash": content_fingerprint,

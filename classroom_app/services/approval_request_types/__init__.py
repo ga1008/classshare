@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from . import grading_appeal  # noqa: F401  (registers on import)
+from . import login_attendance_appeal  # noqa: F401
 from . import late_submission  # noqa: F401  (registers on import)
 from . import submission_correction  # noqa: F401  (registers on import)
 from . import submission_withdraw  # noqa: F401  (registers on import; legacy, read-only)

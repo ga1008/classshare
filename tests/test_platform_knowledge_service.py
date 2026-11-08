@@ -55,7 +55,8 @@ class KnowledgeSQLiteTests(unittest.TestCase):
         before = self.conn.total_changes
         value = service.build_user_knowledge_block(self.conn,self.student,"student")
         self.assertIn("Owned student",value); self.assertIn("Primary class",value)
-        self.assertIn("Student profile",value)
+        self.assertNotIn("Student profile",value)
+        self.assertNotIn("画像",value)
         self.assertIn("累计提交作业/考试 3 次，发表博客 2 篇",value)
         self.assertEqual(self.conn.total_changes,before)
 

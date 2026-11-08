@@ -16,6 +16,7 @@ from .discussion_attachment_service import build_attachment_image_inputs_from_pa
 from .academic_service import build_classroom_ai_context
 from .behavior_tracking_service import record_behavior_event
 from .psych_profile_service import (
+    public_classroom_actor_context,
     build_explicit_user_profile_prompt,
     compose_classroom_chat_system_prompt as build_classroom_chat_prompt,
     format_classroom_summary as build_classroom_summary,
@@ -363,8 +364,8 @@ async def _build_discussion_ai_chat_payload(
         class_snapshot = _load_classroom_snapshot(conn, class_offering_id)
         class_ai_config = fetch_ai_class_config(conn, class_offering_id)
         classroom_ai_context = build_classroom_ai_context(conn, class_offering_id)
-        user_context_prompt = format_system_prompt(user_pk, user_role, class_offering_id)
-        hidden_profile = load_latest_hidden_profile(conn, class_offering_id, user_pk, user_role)
+        user_context_prompt = public_classroom_actor_context(conn, user_pk, user_role)
+        hidden_profile = None  # Public discussion replies use authorized facts.
         rows = conn.execute(
             """
             SELECT id, user_id, user_name, user_role, message, logged_at, emoji_payload_json, attachments_json, quote_payload_json
@@ -579,8 +580,8 @@ async def generate_discussion_ai_reply(
             class_snapshot = _load_classroom_snapshot(conn, class_offering_id)
             class_ai_config = fetch_ai_class_config(conn, class_offering_id)
             classroom_ai_context = build_classroom_ai_context(conn, class_offering_id)
-            user_context_prompt = format_system_prompt(user_pk, user_role, class_offering_id)
-            hidden_profile = load_latest_hidden_profile(conn, class_offering_id, user_pk, user_role)
+            user_context_prompt = public_classroom_actor_context(conn, user_pk, user_role)
+            hidden_profile = None
             rows = conn.execute(
                 """
                 SELECT id, user_id, user_name, user_role, message, logged_at, emoji_payload_json, attachments_json, quote_payload_json
@@ -1058,11 +1059,11 @@ async def refresh_discussion_profile_from_activity(
         response_data = response.json()
 
         if response_data.get("status") != "success":
-            raise RuntimeError(f"AI 返回失败: {response_data}")
+            raise RuntimeError("AI 返回失败")
 
         payload = response_data.get("response_json")
         if not isinstance(payload, dict):
-            raise RuntimeError(f"AI 未返回有效 JSON: {payload}")
+            raise RuntimeError("AI 未返回有效 JSON")
 
         normalized = normalize_profile_payload(payload)
         if not any(
@@ -1098,13 +1099,7 @@ async def refresh_discussion_profile_from_activity(
                 ),
             )
 
-            if normalized["profile_summary"]:
-                table_name = "teachers" if user_role == "teacher" else "students"
-                conn.execute(
-                    f"UPDATE {table_name} SET description = ? WHERE id = ?",
-                    (normalized["profile_summary"], user_pk),
-                )
-
+            # Internal summaries never overwrite public descriptions.
             conn.commit()
 
         _refresh_cached_ai_session_contexts(class_offering_id, user_pk, user_role)

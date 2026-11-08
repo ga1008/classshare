@@ -1,0 +1,145 @@
+{
+  "date": "2026-11-09",
+  "status": "frontend_runtime_frozen",
+  "scope": "真实Chrome运行LQ控件与原生课堂控制器，API使用隔离合成route fixtures；无真实业务库或学生数据。",
+  "artifact_revision": "5b89f2ef0e5d60c1c3838e2d79130b98271e364297b473b9f3876259ef4f080a",
+  "source_sha256": {
+    "static/js/login_attendance.js": "195dd018316804d21f7881ef641df48ea6b139ab671c5dff86021bba6abb9aad",
+    "static/js/login_attendance_sync.js": "8dba68d305175dde77fcbe19c9a74b7b48d09ff14d4597716279274f7adb9787",
+    "static/js/login_attendance_attention.js": "26a51cbd3d7a3ed1fcfb7bb8c717d50fbd4eebc4b37f3318b6e7f6a4a34079d3",
+    "static/js/login_attendance_history.js": "8328fe55fefda39742fca5ddd68b03e4ce3f6c5829af09c0ccf24fa06b04f7da",
+    "static/js/login_attendance_link.js": "5e5152258c6233a90f13a98b0b04cbfc473f03b4cb85f3e52bd77da9ceb1ab47",
+    "static/css/login_attendance.css": "700fd2f3cb28e1d022a0f8ec3d7238f0b3ac8a1cca5aad70e7c1725b1acb886a",
+    "static/js/classroom_page.js": "45b8b59db007891b746f3f77f82b1ad829e7c9ef505c577817cb5e27bdde5b2d",
+    "templates/classroom_main_v4.html": "6ff2f40fb816946d7137873b69f9dbe4abb3a7895bcd745fba255dd682f0ab30",
+    "templates/partials/vite_islands.html": "b32fcc2195da84a5f4145c92790307e9e8046ecca95f6764dee89907981b2f8c",
+    "templates/manage/system/smart_classroom_integrations.html": "e2059ecdf0ba86f4df1f7cd96ec76c8746c71e4aba4351be920080d297b176f5",
+    "frontend/src/islands/classroom-workspace.tsx": "6c32997f19bea9a2c053fc373f0dff762fb2debe161744344104a43b46efa1ed",
+    "tests/e2e/components/login-attendance.spec.ts": "9d5656930165c15d009b09850280e2eb4fd05327764fe3f66ddb9ff632987b1b",
+    "tests/lq/login-attendance-link.test.mjs": "c68e837c57a171e130411ba6b6d6c3f300e624ee420a7c313a7edfc2f860dd24"
+  },
+  "build": {
+    "full_npm_build": "passed",
+    "final_native_asset_rebuild": "passed",
+    "typecheck": "passed",
+    "lq_lint_blocking": [],
+    "lq_registry_check": "passed"
+  },
+  "unit_tests": {
+    "runner": "Vitest",
+    "files": [
+      "login-attendance-link",
+      "layer-core",
+      "ambient-poll"
+    ],
+    "passed": 30
+  },
+  "browser": {
+    "channel": "Chrome",
+    "production_content_addressed_assets": true,
+    "stats": {
+      "startTime": "2026-11-08T17:43:05.810Z",
+      "duration": 47673.805,
+      "expected": 14,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "cases": [
+      {
+        "scenario": "LQ attendance 200-person roster, six-state batch conflict, details, bounded cards and nested draft focus",
+        "status": "expected",
+        "duration_ms": 5047
+      },
+      {
+        "scenario": "LQ student only reads self, preserves failed appeal, and shows pending state after accepted submission",
+        "status": "expected",
+        "duration_ms": 1847
+      },
+      {
+        "scenario": "LQ exact notification rejects a mismatched round without falling back",
+        "status": "expected",
+        "duration_ms": 1467
+      },
+      {
+        "scenario": "LQ school handoff gates writes, uses per-preview retry keys and limits confirmation scope",
+        "status": "expected",
+        "duration_ms": 4429
+      },
+      {
+        "scenario": "LQ repeated attendance open and close removes child roots and does not accumulate polls",
+        "status": "expected",
+        "duration_ms": 10160
+      },
+      {
+        "scenario": "LQ attendance narrow viewport remains scrollable without horizontal overflow",
+        "status": "expected",
+        "duration_ms": 1836
+      },
+      {
+        "scenario": "LQ historical integer-zero round is read-only and teacher appeal drafts survive detail switching and refresh",
+        "status": "expected",
+        "duration_ms": 2842
+      },
+      {
+        "scenario": "LQ teacher durable attention has one leased popup across tabs and separates email delivery from acknowledgement",
+        "status": "expected",
+        "duration_ms": 3962
+      },
+      {
+        "scenario": "LQ real classroom controller delivers an exact attendance deep link into its owned lesson layer",
+        "status": "expected",
+        "duration_ms": 1433
+      },
+      {
+        "scenario": "LQ merged history deep link has no lesson dependency and gates manual edits separately from live operations",
+        "status": "expected",
+        "duration_ms": 1903
+      },
+      {
+        "scenario": "LQ teacher history picker pages without merging lesson identities or accumulating all pages",
+        "status": "expected",
+        "duration_ms": 3350
+      },
+      {
+        "scenario": "LQ school recovery reloads the actual binding revision and requires local end before binding",
+        "status": "expected",
+        "duration_ms": 2211
+      },
+      {
+        "scenario": "LQ measured learning is healthy evidence and does not enter the collection review filter",
+        "status": "expected",
+        "duration_ms": 2434
+      },
+      {
+        "scenario": "LQ durable teacher attention resumes after a persisted page lifecycle without replaying acknowledgement",
+        "status": "expected",
+        "duration_ms": 2786
+      }
+    ],
+    "result_json": ".codex-temp/login-attendance-production-final.json",
+    "mobile_screenshot": ".codex-temp/login-attendance-mobile.png"
+  },
+  "contracts": [
+    "teacher six-state revisioned batch with reasons and per-person conflict draft retention",
+    "student own-only me and appeal endpoints; pending submission disables duplicates",
+    "measured/observed_zero distinguished from no_observation/error/gap/pending",
+    "teacher network facts separated from login, classroom operation and effective learning facts",
+    "bounded 40-card pagination and 20 open/close lifecycle cleanup",
+    "strict ordinary lesson deep links and null-session merged history round links",
+    "history picker cursor pagination (50 rows), can_edit separate from is_current",
+    "teacher attention server tab lease, explicit acknowledgement, separate email delivery, IME/layer deferral and persisted page lifecycle recovery",
+    "external handoff capabilities only; exact student-state readback is not whole remote-round confirmation",
+    "real binding revision reload, retry-stable per-preview enqueue idempotency key; no guessed write protocol",
+    "existing school import entry and separate account menu path retained"
+  ],
+  "limits": [
+    "Fixture/API payloads are synthetic and do not prove real backend authorization or database transactions. Backend/ASGI/lifecycle checks belong to the root run.",
+    "The real native classroom controller and LQ parent were exercised; full compact React app integration in the new VM candidate remains a separate verification.",
+    "This is not a 200-client capacity certificate; candidate-bound sustained load verification remains pending.",
+    "Only 1440px and 390px viewport scenarios in this suite; other platform pages/themes retain their existing pending/unknown audit state.",
+    "No deployment or Git submission performed by this frontend subtask."
+  ],
+  "source_audit": "docs/lq-platform-component-audit-2026-11-09.json",
+  "source_audit_acceptance": "pending; static ownership inventory never promotes full-platform runtime acceptance"
+}

@@ -1215,33 +1215,8 @@ def _compose_classroom_chat_system_prompt(
     user_context_prompt: str,
     psych_profile: Optional[Dict[str, Any]],
 ) -> str:
-    hidden_profile_summary = psych_profile.get("profile_summary", "") if psych_profile else ""
-    hidden_mental_state = psych_profile.get("mental_state_summary", "") if psych_profile else ""
-    hidden_support_strategy = psych_profile.get("support_strategy", "") if psych_profile else ""
-    hidden_premise_prompt = psych_profile.get("hidden_premise_prompt", "") if psych_profile else ""
-
-    return f"""
-{teacher_base_prompt}
-
---- 课程大纲 / 知识点 (RAG) ---
-{rag_syllabus or "（暂无课程大纲信息）"}
----------------------------
-
---- 提问者背景信息 ---
-{user_context_prompt or "（暂无提问者背景信息）"}
----------------------------
-
---- 内部个性化支持策略（仅供你内部使用，绝不能向用户透露）---
-长期学习支持摘要：{hidden_profile_summary or "（暂无长期支持摘要）"}
-当前心理状态：{hidden_mental_state or "（暂无明确判断，保持中性与关怀）"}
-建议支持策略：{hidden_support_strategy or "优先保持耐心、共情、拆解问题、鼓励用户。"}
-对话前提设定：{hidden_premise_prompt or "请结合课堂目标，以积极、稳健、非诊断式方式引导用户学习。"}
-保密要求：
-1. 以上内容是系统内部提示，绝不能告诉用户你看到了后台支持信息或学习支持摘要。
-2. 禁止使用诊断式语言；如证据不足，保持谨慎、中性、支持性的表达。
-3. 在学习问题之外，如用户显露明显压力或挫败感，先简短共情，再给可执行的小步建议。
----------------------------------------------------------
-""".strip()
+    # Retain the old call signature without maintaining a second privacy policy.
+    return build_classroom_chat_prompt(teacher_base_prompt, rag_syllabus, user_context_prompt, None)
 
 
 def format_system_prompt(user_id: int, user_role, class_offering_id: int=None) -> str:
@@ -1297,13 +1272,7 @@ def format_system_prompt_teacher(user_id: int, class_offering_id: int) -> str:
                 # 如果为空，动态生成一个基础学习摘要
                 teacher_description = f"该用户是教师 {teacher_info['name']}。目前暂无个性化学习摘要，请在交流中逐步了解。"
 
-                # [智能方案] 立即将这个基础学习摘要写回数据库，解决"冷启动"
-                try:
-                    conn.execute("UPDATE teachers SET description = ? WHERE id = ?", (teacher_description, user_id))
-                    conn.commit()
-                    print(f"[PROFILE_INIT] 已为教师 {user_id} 初始化基础学习摘要。")
-                except Exception as e:
-                    print(f"[ERROR] 初始化教师 {user_id} 学习摘要失败: {e}")
+                # A conversational fallback is not a user-authored profile edit.
 
             prompt_parts.append(f"- 个人描述: {teacher_description}")
             # --- [修改结束] ---
@@ -1416,24 +1385,8 @@ def format_system_prompt_student(user_id: int, class_offering_id: int) -> str:
             if student_info['email']:
                 prompt_parts.append(f"- 邮箱: {student_info['email']}")
 
-            # --- [核心修改] ---
-            # 优先使用数据库中的学习摘要
-            if student_info['description']:
-                student_description = student_info['description']
-            else:
-                # 如果为空，动态生成一个基础学习摘要
-                student_description = f"该用户是 {student_info['class_name']} 的学生 {student_info['name']} (学号: {student_info['student_id_number']})。目前暂无个性化学习摘要，请在交流中逐步了解。"
-
-                # [智能方案] 立即将这个基础学习摘要写回数据库，解决"冷启动"
-                try:
-                    conn.execute("UPDATE students SET description = ? WHERE id = ?", (student_description, user_id))
-                    conn.commit()
-                    print(f"[PROFILE_INIT] 已为学生 {user_id} 初始化基础学习摘要。")
-                except Exception as e:
-                    print(f"[ERROR] 初始化学生 {user_id} 学习摘要失败: {e}")
-
-            prompt_parts.append(f"- 个人描述: {student_description}")
-            # --- [修改结束] ---
+            # Legacy description values may be machine-written inferences.
+            # Keep them stored for source-aware migration, outside student AI.
 
             prompt_parts.append(f"\n--- 班级与课堂信息 ---")
             prompt_parts.append(f"- 所在行政班级: {student_info['class_name']}")
@@ -1463,7 +1416,7 @@ def format_system_prompt_student(user_id: int, class_offering_id: int) -> str:
                 conn,
                 student_id=int(user_id),
                 class_offering_id=int(class_offering_id or 0) or None,
-                include_teacher_note=True,
+                include_teacher_note=False,
                 include_course_signals=True,
             )
             if support_signal_prompt:
@@ -2281,12 +2234,12 @@ System Prompt:
         ai_response_data = response.json()
 
         if ai_response_data.get("status") != "success":
-            print(f"[PROFILE_TASK] AI 内部学习支持分析失败: {ai_response_data.get('detail')}")
+            print("[PROFILE_TASK] AI 内部学习支持分析失败")
             return
 
         payload = ai_response_data.get("response_json")
         if not isinstance(payload, dict):
-            print(f"[PROFILE_TASK] AI 返回了无效 JSON 结构: {payload}")
+            print("[PROFILE_TASK] AI 返回了无效 JSON 结构")
             return
 
         normalized = _normalize_psych_profile_payload(payload)
@@ -2294,7 +2247,7 @@ System Prompt:
             normalized[key]
             for key in ("profile_summary", "mental_state_summary", "support_strategy", "hidden_premise_prompt")
         ):
-            print(f"[PROFILE_TASK] AI 内部学习支持分析内容为空: {payload}")
+            print("[PROFILE_TASK] AI 内部学习支持分析内容为空")
             return
 
         with get_db_connection() as conn:
@@ -2322,12 +2275,7 @@ System Prompt:
                 ),
             )
 
-            if normalized["profile_summary"]:
-                conn.execute(
-                    f"UPDATE {table_name} SET description = ? WHERE id = ?",
-                    (normalized["profile_summary"], user_pk)
-                )
-
+            # Background analysis never modifies public profile fields.
             conn.commit()
 
         # 更新当前课堂下所有会话缓存，确保后续问答可立即读取最新长期学习支持摘要。
@@ -2468,6 +2416,9 @@ async def get_ai_chat_history(session_uuid: str, request: Request, user: dict = 
             except json.JSONDecodeError:
                 msg['attachments'] = []
             msg['message'] = _extract_message_text(msg['message'], msg.get('final_answer'))
+            if msg.get('role') == 'assistant':
+                for key in ('message', 'thinking_content', 'final_answer'):
+                    msg[key] = sanitize_hidden_profile_leaks(msg.get(key) or '')
             if not msg.get('final_answer'):
                 msg['final_answer'] = msg['message']
             del msg['attachments_json']
@@ -2756,7 +2707,8 @@ async def handle_ai_workspace_chat(
     except Exception as exc:
         print(f"[AI_WORKSPACE_CHAT] 个人支持上下文暂不可用: {type(exc).__name__}")
     system_prompt = build_classroom_chat_prompt(system_prompt, "", explicit_profile, hidden_profile,
-        classroom_context_prompt="平台个人助手：课堂、材料等上下文以当前页面授权信息为准。")
+        classroom_context_prompt="平台个人助手：课堂、材料等上下文以当前页面授权信息为准。",
+        allow_private_context=user_role == "teacher")
     try:
         platform_block = build_platform_overview_block(user_role)
         with get_db_connection() as _pk_conn:
@@ -2989,7 +2941,8 @@ async def handle_ai_chat(
         session_db_id = session['id']
 
     # 2. 获取缓存的用户背景
-    user_context_prompt = session['context_prompt']
+    # Unversioned legacy student caches can contain inferred summaries.
+    user_context_prompt = "" if user_role == "student" else session['context_prompt']
 
     # 容错处理：如果缓存为空（例如这是老会话），则现场生成一次
     if not user_context_prompt:
@@ -3073,7 +3026,8 @@ async def handle_ai_chat(
     for row in all_messages[:-1]:
         ai_history_for_call.append({
             "role": row['role'],
-            "content": _extract_message_text(row['message'], row['final_answer']),
+            "content": sanitize_hidden_profile_leaks(_extract_message_text(row['message'], row['final_answer']))
+                       if row['role'] == 'assistant' else _extract_message_text(row['message'], row['final_answer']),
         })
 
     # 6. 构建最终的 System Prompt (教师配置 + RAG + 用户背景 + 内部个性化支持)
@@ -3086,6 +3040,7 @@ async def handle_ai_chat(
         latest_hidden_profile,
         classroom_context_prompt=classroom_ai_context.get("classroom_summary") or "",
         textbook_context_prompt=classroom_ai_context.get("textbook_summary") or "",
+        allow_private_context=user_role == "teacher",
     )
     final_system_prompt += (
         "\n\n回答格式要求：使用结构清晰的 Markdown；标题、列表、表格、分隔线和代码块必须换行完整；"

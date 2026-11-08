@@ -1174,11 +1174,11 @@ async def generate_behavior_profile_for_user(
         response.raise_for_status()
         response_data = response.json()
         if response_data.get("status") != "success":
-            raise RuntimeError(f"AI 返回失败: {response_data}")
+            raise RuntimeError("AI 返回失败")
 
         payload = response_data.get("response_json")
         if not isinstance(payload, dict):
-            raise RuntimeError(f"AI 未返回有效 JSON: {payload}")
+            raise RuntimeError("AI 未返回有效 JSON")
 
         normalized = normalize_psych_profile_payload(payload)
         if not any(
@@ -1249,13 +1249,8 @@ async def generate_behavior_profile_for_user(
                 ),
             )
 
-            if normalized["profile_summary"]:
-                table_name = "teachers" if user_role == "teacher" else "students"
-                conn.execute(
-                    f"UPDATE {table_name} SET description = ? WHERE id = ?",
-                    (normalized["profile_summary"], user_pk),
-                )
-
+            # Inferred summaries stay in the internal record; public user
+            # descriptions are not background-worker output fields.
             conn.commit()
 
         _refresh_cached_ai_session_contexts(

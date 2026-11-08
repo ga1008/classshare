@@ -620,22 +620,9 @@ def _revoke_remembered_devices(user_id: str, role: Optional[str], *, conn=None) 
 
 
 def get_client_ip(request: Request) -> str:
-    """获取客户端真实IP"""
-    # 首先检查 X-Forwarded-For 头（反向代理情况）
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        # 取第一个IP（客户端真实IP）
-        client_ip = forwarded.split(',')[0].strip()
-        return normalize_ip(client_ip) or client_ip
-
-    # 检查 X-Real-IP 头
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return normalize_ip(real_ip) or real_ip
-
-    # 最后使用连接IP
-    host_ip = request.client.host
-    return normalize_ip(host_ip) or host_ip
+    """Only configured proxies may supply forwarded client identity."""
+    from .services.trusted_network_service import client_network
+    return client_network(request)["ip"]
 
 
 def _get_mp_bearer_user(request: Request) -> Optional[dict]:
@@ -663,11 +650,27 @@ def _get_mp_bearer_user(request: Request) -> Optional[dict]:
     return user
 
 
+def _observe_active_student(request, user):
+    if not user or user.get("role") != "student":
+        return
+    try:
+        # A cryptographically valid old session is not evidence that a removed
+        # or disabled student currently has access. Keep optional auth semantics
+        # unchanged, but only collect after the existing identity fence passes.
+        verified = validate_authenticated_user_identity(user)
+    except Exception:
+        return
+    from .services.login_attendance_access_service import observe_authenticated_request
+    observe_authenticated_request(request, verified)
+
+
 def get_active_user_from_request(request: Request) -> Optional[dict]:
     if getattr(request.state, "auth_unavailable", False):
         raise DatabaseBusyError("身份验证服务暂时繁忙，请稍后重试。")
     if getattr(request.state, "auth_verified", False):
-        return request.state.auth_user
+        user = request.state.auth_user
+        _observe_active_student(request, user)
+        return user
     token = request.cookies.get("access_token")
     if token:
         client_ip = get_client_ip(request)
@@ -675,10 +678,12 @@ def get_active_user_from_request(request: Request) -> Optional[dict]:
         if user:
             request.state.auth_user = user
             request.state.auth_verified = True
+            _observe_active_student(request, user)
             return user
     user = _get_mp_bearer_user(request)
     request.state.auth_user = user
     request.state.auth_verified = True
+    _observe_active_student(request, user)
     return user
 
 

@@ -117,7 +117,7 @@ def _seed_full_interaction_counts(conn: sqlite3.Connection) -> None:
 
 
 class InteractionQualityScoringTests(unittest.TestCase):
-    def test_default_profile_uses_085_factor(self) -> None:
+    def test_new_scores_use_facts_without_a_hidden_default_factor(self) -> None:
         conn = _build_conn()
         self.addCleanup(conn.close)
         _seed_full_interaction_counts(conn)
@@ -125,12 +125,12 @@ class InteractionQualityScoringTests(unittest.TestCase):
         metrics = _load_interaction_metrics(conn, 1, 7)
 
         self.assertAlmostEqual(metrics["base_interaction_ratio"], FULL_SEED_BASE)
-        self.assertEqual(metrics["interaction_quality_source"], "default")
-        self.assertAlmostEqual(metrics["interaction_quality"], 0.7)
-        self.assertAlmostEqual(metrics["interaction_quality_factor"], 0.85)
-        self.assertAlmostEqual(metrics["interaction_ratio"], FULL_SEED_BASE * 0.85)
+        self.assertNotIn("interaction_quality_source", metrics)
+        self.assertNotIn("interaction_quality", metrics)
+        self.assertNotIn("interaction_quality_factor", metrics)
+        self.assertAlmostEqual(metrics["interaction_ratio"], FULL_SEED_BASE)
 
-    def test_profile_quality_floats_interaction_score_inside_same_weight_bucket(self) -> None:
+    def test_private_quality_changes_cannot_change_new_scores(self) -> None:
         conn = _build_conn()
         self.addCleanup(conn.close)
         _seed_full_interaction_counts(conn)
@@ -151,9 +151,9 @@ class InteractionQualityScoringTests(unittest.TestCase):
             "UPDATE classroom_behavior_profiles SET interaction_quality = 0.2, interaction_quality_label = 'low'",
         )
         low_quality = _load_interaction_metrics(conn, 1, 7)
-        self.assertAlmostEqual(low_quality["interaction_quality_factor"], 0.6)
-        self.assertAlmostEqual(low_quality["interaction_ratio"], FULL_SEED_BASE * 0.6)
-        self.assertAlmostEqual(low_quality["interaction_ratio"] * 15, FULL_SEED_BASE * 0.6 * 15)
+        self.assertNotIn("interaction_quality_factor", low_quality)
+        self.assertAlmostEqual(low_quality["interaction_ratio"], FULL_SEED_BASE)
+        self.assertAlmostEqual(low_quality["interaction_ratio"] * 15, FULL_SEED_BASE * 15)
 
     def test_peer_help_counts_as_question_units_and_high_tier_doubles_units(self) -> None:
         conn = _build_conn()

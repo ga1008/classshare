@@ -337,6 +337,7 @@ def application_environment(marker):
            "POSTGRES_POOL_MIN": "1", "POSTGRES_POOL_MAX": "12", "MAIN_THREADPOOL_TOKENS": "32", "MAIN_WORKERS": "1", "MAIN_HOST": "0.0.0.0", "MAIN_PORT": "8000",
            "MAIN_LIMIT_CONCURRENCY": str(SERVER_CONFIG["uvicorn_limit_concurrency"]), "MAIN_BACKLOG": "2048", "MAIN_TIMEOUT_KEEP_ALIVE": "30", "MAIN_WS_PING_INTERVAL": "20", "MAIN_WS_PING_TIMEOUT": "20",
            "SECRET_KEY": marker["synthetic_jwt_secret"], "LANSHARE_RELEASE_ID": marker["release_id"], "LANSHARE_LQ_FAMILIES": SERVER_CONFIG["lq_families"],
+           "TRUSTED_PROXY_HOSTS": "nginx", "TRUSTED_PROXY_CIDRS": "127.0.0.1/32,::1/128",
            "AI_ASSISTANT_URL": "http://127.0.0.1:1", "UI_COPY_GENERATION_ENABLED": "false", "TZ": "Asia/Shanghai", "APP_TIMEZONE": "Asia/Shanghai",
            "INITIAL_SUPER_ADMIN_EMAIL": "capacity-admin@example.invalid", "INITIAL_SUPER_ADMIN_NAME": "Synthetic capacity administrator", "INITIAL_SUPER_ADMIN_PASSWORD": marker["synthetic_password"]}
 

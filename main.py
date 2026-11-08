@@ -79,6 +79,9 @@ def run_server():
             timeout_keep_alive=MAIN_TIMEOUT_KEEP_ALIVE,
             ws_ping_interval=MAIN_WS_PING_INTERVAL,
             ws_ping_timeout=MAIN_WS_PING_TIMEOUT,
+            # Preserve the transport peer; dependencies verifies configured
+            # proxy hops before accepting any forwarded client address.
+            proxy_headers=False,
         )
     except Exception as e:
         print(f"[ERROR] 服务器启动失败: {e}")

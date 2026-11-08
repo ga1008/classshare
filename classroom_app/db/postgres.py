@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import math
 from functools import lru_cache
 import re
 import threading
@@ -454,7 +455,12 @@ def close_connection_pool() -> None:
         print(f"[DB] connection pool close failed: {exc}")
 
 
-def connect_postgres(*, driver: Any | None = None, row_factory: Any | None = None) -> LanSharePostgresConnection:
+def connect_postgres(*, driver: Any | None = None, row_factory: Any | None = None,
+                     checkout_timeout: float | None = None) -> LanSharePostgresConnection:
+    if checkout_timeout is not None:
+        checkout_timeout=float(checkout_timeout)
+        if not math.isfinite(checkout_timeout) or checkout_timeout<=0:
+            raise ValueError("Connection checkout timeout must be positive and finite")
     database_url = validate_database_url(config.DATABASE_URL)
     caller_row_factory = row_factory
     if row_factory is None:
@@ -470,7 +476,8 @@ def connect_postgres(*, driver: Any | None = None, row_factory: Any | None = Non
     if use_pool:
         try:
             pool = _get_connection_pool(row_factory)
-            raw_connection = pool.getconn()
+            raw_connection = (pool.getconn() if checkout_timeout is None else
+                              pool.getconn(timeout=min(checkout_timeout,float(config.POSTGRES_POOL_CHECKOUT_TIMEOUT))))
             return LanSharePostgresConnection(raw_connection, pool=pool)
         except DatabaseConfigurationError:
             raise
@@ -491,7 +498,7 @@ def connect_postgres(*, driver: Any | None = None, row_factory: Any | None = Non
         raw_connection = psycopg_driver.connect(
             database_url,
             autocommit=False,
-            connect_timeout=10,
+            connect_timeout=10 if checkout_timeout is None else max(1,min(10,math.ceil(checkout_timeout))),
             row_factory=row_factory,
         )
         apply_postgres_session_settings(raw_connection)

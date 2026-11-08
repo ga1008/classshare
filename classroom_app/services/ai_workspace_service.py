@@ -93,6 +93,9 @@ def load_history(conn, session_uuid, user):
     for row in reversed(rows):
         message = dict(row)
         message['attachments'] = json.loads(message.pop('attachments_json') or '[]')
+        if message.get('role') == 'assistant':
+            for key in ('message', 'thinking_content', 'final_answer'):
+                message[key] = sanitize_hidden_profile_leaks(message.get(key) or '')
         messages.append(message)
     pending = session.get('active_request_id')
     started = str(session.get('request_started_at') or '')
@@ -192,6 +195,8 @@ def ai_history(conn, session_id, request_id):
     messages, size = [], 0
     for row in rows:
         content = str(row['final_answer'] or row['message'] or '')[:6000]
+        if row['role'] == 'assistant':
+            content = sanitize_hidden_profile_leaks(content)
         if size + len(content) > 24000:
             break
         messages.append({'role': row['role'], 'content': content})
@@ -203,11 +208,15 @@ def completed_reply(conn, session_id, request_id):
     # session_id is from the ownership-checked begin_request, not client input.
     row = conn.execute("SELECT message,final_answer FROM ai_workspace_messages WHERE session_id=? AND request_id=? AND role='assistant' AND status='completed'",
                        (session_id, request_id)).fetchone()
-    return dict(row) if row else {'message': '', 'final_answer': ''}
+    return {key: sanitize_hidden_profile_leaks(row[key] or '') for key in ('message', 'final_answer')} if row else {'message': '', 'final_answer': ''}
 
 
 def load_personal_hidden_profile(conn, user_pk, user_role):
     """Personal strategy may follow the account across classrooms; never peers."""
+    if user_role == 'student':
+        # Do not revive old classroom/workspace inferences after the public
+        # context boundary has been tightened. Historical rows are retained.
+        return None
     row = conn.execute('SELECT profile_json,profile_updated_at FROM ai_workspace_profile_states WHERE user_pk=? AND user_role=?',
                        (user_pk, user_role)).fetchone()
     candidates = []

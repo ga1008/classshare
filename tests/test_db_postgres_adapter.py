@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from classroom_app import config
 from classroom_app.db.connection import begin_immediate_transaction, execute_insert_returning_id
@@ -263,6 +263,22 @@ class PostgresAdapterTests(unittest.TestCase):
 
         self.assertIn("postgresql://***:***@db.example/lanshare", str(ctx.exception))
         self.assertNotIn("user@", str(ctx.exception))
+
+    def test_optional_checkout_budget_is_local_and_never_relaxes_global_timeout(self):
+        from classroom_app.db import postgres
+        pool=Mock();pool.getconn.return_value=FakeRawConnection()
+        with patch.object(config,'DATABASE_URL','postgresql://synthetic@db.example/test'), \
+             patch.object(config,'POSTGRES_POOL_ENABLED',True),patch.object(config,'POSTGRES_POOL_CHECKOUT_TIMEOUT',2.0), \
+             patch.object(postgres,'_get_connection_pool',return_value=pool):
+            connect_postgres(checkout_timeout=0.25).close()
+            pool.getconn.assert_called_with(timeout=0.25)
+            connect_postgres(checkout_timeout=99).close()
+            pool.getconn.assert_called_with(timeout=2.0)
+            pool.getconn.reset_mock()
+            connect_postgres().close()
+            pool.getconn.assert_called_once_with()
+            for value in (0,-1,float('nan'),float('inf')):
+                with self.assertRaises(ValueError):connect_postgres(checkout_timeout=value)
 
 
 if __name__ == "__main__":

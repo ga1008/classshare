@@ -346,6 +346,9 @@ async def api_save_smart_classroom_credential(request: Request, user: dict = Dep
     payload = await _parse_json_request(request)
 
     try:
+        from ...services.smart_classroom_integration_service import prepare_smart_classroom_credential_edit
+        with get_db_connection() as conn:
+            payload = prepare_smart_classroom_credential_edit(conn, int(user["id"]), payload)
         verification = await verify_smart_classroom_credential(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

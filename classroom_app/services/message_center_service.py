@@ -358,25 +358,9 @@ def _sanitize_student_notification_text(value: Any, *, limit: int = 140) -> str:
 
 
 def _load_student_support_profile(conn, class_offering_id: Any, student_id: Any) -> str:
-    normalized_offering_id = _safe_int(class_offering_id)
-    normalized_student_id = _safe_int(student_id)
-    if normalized_offering_id is None or normalized_student_id is None:
-        return ""
-    try:
-        profile = load_latest_hidden_profile(conn, normalized_offering_id, normalized_student_id, "student")
-    except Exception as exc:
-        print(f"[MESSAGE_CENTER] student support profile skipped: {exc}")
-        return ""
-    if not profile:
-        return ""
-    parts = [
-        profile.get("mental_state_summary"),
-        profile.get("support_strategy"),
-        profile.get("language_habit_summary"),
-        profile.get("preferred_ai_style"),
-        profile.get("interest_hypothesis") or profile.get("preference_summary"),
-    ]
-    return " ".join(str(item or "").strip() for item in parts if str(item or "").strip())
+    # Student notifications use the neutral factual copy below. Private
+    # inference must not select phrasing or leak through a notification.
+    return ""
 
 
 def _student_support_sentence(profile_text: str, *, event: str) -> str:

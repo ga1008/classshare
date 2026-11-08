@@ -12,6 +12,8 @@ from .schema_academic_schedule_predictions import ACADEMIC_SCHEDULE_PREDICTION_R
 from .schema_academic_teacher_timetables import ACADEMIC_TEACHER_TIMETABLE_REQUIRED_COLUMNS
 from .schema_grade_publications import GRADE_PUBLICATION_REQUIRED_COLUMNS
 from .schema_attendance_reports import ATTENDANCE_REPORT_REQUIRED_COLUMNS
+from .schema_login_attendance import REQUIRED_COLUMNS as LOGIN_ATTENDANCE_REQUIRED_COLUMNS
+from .schema_smart_classroom_write import SMART_CLASSROOM_WRITE_REQUIRED_COLUMNS
 from .schema_feedback_conversations import FEEDBACK_CONVERSATION_REQUIRED_COLUMNS
 from .schema_ai_workspace import AI_WORKSPACE_REQUIRED_COLUMNS
 from .schema_ai_search import AI_SEARCH_REQUIRED_COLUMNS
@@ -20,6 +22,8 @@ from .schema_behavior_collection_health import BEHAVIOR_COLLECTION_HEALTH_REQUIR
 from .schema_retake import RETAKE_REQUIRED_COLUMNS
 
 REQUIRED_POSTGRES_COLUMNS = {
+    **LOGIN_ATTENDANCE_REQUIRED_COLUMNS,
+    **SMART_CLASSROOM_WRITE_REQUIRED_COLUMNS,
     **AI_SEARCH_REQUIRED_COLUMNS,
     **BEHAVIOR_INBOX_REQUIRED_COLUMNS,
     **BEHAVIOR_COLLECTION_HEALTH_REQUIRED_COLUMNS,

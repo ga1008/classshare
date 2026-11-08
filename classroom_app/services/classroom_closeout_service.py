@@ -754,6 +754,11 @@ def execute_closeout(
     if not summary.get("exists"):
         raise ValueError("未找到此课堂")
 
+    # Persist the lifecycle boundary before closing individual activities. This
+    # shares their transaction and prevents a concurrent new roll call.
+    from .login_attendance_service import close_attendance_for_course
+    attendance_closed = close_attendance_for_course(conn, int(class_offering_id), user)
+
     processed: dict[str, int] = {}
     skipped: dict[str, int] = {}
     failures: list[dict[str, Any]] = []
@@ -876,4 +881,5 @@ def execute_closeout(
         "default_score": _score_for_storage(fallback_score),
         "include_ungraded": include_ungraded,
         "completed_at": _now_iso(),
+        "attendance_closed": attendance_closed,
     }

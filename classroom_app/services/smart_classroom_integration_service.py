@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import os
 import re
+import ssl
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -21,6 +24,55 @@ from .academic_integration_service import (
 
 
 SMART_CLASSROOM_HTTP_TIMEOUT_SECONDS = 18.0
+
+
+def smart_classroom_tls_context() -> ssl.SSLContext:
+    """Use the system trust store or an explicitly maintained CA bundle.
+
+    A custom CA does not disable hostname validation. In particular the
+    provider's legacy underscore hostname must have a valid server identity;
+    never transmit teacher passwords over an unverified connection.
+    """
+    bundle = os.getenv("SMART_CLASSROOM_CA_BUNDLE", "").strip() or None
+    try:
+        return ssl.create_default_context(cafile=bundle)
+    except OSError as exc:
+        raise ValueError("智慧课堂可信 CA 配置不可用，请联系平台维护者。") from exc
+
+
+class SmartClassroomTransport(httpx.AsyncHTTPTransport):
+    """Explicit school identity binding, not a hostname-verification fallback.
+
+    The official API hostname contains an underscore, which OpenSSL refuses
+    to match against the school's wildcard certificate. This sole built-in
+    destination authenticates the fixed, CA-verified school name gxufl.com.
+    Both HTTP authority and TCP destination remain the official API host.
+    Never derive SNI from a received certificate or accept a caller's SNI.
+    """
+    def __init__(self):
+        super().__init__(verify=smart_classroom_tls_context(), trust_env=False, retries=0)
+
+    async def handle_async_request(self, request):
+        if (request.url.scheme != "https" or request.url.host != "edu_api.gxufl.com"
+                or request.url.port not in (None, 443)):
+            raise ValueError("智慧课堂连接只允许已配置的学校 HTTPS 服务。")
+        request.headers["Host"] = "edu_api.gxufl.com"
+        request.extensions["sni_hostname"] = "gxufl.com"
+        return await super().handle_async_request(request)
+
+
+def credential_generation(row: Any) -> str:
+    """Opaque server-only fence; changing account/password/enabled revokes work."""
+    value = dict(row)
+    fields = [str(value.get(key) or "") for key in
+              ("id", "teacher_id", "platform_code", "username", "password_encrypted", "enabled", "updated_at")]
+    return hashlib.sha256("\0".join(fields).encode()).hexdigest()
+
+
+def _connection_message(exc: Exception) -> str:
+    if "CERTIFICATE_VERIFY_FAILED" in str(exc) or "certificate verify failed" in str(exc).lower():
+        return "智慧课堂 TLS 证书校验失败，请联系学校修复证书或由维护者配置可信 CA；已有缓存和归档仍可查看。"
+    return "无法安全连接智慧课堂，请稍后重试；已有缓存和归档未受影响。"
 
 
 @dataclass(frozen=True)
@@ -138,6 +190,21 @@ def normalize_smart_classroom_credential_payload(payload: dict[str, Any]) -> dic
     }
 
 
+def prepare_smart_classroom_credential_edit(conn, teacher_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    """Blank password preserves only this teacher's same external account."""
+    profile = get_smart_classroom_profile(payload.get("platform_code") or payload.get("platform") or "gxufl_smart_classroom")
+    username = _normalize_username(payload.get("username"))
+    if payload.get("password"):
+        return normalize_smart_classroom_credential_payload(payload)
+    row = conn.execute("SELECT * FROM teacher_smart_classroom_credentials WHERE teacher_id=? AND platform_code=? AND auth_method=?",
+                       (int(teacher_id), profile.platform_code, profile.auth_method)).fetchone()
+    if row is None or str(row["username"]) != username:
+        raise ValueError("首次配置或更换智慧课堂账号时，请填写该账号的当前密码。")
+    saved = build_saved_smart_classroom_verification_payload(row)
+    saved["enabled"] = bool(payload.get("enabled", saved["enabled"]))
+    return saved
+
+
 def _failure_result(
     profile: SmartClassroomProfile,
     status: str,
@@ -212,7 +279,7 @@ async def _login_smart_classroom_client(
             _failure_result(
                 profile,
                 STATUS_UNAVAILABLE,
-                f"无法连接智慧课堂或智慧课堂响应异常：{str(exc)[:180]}",
+                _connection_message(exc),
                 elapsed_ms=int((time.monotonic() - started_at) * 1000),
             ),
             "",
@@ -280,7 +347,8 @@ async def verify_smart_classroom_credential(payload: dict[str, Any]) -> dict[str
         base_url=profile.api_base_url,
         timeout=timeout,
         headers=_smart_headers(profile),
-        verify=False,
+        transport=SmartClassroomTransport(),
+        trust_env=False,
         follow_redirects=False,
     ) as client:
         result, _token = await _login_smart_classroom_client(
@@ -307,7 +375,8 @@ async def open_authenticated_smart_classroom_client(
         base_url=profile.api_base_url,
         timeout=timeout,
         headers=_smart_headers(profile),
-        verify=False,
+        transport=SmartClassroomTransport(),
+        trust_env=False,
         follow_redirects=False,
     )
     try:
@@ -553,4 +622,5 @@ def load_teacher_smart_classroom_access_method(conn, teacher_id: int | str) -> d
         get_smart_classroom_profile(row["platform_code"] or "gxufl_smart_classroom"),
     )
     payload["credential_id"] = int(row["id"])
+    payload["credential_generation"] = credential_generation(row)
     return payload

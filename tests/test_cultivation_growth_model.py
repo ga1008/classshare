@@ -161,7 +161,6 @@ class StageTrialGuidanceTests(unittest.TestCase):
             "_load_student": lambda conn, sid: {"name": "学生甲", "class_name": "A班"},
             "load_explicit_user_profile": lambda *a, **k: {},
             "build_explicit_user_profile_prompt": lambda *a, **k: "",
-            "load_latest_hidden_profile": lambda *a, **k: None,
             "_build_course_knowledge_snapshot": lambda *a, **k: "【当前破境范围】第一章",
             "_load_stage_exam_retreat_prompt_block": lambda *a, **k: "",
             "_load_historical_stage_exam_question_texts": lambda *a, **k: [],

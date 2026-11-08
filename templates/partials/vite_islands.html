@@ -23,3 +23,6 @@
 {{ vite_entry_tags('frontend/src/islands/message-center-sync.tsx') }}
 {{ vite_entry_tags('frontend/src/islands/blog-topbar-sync.tsx') }}
 {{ vite_entry_tags('frontend/src/islands/student-security-sync.tsx') }}
+{% if user_info is defined and user_info.role == 'teacher' %}
+<script type="module" src="{{ asset_url('js/login_attendance_attention.js') }}" data-login-attendance-teacher></script>
+{% endif %}

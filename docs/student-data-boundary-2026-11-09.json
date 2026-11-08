@@ -1,0 +1,132 @@
+{
+  "kind": "p0_student_data_boundary",
+  "date": "2026-11-09",
+  "scope": "isolated synthetic validation; no production or private student data read",
+  "historical_policy": "Read-time public projections preserve stored snapshots, score events, certificates, descriptions and conversation source rows. No bulk historical recalculation or deletion. Future normal calculations use factual participation and a recorded scoring policy version.",
+  "changes": [
+    "Nested public DTO for HTTP/SSR/Agent progress, score events, stage and certificate payloads",
+    "Private quality inference removed from future cultivation calculations",
+    "Student chat ignores old context cache and internal profile fallback; public discussion has minimal actor context",
+    "Background analysis no longer writes public descriptions; unverified legacy student descriptions are excluded from student AI inputs",
+    "Versioned greeting/advice caches and sanitized historical conversation/replay/Agent receipts",
+    "New and already queued grading jobs exclude private context; existing rubric/answer feedback and legacy output-leak rejection retained"
+  ],
+  "tests": [
+    {
+      "pattern": "test_student_public_projection.py",
+      "count": 16,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-0.log"
+    },
+    {
+      "pattern": "test_cultivation*.py",
+      "count": 52,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-1.log"
+    },
+    {
+      "pattern": "test_learning_progress*.py",
+      "count": 26,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-2.log"
+    },
+    {
+      "pattern": "test_ability_radar.py",
+      "count": 8,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-3.log"
+    },
+    {
+      "pattern": "test_social_card.py",
+      "count": 8,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-4.log"
+    },
+    {
+      "pattern": "test_ai_workspace*.py",
+      "count": 36,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-5.log"
+    },
+    {
+      "pattern": "test_platform_knowledge_service.py",
+      "count": 13,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-6.log"
+    },
+    {
+      "pattern": "test_interaction_quality_scoring.py",
+      "count": 4,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-7.log"
+    },
+    {
+      "pattern": "test_ai_grading*.py",
+      "count": 22,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-8.log"
+    },
+    {
+      "pattern": "test_grading_overview_comment.py",
+      "count": 15,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-9.log"
+    },
+    {
+      "pattern": "test_agent_platform_broker.py",
+      "count": 11,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-10.log"
+    },
+    {
+      "pattern": "test_agent_platform_requests.py",
+      "count": 19,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-11.log"
+    },
+    {
+      "pattern": "test_life_tips.py",
+      "count": 18,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-12.log"
+    },
+    {
+      "pattern": "test_student_support_course_signals.py",
+      "count": 2,
+      "skipped": 1,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-13.log"
+    },
+    {
+      "pattern": "test_student_insight_cultivation.py",
+      "count": 3,
+      "skipped": 0,
+      "passed": true,
+      "log": ".codex-temp/p0-student-boundary-20261109/check-14.log"
+    }
+  ],
+  "total": 253,
+  "skipped": 1,
+  "all_passed": true,
+  "syntax_check": "15 changed runtime Python modules passed py_compile",
+  "limits": [
+    "No claim that historical production disclosure occurred",
+    "Historical description values retained for source-aware follow-up, never mass-cleared",
+    "Free-form historical text may contain unsupported interpretations without a recognizable marker; this patch does not classify or delete all old user conversations",
+    "Formal build/browser acceptance and deployment are owned by root; this audit is not production verification",
+    "Teacher-private support context remains explicitly opt-in; student/public conversation defaults deny it"
+  ]
+}
