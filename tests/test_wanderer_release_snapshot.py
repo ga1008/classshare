@@ -19,7 +19,8 @@ class ReadOnlySnapshotTest(WandererDbTestCase):
             sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION,
         ) else sqlite3.SQLITE_DENY)
         try:
-            return collect_snapshot(Adapter(), since_local="2098-01-01 00:00:00", present_tables=present)
+            return collect_snapshot(Adapter(), since_local="2098-01-01 00:00:00",
+                                    since_utc="2097-12-31 16:00:00.000000+00:00", present_tables=present)
         finally:
             conn.set_authorizer(None)
 
@@ -54,3 +55,27 @@ class ReadOnlySnapshotTest(WandererDbTestCase):
             finally:
                 conn.execute("UPDATE students SET control_mode='ai' WHERE id=?", (agent['student_id'],))
                 conn.commit()
+
+    def test_same_release_instant_uses_utc_for_native_and_local_for_legacy_messages(self):
+        with self.connect() as conn:
+            agent = self.wanderer(conn, "lele")
+            identity = f"student:{agent['student_id']}"
+            baseline = self.snapshot(conn)["natural_activity_since"]
+            for kind in ("dm", "group"):
+                for suffix, stamp in (("before", "2097-12-31T15:59:59.999999+00:00"),
+                                      ("at", "2097-12-31T16:00:00.000000+00:00")):
+                    conn.execute("INSERT INTO social_messages(conversation_type,conversation_key,sender_identity,"
+                                 "client_nonce,created_at) VALUES(?,?,?,?,?)",
+                                 (kind, f"release-boundary-{kind}", identity, f"release-{kind}-{suffix}", stamp))
+            for stamp in ("2097-12-31T23:59:59.999999", "2098-01-01T00:00:00"):
+                conn.execute("INSERT INTO private_messages(conversation_key,sender_identity,sender_role,sender_user_pk,"
+                             "sender_display_name,recipient_identity,recipient_role,recipient_user_pk,recipient_display_name,"
+                             "content,created_at) VALUES('release-boundary',?,'student',?,'Synthetic','student:99998',"
+                             "'student',99998,'Synthetic recipient','Synthetic message',?)",
+                             (identity, agent['student_id'], stamp))
+            conn.commit()
+            report = self.snapshot(conn)
+            self.assertTrue(report["ok"], report)
+            recent = report["natural_activity_since"]
+            for kind in ("native_dm", "group", "legacy_dm"):
+                self.assertEqual(recent[kind]["ai_messages"], baseline[kind]["ai_messages"] + 1)

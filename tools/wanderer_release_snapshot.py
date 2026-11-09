@@ -30,7 +30,7 @@ OPTIONAL_AUTH_TABLES = frozenset({"remember_login_tokens", "mp_sessions", "wecha
 AI = "SELECT 'student:' || CAST(student_id AS TEXT) FROM wanderer_agents"
 
 
-def collect_snapshot(conn, *, since_local: str, present_tables: set[str]) -> dict:
+def collect_snapshot(conn, *, since_local: str, since_utc: str, present_tables: set[str]) -> dict:
     """Only SELECTs, usable with a DB-API connection; returns no row identities."""
     def count(sql, params=(), *, optional_table=None):
         if optional_table and optional_table not in present_tables:
@@ -76,7 +76,10 @@ def collect_snapshot(conn, *, since_local: str, present_tables: set[str]) -> dic
     recent = {}
     for label, table, kind in (("native_dm", "social_messages", "dm"), ("group", "social_messages", "group"), ("legacy_dm", "private_messages", None)):
         kind_clause = " AND m.conversation_type=%s AND m.message_type='text'" if kind else ""
-        parameters = (since_local, kind) if kind else (since_local,)
+        # Native social stamps are fixed-precision UTC with an offset. Legacy
+        # private messages and runtime stamps are local, offset-free strings.
+        # Comparing both to local wall time silently loses eight hours in China.
+        parameters = (since_utc, kind) if kind else (since_local,)
         where = f"m.sender_identity IN ({AI}) AND REPLACE(m.created_at,'T',' ') >= %s" + kind_clause
         rows = conn.execute(
             "SELECT COUNT(*), COALESCE(SUM(n),0), "
@@ -96,15 +99,15 @@ def collect_snapshot(conn, *, since_local: str, present_tables: set[str]) -> dic
     checks["world_schema_not_v5"] = int(versions != ["5"])
     return {
         "ok": not any(checks.values()), "invariants": checks, "totals": totals,
-        "since_local": since_local, "natural_activity_since": recent,
+        "since_local": since_local, "since_utc": since_utc, "natural_activity_since": recent,
         "activity_interpretation": "counts_only_no_claim_of_alternating_rounds_or_provider_quality",
         "settings": settings, "world_schema_versions": versions,
         "absent_optional_auth_tables": sorted(OPTIONAL_AUTH_TABLES - present_tables),
         "states": {
-            "events": states("wanderer_wake_events", ("pending", "processing", "deferred", "completed", "failed")),
+            "events": states("wanderer_wake_events", ("pending", "processing", "deferred", "completed", "failed", "blocked")),
             "turns": states("wanderer_turns", ("running", "executing", "waiting", "completed", "failed", "capped", "uncertain", "abandoned", "interrupted")),
-            "commands": states("wanderer_commands", ("pending", "executing", "waiting", "succeeded", "failed", "uncertain", "resolved")),
-            "legacy_inbox": states("wanderer_social_inbox", ("pending", "running", "retry", "done", "failed", "skipped")),
+            "commands": states("wanderer_commands", ("pending", "running", "executing", "waiting", "succeeded", "failed", "uncertain", "resolved")),
+            "legacy_inbox": states("wanderer_social_inbox", ("pending", "running", "retry", "done", "failed", "skipped", "idle", "blocked")),
             "reservations": states("wanderer_resource_reservations", ("reserved", "consumed", "released")),
         },
     }
@@ -118,6 +121,7 @@ def main() -> int:
     if since.tzinfo is None:
         parser.error("--since requires an explicit UTC offset")
     local = since.astimezone(ZoneInfo(os.getenv("APP_TIMEZONE") or os.getenv("TZ") or "Asia/Shanghai")).replace(tzinfo=None).isoformat(sep=" ", timespec="seconds")
+    utc = since.astimezone(timezone.utc).isoformat(sep=" ", timespec="microseconds")
     dsn = os.environ.get("DATABASE_URL", "")
     if not dsn.startswith(("postgresql://", "postgres://")):
         parser.error("DATABASE_URL must already be configured for PostgreSQL; no dotenv or fallback is used")
@@ -135,7 +139,7 @@ def main() -> int:
                 if missing:
                     report = {"ok": False, "missing_tables": missing}
                 else:
-                    report = collect_snapshot(conn, since_local=local, present_tables=present)
+                    report = collect_snapshot(conn, since_local=local, since_utc=utc, present_tables=present)
                 report.update({"read_only": True, "generated_at": datetime.now(timezone.utc).isoformat(), "body_or_secret_fields_selected": False})
             finally:
                 conn.execute("ROLLBACK")
