@@ -1,0 +1,84 @@
+{
+  "status": "deployed_and_verified",
+  "verified_at": "2026-11-09T06:44:59.098929+00:00",
+  "release": "20261109-143713-a60b0c06621f",
+  "runtime_source_commit": "788871c491d3470b848c3b9ec9d4e6e34a10e637",
+  "git_targets": [
+    "dev",
+    "codex/login-auto-attendance-20261109"
+  ],
+  "public_url": "https://guardianangel.net.cn",
+  "backend_school": {
+    "tests": 60,
+    "passed": 60
+  },
+  "backend_attendance": {
+    "tests": 192,
+    "skipped": 3,
+    "failures": 0
+  },
+  "formal_browser": {
+    "tests": 5,
+    "passed": 5
+  },
+  "native_postgres": {
+    "status": "ok",
+    "migration_source_files": 91,
+    "fresh_synthetic_rehearsal": true,
+    "cluster_stopped": true
+  },
+  "production": {
+    "verification": "passed",
+    "postgres_container_preserved": true,
+    "manual_full_rows_preserved": true,
+    "source_and_runtime_checks": "passed",
+    "unauthenticated_apis": "401 as expected",
+    "new_tables_present": true
+  },
+  "live_school_session": {
+    "status": "passed",
+    "server_login_requests": 1,
+    "school_read_http": [
+      200,
+      200
+    ],
+    "shared_session_reused": true,
+    "session_state": "active",
+    "attendance_mutations": 0,
+    "new_schema_present": true,
+    "synthetic_business_data_created": false
+  },
+  "school_fixture": {
+    "temporary_rounds_removed": true,
+    "original_rounds_preserved": 16,
+    "original_student_states_preserved": 816
+  },
+  "asset_parity": {
+    "linux_graph": "b02cd201cab7f39f5f7e086e637bb7764405a9ed73f51df2102b4298691eaebe",
+    "same_recipe": true,
+    "source_hash_differences": [],
+    "source_file_count": 551,
+    "vite_manifest_differences": [
+      "frontend/src/islands/assignment-authoring-sync.tsx",
+      "frontend/src/islands/exam-assign-sync.tsx",
+      "frontend/src/islands/feedback-launcher.tsx",
+      "frontend/src/islands/blog-launcher.tsx",
+      "frontend/src/islands/submission-jump-nav.tsx",
+      "frontend/src/islands/assignment-submit-sync.tsx",
+      "frontend/src/islands/classroom-page.tsx",
+      "frontend/src/islands/dashboard-workspace.tsx"
+    ],
+    "vite_only_import_listing_order_differs": true,
+    "identical_chunk_filenames_and_dependency_sets": true
+  },
+  "long_load_test": false,
+  "capacity_acceptance": false,
+  "backup_directory": "/var/backups/lanshare-attendance-20261109-143713-a60b0c06621f",
+  "evidence_sha256": {
+    "verification.json": "3b06bf4c472954b1bf6766429dcab8156ed07f11f7be3259e30fab6f49fe0872",
+    "production-before.json": "d00672c1da256ad7a7e6a2435c7c90b80d1cc1b9ba3ddf2665a97b37e76a5a28",
+    "production-after.json": "1d8bebeeea0852c805638fc804c10700b19e7cdcd136180e5fce0ba4b0f83c45",
+    "asset-parity.json": "c0fb77cbe02c29f430fb34db51a7bde38b5669e304f169f0f9b69fd5cd837bb5",
+    "live-school-session.log": "f0410c037285937444d79df4413422aa8e0250a8f8f288a7db88dc5ca72a08e5"
+  }
+}
