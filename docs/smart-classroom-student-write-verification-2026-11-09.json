@@ -1,0 +1,69 @@
+{
+  "contract": "gxufl-miniapp-student-status-write-v1",
+  "verification_date": "2026-11-09",
+  "status": "live_single_student_write_readback_restoration_and_cleanup_passed",
+  "source": {
+    "kind": "delivered_school_miniapp_client_code_and_authorized_live_server_validation",
+    "miniapp_id": "wx30f9e2f391fa6338",
+    "cached_package_version": "14",
+    "package_sha256": "b7a997706eb348f3e9ebf99afc4794db2144cf663c74dc363d51917cbe2ef4cf",
+    "modules": ["config/env.js", "config/request.js", "config/api/teacher/teacherSchedule.js", "pages/fun/checkin/tcheck/index.js", "pages/fun/checkin/tcount/record/index.js", "pages/fun/checkin/tcount/trecord/index.js"]
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://edu-api.gxufl.com/api/teaching/teacherSchedule/changeStuStatus",
+    "headers": {"Content-Type": "application/x-www-form-urlencoded", "Authorization": "raw teacher login token; never persisted in this evidence", "Tenant-Id": "1"},
+    "form_fields": {"checkinCourseId": "exact remote attendance round id", "username": "student no; not teacher username or student row id", "status": "remote attendance status"},
+    "observed_success_http_status": 200,
+    "observed_success_json": {"state": "ok"},
+    "success_requires_complete_scoped_readback": true,
+    "remote_idempotency_contract_verified": false,
+    "automatic_write_retry_performed": false
+  },
+  "readback": {
+    "miniapp_round_roster": {"method": "POST", "path": "/teaching/teacherSchedule/viewCheckinCoursesRecords", "form_fields": ["checkinCourseId"]},
+    "miniapp_scope": {"method": "POST", "path": "/teaching/teacherSchedule/view", "form_fields": ["id", "week", "dayOfWeek", "section"]},
+    "independent_pc_roster": {"method": "POST", "path": "/teaching/checkinCourse/checkinRecord", "form_fields": ["id"]},
+    "verification": "exact schedule and round, ended state, complete roster identities, all student statuses; dynamic countdown excluded from conservation hash"
+  },
+  "authorized_test": {
+    "academic_year": "2026-2027", "semester": 1, "week": 2, "weekday": 7, "sections": [8, 9],
+    "course_name": "计算机网络原理", "course_code": "E030054B1",
+    "preexisting_round_in_authorized_lesson": false,
+    "temporary_round_created_and_ended_via_official_ui": true,
+    "complete_roster_size": 51,
+    "selected_student_count": 1,
+    "forward_status": "UNCHECKED -> CHECKED",
+    "forward_confirmed_at": "2026-11-09T13:56:55.931865+08:00",
+    "restoration_status": "CHECKED -> UNCHECKED",
+    "restoration_confirmed_at": "2026-11-09T13:56:56.954582+08:00",
+    "student_write_attempts_including_restoration": 2,
+    "other_50_students_unchanged": true,
+    "full_target_roster_restored": true,
+    "temporary_round_cleanup_attempts": 1,
+    "temporary_round_cleanup_confirmed": true,
+    "authorized_lesson_empty_again": true,
+    "original_other_rounds_preserved": 16,
+    "original_student_states_preserved": 816,
+    "real_attendance_pressure_test_performed": false,
+    "lanshare_business_database_test_writes": 0
+  },
+  "session_compatibility": {
+    "pc_login_token_accepted_by_miniapp_read_and_student_write": true,
+    "new_login_changes_token": true,
+    "old_token_before_new_login_http_status": 200,
+    "old_token_after_new_login_http_status": 401,
+    "new_token_after_new_login_http_status": 200,
+    "official_miniapp_returned_to_login_after_server_logins": true,
+    "followup_required": "reuse one account session within a job; stop on 401; require explicit reauthorization or a school-supported independent integration session; no blind login loops"
+  },
+  "product_boundary": {
+    "production_automatic_student_write_enabled": false,
+    "production_code_modified": false,
+    "server_automatic_start_end_runtime_verified": false,
+    "all_eight_statuses_runtime_tested": false,
+    "bulk_write_api_verified": false,
+    "credentials_student_identifiers_and_private_client_code_in_git": false,
+    "long_load_test_performed": false
+  }
+}
