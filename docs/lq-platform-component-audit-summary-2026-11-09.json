@@ -1,63 +1,63 @@
 {
   "acceptance": "pending",
   "summary": {
-    "files": 595,
+    "files": 597,
     "htmlTemplates": 209,
-    "entries": 5687,
+    "entries": 5701,
     "byKind": {
       "toolbar": 137,
-      "surface": 769,
+      "surface": 773,
       "choice": 214,
-      "button": 2264,
-      "field": 777,
-      "unknown": 831,
+      "button": 2266,
+      "field": 780,
+      "unknown": 832,
       "menu": 38,
       "layer": 137,
-      "select": 306,
+      "select": 308,
       "content-slot": 39,
       "tab": 40,
       "domain": 18,
-      "status": 53,
+      "status": 54,
       "dialog": 31,
-      "chip": 32,
+      "chip": 33,
       "handle": 1
     },
     "bySyntax": {
       "jinja-component-call": 542,
-      "jinja-html": 2516,
+      "jinja-html": 2517,
       "dynamic-html-sink": 688,
-      "js-html-candidate": 1385,
-      "create-element": 187,
-      "component-factory-call": 186,
+      "js-html-candidate": 1387,
+      "create-element": 188,
+      "component-factory-call": 196,
       "react-jsx": 158,
       "python-generated-jinja-html": 25
     },
     "byCanonicalContract": {
-      "not-declared": 1856,
-      "canonical-declared-pending": 3739,
+      "not-declared": 1869,
+      "canonical-declared-pending": 3740,
       "declared-missing-canonical": 6,
       "canonical-resolution-pending": 5,
       "adapter-call-pending-runtime": 81
     },
     "byProvenance": {
-      "shared-component-call": 761,
+      "shared-component-call": 771,
       "lq-marked-native": 136,
-      "component-declared": 3749,
+      "component-declared": 3750,
       "runtime-output-unknown": 688,
-      "legacy-or-native": 141,
+      "legacy-or-native": 144,
       "shared-definition": 54,
       "shared-adapter-call-candidate": 81,
       "factory-ownership-unknown": 49,
       "external-icon-content-slot": 28
     },
     "byStatus": {
-      "pending": 4856,
-      "unknown": 831
+      "pending": 4869,
+      "unknown": 832
     },
     "largestFiles": [
       {
         "file": "templates/classroom_main_v4.html",
-        "entries": 210
+        "entries": 211
       },
       {
         "file": "templates/assignment_detail_teacher.html",
@@ -112,12 +112,12 @@
         "entries": 61
       },
       {
-        "file": "static/js/course_schedule_editor.js",
-        "entries": 59
+        "file": "static/js/approval_workflow.js",
+        "entries": 60
       },
       {
-        "file": "static/js/approval_workflow.js",
-        "entries": 58
+        "file": "static/js/course_schedule_editor.js",
+        "entries": 59
       },
       {
         "file": "templates/dashboard_teacher.html",

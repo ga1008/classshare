@@ -490,7 +490,8 @@ def student_view(conn, offering_id, session_id, user):
     if user.get("role") != "student":
         raise HTTPException(403,"仅学生本人可以读取此结果。")
     row = conn.execute("SELECT r.* FROM login_attendance_rounds r JOIN login_attendance_records s ON s.round_id=r.id "
-                       "WHERE r.class_offering_id=? AND r.session_id=? AND s.student_id=? ORDER BY r.is_current DESC,r.id DESC LIMIT 1",
+                       "WHERE r.class_offering_id=? AND r.session_id=? AND s.student_id=? "
+                       "AND r.is_current=1 AND r.state<>'void' LIMIT 1",
                        (offering_id,session_id,user["id"])).fetchone()
     if not row:
         from .materials_service import ensure_classroom_access

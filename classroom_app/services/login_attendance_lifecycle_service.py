@@ -21,10 +21,10 @@ def blockers(conn, offering_ids, *, merging):
         active=conn.execute(f"SELECT COUNT(*) AS n FROM login_attendance_rounds WHERE class_offering_id IN ({marks}) "
             "AND state IN ('scheduled','running','settling') AND is_current=1",ids).fetchone()['n']
         if active:messages.append(f"有 {active} 轮本地点名尚未结束结算，请先结束并等待结算或作废后合班。")
-        if _exists(conn,'approval_requests'):
-            pending=conn.execute(f"SELECT COUNT(*) AS n FROM approval_requests WHERE class_offering_id IN ({marks}) "
-                "AND request_type='login_attendance_appeal' AND status='pending'",ids).fetchone()['n']
-            if pending:messages.append(f"有 {pending} 条签到申诉尚待处理，请先完成核对再合班，历史处理记录会保留。")
+    if merging and _exists(conn,'approval_requests'):
+        pending=conn.execute(f"SELECT COUNT(*) AS n FROM approval_requests WHERE class_offering_id IN ({marks}) "
+            "AND request_type IN ('login_attendance_appeal','smart_attendance_appeal') AND status='pending'",ids).fetchone()['n']
+        if pending:messages.append(f"有 {pending} 条签到申诉尚待处理，请先完成核对再合班，历史处理记录会保留。")
     if _exists(conn,'smart_attendance_write_bindings'):
         pending=conn.execute(f"SELECT COUNT(*) AS n FROM smart_attendance_sync_runs r JOIN smart_attendance_write_bindings b ON b.id=r.binding_id "
             f"WHERE b.class_offering_id IN ({marks}) AND r.state IN ('pending','outcome_unknown','needs_teacher_reauth')",ids).fetchone()['n']
@@ -72,12 +72,34 @@ def _archive_appeal_links(conn,round_id,*,target_id=None):
                          (link,role,f"login_attendance_appeal:{request['id']}:%"))
 
 
+def _archive_smart_appeals(conn, offering_ids, *, target_id=None, user=None):
+    """Keep school-source decisions auditable without remapping their lesson."""
+    if not offering_ids or not _exists(conn,'approval_requests'):return
+    marks=','.join('?' for _ in offering_ids)
+    rows=conn.execute(f"SELECT id,subject_id,payload_json,class_offering_id FROM approval_requests "
+        f"WHERE request_type='smart_attendance_appeal' AND class_offering_id IN ({marks})",tuple(offering_ids)).fetchall()
+    for row in rows:
+        payload=attendance._load(row['payload_json'])
+        payload.update(history_only=True,deleted_archive=target_id is None,
+                       original_class_offering_id=row['class_offering_id'])
+        if target_id is not None:payload['merged_into_offering_id']=target_id
+        conn.execute('UPDATE approval_requests SET payload_json=? WHERE id=?',(attendance._json(payload),row['id']))
+        if _exists(conn,'message_center_notifications'):
+            conn.execute("UPDATE message_center_notifications SET link_url=? WHERE ref_type='approval_workflow' AND ref_id LIKE ?",
+                ('/profile?section=notifications#profile-message-center',f"smart_attendance_appeal:{row['id']}:%"))
+    if target_id is None and rows:
+        from .approval_workflow_service import auto_cancel_requests
+        auto_cancel_requests(conn,request_type='smart_attendance_appeal',subject_ids=[r['subject_id'] for r in rows],
+            actor=user,note='课堂已归档，本次签到申请结束；原始记录与处理历史保留。')
+
+
 def archive_for_merge(conn, target_id, source_ids, teacher_id):
     """Move histories by stable round/student IDs; never remap school slots by order."""
     if not _exists(conn,'login_attendance_rounds'):return 0
     messages=blockers(conn,[target_id,*source_ids],merging=True)
     if messages:raise HTTPException(409,'；'.join(messages))
     user={'role':'teacher','id':teacher_id}
+    _archive_smart_appeals(conn,source_ids,target_id=target_id,user=user)
     marks=','.join('?' for _ in source_ids)
     rows=conn.execute(f"SELECT * FROM login_attendance_rounds WHERE class_offering_id IN ({marks}) ORDER BY id",tuple(source_ids)).fetchall()
     for raw in rows:
@@ -100,6 +122,7 @@ def prepare_deletion(conn, offering_id, user):
     attendance.require_teacher(conn,offering_id,user,lock=True)
     messages=blockers(conn,[offering_id],merging=False)
     if messages:raise HTTPException(409,'；'.join(messages))
+    _archive_smart_appeals(conn,[offering_id],user=user)
     if not _exists(conn,'login_attendance_rounds'):return
     rows=conn.execute('SELECT * FROM login_attendance_rounds WHERE class_offering_id=? ORDER BY id',(offering_id,)).fetchall()
     for raw in rows:

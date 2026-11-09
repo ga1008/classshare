@@ -12,6 +12,7 @@ import { getLayerSystem } from './lq/layer.js';
 import { openKnowledgeTree, lifecycleLabel } from './session_knowledge_tree.js';
 import { openKnowledgeTreeManager } from './session_knowledge_tree_manager.js';
 import { resolveAttendanceLink } from './login_attendance_link.js';
+import { initAttendanceDashboardEntry, attendanceEntryState, refreshAttendanceVisibility, openAttendanceDashboardFromEntry } from './attendance_dashboard_entry.js';
 
 const learningMaterialSelector = initLearningMaterialSelector();
 
@@ -96,6 +97,7 @@ function initCoursePopover() {
 
     const renderAttendanceEmpty = (message) => {
         latestAttendancePayload = null;
+        if (smartAttendancePanel && !isTeacherAttendanceView()) smartAttendancePanel.hidden = true;
         if (smartAttendanceMessage) smartAttendanceMessage.textContent = message || '当前课堂还没有可统计的智慧课堂点名记录。';
         if (smartAttendanceMetrics) smartAttendanceMetrics.innerHTML = '';
         if (smartAttendanceWeekChart) {
@@ -492,6 +494,7 @@ function initCoursePopover() {
             renderAttendanceEmpty(payload.message || '当前课堂还没有可统计的智慧课堂点名记录。');
             return;
         }
+        if (smartAttendancePanel) smartAttendancePanel.hidden = false;
         setAttendanceExportReady(isTeacher);
         if (smartAttendanceMessage) {
             const latest = summary.latest_synced_at ? `最近同步 ${summary.latest_synced_at}` : '已读取本地同步记录';
@@ -592,6 +595,7 @@ function initCoursePopover() {
             if (sync) {
                 const syncResult = await apiFetch('/api/manage/system/smart-classroom-sync', { method: 'POST', silent: true });
                 showToast(syncResult.message || '智慧课堂点名同步完成。', syncResult.status === 'failed' ? 'warning' : 'success');
+                document.dispatchEvent(new CustomEvent('classroom:attendance-changed'));
             }
             const result = await apiFetch(`/api/classrooms/${window.APP_CONFIG.classOfferingId}/smart-attendance/analytics`, { silent: true });
             renderAttendanceAnalytics(result);
@@ -599,7 +603,7 @@ function initCoursePopover() {
         } catch (error) {
             if (!quiet) {
                 renderAttendanceEmpty(error.message || '读取智慧课堂出勤统计失败。');
-                showToast(error.message || '读取智慧课堂出勤统计失败。', 'error');
+                if (isTeacherAttendanceView()) showToast(error.message || '读取智慧课堂出勤统计失败。', 'error');
             }
         } finally {
             attendanceLoading = false;
@@ -1210,8 +1214,10 @@ function initTeachingTimeline() {
         }
         syncKnowledgeEntry(session);
         if (sessionModalAutoAttendanceBtn) {
-            sessionModalAutoAttendanceBtn.hidden = isHome || isExam || !session?.id;
-            sessionModalAutoAttendanceBtn.disabled = isHome || isExam || !session?.id;
+            const visible = !isHome && !isExam && Boolean(session?.id) && attendanceEntryState(session.id).visible;
+            sessionModalAutoAttendanceBtn.hidden = !visible;
+            sessionModalAutoAttendanceBtn.disabled = !visible;
+            if (!isTeacher) void refreshAttendanceVisibility().catch(() => {});
         }
         renderCheckinEmpty(isExam ? '考试卡片不关联课堂点名记录。' : (isHome ? '课程首页没有点名记录。' : '点击“点名统计”读取本次课签到情况。'));
         if (sessionCheckinPanel) sessionCheckinPanel.hidden = true;
@@ -2226,6 +2232,11 @@ function initTeachingTimeline() {
         if (attendanceOpening || !session?.id || !trigger?.isConnected || trigger.hidden || trigger.disabled || isHomeEntry(session) || isAcademicExamEntry(session)) return;
         const parent = getLayerSystem(document).top();
         if (!parent?.root.contains(trigger)) return;
+        if (!isTeacher && !attendanceEntryState(session.id).local) {
+            try { await openAttendanceDashboardFromEntry({ trigger, sessionId: session.id }); }
+            catch (error) { showToast(error.message || '签到统计加载失败，请重试。', 'error'); }
+            return;
+        }
         attendanceOpening = true;
         try {
             const mod = await import('./login_attendance.js');
@@ -2236,6 +2247,14 @@ function initTeachingTimeline() {
         finally { attendanceOpening = false; }
     }
     sessionModalAutoAttendanceBtn?.addEventListener('click', () => openAttendance());
+    document.addEventListener('classroom:attendance-visibility', () => {
+        const session = activeModalSession;
+        if (!sessionModalAutoAttendanceBtn || !session) return;
+        const visible = !isHomeEntry(session) && !isAcademicExamEntry(session) && Boolean(session.id) && attendanceEntryState(session.id).visible;
+        sessionModalAutoAttendanceBtn.hidden = !visible;
+        sessionModalAutoAttendanceBtn.disabled = !visible;
+        if (visible) deliverAttendanceIntent();
+    });
     function deliverAttendanceIntent() {
         if (attendanceIntentDelivered || attendanceLink.kind !== 'valid' || explicitSession.kind !== 'valid') return;
         let attempts = 0;
@@ -3203,6 +3222,7 @@ export function initClassroomPage() {
     initWorkspaceNav();
     initClassroomActivitySidebar();
     initTeachingTimeline();
+    initAttendanceDashboardEntry();
     initLoginAttendanceHistory();
     initAcademicCourseExamPanel();
     initAssignmentClocks({

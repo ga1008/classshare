@@ -121,7 +121,7 @@ from .routers import cultivation_display
 from .routers import polls
 from .routers import material_whiteboards
 from .routers import classroom_closeout
-from .routers import login_attendance, smart_classroom_write
+from .routers import login_attendance, smart_classroom_write, smart_attendance_appeals
 from .routers import classroom_group_qr
 from .routers import classroom_retake
 from .routers import lesson_plans
@@ -876,6 +876,7 @@ app.include_router(smart_classroom.router)
 app.include_router(login_attendance.router)
 app.include_router(login_attendance.attention_router)
 app.include_router(login_attendance.archive_router)
+app.include_router(smart_attendance_appeals.router)
 app.include_router(smart_classroom_write.router)
 from .routers import attendance_reports
 app.include_router(attendance_reports.router)

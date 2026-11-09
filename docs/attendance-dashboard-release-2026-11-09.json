@@ -1,0 +1,38 @@
+{
+  "status": "passed",
+  "synthetic_only": true,
+  "verified_at": "2026-11-09T01:20:12.279235+00:00",
+  "browser": {
+    "startTime": "2026-11-09T01:17:51.511Z",
+    "duration": 5867.0560000000005,
+    "expected": 4,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "formal_build": "CSS and Vite passed; static asset build rerun successfully after fixing missing parenthesis and nested-dialog refresh. Final graph checked.",
+  "windows_static_graph": "2f667ce3bf787ae559c6ff8fd8aa97d0bce2e5d1c84ff7f39189a1c98a3f969f",
+  "source_audit_updated": true,
+  "lq_inventory_updated": true,
+  "lq_entry_budget_passed": true,
+  "desktop_and_mobile_screenshots_reviewed": true,
+  "vmware_restarted": false,
+  "long_load_test_run": false,
+  "capacity_acceptance_claimed": false,
+  "new_schema": false,
+  "backend": {
+    "status": "passed",
+    "tests": 20,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "synthetic_only": true,
+    "production_access": false
+  },
+  "deployment": {
+    "status": "pending"
+  },
+  "git": {
+    "status": "pending"
+  }
+}

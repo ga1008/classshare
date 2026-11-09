@@ -101,7 +101,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     async function mutate(action) {
         if (busy || closed) return;
         setBusy(true); setNotice('正在处理…');
-        try { await action(); }
+        try { await action(); document.dispatchEvent(new CustomEvent('classroom:attendance-changed')); }
         catch (error) { fail(error); }
         finally { if (!closed) { setBusy(false); if (teacher) paintSelection(); } }
     }
@@ -177,7 +177,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         const counts = round?.summary?.counts || {};
         summary.replaceChildren(...[['出勤', counts.PRESENT || 0], ['待确认', counts.PENDING || 0], ['应到', round?.summary?.expected ?? '—'], ['免考勤', round?.summary?.exempt ?? 0]].map(([label, value]) => createContent('card', { title: label, variant: 'stat', value })));
         stateCounts.replaceChildren(...ATTENDANCE_STATES.map(([key,label])=>chip(`${label} ${counts[key]||0} 人`,key==='PRESENT'?'success':'neutral')));
-        actions.replaceChildren(button('刷新记录', () => load().catch(fail)), button('历史点名', async event => { const trigger=event.currentTarget; trigger.disabled=true; try { const mod=await import('./login_attendance_history.js'); if(!closed && trigger.isConnected) mod.openAttendanceHistory({classOfferingId:offering,trigger,parentLayer:handle}); } catch(error){fail(error);} finally{if(trigger.isConnected)trigger.disabled=busy;} }), button('账号与同步设置', () => { window.open('/manage/academic/smart-classroom', '_blank', 'noopener'); }, 'ghost'));
+        actions.replaceChildren(button('刷新记录', () => load().catch(fail)), button('学期签到统计', openDashboard), button('历史点名', async event => { const trigger=event.currentTarget; trigger.disabled=true; try { const mod=await import('./login_attendance_history.js'); if(!closed && trigger.isConnected) mod.openAttendanceHistory({classOfferingId:offering,trigger,parentLayer:handle}); } catch(error){fail(error);} finally{if(trigger.isConnected)trigger.disabled=busy;} }), button('账号与同步设置', () => { window.open('/manage/academic/smart-classroom', '_blank', 'noopener'); }, 'ghost'));
         if (!historyOnly && (!round || (round.state === 'void' && latestLessonRoundId === round.id))) actions.prepend(button('开启本地点名', createRound, 'prominent'));
         if (isCurrent() && ['running', 'scheduled'].includes(round?.state)) actions.append(button('结束本地点名', endRound));
         if (isCurrent() && round.state !== 'void') actions.append(button('重新核算', () => mutate(async () => { round = await call(`/rounds/${round.id}/recalculate`, { method: 'POST', body: { revision: round.revision } }); paint(); setNotice('已读取最新核算结果。'); })), button('作废本轮', voidRound, 'destructive'));
@@ -257,7 +257,8 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         detailDropdowns.push(...enhanceDropdowns(appeal));
     }
     function paintStudent() {
-        listPane.hidden = true; config.hidden = true; summary.replaceChildren(); actions.replaceChildren(button('刷新本人记录', () => load().catch(fail)));
+        if (!round || data?.status === 'NOT_STARTED' || round.state === 'void') { detail.replaceChildren(); heading.hidden = true; document.dispatchEvent(new CustomEvent('classroom:attendance-changed')); void getLayerSystem(document).close(handle, 'unavailable'); return; }
+        listPane.hidden = true; config.hidden = true; summary.replaceChildren(); actions.replaceChildren(button('刷新本人记录', () => load().catch(fail)), button('本学期签到', openDashboard));
         detail.replaceChildren(node('h3', '', '我的签到'), chip(data?.status_label || (data?.status === 'NOT_STARTED' ? '尚未开启' : statusLabel(data?.status)), data?.status === 'PRESENT' ? 'success' : 'neutral'), node('p', '', data?.message || '教师尚未开启本次点名。'));
         if (!round) return;
         if (data.appeal) detail.append(node('p', '', data.appeal.status === 'pending' ? '签到申诉正在处理中。' : '本次申诉已处理，可在通知中查看结果。'));
@@ -268,6 +269,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         submit.disabled = !data.can_appeal; submit.dataset.laDisabled = String(!data.can_appeal);
         detail.append(f.wrapper, submit, node('p', '', data.can_appeal ? '仅提交本人的签到说明。已受理申诉会继续处理。' : '点名结束并开放申诉后可提交；作废轮次和已过期记录不开放新申诉。'));
     }
+    async function openDashboard(event) { const trigger=event.currentTarget; trigger.disabled=true; try { const mod=await import('./attendance_dashboard.js'); if(!closed&&trigger.isConnected)mod.openAttendanceDashboard({classOfferingId:offering,userRole,trigger}); } catch(error){fail(error);} finally{if(trigger.isConnected)trigger.disabled=busy;} }
     async function showExternal() { const trigger=document.activeElement; trigger.disabled=true; try { externalCleanup?.(); const mod = await import('./login_attendance_sync.js'); if (!closed && trigger.isConnected) externalCleanup = mod.openAttendanceSync({ base: `${base}/rounds/${round.id}/external`, round, trigger, parentLayer: handle }); } finally {if(trigger.isConnected)trigger.disabled=busy;} }
     fields.search.addEventListener('input', () => { page = 0; paintGrid(); }); fields.filter.addEventListener('change', () => { page = 0; paintGrid(); });
     shell.addEventListener('input', event => { if (!event.target.matches('input[type="search"]')) dirty = true; });

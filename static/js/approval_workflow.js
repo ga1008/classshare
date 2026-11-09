@@ -73,6 +73,12 @@ function statusBadge(item) {
 
 /* ------------------------------------------------------------------ detail renderers */
 const DETAIL_RENDERERS = {
+    smart_attendance_appeal(item) {
+        const attendance = item.detail?.attendance || {}, record = attendance.record || {};
+        const effective = attendance.current_source_available === false ? 'PENDING' : attendance.effective_status || record.status;
+        const rows = [['学生',record.name || item.applicant_name],['学号',record.student_number],['平台统计',ATTENDANCE_STATES.find(([key])=>key===effective)?.[1] || (effective === 'LATE_OR_EARLY' ? '迟到或早退' : '待核对')],['学校原始状态',record.status_label || record.source_status || '以同步原件为准'],['来源',attendance.current_source_available === false ? '来源已失效，仅可说明处理' : attendance.source_changed || attendance.correction?.stale ? '来源已变化，请重新核对' : '已同步签到']];
+        return `<div class="apr-kv-grid">${rows.map(([label,value])=>`<div class="apr-kv"><span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value ?? '暂无'))}</strong></div>`).join('')}</div><p>批准仅更正平台签到统计，学校端原记录不会被改写。</p>`;
+    },
     login_attendance_appeal(item) {
         const attendance = item.detail?.attendance || {}, record = attendance.record || attendance;
         const seconds = record.evidence?.learning?.measured_seconds ?? record.participation?.measured_seconds;
@@ -424,6 +430,19 @@ function bindLateForm(body, d) {
 
 /* ------------------------------------------------------------------ decision forms */
 const DECISION_FORMS = {
+    smart_attendance_appeal(item) {
+        const attendance = item.detail?.attendance || {}, fingerprint = attendance.source_fingerprint;
+        return {
+            html: `<label class="form-group"><span class="form-label">平台签到更正为</span><select class="form-control" data-apr-field="attendance_status">${ATTENDANCE_STATES.map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></label><small class="text-muted">学校原记录保留。来源变化时先读取最新详情，审批说明会保留。</small><button type="button" class="btn btn-outline" data-apr-attendance-refresh>读取最新签到详情</button>`,
+            validate(form, decision) {
+                if (!form.querySelector('[data-apr-field="note"]')?.value.trim()) return '请填写本次签到核对的审批说明。';
+                if (decision === 'approve' && (attendance.current_source_available === false || !fingerprint)) return '签到来源尚未完整读取或已失效，请刷新核对后处理。';
+                return '';
+            },
+            collect(form) { return { status: form.querySelector('[data-apr-field="attendance_status"]')?.value || 'PRESENT', source_fingerprint: fingerprint }; },
+            bind(body,{refresh}) { body.querySelector('[data-apr-attendance-refresh]')?.addEventListener('click',()=>refresh()); },
+        };
+    },
     login_attendance_appeal(item) {
         const revision = item.detail?.attendance?.record?.revision;
         return {
@@ -989,6 +1008,7 @@ export function mountPanel(root, options) {
                 method: 'POST', body: JSON.stringify({ note, decision_payload: decisionPayload }),
             });
             decided = true; decidedRequest = data.request; drafts.delete(id);
+            if (['login_attendance_appeal','smart_attendance_appeal'].includes(decidedRequest?.request_type)) document.dispatchEvent(new CustomEvent('classroom:attendance-changed'));
             if (destroyed) return;
             showToast(decision === 'approve' ? '已通过申请，学生将收到通知' : '已拒绝申请，学生将收到通知', 'success');
             await load();

@@ -17,5 +17,10 @@
 .la-dialog .lq-dialog__body { min-height:0; overflow:auto; }
 .la-dialog .lq-table { width:100%; }
 .la-appeal { display:grid; gap:.65rem; }
+.lad-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; min-width:0; }
+.lad-session-body { display:grid; gap:.6rem; min-width:0; overflow-wrap:anywhere; }
+.lad-session-body p,.lad-note { margin:0; }
+.lad-session-body .lq-progress { width:100%; }
+.lad-workspace .lq-card__head,.lad-workspace .lq-card__copy { min-width:0; overflow-wrap:anywhere; }
 @media(max-width:800px) { .la-content { grid-template-columns:1fr; } .la-detail { position:static; } .la-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media(max-width:480px) { .la-students { grid-template-columns:1fr; } .la-actions>.lq-btn { min-height:2.75rem; } }
+@media(max-width:480px) { .la-students,.lad-list { grid-template-columns:1fr; } .la-actions>.lq-btn { min-height:2.75rem; } }

@@ -109,3 +109,35 @@ class AttendanceLifecycleTests(unittest.TestCase):
             binding=conn.execute("SELECT * FROM smart_attendance_write_bindings WHERE id='b'").fetchone()
             self.assertIsNone(binding['class_offering_id']);self.assertIsNone(binding['session_id'])
             self.assertEqual('paused',binding['state'])
+
+    def test_school_appeal_blocks_merge_and_deletion_preserves_cancelled_audit(self):
+        with database.get_db_connection() as conn:
+            conn.execute("INSERT INTO approval_requests(request_type,status,applicant_role,applicant_user_pk,"
+                "subject_id,class_offering_id,title,payload_json) VALUES('smart_attendance_appeal','pending','student',?,?,?,?,?)",
+                (self.f.student_b,'api:987',self.f.source_id,'Synthetic school attendance appeal',
+                 json.dumps({'session_id':self.f.source_session,'source_status':'UNCHECKED'})))
+            conn.commit()
+            self.assertTrue(any('申诉' in message for message in lifecycle.blockers(conn,[self.f.source_id],merging=True)))
+            lifecycle.prepare_deletion(conn,self.f.source_id,self.user)
+            row=conn.execute("SELECT * FROM approval_requests WHERE subject_id='api:987'").fetchone()
+            self.assertEqual('cancelled',row['status'])
+            payload=json.loads(row['payload_json'])
+            self.assertTrue(payload['history_only']);self.assertTrue(payload['deleted_archive'])
+            self.assertEqual(self.f.source_session,payload['session_id'])
+            self.assertEqual('UNCHECKED',payload['source_status'])
+            self.assertEqual(1,conn.execute("SELECT COUNT(*) FROM approval_request_events WHERE request_id=? AND event_type='auto_cancelled'",(row['id'],)).fetchone()[0])
+
+    def test_school_decision_after_merge_is_history_not_new_lesson_correction(self):
+        with database.get_db_connection() as conn:
+            conn.execute("INSERT INTO approval_requests(request_type,status,applicant_role,applicant_user_pk,"
+                "subject_id,class_offering_id,payload_json,decision_payload_json) VALUES('smart_attendance_appeal','approved','student',?,?,?,?,?)",
+                (self.f.student_b,'api:988',self.f.source_id,json.dumps({'session_id':self.f.source_session}),
+                 json.dumps({'status':'PRESENT','local_only':True})))
+            lifecycle.archive_for_merge(conn,self.f.target_id,[self.f.source_id],self.f.teacher_id)
+            row=conn.execute("SELECT * FROM approval_requests WHERE subject_id='api:988'").fetchone()
+            self.assertEqual('approved',row['status'])
+            self.assertEqual('PRESENT',json.loads(row['decision_payload_json'])['status'])
+            payload=json.loads(row['payload_json'])
+            self.assertTrue(payload['history_only']);self.assertFalse(payload['deleted_archive'])
+            self.assertEqual(self.f.source_session,payload['session_id'])
+            self.assertEqual(self.f.target_id,payload['merged_into_offering_id'])

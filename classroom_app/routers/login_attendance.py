@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher, get_current_user
 from ..services import login_attendance_service as service
+from ..services import attendance_dashboard_service as dashboard_service
 from ..services import approval_workflow_service as workflow
 from ..services.trusted_network_service import client_network, require_same_origin
 
@@ -82,6 +83,24 @@ def _offering_round(conn, offering_id, round_id):
 def history(offering_id: int,before_id: int|None=None,limit: int=50,user: dict=Depends(get_current_teacher)):
     with get_db_connection() as conn:
         return service.history(conn,offering_id,user,before_id=before_id,limit=limit)
+
+
+@router.get("/dashboard/visibility")
+def dashboard_visibility(offering_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        return dashboard_service.visibility(conn, offering_id, user)
+
+
+@router.get("/dashboard")
+def dashboard(offering_id: int, session_id: int | None = None, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        return dashboard_service.dashboard(conn, offering_id, user, session_id=session_id)
+
+
+@router.get("/dashboard/students/{student_id}")
+def dashboard_student(offering_id: int, student_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        return dashboard_service.dashboard(conn, offering_id, user, student_id=student_id)
 
 
 @archive_router.get("/rounds/{round_id}")

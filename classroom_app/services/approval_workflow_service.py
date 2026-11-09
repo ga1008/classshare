@@ -198,7 +198,7 @@ def _reviewers_for_request(conn, request) -> list[dict[str, Any]]:
     retain their existing nominated-reviewer contract unchanged.
     """
     previous = _load_reviewers(conn, int(request["id"]))
-    if request.get("request_type") != "login_attendance_appeal":
+    if request.get("request_type") not in {"login_attendance_appeal", "smart_attendance_appeal"}:
         return previous
     owner = conn.execute("SELECT t.id,t.name FROM class_offerings o JOIN teachers t ON t.id=o.teacher_id WHERE o.id=?",
                          (request.get("class_offering_id"),)).fetchone()
@@ -211,8 +211,8 @@ def _reviewers_for_request(conn, request) -> list[dict[str, Any]]:
 def _incoming_scope(role, user_pk):
     ordinary = "EXISTS (SELECT 1 FROM approval_request_reviewers v WHERE v.request_id=r.id AND v.reviewer_role=? AND v.reviewer_user_pk=?)"
     current = "EXISTS (SELECT 1 FROM class_offerings o WHERE o.id=r.class_offering_id AND o.teacher_id=?)"
-    return (f"((r.request_type<>'login_attendance_appeal' AND {ordinary}) OR "
-            f"(r.request_type='login_attendance_appeal' AND ?='teacher' AND {current}))",
+    return (f"((r.request_type NOT IN ('login_attendance_appeal','smart_attendance_appeal') AND {ordinary}) OR "
+            f"(r.request_type IN ('login_attendance_appeal','smart_attendance_appeal') AND ?='teacher' AND {current}))",
             [role,user_pk,role,user_pk])
 
 
@@ -413,7 +413,7 @@ def list_requests(conn, user: Mapping[str, Any], *, scope: str = "incoming", sta
         where.append("r.applicant_role = ? AND r.applicant_user_pk = ?")
         params.extend([role, user_pk])
     elif scope == "all" and _is_super_admin(conn, user):
-        where.append("(r.request_type<>'login_attendance_appeal' OR (?='teacher' AND EXISTS (SELECT 1 FROM class_offerings o WHERE o.id=r.class_offering_id AND o.teacher_id=?)))")
+        where.append("(r.request_type NOT IN ('login_attendance_appeal','smart_attendance_appeal') OR (?='teacher' AND EXISTS (SELECT 1 FROM class_offerings o WHERE o.id=r.class_offering_id AND o.teacher_id=?)))")
         params.extend([role,user_pk])
     else:
         clause, values = _incoming_scope(role,user_pk)
@@ -680,7 +680,7 @@ def remind_stale_requests(conn, *, now: datetime | None = None) -> dict[str, int
             reviewers = [r for r in _reviewers_for_request(conn,request) if not r.get("reminded_at")]
             if not reviewers:
                 continue
-            if request.get("request_type")=="login_attendance_appeal":
+            if request.get("request_type") in {"login_attendance_appeal", "smart_attendance_appeal"}:
                 for reviewer in reviewers:
                     conn.execute("INSERT INTO approval_request_reviewers(request_id,reviewer_role,reviewer_user_pk,reviewer_name,created_at) VALUES(?,?,?,?,?) ON CONFLICT(request_id,reviewer_role,reviewer_user_pk) DO NOTHING",
                                  (int(request["id"]),reviewer["reviewer_role"],reviewer["reviewer_user_pk"],reviewer["reviewer_name"],now_dt.isoformat()))

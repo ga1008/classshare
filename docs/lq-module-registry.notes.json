@@ -343,6 +343,14 @@
       "params": "LQ createDomainModal(type=viewer)/createDialog/openDialog/createDomainButton；主奖章原生 button + choice，铭文 raised Surface。十阶段 SVG，透明 PNG 固定 1600×1850，内含课程/姓名/证号/日期；文件名净化与长文本折行。",
       "states": "首次颁发/已见本地记录/服务端标记失败重试；历史查看不发 revealed、不写 seen；点击奖章打开收藏子层；系统 picker 取消、编码失败/可重试、写入中禁重复、无 picker 时浏览器下载；关闭/销毁取消动画与监听。窄屏与横屏布局、亮暗、quiet/off/reduced-motion/forced-colors。",
       "rules": "图形颜色与有限庆祝是内容槽；不替换 LQ 外壳材质、焦点栈、滚动锁或进出场。读取已授权 progress 中证书；历史查看不得误标新的未读道印。系统 picker 必须在真实点击激活内调用，随后才异步编码；临时 URL 定时释放。正式构建隔离浏览器验证只覆盖本业务，不等于全平台验收。"
+    },
+    "attendance-dashboard": {
+      "title": "课程签到统计 static/js/attendance_dashboard.js",
+      "layer": "composite",
+      "summary": "课堂顶部统一学期与个人签到入口，课次/学生汇总分页40条；复用现有本地点名与智慧课堂同步、导出，个人时间线显示真实来源、未决和本地更正。",
+      "params": "LQ Dialog、Card(stat/default)、Chip、Progress、Input/Search、Textarea、NativeSelect和Button；领域CSS仅布局，按需加载统计模块。",
+      "states": "学生无本人有效来源时隐藏入口及旧智慧面板；页面可见时一分钟一次轻量ID可见性查询，无全班轮询；加载/错误/空/多来源/未纳入/采集中/申诉待处理，来源CAS冲突保留说明。",
+      "rules": "学生只读本人；本地和学校来源取舍、分母由后端判定，不以计划课次推算缺勤。LQ独占嵌套焦点/关闭否决；申诉保留学校原记录，批准只作用本地统计。深链精确学生课次，未知来源不猜替代记录。"
     }
   },
   "_tools": {
