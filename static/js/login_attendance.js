@@ -37,7 +37,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     const uid = `la${lesson}x${++sequence}`;
     let data = null, round = null, closed = false, busy = false, dirty = false, epoch = 0, handle, focusedStudent = studentId || null;
     let page = 0, formInitialized = false, createKey = crypto.randomUUID(), selected = new Map();
-    let detailEpoch = 0, externalCleanup = null, appealData = null;
+    let detailEpoch = 0, externalCleanup = null, externalOpen = false, appealData = null;
     let latestLessonRoundId = null;
     const appealDrafts = new Map();
     let detailDropdowns = [];
@@ -169,6 +169,9 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         if (focusedStudent && teacher) await showDetail(focusedStudent);
     }
     function paint() {
+        // Preserve the nested layer's trigger, focus and configuration draft
+        // if a parent request that started earlier completes behind it.
+        if (externalOpen) return;
         const context = historyOnly ? round?.context || {} : session || {};
         const originalClasses = [...new Set((round?.records||[]).map(r=>r.class_name).filter(Boolean))];
         const classLabel = context.class_name || context.teaching_class_name || (historyOnly ? originalClasses.slice(0,8).join('、') + (originalClasses.length>8?` 等 ${originalClasses.length} 个班`:'') : '');
@@ -181,7 +184,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         if (!historyOnly && (!round || (round.state === 'void' && latestLessonRoundId === round.id))) actions.prepend(button('开启本地点名', createRound, 'prominent'));
         if (isCurrent() && ['running', 'scheduled'].includes(round?.state)) actions.append(button('结束本地点名', endRound));
         if (isCurrent() && round.state !== 'void') actions.append(button('重新核算', () => mutate(async () => { round = await call(`/rounds/${round.id}/recalculate`, { method: 'POST', body: { revision: round.revision } }); paint(); setNotice('已读取最新核算结果。'); })), button('作废本轮', voidRound, 'destructive'));
-        if (isCurrent() && round.state !== 'void') actions.append(button('智慧课堂核对', () => showExternal().catch(fail)));
+        if (round) actions.append(button(isCurrent() && round.state !== 'void' ? '智慧课堂核对' : '查看学校同步记录', event => showExternal(event).catch(fail)));
         if (data?.policy?.closed_at_ms) { actions.querySelectorAll('button').forEach(n => { if (n.textContent.includes('开启')) { n.disabled = true; n.dataset.laDisabled = 'true'; } }); }
         if (!formInitialized && data?.policy) {
             appendField(configBody, 'networks', 'textarea', '本课教室 IP 或网段（每行一个）', (data.policy.networks?.length ? data.policy.networks : [data.teacher_network?.ip].filter(Boolean)).join('\n'), { rows: 2 });
@@ -270,7 +273,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         detail.append(f.wrapper, submit, node('p', '', data.can_appeal ? '仅提交本人的签到说明。已受理申诉会继续处理。' : '点名结束并开放申诉后可提交；作废轮次和已过期记录不开放新申诉。'));
     }
     async function openDashboard(event) { const trigger=event.currentTarget; trigger.disabled=true; try { const mod=await import('./attendance_dashboard.js'); if(!closed&&trigger.isConnected)mod.openAttendanceDashboard({classOfferingId:offering,userRole,trigger}); } catch(error){fail(error);} finally{if(trigger.isConnected)trigger.disabled=busy;} }
-    async function showExternal() { const trigger=document.activeElement; trigger.disabled=true; try { externalCleanup?.(); const mod = await import('./login_attendance_sync.js'); if (!closed && trigger.isConnected) externalCleanup = mod.openAttendanceSync({ base: `${base}/rounds/${round.id}/external`, round, trigger, parentLayer: handle }); } finally {if(trigger.isConnected)trigger.disabled=busy;} }
+    async function showExternal(event) { const trigger=event.currentTarget; trigger.disabled=true; try { externalCleanup?.(); const mod = await import('./login_attendance_sync.js'); if (!closed && trigger.isConnected) { externalOpen = true; externalCleanup = mod.openAttendanceSync({ base: `${base}/rounds/${round.id}/external`, round, trigger, parentLayer: handle, readOnly: historyOnly || !isCurrent() || round.state === 'void', onClose: () => { externalOpen = false; externalCleanup = null; } }); } } catch(error) { externalOpen = false; throw error; } finally {if(trigger.isConnected)trigger.disabled=busy;} }
     fields.search.addEventListener('input', () => { page = 0; paintGrid(); }); fields.filter.addEventListener('change', () => { page = 0; paintGrid(); });
     shell.addEventListener('input', event => { if (!event.target.matches('input[type="search"]')) dirty = true; });
     listPane.hidden = !teacher; config.hidden = !teacher || historyOnly;

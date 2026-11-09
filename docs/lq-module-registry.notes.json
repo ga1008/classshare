@@ -344,6 +344,14 @@
       "states": "首次颁发/已见本地记录/服务端标记失败重试；历史查看不发 revealed、不写 seen；点击奖章打开收藏子层；系统 picker 取消、编码失败/可重试、写入中禁重复、无 picker 时浏览器下载；关闭/销毁取消动画与监听。窄屏与横屏布局、亮暗、quiet/off/reduced-motion/forced-colors。",
       "rules": "图形颜色与有限庆祝是内容槽；不替换 LQ 外壳材质、焦点栈、滚动锁或进出场。读取已授权 progress 中证书；历史查看不得误标新的未读道印。系统 picker 必须在真实点击激活内调用，随后才异步编码；临时 URL 定时释放。正式构建隔离浏览器验证只覆盖本业务，不等于全平台验收。"
     },
+    "attendance-school-sync": {
+      "title": "课堂学校自动推送 static/js/login_attendance_sync.js",
+      "layer": "composite",
+      "summary": "2026-11-09：本地点名子层保留原学校来源、绑定、预览和逐人回读；另以每轮显式授权开启服务器持久推送。教室定位只用于明确的新建请求；已有点名不要求定位。历史与作废轮次仅查看原核验记录。",
+      "params": "复用 LQ Dialog(parentLayer/confirm)、DomainButton(glass/prominent/ghost)、Form(input/select/checkbox)、Dropdown、Chip、Table 与有界 ambient poll；login_attendance.css 只管布局及表格换行，无新增材质或动效。",
+      "states": "默认关闭、等待本地结束、等待补报结算、排队、处理中、逐人确认、部分完成、冲突、结果未知、需要重新授权、暂停与作废；单会话影响明确提示。定位拒绝仍可绑定已有点名；409 保留课次和授权草稿，刷新版本后由教师重试。",
+      "rules": "学校账号与 token 不进入浏览器；签名 source/slot 由服务端核对，UI 不拼造学校标识。PUT 使用幂等键，暂停/重试/重新授权携带 revision；GET 状态更新不替换配置草稿，迟到响应由代次排除。父层迟到请求不重建子层触发器；关闭确认保留已保存后台任务，销毁清理请求、dropdown 与轮询。学生入口不加载学校账号与推送细节。隔离 browser 用例见 login-attendance.spec.ts 的 school auto push、historical school 与原 handoff/recovery；正式构建结果由发布验收单独记录。"
+    },
     "attendance-dashboard": {
       "title": "课程签到统计 static/js/attendance_dashboard.js",
       "layer": "composite",

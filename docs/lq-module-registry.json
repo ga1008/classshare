@@ -2222,6 +2222,10 @@
       "hits": 2
      },
      {
+      "path": "static/js/login_attendance_sync.js",
+      "hits": 2
+     },
+     {
       "path": "static/js/manage_classrooms.js",
       "hits": 2
      },
@@ -2247,10 +2251,6 @@
      },
      {
       "path": "static/js/login_attendance.js",
-      "hits": 1
-     },
-     {
-      "path": "static/js/login_attendance_sync.js",
       "hits": 1
      },
      {
@@ -5010,6 +5010,10 @@
       "hits": 4
      },
      {
+      "path": "static/js/login_attendance_sync.js",
+      "hits": 4
+     },
+     {
       "path": "static/js/material_viewer.js",
       "hits": 4
      },
@@ -5139,10 +5143,6 @@
      },
      {
       "path": "static/js/login_attendance.js",
-      "hits": 2
-     },
-     {
-      "path": "static/js/login_attendance_sync.js",
       "hits": 2
      },
      {
@@ -5492,7 +5492,7 @@
     "rules": "禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。 2026-10-28 close 的 beforeClose 自有确认子层沿祖先推进 pending 序号，成功关闭仍返回有效触发器；无关新层打断后不再恢复旧焦点请求。覆盖新开/重开/ordered external，保留新窗口防抢焦点与取消合同，见 social-dm-sidebar-2026-10-28 和 layer-core 浏览器回归。"
    },
    "consumers": {
-    "count": 29,
+    "count": 30,
     "files": [
      {
       "path": "static/js/academic_sync_dialog.js",
@@ -5564,6 +5564,10 @@
      },
      {
       "path": "static/js/login_attendance_history.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/login_attendance_sync.js",
       "hits": 2
      },
      {
@@ -7543,6 +7547,7 @@
    "dialogs",
    "domain-controls",
    "forms",
+   "layers",
    "skeleton",
    "tables"
   ],

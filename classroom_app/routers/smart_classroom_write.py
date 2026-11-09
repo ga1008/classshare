@@ -1,4 +1,4 @@
-"""Teacher-owned school handoff and readback. No unverified remote mutation."""
+"""Teacher-owned school synchronization with explicit authorization and readback."""
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -9,6 +9,8 @@ from ..database import get_db_connection
 from ..dependencies import get_current_teacher
 from ..services import smart_classroom_write_service as service
 from ..services import smart_classroom_attendance_adapter as adapter
+from ..services import smart_classroom_auto_sync_service as auto_sync
+from ..services.smart_classroom_session_service import SmartClassroomSessionError
 from ..services.attendance_report_service import sign_attendance_source_option, _decode_option
 from ..services.trusted_network_service import require_same_origin
 
@@ -49,6 +51,22 @@ class Revision(Strict):
     expected_revision:int=Field(ge=1)
 
 
+class Location(Strict):
+    latitude:float=Field(ge=-90,le=90,allow_inf_nan=False,strict=True)
+    longitude:float=Field(ge=-180,le=180,allow_inf_nan=False,strict=True)
+    captured_at_ms:int=Field(gt=0,strict=True)
+
+
+class AutoSyncCreate(Source):
+    slot_token:str=Field(min_length=1,max_length=20000)
+    enabled:bool=Field(default=True,strict=True)
+    allow_create:bool=Field(default=False,strict=True)
+    acknowledge_session_takeover:bool=Field(default=False,strict=True)
+    location:Location|None=None
+    expected_revision:int|None=Field(default=None,ge=1)
+    idempotency_key:str=Field(min_length=1,max_length=160)
+
+
 def _context(offering_id,round_id,user,request=None):
     if request is not None:
         require_same_origin(request)
@@ -62,10 +80,14 @@ def _context(offering_id,round_id,user,request=None):
 
 async def _call(awaitable):
     try:return await awaitable
+    except SmartClassroomSessionError as exc:
+        busy=exc.code=="session_busy"
+        raise HTTPException(503 if busy else 409,{"code":exc.code,"message":str(exc)},
+                            headers={"Retry-After":"5"} if busy else None) from exc
     except adapter.AttendanceSourceError as exc:
         raise HTTPException(503,{"code":exc.code,"message":str(exc)}) from exc
     except (httpx.HTTPError,TimeoutError):
-        raise HTTPException(503,{"code":"school_read_unavailable","message":"学校只读连接暂不可用，请稍后核对；没有发送改签请求。"}) from None
+        raise HTTPException(503,{"code":"school_connection_unavailable","message":"学校连接暂不可用。已提交任务请查看任务状态，系统会先回读核实，请勿重复创建点名。"}) from None
     except ValueError as exc:
         message=str(exc) if "TLS" in str(exc) or "可信 CA" in str(exc) else "学校账号连接验证未通过，请重新验证原账号。"
         raise HTTPException(409,{"code":"needs_teacher_reauth","message":message}) from None
@@ -163,3 +185,41 @@ def pause(offering_id:int,round_id:int,run_id:str,payload:Revision,request:Reque
     _context(offering_id,round_id,user,request)
     with get_db_connection() as conn:
         result=service.pause_run(conn,user,round_id,run_id,payload.expected_revision);conn.commit();return result
+
+
+@router.post("/slot-options")
+async def slot_options(offering_id:int,round_id:int,payload:Source,request:Request,user:dict=Depends(get_current_teacher)):
+    _context(offering_id,round_id,user,request)
+    return await _call(auto_sync.list_slot_options(user,round_id,payload.source_token))
+
+
+@router.get("/auto-sync")
+def get_auto_sync(offering_id:int,round_id:int,user:dict=Depends(get_current_teacher)):
+    _context(offering_id,round_id,user)
+    with get_db_connection() as conn:return auto_sync.get_auto_sync(conn,user,round_id)
+
+
+@router.put("/auto-sync")
+async def configure_auto_sync(offering_id:int,round_id:int,payload:AutoSyncCreate,request:Request,user:dict=Depends(get_current_teacher)):
+    _context(offering_id,round_id,user,request)
+    return await _call(auto_sync.configure_auto_sync(user,round_id,payload.model_dump(exclude_none=True)))
+
+
+@router.post("/auto-sync/pause")
+def pause_auto_sync(offering_id:int,round_id:int,payload:Revision,request:Request,user:dict=Depends(get_current_teacher)):
+    _context(offering_id,round_id,user,request)
+    with get_db_connection() as conn:
+        result=auto_sync.pause_auto_sync(conn,user,round_id,payload.expected_revision);conn.commit();return result
+
+
+@router.post("/auto-sync/retry")
+def retry_auto_sync(offering_id:int,round_id:int,payload:Revision,request:Request,user:dict=Depends(get_current_teacher)):
+    _context(offering_id,round_id,user,request)
+    with get_db_connection() as conn:
+        result=auto_sync.retry_auto_sync(conn,user,round_id,payload.expected_revision);conn.commit();return result
+
+
+@router.post("/auto-sync/reauthorize")
+async def reauthorize_auto_sync(offering_id:int,round_id:int,payload:Revision,request:Request,user:dict=Depends(get_current_teacher)):
+    _context(offering_id,round_id,user,request)
+    return await _call(auto_sync.reauthorize_auto_sync(user,round_id,payload.expected_revision))

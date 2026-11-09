@@ -1,0 +1,21 @@
+{
+  "create_confirmed": true,
+  "stop_confirmed": true,
+  "cleanup_confirmed": true,
+  "original_history_preserved": true,
+  "start_http": 200,
+  "stop_http": 200,
+  "delete_http": 200,
+  "original_rounds": 16,
+  "original_student_states": 816,
+  "date": "2026-11-09",
+  "scope": "Previously authorized week 2 / Sunday / sections 8-9 Computer Networks combined class",
+  "start_response": "checkinCourse object, not state:ok",
+  "stop_response": {
+    "state": "ok"
+  },
+  "target_scope_empty_after_cleanup": true,
+  "production_database_test_data_created": false,
+  "location_source": "Official miniapp GPS captured for the same explicitly authorized historical fixture; not a current-location claim",
+  "long_load_test": false
+}

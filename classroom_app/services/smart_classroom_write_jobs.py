@@ -16,3 +16,10 @@ async def handle_smart_attendance_readback(task):
 def register_handlers():
     from .scheduled_task_service import register_task_handler
     register_task_handler(TASK_KIND,handle_smart_attendance_readback)
+    register_task_handler('smart_attendance_auto_sync',handle_smart_attendance_auto_sync)
+
+
+async def handle_smart_attendance_auto_sync(task):
+    from .smart_classroom_auto_sync_service import process_auto_sync
+    payload=task['payload']
+    return await process_auto_sync(int(payload['teacher_id']),str(payload['round_id']))

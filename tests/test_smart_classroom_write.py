@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 from fastapi import HTTPException
 
 from classroom_app.db.schema_smart_classroom_write import ensure_smart_classroom_write_schema
+from classroom_app.db.schema_smart_classroom_auto_sync import ensure_smart_classroom_auto_sync_schema
 from classroom_app.db.schema_login_attendance import ensure_login_attendance_schema
 from classroom_app.services import smart_classroom_write_service as service
 from classroom_app.services.attendance_report_service import sign_attendance_source_option
@@ -20,6 +21,7 @@ class SmartWriteTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.conn.close)
         self.conn.executescript("CREATE TABLE class_offerings(id INTEGER PRIMARY KEY,teacher_id INTEGER);INSERT INTO class_offerings VALUES(11,1);CREATE TABLE class_offering_sessions(id INTEGER PRIMARY KEY,class_offering_id INTEGER);INSERT INTO class_offering_sessions VALUES(21,11);")
         ensure_smart_classroom_write_schema(self.conn)
+        ensure_smart_classroom_auto_sync_schema(self.conn)
         self.conn.commit()
         self.user={"role":"teacher","id":1}
         self.context={"class_offering_id":11,"session_id":21,"round_id":31,"revision":1,"state":"published",
@@ -92,7 +94,9 @@ class SmartWriteTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("protected",result[0]["state"])
         result=service.compare_students(targets,{"0001":"NEW_UNKNOWN"},{"0001":"NEW_UNKNOWN"})
         self.assertEqual("blocked",result[0]["state"])
-        for op in ("start","end","update_student","save","update"):
+        for op in ("start","end","update_student"):
+            service.require_write_capability(op)
+        for op in ("save","update"):
             with self.assertRaises(HTTPException) as caught:service.require_write_capability(op)
             self.assertEqual("write_protocol_unverified",caught.exception.detail["code"])
 

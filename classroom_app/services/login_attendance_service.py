@@ -344,6 +344,14 @@ def evaluate_round(conn, round_id, *, timestamp=None):
     if newly_present:
         _cancel_appeals(conn,round_id,newly_present,None,"新采集证据已确认出勤，申诉已自动纠正并保留处理记录。")
 
+    _schedule_school_sync(conn, round_id)
+
+
+def _schedule_school_sync(conn, round_id):
+    # Scheduling shares the local transaction; no network IO or remote mutation here.
+    from .smart_classroom_auto_sync_service import schedule_due_auto_sync
+    schedule_due_auto_sync(conn, round_id)
+
 
 def end_round(conn, round_id, user, payload, *, timestamp=None):
     row = load_round(conn, round_id, user, lock=True)
@@ -372,6 +380,7 @@ def void_round(conn, round_id, user, payload):
     conn.execute("UPDATE login_attendance_rounds SET state='void',is_current=0,void_reason=?,revision=revision+1 WHERE id=?", (reason,round_id))
     _audit(conn, round_id, "void", user, before={"state":row["state"]}, reason=reason)
     _cancel_appeals(conn, round_id, None, user, "本次点名已作废，原记录保留供查询。")
+    _schedule_school_sync(conn, round_id)
     return round_view(conn, round_id, user)
 
 
@@ -421,6 +430,7 @@ def change_records(conn, round_id, user, payload, *, resolve_appeals=True):
         conn.execute("UPDATE login_attendance_rounds SET revision=revision+1 WHERE id=?",(round_id,))
         if resolve_appeals:
             _cancel_appeals(conn,round_id,settled,user,"教师已更正本次考勤，请查看当前结果。")
+        _schedule_school_sync(conn, round_id)
     return {"results":results,"round":round_view(conn,round_id,user)}
 
 

@@ -120,6 +120,61 @@ test('LQ school handoff gates writes, uses per-preview retry keys and limits con
   expect(requests.some(x=>/\/(start|end|update_student)$/.test(x.url))).toBeFalsy(); expect(errors).toEqual([]);
 });
 
+test('LQ school auto push requires explicit exact slot and consent, preserves retry identity and waits for settlement', async ({ page }) => {
+  const current = {...round(2), state:'settling'}, writes:any[]=[]; let saved:any=null;
+  const target={course_name:'合成课程',course_code:'T001',teaching_class_name:'合成班',academic_year:'2026-2027',academic_term:1,session_date:'2026-11-09',week:11,day_of_week:1,section:'4,5'};
+  const errors=await fixture(page,async(route,url,body)=>{
+    if(url.endsWith('/sessions/12'))return json(route,{session,policy:current.policy,round:current});
+    if(url.endsWith('/capabilities'))return json(route,{read_sources:true,read_checkins:true,readback:true,auto_sync:true,update_student:true});
+    if(url.endsWith('/source-options'))return json(route,{items:[{course_name:'合成课程',course_code:'T001',teaching_class_name:'合成班',source_token:'synthetic-source'}]});
+    if(url.endsWith('/slot-options'))return json(route,{options:[{label:'2026-11-09 第11周星期一 4、5节 · 合成班 · 已有点名99',slot_token:'synthetic-slot',remote_checkin_id:'99',is_stopped:true,can_create:false,target}]});
+    if(url.endsWith('/auto-sync')&&route.request().method()==='PUT'){writes.push(body);if(writes.length===1)return json(route,{detail:'合成短暂故障'},503);saved={revision:1,enabled:true,state:'waiting_settlement',message:'正在等待补报结算',target,remote_checkin_id:'99',last_run:null};return json(route,{plan:saved});}
+    if(url.endsWith('/auto-sync'))return json(route,{plan:saved});
+    if(url.endsWith('/runs')||url.endsWith('/bindings'))return json(route,{items:[]});
+    return json(route,{detail:'unexpected '+url},500);
+  });
+  await open(page);await page.getByRole('button',{name:'智慧课堂核对',exact:true}).click();const d=page.getByRole('dialog',{name:'智慧课堂核对',exact:true});
+  await expect(d.getByText('本轮未启用学校自动推送',{exact:true})).toBeVisible();expect(writes).toHaveLength(0);
+  await d.getByRole('button',{name:'读取学校授课班'}).click();await choose(page,d,'学校授课班','合成课程 · T001 · 合成班');
+  await d.getByRole('button',{name:'读取本课学校课次'}).click();await choose(page,d,'学校准确课次与轮次','2026-11-09 第11周星期一 4、5节 · 合成班 · 已有点名99');
+  await expect(d.getByRole('button',{name:'启用本轮结束后自动推送'})).toBeDisabled();
+  await d.getByLabel('我知悉学校单会话限制，授权本轮后台使用已保存账号',{exact:true}).check();
+  await d.getByRole('button',{name:'启用本轮结束后自动推送'}).click();await expect(d.getByRole('alert')).toContainText('合成短暂故障');
+  await d.getByRole('button',{name:'启用本轮结束后自动推送'}).click();await expect(d.getByText('等待补报结算',{exact:true})).toBeVisible();
+  expect(writes).toHaveLength(2);expect(writes[0].idempotency_key).toBe(writes[1].idempotency_key);expect(writes[1]).toMatchObject({source_token:'synthetic-source',slot_token:'synthetic-slot',allow_create:false,enabled:true,acknowledge_session_takeover:true});expect(writes[1].location).toBeUndefined();
+  await page.screenshot({path:'.codex-temp/school-attendance-auto-sync-desktop.png',fullPage:true});
+  await page.keyboard.press('Escape');await expect(d).not.toBeVisible();await expect(page.getByRole('button',{name:'智慧课堂核对',exact:true})).toBeFocused();expect(saved.enabled).toBe(true);expect(errors).toEqual([]);
+});
+
+test('LQ school auto push denied geolocation keeps draft and permits an existing round, revision conflicts retain consent',async({page})=>{
+  await page.addInitScript(()=>Object.defineProperty(navigator,'geolocation',{value:{getCurrentPosition:(_ok:any,fail:any)=>fail({code:1})}}));
+  const current=round(2), requests:any[]=[];let version=7;
+  const errors=await fixture(page,async(route,url,body)=>{
+    if(url.endsWith('/sessions/12'))return json(route,{session,policy:current.policy,round:current});
+    if(url.endsWith('/capabilities'))return json(route,{read_sources:true,read_checkins:true,readback:true,auto_sync:true,update_student:true});
+    if(url.endsWith('/source-options'))return json(route,{items:[{course_name:'合成课程',course_code:'T001',teaching_class_name:'合成班',source_token:'synthetic-source'}]});
+    if(url.endsWith('/slot-options'))return json(route,{options:[{label:'明确的新课次',slot_token:'create-slot',can_create:true},{label:'明确的已有点名',slot_token:'existing-slot',remote_checkin_id:'99',can_create:false}]});
+    if(url.endsWith('/auto-sync/retry')){requests.push(body);if(body.expected_revision!==version)return json(route,{detail:'任务版本已变化'},409);return json(route,{plan:{revision:9,enabled:true,state:'pending',target:{}}});}
+    if(url.endsWith('/auto-sync'))return json(route,{plan:{revision:version,enabled:true,state:'paused',target:{}}});
+    if(url.endsWith('/runs')||url.endsWith('/bindings'))return json(route,{items:[]});return json(route,{detail:'unexpected '+url},500);
+  });
+  await open(page);await page.getByRole('button',{name:'智慧课堂核对',exact:true}).click();const d=page.getByRole('dialog',{name:'智慧课堂核对',exact:true});
+  await d.getByRole('button',{name:'读取学校授课班'}).click();await choose(page,d,'学校授课班','合成课程 · T001 · 合成班');await d.getByRole('button',{name:'读取本课学校课次'}).click();await choose(page,d,'学校准确课次与轮次','明确的新课次');
+  await d.getByRole('button',{name:'获取本次教室定位'}).click();await expect(d.getByRole('alert')).toContainText('未取得定位');
+  await choose(page,d,'学校准确课次与轮次','明确的已有点名');await expect(d.getByRole('button',{name:'获取本次教室定位'})).toBeDisabled();
+  const consent=d.getByLabel('我知悉学校单会话限制，授权本轮后台使用已保存账号',{exact:true});await consent.check();version=8;
+  await d.getByRole('button',{name:'核对后继续推送'}).click();await expect(d.getByRole('alert')).toContainText('配置或任务已变化');await expect(consent).toBeChecked();
+  await d.getByRole('button',{name:'刷新自动推送进度'}).click();await expect(consent).toBeChecked();await d.getByRole('button',{name:'核对后继续推送'}).click();await expect(d.getByText('已排队',{exact:true})).toBeVisible();expect(requests.map(x=>x.expected_revision)).toEqual([7,8]);
+  await page.keyboard.press('Escape');await expect(page.getByRole('dialog',{name:'关闭并放弃同步配置草稿？'})).toBeVisible();await page.getByRole('dialog',{name:'关闭并放弃同步配置草稿？'}).getByRole('button',{name:'取消',exact:true}).click();await expect(consent).toBeChecked();expect(errors).toEqual([]);
+});
+
+test('LQ historical school sync exposes saved verification without remote mutations',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  const current={...round(2),is_current:false,state:'void'},calls:string[]=[];
+  const errors=await fixture(page,async(route,url)=>{calls.push(route.request().method()+' '+url);if(url.endsWith('/sessions/12'))return json(route,{session,policy:current.policy,round:current});if(url.endsWith('/capabilities'))return json(route,{readback:true,auto_sync:true});if(url.endsWith('/auto-sync'))return json(route,{plan:{revision:3,state:'void',enabled:false,target:{},last_run:{operations:[{student_number:'S001',target_status:'CHECKED',remote_status:'CHECKED',state:'confirmed',reason:'学校回读一致'}]}}});if(url.endsWith('/runs'))return json(route,{items:[{id:'automatic-only-run',mode:'auto_sync'}]});if(url.endsWith('/bindings'))return json(route,{items:[]});return json(route,{detail:'unexpected'},500);});
+  await open(page);await page.getByRole('button',{name:'查看学校同步记录'}).click();const d=page.getByRole('dialog',{name:'智慧课堂核对',exact:true});await expect(d.getByText('学校回读一致',{exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'启用本轮结束后自动推送'})).toHaveCount(0);await expect(d.getByRole('button',{name:'重新授权后台连接'})).toHaveCount(0);await expect(d.getByLabel('学年',{exact:true})).not.toBeVisible();expect(await d.evaluate(n=>n.scrollWidth<=n.clientWidth+1)).toBe(true);await page.screenshot({path:'.codex-temp/school-attendance-auto-sync-mobile.png',fullPage:true});expect(calls.every(x=>x.startsWith('GET '))).toBe(true);expect(calls.some(x=>x.endsWith('/runs/automatic-only-run'))).toBe(false);expect(errors).toEqual([]);
+});
+
 test('LQ repeated attendance open and close removes child roots and does not accumulate polls', async ({page})=>{
   let gets=0;const current=round(2);const errors=await fixture(page,async(route,url)=>{gets++;return json(route,{session,policy:current.policy,round:current});});
   await page.getByRole('button',{name:'进入课次',exact:true}).click();

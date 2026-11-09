@@ -9,6 +9,7 @@
 .la-bulk-fields>.lq-field { flex:1 1 12rem; }
 .la-content { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(17rem,1fr); gap:1rem; align-items:start; }
 .la-list-pane,.la-detail,.la-form { display:grid; gap:.85rem; min-width:0; }
+.la-form[hidden] { display:none; }
 .la-students { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; }
 .la-student-body { display:grid; gap:.5rem; }
 .la-student-body p,.la-facts p { margin:0; overflow-wrap:anywhere; }
@@ -16,6 +17,7 @@
 .la-detail { position:sticky; top:0; overflow-wrap:anywhere; }
 .la-dialog .lq-dialog__body { min-height:0; overflow:auto; }
 .la-dialog .lq-table { width:100%; }
+.la-dialog .lq-table td { overflow-wrap:anywhere; }
 .la-appeal { display:grid; gap:.65rem; }
 .lad-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; min-width:0; }
 .lad-session-body { display:grid; gap:.6rem; min-width:0; overflow-wrap:anywhere; }

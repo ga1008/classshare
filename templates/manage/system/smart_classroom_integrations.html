@@ -16,7 +16,8 @@
 {% from "macros/lq/chip-row.html" import lq_chip_row %}
 {% from "macros/lq/forms.html" import lq_field %}
 <section class="smart-classroom-shell">
-    <p>本地点名从课堂课次的“自动点名”进入；此处单独管理本人学校账号。学校端开始、结束和改签须在官方微信小程序完成，再回课堂绑定准确点名并回读核对。逐人状态一致不等于完整远端流程已完成。</p>
+    <p>本地点名从课堂课次的“自动点名”进入；此处管理本人学校账号、读取学校点名记录。需要向学校推送时，请在具体课次的“智慧课堂核对”中核对学校课次，并单独启用本轮自动推送。</p>
+    <p role="note">学校账号只支持一个登录会话。保存、重新验证或后台恢复登录可能使微信小程序需要重新登录；小程序再次登录也可能中断后台连接。系统会保留已确认进度，提示重新授权后继续核对。</p>
     {{ page_head('广外智慧课堂对接', eyebrow='SMART CLASSROOM', description='保存账号前会先登录校验。校验通过后，系统会顺序同步教师可见的授课班点名记录，并按课程编号、教学班、学期和课次日期对齐到本平台课堂。',
         actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'smart-account-manage-btn'}, {'label': '一键同步', 'variant': 'primary', 'id': 'smart-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'smart-sync-capability-refresh-btn'}], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
     {% if _smart_lq_enabled %}
@@ -25,7 +26,7 @@
             {% if slot == 'body' %}
             {{ lq_chip_row('smart-sync-method-chips', '同步方式', [
                 {'label': '点名记录'}, {'label': '课次对齐'},
-                {'label': '顺序同步'}, {'label': '不写入智慧课堂'}]) }}
+                {'label': '顺序同步'}, {'label': '本页读取学校记录'}]) }}
             {% endif %}
         {% endcall %}
         {% call(slot) lq_card('当前适配器') %}
@@ -58,7 +59,7 @@
                     <span class="smart-classroom-chip">点名记录</span>
                     <span class="smart-classroom-chip">课次对齐</span>
                     <span class="smart-classroom-chip">顺序同步</span>
-                    <span class="smart-classroom-chip">不写入智慧课堂</span>
+                    <span class="smart-classroom-chip">本页读取学校记录</span>
                 </div>
             </div>
         </article>

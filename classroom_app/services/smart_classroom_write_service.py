@@ -1,8 +1,7 @@
-"""Durable school attendance handoff, preview and readback.
+"""Shared school attendance ledger and the original teacher handoff/readback.
 
-The verified adapter is read-only. Unknown start/end/update protocols cannot
-be enabled by environment variables, client flags, or a forged capability.
-Local attendance and imported PDFs are never mutated by this module.
+Automatic writes use the separately authorized auto-sync service. Legacy
+readback actions cannot modify its operations or erase submission intentions.
 """
 from __future__ import annotations
 
@@ -33,15 +32,17 @@ def _hash(value): return hashlib.sha256(_json(value).encode()).hexdigest()
 
 
 def capabilities():
-    return {"contract": "gxufl-attendance-readback-v1", "read_sources": True, "read_checkins": True,
-            "readback": True, "start": False, "end": False, "update_student": False,
-            "remote_lifecycle_verified": False, "mode": "teacher_handoff",
-            "message": "可绑定学校官方端已发起的点名并核对学生状态；开始、结束及改签写协议尚未核实，请在学校官方端完成。"}
+    from . import smart_classroom_miniapp_adapter as mini
+    return {"contract": "gxufl-attendance-write-v2", "read_sources": True, "read_checkins": True,
+            "readback": True, "start": mini.LIFECYCLE_VERIFIED, "end": mini.LIFECYCLE_VERIFIED,
+            "update_student": mini.STUDENT_WRITE_VERIFIED, "auto_sync": True,
+            "remote_lifecycle_verified": mini.LIFECYCLE_VERIFIED, "mode": "verified_round_sync",
+            "message": "教师可授权本轮自动同步；服务器只处理精确绑定课次、已发布结果和唯一匹配学生，并逐人回读确认。"}
 
 
 def require_write_capability(operation):
-    # No guessed save/update calls and no user-controlled adapter registry.
-    raise HTTPException(409, {"code": "write_protocol_unverified", "message": capabilities()["message"]})
+    if operation not in {"start", "end", "update_student"} or not capabilities().get(operation):
+        raise HTTPException(409, {"code": "write_protocol_unverified", "message": "该写入操作尚未完成真实核实。"})
 
 
 def load_local_context(conn, user, round_id):
@@ -140,7 +141,7 @@ async def _account_lease(key):
         conn.commit()
     if not row:
         raise HTTPException(429, "该智慧课堂账号正在核对，请稍后重试。", headers={"Retry-After": "3"})
-    try: yield
+    try: yield token
     finally:
         with get_db_connection() as conn:
             conn.execute("DELETE FROM smart_attendance_account_leases WHERE external_account_key=? AND lease_token=?", (key, token)); conn.commit()
@@ -260,13 +261,18 @@ def _run(conn, user, round_id, run_id):
     row = conn.execute("SELECT * FROM smart_attendance_sync_runs WHERE id=? AND owner_teacher_id=? AND local_round_id=?",
                        (str(run_id),int(user["id"]),str(round_id))).fetchone()
     if not row: raise HTTPException(404, "同步任务不存在或无访问权限。")
-    return ctx, dict(row)
+    return ctx, {**dict(row),"mode":"auto_sync" if str(row["request_key"] or "").startswith("auto:") else "teacher_handoff"}
+
+
+def _require_handoff(run):
+    if run.get("mode")=="auto_sync":
+        raise HTTPException(409,"此任务属于本轮自动推送，请在自动推送区域查看、暂停或重试，保留逐人提交记录。")
 
 
 def get_run(user, round_id, run_id):
     with get_db_connection() as conn:
         _, run = _run(conn,user,round_id,run_id)
-        public = {key:run[key] for key in ("id","binding_id","state","revision","message","verified_at","created_at","updated_at")}
+        public = {key:run[key] for key in ("id","binding_id","state","revision","message","verified_at","created_at","updated_at","mode")}
         public["operations"] = [dict(row) for row in conn.execute("SELECT student_id,student_number,baseline_status,target_status,remote_status,state,reason FROM smart_attendance_sync_operations WHERE run_id=? ORDER BY student_id",(run_id,)).fetchall()]
         public.update(capabilities=capabilities(), confirmation_scope="student_status_readback_only", full_remote_round_confirmed=False)
         return public
@@ -275,8 +281,10 @@ def get_run(user, round_id, run_id):
 def enqueue_readback(conn, user, round_id, preview_id, request_key):
     from .scheduled_task_service import schedule_task
     ctx, run = _run(conn,user,round_id,preview_id)
+    _require_handoff(run)
     key = str(request_key or "").strip()
     if not 1 <= len(key) <= 160: raise HTTPException(422,"请提供有效幂等请求标识。")
+    if key.startswith("auto:"):raise HTTPException(422,"该请求标识前缀保留给自动推送任务。")
     prior = conn.execute("SELECT id FROM smart_attendance_sync_runs WHERE owner_teacher_id=? AND request_key=?",(user["id"],key)).fetchone()
     if prior:
         if str(prior["id"]) != str(preview_id): raise HTTPException(409,"该请求标识已用于另一预览。")
@@ -333,6 +341,7 @@ def _readback_failure(user, round_id, run_id, revision):
 async def reconcile_run(user, round_id, run_id):
     with get_db_connection() as conn:
         ctx, run = _run(conn,user,round_id,run_id)
+        _require_handoff(run)
         if run["state"] in {"paused","superseded"}: return {"id":run_id,"state":run["state"]}
         unknown = _unknown_submission(conn,run)
         historical = _historical(ctx)
@@ -380,6 +389,7 @@ async def reconcile_run(user, round_id, run_id):
 
 def pause_run(conn,user,round_id,run_id,expected_revision):
     _,run=_run(conn,user,round_id,run_id)
+    _require_handoff(run)
     if _unknown_submission(conn,run):raise HTTPException(409,"旧请求结果未知，不能用暂停隐藏未核实的提交；请继续回读核对。")
     if int(run["revision"])!=int(expected_revision):raise HTTPException(409,"同步任务已变化，请刷新后重试。")
     cursor=conn.execute("UPDATE smart_attendance_sync_runs SET state='paused',revision=revision+1,updated_at=? WHERE id=? AND revision=?",(_now(),run_id,expected_revision))
@@ -388,9 +398,11 @@ def pause_run(conn,user,round_id,run_id,expected_revision):
     return {"id":run_id,"state":"paused"}
 
 
-def reauthorize_binding(conn,user,round_id,binding_id,expected_revision):
+def reauthorize_binding(conn,user,round_id,binding_id,expected_revision,*,auto_sync=False):
     """Same external account only; never relabel old work as unsent."""
     _,binding=_binding(conn,user,round_id,binding_id,lock=True)
+    if not auto_sync and conn.execute("SELECT 1 FROM smart_attendance_auto_sync WHERE binding_id=? LIMIT 1",(binding_id,)).fetchone():
+        raise HTTPException(409,"此绑定由自动推送管理，请使用自动推送区域的重新授权入口。")
     if binding["revision"]!=expected_revision:raise HTTPException(409,"绑定已变化，请刷新。")
     access=_account_access(conn,user["id"],binding["external_account_key"])
     cursor=conn.execute("UPDATE smart_attendance_write_bindings SET credential_id=?,credential_generation=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?",
@@ -405,7 +417,9 @@ def reauthorize_binding(conn,user,round_id,binding_id,expected_revision):
 
 def list_runs(conn,user,round_id):
     load_read_context(conn,user,round_id)
-    return [dict(row) for row in conn.execute("SELECT id,binding_id,state,revision,message,verified_at,created_at,updated_at FROM smart_attendance_sync_runs WHERE owner_teacher_id=? AND local_round_id=? ORDER BY created_at DESC LIMIT 50",(user["id"],str(round_id))).fetchall()]
+    return [dict(row) for row in conn.execute("SELECT id,binding_id,state,revision,message,verified_at,created_at,updated_at,"
+        "CASE WHEN request_key LIKE 'auto:%' THEN 'auto_sync' ELSE 'teacher_handoff' END AS mode "
+        "FROM smart_attendance_sync_runs WHERE owner_teacher_id=? AND local_round_id=? ORDER BY created_at DESC LIMIT 50",(user["id"],str(round_id))).fetchall()]
 
 
 def list_bindings(conn,user,round_id):

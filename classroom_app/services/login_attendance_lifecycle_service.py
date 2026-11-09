@@ -32,6 +32,15 @@ def blockers(conn, offering_ids, *, merging):
         leases=conn.execute(f"SELECT COUNT(*) AS n FROM smart_attendance_write_bindings b JOIN smart_attendance_account_leases l "
             f"ON l.external_account_key=b.external_account_key WHERE b.class_offering_id IN ({marks}) AND l.lease_until>?",(*ids,_now())).fetchone()['n']
         if pending or leases:messages.append("智慧课堂仍有正在处理或结果待核实的同步，请先完成远端回读核对，再合班或删除课堂。")
+    if _exists(conn,'smart_attendance_auto_sync'):
+        unknown=conn.execute(f"SELECT COUNT(*) AS n FROM smart_attendance_auto_sync a WHERE a.class_offering_id IN ({marks}) "
+            "AND (a.state='outcome_unknown' OR EXISTS (SELECT 1 FROM smart_attendance_sync_operations o "
+            "WHERE o.run_id=a.last_run_id AND o.state='outcome_unknown'))",ids).fetchone()['n']
+        from .smart_classroom_write_service import _now
+        active=conn.execute(f"SELECT COUNT(*) AS n FROM smart_attendance_auto_sync a JOIN smart_attendance_account_leases l "
+            f"ON l.external_account_key=a.external_account_key WHERE a.class_offering_id IN ({marks}) AND l.lease_until>?",
+            (*ids,_now())).fetchone()['n']
+        if unknown or active:messages.append("智慧课堂自动推送尚有进行中或结果未知的请求，请先完成回读核实，保护原考勤。")
     return messages
 
 
@@ -42,6 +51,17 @@ def _pause_remote(conn, offering_ids, *, target_id=None):
     from .smart_classroom_write_service import _now
     from .scheduled_task_service import cancel_tasks_by_dedupe
     stamp=_now()
+    if _exists(conn,'smart_attendance_auto_sync'):
+        plans=conn.execute(f"SELECT local_round_id FROM smart_attendance_auto_sync WHERE class_offering_id IN ({marks})",tuple(offering_ids)).fetchall()
+        for plan in plans:
+            if _exists(conn,'scheduled_tasks'):
+                tasks=conn.execute("SELECT dedupe_key FROM scheduled_tasks WHERE task_kind='smart_attendance_auto_sync' "
+                    "AND dedupe_key LIKE ? AND status IN ('pending','running')",('smart-auto:'+str(plan['local_round_id'])+':%',)).fetchall()
+                for task in tasks:cancel_tasks_by_dedupe(conn,task['dedupe_key'])
+            conn.execute("UPDATE smart_attendance_auto_sync SET enabled=0,state='void',revision=revision+1,session_id=NULL,"
+                "message=?,updated_at=?"+(" ,class_offering_id=?" if target_id is not None else "")+" WHERE local_round_id=?",
+                ('课堂归档，停止后续同步，保留学校原始考勤与审计。',stamp,target_id,plan['local_round_id']) if target_id is not None
+                else ('课堂归档，停止后续同步，保留学校原始考勤与审计。',stamp,plan['local_round_id']))
     for binding in bindings:
         runs=conn.execute("SELECT id,state FROM smart_attendance_sync_runs WHERE binding_id=?",(binding['id'],)).fetchall()
         for run in runs:

@@ -6,6 +6,8 @@ import unittest
 from unittest.mock import patch
 
 from classroom_app.db.schema_login_attendance import ensure_login_attendance_schema
+from classroom_app.db.schema_smart_classroom_write import ensure_smart_classroom_write_schema
+from classroom_app.db.schema_smart_classroom_auto_sync import ensure_smart_classroom_auto_sync_schema
 from classroom_app.services import approval_workflow_schema as schema
 from classroom_app.services import approval_workflow_service as workflow
 from classroom_app.services import login_attendance_service as attendance
@@ -27,6 +29,8 @@ class AttendanceAppealTests(unittest.TestCase):
         patch.object(attendance,"get_configured_db_engine",return_value="sqlite").start()
         patch.object(appeal,"get_configured_db_engine",return_value="sqlite").start()
         ensure_login_attendance_schema(self.conn,engine="sqlite")
+        ensure_smart_classroom_write_schema(self.conn,engine='sqlite')
+        ensure_smart_classroom_auto_sync_schema(self.conn,engine='sqlite')
         schema.ensure_approval_workflow_schema(self.conn)
         self.now=attendance.now_ms()
         ctx={"class_offering_id":11,"session_id":21,"course_name":"Synthetic","year":"2026-2027","term":1}

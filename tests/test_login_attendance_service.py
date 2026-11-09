@@ -5,6 +5,8 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 from classroom_app.db.schema_login_attendance import ensure_login_attendance_schema
+from classroom_app.db.schema_smart_classroom_write import ensure_smart_classroom_write_schema
+from classroom_app.db.schema_smart_classroom_auto_sync import ensure_smart_classroom_auto_sync_schema
 from classroom_app.services import login_attendance_service as service
 from classroom_app.services.login_attendance_access_service import record_access
 from classroom_app.services import approval_workflow_schema
@@ -29,6 +31,8 @@ class LoginAttendanceServiceTests(unittest.TestCase):
           INSERT INTO class_offering_sessions VALUES(22,10,'Later','2026-11-08',6,11,'4,5','','E1','normal');
         """)
         ensure_login_attendance_schema(self.conn,engine='sqlite')
+        ensure_smart_classroom_write_schema(self.conn,engine='sqlite')
+        ensure_smart_classroom_auto_sync_schema(self.conn,engine='sqlite')
         patcher=patch.object(approval_workflow_schema,'_SCHEMA_READY',False)
         patcher.start(); self.addCleanup(patcher.stop)
         approval_workflow_schema.ensure_approval_workflow_schema(self.conn)

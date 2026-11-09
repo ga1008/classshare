@@ -7,7 +7,7 @@ import re
 import ssl
 import time
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, AsyncIterator
 
@@ -20,6 +20,12 @@ from .academic_integration_service import (
     STATUS_VERIFIED,
     decrypt_academic_secret,
     encrypt_academic_secret,
+)
+from .smart_classroom_session_service import (
+    SmartClassroomSessionError,
+    acquire_session,
+    mark_session_unauthorized,
+    revoke_credential_sessions,
 )
 
 
@@ -58,6 +64,20 @@ class SmartClassroomTransport(httpx.AsyncHTTPTransport):
             raise ValueError("智慧课堂连接只允许已配置的学校 HTTPS 服务。")
         request.headers["Host"] = "edu_api.gxufl.com"
         request.extensions["sni_hostname"] = "gxufl.com"
+        return await super().handle_async_request(request)
+
+
+class SmartClassroomMiniTransport(httpx.AsyncHTTPTransport):
+    """The verified mini-program API has a regular, fully checked TLS name."""
+    def __init__(self):
+        super().__init__(verify=smart_classroom_tls_context(), trust_env=False, retries=0)
+
+    async def handle_async_request(self, request):
+        if (request.url.scheme != "https" or request.url.host != "edu-api.gxufl.com"
+                or request.url.port not in (None, 443)):
+            raise ValueError("智慧课堂连接只允许已配置的学校 HTTPS 服务。")
+        request.headers["Host"] = "edu-api.gxufl.com"
+        request.extensions["sni_hostname"] = "edu-api.gxufl.com"
         return await super().handle_async_request(request)
 
 
@@ -255,6 +275,7 @@ def _smart_headers(profile: SmartClassroomProfile) -> dict[str, str]:
         "Accept": "application/json, text/plain, */*",
         "Origin": profile.base_url,
         "Referer": f"{profile.base_url}/",
+        "Tenant-Id": "1",
     }
 
 
@@ -274,6 +295,8 @@ async def _login_smart_classroom_client(
         )
         response.raise_for_status()
         payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Unexpected login response")
     except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
         return (
             _failure_result(
@@ -289,13 +312,7 @@ async def _login_smart_classroom_client(
     err_no = payload.get("errNo")
     token = str(payload.get("token") or "").strip()
     if err_no not in (0, "0") or not token:
-        message = (
-            payload.get("msg")
-            or payload.get("message")
-            or payload.get("errMsg")
-            or "智慧课堂账号或密码校验失败。"
-        )
-        return _failure_result(profile, STATUS_FAILED, str(message)[:260], elapsed_ms=elapsed_ms), ""
+        return _failure_result(profile, STATUS_FAILED, "智慧课堂账号或密码校验失败。", elapsed_ms=elapsed_ms), ""
 
     if payload.get("isTeacher") is False:
         return (
@@ -314,10 +331,13 @@ async def _login_smart_classroom_client(
     user_info: dict[str, Any] = {}
     try:
         info_response = await client.get("/user/getUserInfo", params={"_t": int(time.time() * 1000)})
+        if info_response.status_code == 401:
+            return _failure_result(profile, STATUS_FAILED, "智慧课堂会话已被其他登录替换，请教师重新授权。"), ""
         if info_response.status_code < 400:
             info_payload = info_response.json()
             if isinstance(info_payload, dict):
-                user_info = info_payload
+                user_info = {key: info_payload[key] for key in ("realName", "name", "username", "isTeacher", "id")
+                             if key in info_payload and isinstance(info_payload[key], (str, int, bool, type(None)))}
                 display_name = str(
                     info_payload.get("realName")
                     or info_payload.get("name")
@@ -342,52 +362,60 @@ async def _login_smart_classroom_client(
 async def verify_smart_classroom_credential(payload: dict[str, Any]) -> dict[str, Any]:
     normalized = normalize_smart_classroom_credential_payload(payload)
     profile = get_smart_classroom_profile(normalized["platform_code"])
-    timeout = httpx.Timeout(SMART_CLASSROOM_HTTP_TIMEOUT_SECONDS, connect=8.0)
-    async with httpx.AsyncClient(
-        base_url=profile.api_base_url,
-        timeout=timeout,
-        headers=_smart_headers(profile),
-        transport=SmartClassroomTransport(),
-        trust_env=False,
-        follow_redirects=False,
-    ) as client:
-        result, _token = await _login_smart_classroom_client(
-            client,
-            profile,
-            username=normalized["username"],
-            password=normalized["password"],
-        )
-        return result
+    try:
+        async with open_authenticated_smart_classroom_client(normalized, force_reauth=True) as (_, _, result):
+            return result
+    except SmartClassroomSessionError as exc:
+        result = exc.verification_result or _failure_result(
+            profile, STATUS_UNAVAILABLE if exc.code == "session_busy" else STATUS_FAILED, str(exc))
+        return {**result, "error_code": exc.code}
 
 
 @asynccontextmanager
 async def open_authenticated_smart_classroom_client(
     access_payload: dict[str, Any],
+    *,
+    api: str = "pc",
+    login_scope: str | None = None,
+    allow_login: bool = False,
+    force_reauth: bool = False,
 ) -> AsyncIterator[tuple[httpx.AsyncClient, SmartClassroomProfile, dict[str, Any]]]:
     profile = get_smart_classroom_profile(access_payload.get("platform_code") or "gxufl_smart_classroom")
     username = _normalize_username(access_payload.get("username"))
     password = _normalize_password(access_payload.get("password"))
     if profile.adapter_key != "gxufl_smart_classroom_v3" or profile.auth_method != "password_token":
         raise ValueError("该智慧课堂适配器暂不支持自动登录会话。")
+    if api not in {"pc", "mini"}:
+        raise ValueError("未知的智慧课堂接口类型。")
+    if api == "mini":
+        profile = replace(profile, api_base_url="https://edu-api.gxufl.com/api")
 
     timeout = httpx.Timeout(SMART_CLASSROOM_HTTP_TIMEOUT_SECONDS, connect=8.0)
     client = httpx.AsyncClient(
         base_url=profile.api_base_url,
         timeout=timeout,
         headers=_smart_headers(profile),
-        transport=SmartClassroomTransport(),
+        transport=SmartClassroomMiniTransport() if api == "mini" else SmartClassroomTransport(),
         trust_env=False,
         follow_redirects=False,
     )
     try:
-        login_result, _token = await _login_smart_classroom_client(
-            client,
-            profile,
-            username=username,
-            password=password,
+        async def login():
+            return await _login_smart_classroom_client(client, profile, username=username, password=password)
+
+        session = await acquire_session(
+            access_payload, login, login_scope=login_scope, allow_login=allow_login, force_reauth=force_reauth,
         )
-        if login_result.get("status") != STATUS_VERIFIED:
-            raise ValueError(str(login_result.get("message") or "智慧课堂登录校验未通过。"))
+        client.headers["Authorization"] = session.token
+
+        async def check_authorization(response):
+            if response.status_code == 401:
+                mark_session_unauthorized(session)
+                await response.aclose()
+                raise SmartClassroomSessionError("needs_teacher_reauth")
+
+        client.event_hooks["response"].append(check_authorization)
+        login_result = session.login_result or _success_result(profile, username=username)
         yield client, profile, login_result
     finally:
         await client.aclose()
@@ -476,6 +504,12 @@ def save_verified_smart_classroom_credential(
     now = _now_iso()
     checked_at = str(verification.get("checked_at") or now)
     access_method_json = _json_dumps(profile.access_method())
+    previous = conn.execute("SELECT * FROM teacher_smart_classroom_credentials "
+                            "WHERE teacher_id=? AND platform_code=? AND auth_method=?",
+                            (int(teacher_id), profile.platform_code, profile.auth_method)).fetchone()
+    if previous is not None:
+        revoke_credential_sessions(conn, previous,
+                                   preserve_access=normalized if normalized["enabled"] else None)
     conn.execute(
         """
         INSERT INTO teacher_smart_classroom_credentials (
@@ -533,6 +567,8 @@ def save_verified_smart_classroom_credential(
         """,
         (int(teacher_id), profile.platform_code, profile.auth_method),
     ).fetchone()
+    if not normalized["enabled"]:
+        revoke_credential_sessions(conn, row)
     return serialize_smart_classroom_credential(row)
 
 
@@ -555,11 +591,17 @@ def update_smart_classroom_credential_verification_status(
     credential_id: int | str,
     verification: dict[str, Any],
 ) -> dict[str, Any]:
-    get_teacher_smart_classroom_credential(conn, teacher_id, credential_id)
+    previous = get_teacher_smart_classroom_credential(conn, teacher_id, credential_id)
+    if verification.get("error_code") == "session_busy":
+        # A duplicate verification must not revoke the first in-flight login.
+        return serialize_smart_classroom_credential(previous)
     now = _now_iso()
     status = str(verification.get("status") or STATUS_UNCHECKED)
     checked_at = str(verification.get("checked_at") or now)
     is_verified = status == STATUS_VERIFIED
+    revoke_credential_sessions(conn, previous, preserve_access=(
+        build_saved_smart_classroom_verification_payload(previous)
+        if is_verified and previous["enabled"] else None))
     conn.execute(
         """
         UPDATE teacher_smart_classroom_credentials
@@ -590,7 +632,8 @@ def update_smart_classroom_credential_verification_status(
 
 
 def delete_teacher_smart_classroom_credential(conn, teacher_id: int | str, credential_id: int | str) -> int:
-    get_teacher_smart_classroom_credential(conn, teacher_id, credential_id)
+    previous = get_teacher_smart_classroom_credential(conn, teacher_id, credential_id)
+    revoke_credential_sessions(conn, previous)
     cursor = conn.execute(
         """
         DELETE FROM teacher_smart_classroom_credentials

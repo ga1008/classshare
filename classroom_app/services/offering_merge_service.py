@@ -114,6 +114,7 @@ def _rules() -> dict[str, MergeRule]:
     rules["behavior_collection_observations"] = MergeRule(STRATEGY_COLLECTION_OBSERVATIONS)
     rules["login_attendance_rounds"] = MergeRule(STRATEGY_ATTENDANCE_HISTORY)
     rules["smart_attendance_write_bindings"] = MergeRule(STRATEGY_ATTENDANCE_HISTORY)
+    rules["smart_attendance_auto_sync"] = MergeRule(STRATEGY_ATTENDANCE_HISTORY)
     rules["login_attendance_policies"] = MergeRule(STRATEGY_KEEP_TARGET)
     rules["approval_requests"] = MergeRule(STRATEGY_REPOINT)
     rules["class_offering_sessions"] = MergeRule(STRATEGY_SESSION_STRUCTURE)

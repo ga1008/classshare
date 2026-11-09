@@ -39,7 +39,7 @@
 | [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 183 |
 | [Indicators 徽标 / 头像 / 进度 / 加载](#indicators) | component | `lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner` | 宏 / JS / Py / React | 20 |
 | [Insights 统计（AvatarStack / Ring / Bars / Meter）](#insights) | component | `lq-avatar-stack`, `lq-bars`, `lq-insight`, `lq-meter`, `lq-ring` | 宏 / JS / Py | 4 |
-| [Layer 层栈](#layers) | component | — | JS | 29 |
+| [Layer 层栈](#layers) | component | — | JS | 30 |
 | [Lightbox 灯箱](#lightbox) | component | `lq-lightbox` | JS | 1 |
 | [Menu / Popover 菜单与浮层](#menus) | component | `lq-menu` | 宏 / JS / Py | 12 |
 | [NavMenu 导航菜单](#nav-menu) | component | `lq-nav-menu` | 宏 / JS / Py | 6 |
@@ -941,6 +941,7 @@
 - `static/js/course_schedule_editor_styles.js` ×2
 - `static/js/knowledge_tree/chrome.js` ×2
 - `static/js/knowledge_tree/side.js` ×2
+- `static/js/login_attendance_sync.js` ×2
 - `static/js/manage_classrooms.js` ×2
 - `static/js/manage_filter_chips.js` ×2
 - `static/js/message_center_blog.js` ×2
@@ -948,7 +949,6 @@
 - `static/js/attendance_dashboard.js` ×1
 - `static/js/course_schedule_styles.js` ×1
 - `static/js/login_attendance.js` ×1
-- `static/js/login_attendance_sync.js` ×1
 - `static/js/manage_classes.js` ×1
 - `static/js/manage_gongwen.js` ×1
 - `static/js/manage_wanderers.js` ×1
@@ -1471,6 +1471,7 @@
 - `static/js/ai_workspace_capture.js` ×4
 - `static/js/blog_studio.js` ×4
 - `static/js/course_schedule_deck.js` ×4
+- `static/js/login_attendance_sync.js` ×4
 - `static/js/material_viewer.js` ×4
 - `static/js/offering_bootstrap.js` ×4
 - `static/js/profile.js` ×4
@@ -1504,7 +1505,6 @@
 - `static/js/global_search.js` ×2
 - `static/js/knowledge_tree/side.js` ×2
 - `static/js/login_attendance.js` ×2
-- `static/js/login_attendance_sync.js` ×2
 - `static/js/manage_blog_review.js` ×2
 - `static/js/manage_gongwen.js` ×2
 - `static/js/manage_signatures.js` ×2
@@ -1606,7 +1606,7 @@
 - **设计摘要**：`getLayerSystem()` 唯一持有层级、焦点、背景 inert、滚动锁、嵌套顺序与关闭；可移植领域弹层显式注册。
 - **规则**：禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。 2026-10-28 close 的 beforeClose 自有确认子层沿祖先推进 pending 序号，成功关闭仍返回有效触发器；无关新层打断后不再恢复旧焦点请求。覆盖新开/重开/ordered external，保留新窗口防抢焦点与取消合同，见 social-dm-sidebar-2026-10-28 和 layer-core 浏览器回归。
 - **JS 入口** `static/js/lq/layer.js`：`getLayerSystem`
-- **消费者**：29 个文件
+- **消费者**：30 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1628,6 +1628,7 @@
 - `static/js/login_attendance.js` ×2
 - `static/js/login_attendance_attention.js` ×2
 - `static/js/login_attendance_history.js` ×2
+- `static/js/login_attendance_sync.js` ×2
 - `static/js/ls_date_picker.js` ×2
 - `static/js/ls_image_lightbox.js` ×2
 - `static/js/process_material_modal.js` ×2

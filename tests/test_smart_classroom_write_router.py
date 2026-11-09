@@ -14,8 +14,11 @@ from tests import test_smart_classroom_write as fixtures
 class SmartWriteRouterTests(unittest.TestCase):
     def setUp(self):
         self.fixture=fixtures.SmartWriteTests(methodName="test_handoff_diff_external_change_and_readback_conserve_all_people")
-        self.fixture.setUp()
+        # The nested async fixture needs its runner for doCleanups to execute.
+        self.fixture._setupAsyncioRunner()
+        self.addCleanup(self.fixture._tearDownAsyncioRunner)
         self.addCleanup(self.fixture.doCleanups)
+        self.fixture.setUp()
         self.preview=asyncio.run(self.fixture.preview())
         self.user=self.fixture.user.copy()
         patcher=patch.object(routes,"get_db_connection",self.fixture.database)
@@ -55,9 +58,11 @@ class SmartWriteRouterTests(unittest.TestCase):
             self.assertEqual(first.json(),second.json())
             self.assertEqual(1,schedule.call_count)
         capabilities=self.client.get(self.base+"/capabilities").json()
-        self.assertFalse(capabilities["start"])
-        self.assertFalse(capabilities["end"])
-        self.assertFalse(capabilities["update_student"])
+        from classroom_app.services import smart_classroom_miniapp_adapter as mini
+        self.assertEqual(mini.LIFECYCLE_VERIFIED,capabilities["start"])
+        self.assertEqual(mini.LIFECYCLE_VERIFIED,capabilities["end"])
+        self.assertEqual(mini.STUDENT_WRITE_VERIFIED,capabilities["update_student"])
+        self.assertTrue(capabilities["auto_sync"])
 
     def test_forged_source_is_rejected_before_any_remote_request(self):
         before=self.fixture.remote.await_count
@@ -76,6 +81,20 @@ class SmartWriteRouterTests(unittest.TestCase):
             self.assertNotIn(secret,response.text)
         self.user={"role":"teacher","id":2}
         self.assertEqual(403,self.client.get(self.base+"/bindings").status_code)
+
+    def test_legacy_controls_cannot_mutate_an_automatic_run(self):
+        run_id=self.preview["id"]
+        self.fixture.conn.execute("UPDATE smart_attendance_sync_runs SET request_key='auto:synthetic' WHERE id=?",(run_id,))
+        self.fixture.conn.commit()
+        before=[dict(row) for row in self.fixture.conn.execute("SELECT * FROM smart_attendance_sync_operations WHERE run_id=? ORDER BY id",(run_id,))]
+        remote_before=self.fixture.remote.await_count
+        for suffix,payload in ((f"/runs/{run_id}/refresh",{}),(f"/runs/{run_id}/pause",{"expected_revision":1}),
+                               ("/runs",{"preview_id":run_id,"idempotency_key":"legacy-request"})):
+            response=self.client.post(self.base+suffix,json=payload)
+            self.assertEqual(409,response.status_code,response.text)
+        after=[dict(row) for row in self.fixture.conn.execute("SELECT * FROM smart_attendance_sync_operations WHERE run_id=? ORDER BY id",(run_id,))]
+        self.assertEqual(before,after)
+        self.assertEqual(remote_before,self.fixture.remote.await_count)
 
 
 if __name__=="__main__":unittest.main()
