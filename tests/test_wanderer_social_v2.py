@@ -54,6 +54,8 @@ class SocialV2Test(WandererWorldTestCase):
                 conn.execute(f"DELETE FROM {row['name']}")
             conn.execute("DELETE FROM wanderer_bonds")
             conn.execute("DELETE FROM wanderer_wake_events")
+            for table in ('wanderer_commands','wanderer_turns','wanderer_runtime_leases'):
+                conn.execute(f'DELETE FROM {table}')
             conn.commit()
 
     def affinity(self,conn,actor,peer,value,operation):
@@ -237,6 +239,46 @@ class SocialV2Test(WandererWorldTestCase):
             self.assertEqual(len({r["sender_identity"] for r in texts}),2)
             states=conn.execute("SELECT handled_message_id FROM wanderer_group_observations WHERE group_id=?",(gid,)).fetchall()
             self.assertTrue(all(r["handled_message_id"]>0 for r in states))
+
+    def test_group_protocol_repair_after_next_day_budget_advances_original_watermark(self):
+        from datetime import datetime,timedelta
+        from fastapi import FastAPI
+        from classroom_app.routers.social import router
+        from classroom_app.services import wanderer_platform_service as platform,wanderer_runtime_service as runtime
+        from classroom_app.services.wanderer_group_runtime_service import run_member_group
+        from classroom_app.services.wanderer_settings_service import wanderer_runtime_setting_set
+        from classroom_app.time_utils import local_iso
+        from tests.test_wanderer_runtime_v2 import Caller,decision,command
+        gid,key=self.make_group(self.atai,self.lele)
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn,'autonomous_v2_enabled','1')
+            conn.execute("UPDATE wanderer_agents SET born_at=?,lifespan_weeks=10,life_penalty_weeks=0,daily_wake_limit=1",(local_iso(),))
+            conn.execute("UPDATE wanderer_wake_events SET run_at='2100-01-01' WHERE source IN ('group_created','group_joined')")
+            conn.commit()
+        self.send(self.real,key,'合成群聊中的新问题')
+        app=FastAPI();app.include_router(router)
+        bad=Caller(decision([],True,['self.status']))
+        with patch.object(platform,'_app',return_value=app):
+            result=asyncio.run(run_member_group(self.atai,gid,conn_factory=self.connect,ai_caller=bad))
+        self.assertEqual(result['status'],'capped',result)
+        self.assertEqual(len(bad.calls),1)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute('SELECT handled_message_id FROM wanderer_group_observations WHERE group_id=? AND wanderer_id=?',(gid,self.atai['id'])).fetchone()[0],0)
+        later=Caller(decision([command('social.send_message',{'path_params':{'key':key},'body':{'body':'修复后由我自主回复。','client_nonce':'repair-group'}})]))
+        tomorrow=datetime.fromisoformat(local_iso())+timedelta(days=1)
+        with patch.object(platform,'_app',return_value=app), \
+             patch('classroom_app.time_utils.local_now',return_value=tomorrow), \
+             patch('classroom_app.services.wanderer_settings_service.local_now',return_value=tomorrow), \
+             patch.object(runtime,'local_now',return_value=tomorrow), \
+             patch('classroom_app.services.wanderer_resource_service.local_now',return_value=tomorrow):
+            drained=asyncio.run(runtime.drain_wake_events(self.connect,ai_caller=later,limit=1))
+            self.assertEqual(drained['ai_calls'],1,drained)
+            replay=asyncio.run(run_member_group(self.atai,gid,conn_factory=self.connect,ai_caller=later))
+            self.assertEqual(replay['status'],'ok',replay)
+            self.assertEqual(replay['ai_calls'],0)
+        with self.connect() as conn:
+            self.assertGreater(conn.execute('SELECT handled_message_id FROM wanderer_group_observations WHERE group_id=? AND wanderer_id=?',(gid,self.atai['id'])).fetchone()[0],0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM social_messages WHERE conversation_key=? AND sender_identity=? AND message_type='text'",(key,self.ident(self.atai))).fetchone()[0],1)
 
     def test_recovery_restores_missing_group_trigger_without_fake_text(self):
         from classroom_app.services.wanderer_group_runtime_service import recover_group_events

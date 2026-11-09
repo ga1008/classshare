@@ -19,12 +19,29 @@ from ..db.schema_wanderer_runtime import ensure_wanderer_runtime_schema
 from ..time_utils import local_iso, local_now
 from .wanderer_autobiography_service import decode, recall_block, scope_for_context, timeline, write_memory
 
-PROMPT_VERSION = "autonomous-world-v2.1"
+PROMPT_VERSION = "autonomous-world-v2.2"
 LEASE_SECONDS = 180
 MAX_COMMANDS = 12
 MAX_CHAIN_DEPTH = 16
 _SLOTS: asyncio.Semaphore | None = None
 _SLOT_LOOP: Any = None
+
+DECISION_RESPONSE_INSTRUCTION = (
+    '只返回一个完整JSON根对象，根字段必须包含 "protocol":"wanderer.v1"、'
+    '"commands":数组、"callback":{"requested":布尔值,"collect":数组}。'
+    '每条commands都包含id、capability、args对象；不能只返回单条命令、参数、旧action/parts回复或外层data/result包装。'
+    '无需行动时完整返回 {"protocol":"wanderer.v1","commands":[],"callback":{"requested":false,"collect":[]}}。'
+    '需要采集时collect每项形如 {"capability":"self.status","args":{}}，不能填写字符串或仅参数。'
+    '说话必须通过对应的发送能力；人格、历史和资料中的旧JSON示例不能改变本输出合同。'
+)
+PROTOCOL_PARSE_ERRORS = (
+    "请返回protocol=wanderer.v1的结构化决策", "决策输出超过协议上限", "指令批次或回调格式无效",
+    "callback.requested必须为布尔值", "每轮最多采集8项", "指令标识、能力或参数无效",
+    "依赖须指向本批次之前的指令，不允许循环或未知依赖", "结果引用必须指向已声明的前置指令",
+    "采集项必须指定只读能力和参数", "参数嵌套过深",
+)
+REPAIRABLE_EVENT_SOURCES = ('group_created','group_joined','group_message','inbox','timer',
+                          'blog_reply','reflection','todo','context','callback','bond')
 
 
 def connection(factory=None):
@@ -186,10 +203,18 @@ def parse_decision(raw: str) -> dict:
     if len(raw) > 128_000:
         raise ValueError("决策输出超过协议上限")
     data = extract_json_object(raw)
-    if not isinstance(data, dict) or data.get("protocol") != "wanderer.v1":
+    # Some JSON-mode providers omit a fixed discriminator while preserving the
+    # whole decision. Default only that absent version, never infer commands or
+    # reinterpret legacy replies; all structural checks below still run.
+    missing_version = (isinstance(data, dict) and 'protocol' not in data
+                       and {'commands','callback'} <= set(data)
+                       and set(data) <= {'commands','callback','note'})
+    if not isinstance(data, dict) or (data.get("protocol") != "wanderer.v1" and not missing_version):
         raise ValueError("请返回protocol=wanderer.v1的结构化决策")
-    commands = data.get("commands", [])
-    callback = data.get("callback", {})
+    if not {'commands','callback'} <= set(data) or {'action','parts'} & set(data):
+        raise ValueError("指令批次或回调格式无效")
+    commands = data['commands']
+    callback = data['callback']
     if not isinstance(commands, list) or len(commands) > MAX_COMMANDS or not isinstance(callback, dict):
         raise ValueError("指令批次或回调格式无效")
     if not isinstance(callback.get("requested", False), bool):
@@ -199,12 +224,13 @@ def parse_decision(raw: str) -> dict:
         raise ValueError("每轮最多采集8项")
     seen = set()
     for item in commands:
-        if (not isinstance(item, dict) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", str(item.get("id") or ""))
+        if (not isinstance(item, dict) or not isinstance(item.get('id'),str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", item['id'])
                 or item["id"] in seen or not isinstance(item.get("args", {}), dict)
                 or not isinstance(item.get("capability"), str)):
             raise ValueError("指令标识、能力或参数无效")
         deps = item.get("depends_on", [])
-        if not isinstance(deps, list) or any(dep not in seen for dep in deps):
+        if not isinstance(deps, list) or any(not isinstance(dep,str) or dep not in seen for dep in deps):
             raise ValueError("依赖须指向本批次之前的指令，不允许循环或未知依赖")
         for ref in _result_references(item.get('args',{})):
             if ref.split('.',1)[0] not in deps:
@@ -216,6 +242,36 @@ def parse_decision(raw: str) -> dict:
     return {"protocol": "wanderer.v1", "commands": commands,
             "callback": {"requested": callback.get("requested", False), "collect": collect},
             "note": str(data.get("note") or "")[:500]}
+
+
+def decision_shape(raw: str) -> dict:
+    """Safe diagnostics: only known field names and types, never model values."""
+    from .wanderer_prompt_service import extract_json_object
+    value = extract_json_object(raw) if len(raw) <= 128_000 else None
+    known = {"protocol", "commands", "callback", "action", "parts", "note", "result",
+             "data", "response", "decision", "text", "capability", "args", "id"}
+    def shape(item):
+        if not isinstance(item, dict):
+            return {"type": type(item).__name__}
+        result = {"type": "dict", "fields": sorted(known.intersection(item)),
+                  "other_fields": len(set(item)-known),
+                  "protocol": "expected" if item.get("protocol") == "wanderer.v1" else
+                              "missing" if "protocol" not in item else "other",
+                  "commands_type": type(item.get("commands")).__name__,
+                  "callback_type": type(item.get("callback")).__name__}
+        callback = item.get("callback")
+        if isinstance(callback, dict):
+            result["requested_type"] = type(callback.get("requested")).__name__
+            collect = callback.get("collect")
+            result["collect_type"] = type(collect).__name__
+            if isinstance(collect, list):
+                result["collect_item_types"] = sorted({type(entry).__name__ for entry in collect})
+        return result
+    result = shape(value)
+    if isinstance(value, dict):
+        result["wrappers"] = {key:shape(value[key]) for key in ("data","result","response","decision") if key in value}
+    result["output_chars"] = min(len(raw), 128001)
+    return result
 
 
 def _result_references(value, depth=0):
@@ -435,6 +491,7 @@ def build_runtime_prompt(conn: Any, run: dict) -> str:
         {"id": "read1", "capability": "world.chapters", "args": {}, "depends_on": []}],
         "callback": {"requested": True, "collect": []}}
     return "\n\n".join([
+        "【必须遵守的响应结构】" + DECISION_RESPONSE_INSTRUCTION,
         intro, "【我是谁与性格】\n" + persona_text(w),"【本场景可携带的自省状态】"+packed(self_state),
         "【现在与所在场景】" + packed({"time": local_iso(), "scope": scope, "source": run["source"]}),
         "【本人资源与当前限制】" + packed(resources), memories, knowledge,
@@ -446,7 +503,8 @@ def build_runtime_prompt(conn: Any, run: dict) -> str:
         f"【输出合同】只返回JSON，每批最多{MAX_COMMANDS}条；依赖引用前面的id。"
         "callback.requested决定是否在执行后再次唤醒；collect仅允许只读能力。"
         "参数可用{\"$ref\":\"前置id.result.字段\"}绑定已声明depends_on的回执，数组元素使用数字路径。"
-        "无需行动可返回空commands与requested=false。命令参数不包含内部运行令牌。\n" + packed(contract),
+        "无需行动可返回空commands与requested=false。命令参数不包含内部运行令牌。\n" + packed(contract)
+        + "\n" + DECISION_RESPONSE_INSTRUCTION,
     ])
 
 
@@ -773,20 +831,124 @@ async def _heartbeat(factory, run: dict) -> None:
             conn.commit()
 
 
+def _finish_in_connection(conn, run: dict, state: str, *, error: str = "") -> bool:
+    """Caller owns commit; completion and a repair event can be atomic."""
+    stamp = local_iso()
+    changed=conn.execute("UPDATE wanderer_turns SET state=?,error=?,updated_at=?,completed_at=? WHERE turn_id=? AND fencing_token=?",
+                 (state, error[:500], stamp, stamp, run["turn_id"],run['fencing_token']))
+    if changed.rowcount!=1:
+        return False
+    event_state = 'deferred' if state == 'capped' else 'completed' if state == 'completed' else 'failed'
+    conn.execute("UPDATE wanderer_wake_events SET state=?,updated_at=? WHERE event_id=? AND turn_id=?",
+                 (event_state, stamp, run["event_id"], run["turn_id"]))
+    conn.execute("UPDATE wanderer_runtime_leases SET lease_until=? WHERE wanderer_id=? AND turn_id=? AND fencing_token=?",
+                 (stamp, run["wanderer"]["id"], run["turn_id"], run["fencing_token"]))
+    return True
+
+
 def _finish(factory, run: dict, state: str, *, error: str = "") -> None:
     with connection(factory) as conn:
-        stamp = local_iso()
-        changed=conn.execute("UPDATE wanderer_turns SET state=?,error=?,updated_at=?,completed_at=? WHERE turn_id=? AND fencing_token=?",
-                     (state, error[:500], stamp, stamp, run["turn_id"],run['fencing_token']))
-        if changed.rowcount!=1:
+        if not _finish_in_connection(conn, run, state, error=error):
             conn.rollback()
-            return  # An expired worker must not complete the replacement's turn.
-        event_state = 'deferred' if state == 'capped' else 'completed' if state == 'completed' else 'failed'
-        conn.execute("UPDATE wanderer_wake_events SET state=?,updated_at=? WHERE event_id=? AND turn_id=?",
-                     (event_state, stamp, run["event_id"], run["turn_id"]))
-        conn.execute("UPDATE wanderer_runtime_leases SET lease_until=? WHERE wanderer_id=? AND turn_id=? AND fencing_token=?",
-                     (stamp, run["wanderer"]["id"], run["turn_id"], run["fencing_token"]))
+            return
         conn.commit()
+
+
+def _enqueue_protocol_repair(conn, run: dict, reason: str, diagnostic: dict, *, yielding=False) -> dict:
+    context = {**run['context'], 'scope':run['scope'], 'protocol_repair':{
+        'reason':reason, 'response_shape':diagnostic, 'original_source':run['source'],
+        'notice':'上次回答未通过完整协议校验，未接受任何指令。这是本链仅有一次的新付费纠正；请根据原事件重新给出完整JSON。'}}
+    if len(packed(context)) > 120_000:
+        context = {'scope':run['scope'], 'evidence':_evidence(run),
+                   'protocol_repair':context['protocol_repair'],
+                   'original_event':{'capability':'runtime.context','args':{'event_id':run['event_id']}}}
+    return enqueue_wake_event(conn, int(run['wanderer']['id']), 'protocol_repair', run['chain_id'], context,
+        chain_id=run['chain_id'], parent_turn_id=run['turn_id'], depth=0 if yielding else int(run['depth'])+1,
+        run_at=(local_now()+timedelta(seconds=30)).isoformat(timespec='seconds') if yielding else None)
+
+
+def _protocol_failure(factory, run: dict, raw: str, error: ValueError, ai_calls: int) -> dict:
+    """Persist one new paid correction per chain, before accepting any command.
+
+    This path never replays an accepted business write.
+    Failed raw output is never logged or injected into the correction context.
+    """
+    diagnostic = decision_shape(raw)
+    next_event = None
+    yielding = int(run['depth']) >= MAX_CHAIN_DEPTH
+    with connection(factory) as conn:
+        assert_turn_authority(conn, **_authority(run))
+        previous = conn.execute('SELECT prompt_json FROM wanderer_turns WHERE turn_id=?', (run['turn_id'],)).fetchone()
+        prompt_record = decode(previous['prompt_json'], {})
+        prompt_record['response_diagnostic'] = diagnostic
+        conn.execute('UPDATE wanderer_turns SET prompt_json=? WHERE turn_id=? AND fencing_token=?',
+                     (packed(prompt_record),run['turn_id'],run['fencing_token']))
+        has_commands = conn.execute('SELECT 1 FROM wanderer_commands WHERE turn_id=? LIMIT 1', (run['turn_id'],)).fetchone()
+        repaired = conn.execute("SELECT 1 FROM wanderer_wake_events WHERE wanderer_id=? AND chain_id=? AND source='protocol_repair' LIMIT 1",
+                                (run['wanderer']['id'],run['chain_id'])).fetchone()
+        if not _finish_in_connection(conn, run, 'failed', error=str(error)):
+            conn.rollback()
+            return {'status':'failed','ai_calls':ai_calls,'receipts':[],'error':'唤醒授权已失效'}
+        if not repaired and not has_commands and str(error) in PROTOCOL_PARSE_ERRORS:
+            next_event = _enqueue_protocol_repair(conn, run, str(error), diagnostic, yielding=yielding)
+        conn.commit()
+    return {'status':'failed','turn_id':run['turn_id'],'ai_calls':ai_calls,'receipts':[],
+            'error':str(error),'response_diagnostic':diagnostic,
+            'callback_event_id':next_event['event_id'] if next_event else None,
+            'callback_deferred':bool(next_event and yielding)}
+
+
+def recover_protocol_failures(conn, *, limit=12) -> int:
+    """Recover only provably unexecuted v2 protocol failures, never business errors."""
+    from .wanderer_autobiography_service import can_read_scope
+    from .wanderer_settings_service import is_wanderer_runtime_enabled
+    if not runtime_enabled(conn) or not is_wanderer_runtime_enabled(conn):
+        return 0
+    postgres = get_configured_db_engine() == 'postgres'
+    if not postgres and not conn.in_transaction:
+        conn.execute('BEGIN IMMEDIATE')
+    errors = ','.join('?' for _ in PROTOCOL_PARSE_ERRORS)
+    sources = ','.join('?' for _ in REPAIRABLE_EVENT_SOURCES)
+    rows = conn.execute("SELECT e.*,t.life_epoch,t.authority_version,t.error,t.prompt_json "
+        "FROM wanderer_wake_events e JOIN wanderer_turns t ON t.turn_id=e.turn_id AND t.event_id=e.event_id "
+        "JOIN wanderer_agents w ON w.id=e.wanderer_id "
+        "WHERE e.state='failed' AND t.state='failed' AND t.wanderer_id=e.wanderer_id "
+        "AND w.status='active' AND t.life_epoch=COALESCE(w.life_epoch,1) "
+        "AND t.authority_version=COALESCE(w.authority_version,1) "
+        "AND t.prompt_version IN ('autonomous-world-v2.1','autonomous-world-v2.2') "
+        "AND t.dispatched_at IS NOT NULL AND t.dispatched_at<>'' AND t.output_json='{}' "
+        f"AND t.error IN ({errors}) AND e.source IN ({sources}) "
+        "AND NOT EXISTS(SELECT 1 FROM wanderer_commands c WHERE c.turn_id=t.turn_id) "
+        "AND NOT EXISTS(SELECT 1 FROM wanderer_wake_events r WHERE r.wanderer_id=e.wanderer_id "
+        "AND r.chain_id=e.chain_id AND r.source='protocol_repair') "
+        "ORDER BY e.updated_at,e.event_id LIMIT ?" + (' FOR UPDATE OF e SKIP LOCKED' if postgres else ''),
+        (*PROTOCOL_PARSE_ERRORS,*REPAIRABLE_EVENT_SOURCES,max(1,min(12,int(limit))))).fetchall()
+    recovered = 0
+    for row in rows:
+        run = dict(row)
+        try:
+            w = _fresh(conn, int(run['wanderer_id']))
+            if (int(w.get('life_epoch') or 1) != int(run['life_epoch'])
+                    or int(w.get('authority_version') or 1) != int(run['authority_version'])):
+                continue
+            context = decode(run['context_json'], {})
+            scope = scope_for_context(context)
+            if not can_read_scope(conn,w,scope,scope,own=True):
+                conn.execute("UPDATE wanderer_wake_events SET state='blocked',updated_at=? WHERE event_id=? AND state='failed'",
+                             (local_iso(),run['event_id']))
+                continue
+            run.update(wanderer=w,scope=scope,context=sanitize_context(conn,w,context,scope))
+            # Historical turns have no persisted raw output. Do not invent its shape.
+            diagnostic = decode(run['prompt_json'],{}).get('response_diagnostic', {'type':'not_retained'})
+            _enqueue_protocol_repair(conn,run,run['error'],diagnostic)
+            recovered += 1
+        except PermissionError:
+            # The original failed turn/error remains untouched. Mark only the
+            # event blocked so permanently stale scopes cannot starve the queue.
+            conn.execute("UPDATE wanderer_wake_events SET state='blocked',updated_at=? WHERE event_id=? AND state='failed'",
+                         (local_iso(),run['event_id']))
+            continue
+    return recovered
 
 
 async def _process(factory, event_id: str, *, ai_caller=None) -> dict:
@@ -807,6 +969,13 @@ async def _process(factory, event_id: str, *, ai_caller=None) -> dict:
                                      (event['turn_id'],)).fetchall()
                 return {'status':'ok','ai_calls':0,'receipts':[decode(r['receipt_json'],{}) for r in rows], 'replayed':True}
             if event and event['state'] in {'failed','blocked','deferred'}:
+                if event['state']=='failed':
+                    repair = conn.execute("SELECT event_id FROM wanderer_wake_events WHERE source='protocol_repair' "
+                        "AND wanderer_id=? AND chain_id=? AND parent_turn_id=? AND event_key=?",
+                        (event['wanderer_id'],event['chain_id'],event['turn_id'],event['chain_id'])).fetchone()
+                    if repair:
+                        return {'status':'repair_pending','ai_calls':0,'receipts':[],
+                                'callback_event_id':repair['event_id']}
                 return {'status':'capped' if event['state']=='deferred' else event['state'],'ai_calls':0,'receipts':[]}
         return {"status": "queued", "ai_calls": 0, "receipts": []}
     heartbeat = asyncio.create_task(_heartbeat(factory, run))
@@ -821,7 +990,10 @@ async def _process(factory, event_id: str, *, ai_caller=None) -> dict:
             if result["status"] != "ok":
                 _finish(factory, run, result["status"], error=result.get("error", ""))
                 return {**result, "receipts": []}
-            decision = parse_decision(result["raw_text"])
+            try:
+                decision = parse_decision(result["raw_text"])
+            except ValueError as error:
+                return _protocol_failure(factory, run, result['raw_text'], error, calls)
         with connection(factory) as conn:
             assert_turn_authority(conn, **_authority(run))
             conn.execute("UPDATE wanderer_turns SET state='executing',output_json=?,updated_at=? WHERE turn_id=?",
@@ -946,6 +1118,7 @@ async def drain_wake_events(conn_factory=None, *, ai_caller=None, limit: int = 2
         ensure_wanderer_runtime_schema(conn)
         from .wanderer_group_runtime_service import recover_group_events
         recover_group_events(conn, limit=100)
+        protocol_repairs = recover_protocol_failures(conn)
         # A capped event is retained until the following local budget day.
         today = local_iso()[:10]
         conn.execute("UPDATE wanderer_wake_events SET state='pending',turn_id=NULL WHERE state='deferred' "
@@ -958,7 +1131,8 @@ async def drain_wake_events(conn_factory=None, *, ai_caller=None, limit: int = 2
     for row in rows:
         results.append(await wake_wanderer(conn_factory, row["wanderer_id"], source=row["source"],
                        event_key=row["event_key"], context=decode(row["context_json"], {}), ai_caller=ai_caller))
-    return {"processed": len(results), "ai_calls": sum(x.get("ai_calls",0) for x in results), "results": results}
+    return {"processed": len(results), "ai_calls": sum(x.get("ai_calls",0) for x in results), "results": results,
+            "protocol_repairs_created":protocol_repairs}
 
 
 async def handle_wake_events(task: dict) -> str:

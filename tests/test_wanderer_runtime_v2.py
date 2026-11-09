@@ -33,6 +33,7 @@ class Caller:
 class RuntimeV2Tests(WandererDbTestCase):
     def setUp(self):
         super().setUp()
+        self.enterContext(patch.dict('os.environ',{'WANDERER_ENABLED':'true'}))
         with self.connect() as conn:
             for table in ("wanderer_commands", "wanderer_turns", "wanderer_wake_events", "wanderer_runtime_leases",
                           "wanderer_memory_sources", "wanderer_episodic_memories", "wanderer_resource_reservations",
@@ -222,7 +223,7 @@ class RuntimeV2Tests(WandererDbTestCase):
         self.assertEqual(result['receipts'][0]['status'],'succeeded')
 
     def test_reconsider_invalid_output_is_new_paid_decision(self):
-        first=self.wake(Caller({'protocol':'wrong'}))
+        first=self.wake(Caller({'protocol':'wrong'},{'protocol':'wrong'}))
         self.assertEqual(first['status'],'failed')
         with self.connect() as conn:
             row=conn.execute("SELECT * FROM wanderer_wake_events WHERE state='failed'").fetchone()
@@ -233,7 +234,131 @@ class RuntimeV2Tests(WandererDbTestCase):
         self.assertEqual(result['status'],'ok',result)
         self.assertIn('previous_turn',caller.calls[0]['system_prompt'])
         with self.connect() as conn:
-            self.assertEqual(conn.execute('SELECT COUNT(*) AS n FROM wanderer_turns').fetchone()['n'],2)
+            self.assertEqual(conn.execute('SELECT COUNT(*) AS n FROM wanderer_turns').fetchone()['n'],3)
+
+    def test_missing_fixed_version_is_accepted_only_for_complete_current_shape(self):
+        payload=decision([command('memory.write',{'content':'我只记录自己决定的内容。','location':'书房'})])
+        payload.pop('protocol')
+        result=self.wake(Caller(payload))
+        self.assertEqual(result['status'],'ok',result)
+        self.assertEqual(result['ai_calls'],1)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_memory_sources').fetchone()[0],1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_wake_events WHERE source='protocol_repair'").fetchone()[0],0)
+        for invalid in ({'commands':[]},{'callback':{}},{'commands':[],'callback':{},'parts':['legacy']},
+                        {'protocol':'wanderer.v1','action':'reply','parts':['legacy']},
+                        {'protocol':'wanderer.v1'},
+                        {'protocol':'old','commands':[],'callback':{}},
+                        {'commands':[],'callback':{'requested':True,'collect':['self.status']}},
+                        {'commands':[command('self.status',deps=[{}])],'callback':{}},
+                        {'commands':[{**command('self.status'),'id':12}],'callback':{}}):
+            with self.subTest(invalid=invalid),self.assertRaises(ValueError):
+                runtime.parse_decision(json.dumps(invalid))
+
+    def test_protocol_repair_is_paid_once_and_replay_never_dispatches_again(self):
+        secret='PRIVATE_INVALID_MODEL_BODY_NEVER_LOGGED'
+        bad={'action':'reply','parts':[secret]}
+        def corrected(payload):
+            self.assertIn('protocol_repair',payload['system_prompt'])
+            self.assertIn('"remaining":98',payload['system_prompt'])
+            self.assertNotIn(secret,payload['system_prompt'])
+            self.assertIn('"protocol":"wanderer.v1"',payload['new_message'])
+            return decision([command('memory.write',{'content':'这次回答已确认。','location':'书房'})])
+        caller=Caller(bad,corrected)
+        result=self.wake(caller)
+        self.assertEqual(result['status'],'ok',result)
+        self.assertEqual(result['ai_calls'],2)
+        repeated=self.wake(caller)
+        self.assertEqual(repeated['status'],'ok',repeated)
+        self.assertEqual(repeated['ai_calls'],0)
+        self.assertEqual(len(caller.calls),2)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_wake_events WHERE source='protocol_repair'").fetchone()[0],1)
+            self.assertEqual(conn.execute("SELECT SUM(used_units) FROM wanderer_resource_usage WHERE resource='ai_wake'").fetchone()[0],2_000_000)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_commands').fetchone()[0],1)
+            records=''.join(str(row[0]) for row in conn.execute('SELECT prompt_json FROM wanderer_turns'))
+            self.assertNotIn(secret,records)
+            self.assertIn('response_diagnostic',records)
+
+    def test_second_invalid_protocol_stops_without_business_or_more_repairs(self):
+        valid=command('memory.write',{'content':'不能部分执行','location':'测试'})
+        bad=decision([valid,command('self.status',deps=[{}],ident='bad')])
+        caller=Caller(bad,decision([],True,['self.status']))
+        result=self.wake(caller)
+        self.assertEqual(result['status'],'failed',result)
+        self.assertEqual(result['ai_calls'],2)
+        self.assertEqual(self.wake(caller)['ai_calls'],0)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_commands').fetchone()[0],0)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_memory_sources').fetchone()[0],0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_wake_events WHERE source='protocol_repair'").fetchone()[0],1)
+            self.assertEqual(runtime.recover_protocol_failures(conn),0)
+
+    def test_protocol_repair_waits_for_next_day_budget_and_original_event_replays(self):
+        from datetime import datetime,timedelta
+        from classroom_app.services.wanderer_settings_service import daily_ai_calls
+        with self.connect() as conn:
+            conn.execute('UPDATE wanderer_agents SET daily_wake_limit=1 WHERE id=?',(self.w['id'],))
+            conn.commit()
+        caller=Caller({'parts':['invalid']})
+        result=self.wake(caller)
+        self.assertEqual(result['status'],'capped',result)
+        self.assertEqual(len(caller.calls),1)
+        with self.connect() as conn:
+            self.assertEqual(daily_ai_calls(conn),1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_wake_events WHERE source='protocol_repair' AND state='deferred'").fetchone()[0],1)
+        tomorrow=datetime.fromisoformat(local_iso())+timedelta(days=1)
+        later=Caller(decision())
+        with patch('classroom_app.time_utils.local_now',return_value=tomorrow), \
+             patch.dict('os.environ',{'WANDERER_ENABLED':'true'}), \
+             patch('classroom_app.services.wanderer_settings_service.local_now',return_value=tomorrow), \
+             patch.object(runtime,'local_now',return_value=tomorrow), \
+             patch('classroom_app.services.wanderer_resource_service.local_now',return_value=tomorrow):
+            resumed=asyncio.run(runtime.drain_wake_events(self.connect,ai_caller=later,limit=12))
+            self.assertEqual(resumed['ai_calls'],1,resumed)
+            replay=self.wake(later)
+            self.assertEqual(replay['status'],'ok',replay)
+            self.assertEqual(replay['ai_calls'],0)
+        self.assertEqual(len(later.calls),1)
+
+    def test_accepted_business_failure_is_not_a_protocol_repair(self):
+        with patch.object(runtime,'execute_command',side_effect=RuntimeError('synthetic execution failure')):
+            result=self.wake(Caller(decision([command('self.status')])))
+        self.assertEqual(result['status'],'failed')
+        with self.connect() as conn:
+            self.assertEqual(runtime.recover_protocol_failures(conn),0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_wake_events WHERE source='protocol_repair'").fetchone()[0],0)
+
+    def test_historical_protocol_recovery_is_bounded_guarded_and_idempotent(self):
+        from concurrent.futures import ThreadPoolExecutor
+        created=[]
+        with self.connect() as conn:
+            for i in range(8):
+                event=runtime.enqueue_wake_event(conn,self.w['id'],'group_joined',f'history-{i}',{'scope':{'kind':'public'}})
+                run=runtime._claim(conn,event['event_id'])
+                conn.execute("UPDATE wanderer_turns SET dispatched_at=?,prompt_version='autonomous-world-v2.1' WHERE turn_id=?",(local_iso(),run['turn_id']))
+                runtime._finish_in_connection(conn,run,'failed',error=runtime.PROTOCOL_PARSE_ERRORS[0])
+                created.append(run)
+            # Only the first two have proof of a never-accepted current v2 call.
+            conn.execute("UPDATE wanderer_turns SET prompt_version='legacy' WHERE turn_id=?",(created[2]['turn_id'],))
+            conn.execute("UPDATE wanderer_turns SET dispatched_at=NULL WHERE turn_id=?",(created[3]['turn_id'],))
+            conn.execute("UPDATE wanderer_turns SET output_json=? WHERE turn_id=?",(json.dumps(decision()),created[4]['turn_id']))
+            conn.execute("UPDATE wanderer_turns SET error='business failure' WHERE turn_id=?",(created[5]['turn_id'],))
+            conn.execute("UPDATE wanderer_turns SET life_epoch=life_epoch+1 WHERE turn_id=?",(created[6]['turn_id'],))
+            conn.execute("UPDATE wanderer_wake_events SET source='unknown' WHERE event_id=?",(created[7]['event_id'],))
+            conn.commit()
+        def recover(_):
+            with self.connect() as conn:
+                n=runtime.recover_protocol_failures(conn,limit=1)
+                conn.commit()
+                return n
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            self.assertEqual(sum(workers.map(recover,range(2))),2)
+        self.assertEqual(recover(0),0)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_wake_events WHERE source='protocol_repair'").fetchone()[0],2)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_turns WHERE state='failed'").fetchone()[0],8)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_resource_reservations').fetchone()[0],0)
 
     def test_memory_revision_preserves_original_and_rejects_stale_revision(self):
         first=self.wake(Caller(decision([command('memory.write',{'content':'最初理解','location':'书房','visibility':'public'})])))

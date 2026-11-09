@@ -102,7 +102,7 @@ async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
         result = await wake_wanderer(ctx.conn_factory,ctx.wanderer_id,source='inbox',
             event_key=f"{task['id']}:{window['anchor']}",context=payload,ai_caller=ctx.ai_caller)
         rounds = result.get('rounds') or [result]
-        considered = bool(rounds and rounds[0].get('status')=='ok')
+        considered = any(item.get('status')=='ok' for item in rounds)
         return {'status':'ok' if considered else result.get('status'), 'parts':[], 'action':'skip',
                 'mood':'','reason':'已通过自主指令处理本次来信' if considered else result.get('error','等待唤醒'),
                 'ai_calls':result.get('ai_calls',0),'autonomous_runtime':True}

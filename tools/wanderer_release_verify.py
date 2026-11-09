@@ -41,6 +41,12 @@ TESTS = (
     "tests.test_wanderer_runtime_v2.RuntimeV2Tests.test_duplicate_source_event_never_calls_again",
     "tests.test_wanderer_runtime_v2.RuntimeV2Tests.test_revocation_while_model_waits_blocks_writes",
     "tests.test_wanderer_runtime_v2.RuntimeV2Tests.test_stale_executing_turn_resumes_receipts_without_model",
+    "tests.test_wanderer_runtime_v2.RuntimeV2Tests.test_missing_fixed_version_is_accepted_only_for_complete_current_shape",
+    "tests.test_wanderer_runtime_v2.RuntimeV2Tests.test_protocol_repair_is_paid_once_and_replay_never_dispatches_again",
+    "tests.test_wanderer_runtime_v2.RuntimeV2Tests.test_second_invalid_protocol_stops_without_business_or_more_repairs",
+    "tests.test_wanderer_runtime_v2.RuntimeV2Tests.test_protocol_repair_waits_for_next_day_budget_and_original_event_replays",
+    "tests.test_wanderer_runtime_v2.RuntimeV2Tests.test_accepted_business_failure_is_not_a_protocol_repair",
+    "tests.test_wanderer_runtime_v2.RuntimeV2Tests.test_historical_protocol_recovery_is_bounded_guarded_and_idempotent",
 )
 
 

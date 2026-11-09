@@ -193,6 +193,33 @@ class WandererLegacyDeliveryTest(WandererWorldTestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_commands WHERE state='succeeded'").fetchone()[0],6)
             self.assertEqual(snapshot(conn,self.a['id'],'ai_wake')['used']+snapshot(conn,self.b['id'],'ai_wake')['used'],6)
 
+    def test_legacy_protocol_repair_delivers_once_and_replay_has_no_extra_charge(self):
+        from classroom_app.routers.message_center import router
+        from classroom_app.services import wanderer_platform_service as platform,wanderer_inbox_worker as worker,wanderer_runtime_service as runtime
+        from tests.test_wanderer_runtime_v2 import Caller,decision,command
+        app=FastAPI();app.include_router(router)
+        with self.connect() as conn:
+            self.send(conn);conn.commit()
+        def repaired(payload):
+            context=json.loads(payload['system_prompt'].split('<<<data>>>\n')[1].split('\n<<<end>>>')[0])
+            return decision([command('legacy.send_message',{'body':{'contact_identity':context['peer_identity'],'content':'经过格式纠正后的合成私信。'}})])
+        caller=Caller({'action':'reply','parts':['这条旧协议消息不能发送']},repaired)
+        with patch.object(platform,'_app',return_value=app):
+            with self.connect() as conn:
+                conn.execute("UPDATE wanderer_social_inbox SET run_at='2000-01-01' WHERE state IN ('pending','retry')");conn.commit()
+            result=asyncio.run(worker.process_once(factory=self.connect,ai_caller=caller,sleep=ZeroSleep(),limit=1))
+            self.assertIn('done',result)
+            with self.connect() as conn:
+                event=dict(conn.execute("SELECT * FROM wanderer_wake_events WHERE source='inbox' ORDER BY created_at LIMIT 1").fetchone())
+                self.assertEqual(conn.execute('SELECT COUNT(*) FROM private_messages').fetchone()[0],2)
+                self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_private_message_operations').fetchone()[0],1)
+                self.assertEqual(snapshot(conn,self.a['id'],'ai_wake')['used']+snapshot(conn,self.b['id'],'ai_wake')['used'],2)
+                self.assertGreater(conn.execute('SELECT handled_message_id FROM wanderer_social_inbox WHERE wanderer_id=?',(event['wanderer_id'],)).fetchone()[0],0)
+            replay=asyncio.run(runtime.wake_wanderer(self.connect,event['wanderer_id'],source='inbox',event_key=event['event_key'],ai_caller=caller))
+        self.assertEqual(replay['status'],'ok',replay)
+        self.assertEqual(replay['ai_calls'],0)
+        self.assertEqual(len(caller.calls),2)
+
     def test_background_assistant_job_restores_trusted_billing_origin(self):
         from classroom_app.services import wanderer_ai_attribution as attribution
         source=attribution.AIAttribution(self.a['id'],self.a['student_id'],self.a['life_epoch'],self.a['authority_version'],str(uuid.uuid4()),self.connect)

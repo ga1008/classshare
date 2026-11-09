@@ -120,10 +120,15 @@ async def run_member_group(wanderer: dict, group_id: int, *, conn_factory=None, 
                                  context=context,ai_caller=ai_caller)
     with connection(conn_factory) as conn:
         # A crash after a completed decision but before this watermark is safe to replay.
-        row = conn.execute("SELECT t.state FROM wanderer_wake_events e LEFT JOIN wanderer_turns t ON t.turn_id=e.turn_id "
+        row = conn.execute("SELECT t.state,EXISTS(SELECT 1 FROM wanderer_wake_events r "
+                           "JOIN wanderer_turns rt ON rt.turn_id=r.turn_id AND rt.event_id=r.event_id "
+                           "WHERE r.source='protocol_repair' AND r.wanderer_id=e.wanderer_id "
+                           "AND r.chain_id=e.chain_id AND r.event_key=e.chain_id AND r.parent_turn_id=e.turn_id "
+                           "AND rt.state='completed') AS repaired FROM wanderer_wake_events e "
+                           "LEFT JOIN wanderer_turns t ON t.turn_id=e.turn_id "
                            "WHERE e.wanderer_id=? AND e.source='group_message' AND e.event_key=?",
                            (wanderer["id"],event_key)).fetchone()
-        if row and row["state"] == "completed":
+        if row and (row["state"] == "completed" or row['repaired']):
             conn.execute("UPDATE wanderer_group_observations SET handled_message_id=?,updated_at=? "
                          "WHERE wanderer_id=? AND group_id=? AND membership_stamp=? AND handled_message_id<?",
                          (context["snapshot_message_id"],local_iso(),wanderer["id"],group_id,

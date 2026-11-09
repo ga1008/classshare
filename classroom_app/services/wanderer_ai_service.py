@@ -384,7 +384,7 @@ async def generate_turn(
 async def generate_decision(conn_factory: ConnFactory, run: dict[str, Any], *, ai_caller: Optional[AiCaller] = None) -> dict[str, Any]:
     """Exactly one paid thought. Tools and continuation are owned by the runtime."""
     from .wanderer_resource_service import reserve, settle
-    from .wanderer_runtime_service import assert_turn_authority, build_runtime_prompt, packed, _authority
+    from .wanderer_runtime_service import assert_turn_authority, build_runtime_prompt, packed, _authority, DECISION_RESPONSE_INSTRUCTION
     from ..time_utils import local_iso
 
     operation_id = f"wake:{run['turn_id']}"
@@ -414,7 +414,7 @@ async def generate_decision(conn_factory: ConnFactory, run: dict[str, Any], *, a
         conn.execute("UPDATE wanderer_turns SET dispatched_at=?,prompt_json=?,updated_at=? WHERE turn_id=?",
                      (local_iso(), packed({"system_prompt": prompt}), local_iso(), run['turn_id']))
         conn.commit()
-    payload = _payload(system_prompt=prompt, user_message="请根据当前事件、记忆和剩余资源自主决定下一步。只输出协议JSON。",
+    payload = _payload(system_prompt=prompt, user_message="请根据当前事件、记忆和剩余资源自主决定下一步。" + DECISION_RESPONSE_INSTRUCTION,
                        task_type=WANDERER_TASK_TYPE, task_label=f"wanderer:{fresh['slug']}:autonomous",
                        logical_call_id=operation_id)
     try:
