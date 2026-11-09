@@ -30,9 +30,27 @@
     "production_access": false
   },
   "deployment": {
-    "status": "pending"
+    "status": "passed",
+    "release": "20261109-092202-77ddbd5a14e2",
+    "source_commit": "0feb96cee3119941e52dea51e4f9d412186a4638",
+    "verified_at_utc": "2026-11-09T01:29:17.470541+00:00",
+    "readonly_live_checks": true,
+    "source_assets_authorization_and_scheduler_verified": true,
+    "postgres_container_and_data_preserved": true,
+    "manual_rows_and_files_preserved": true,
+    "backup_before_migration": true,
+    "new_production_test_records": false,
+    "linux_static_graph": "9d8350d1261726d781f3814c1c4ca99a736330094cae1c558bfe4d4ad06efcc4",
+    "migration_validation": "89 migration source files identical to the earlier passed native PostgreSQL rehearsal; proof revalidated, no new long rehearsal.",
+    "evidence": ".codex-temp/attendance-dashboard-release/production-after.json"
   },
   "git": {
-    "status": "pending"
+    "status": "pushed",
+    "source_commit": "0feb96cee3119941e52dea51e4f9d412186a4638",
+    "branches": [
+      "origin/dev",
+      "origin/codex/login-auto-attendance-20261109"
+    ],
+    "release_record": "Documentation-only publication record follows the deployed runtime commit."
   }
 }
