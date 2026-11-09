@@ -13,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
 from tools.signature_visibility_rehearsal import valid_report_proof
 from tools.agent_authority_migration_rehearsal import valid_report_proof as valid_agent_proof
 from tools.behavior_capacity_migration_rehearsal import valid_report_proof as valid_behavior_capacity_proof
+from tools.wanderer_migration_rehearsal import valid_report_proof as valid_wanderer_proof
 REPORT_CONTRACT = "native-pg-rehearsal-v1"
 REQUIRED_MIGRATION_FILES = (
     "classroom_app/config.py", "classroom_app/database.py", "classroom_app/storage_paths.py",
@@ -26,6 +27,8 @@ REQUIRED_MIGRATION_FILES = (
     "tools/assessment_postgres_rehearsal.py", "tools/signature_visibility_rehearsal.py",
     "tools/agent_authority_migration_rehearsal.py", "tools/deploy/validate_native_pg_rehearsal.py",
     "tools/behavior_capacity_migration_rehearsal.py",
+    "tools/wanderer_migration_rehearsal.py", "classroom_app/services/account_control_service.py",
+    "classroom_app/services/wanderer_resource_service.py", "classroom_app/services/social_common.py",
 )
 
 
@@ -60,6 +63,10 @@ def validate_report(report: dict[str, Any], *, repo_root: Path, backup_file: Pat
 
     def preserved_phase(phase):
         raw = phase.get("old_differences_per_pass")
+        wanderer_proofs = phase.get("wanderer_migration_per_pass")
+        if (not isinstance(wanderer_proofs, list) or len(wanderer_proofs) != 2
+                or not all(valid_wanderer_proof(proof) for proof in wanderer_proofs) or wanderer_proofs[0] != wanderer_proofs[1]):
+            return False
         agent_proofs = phase.get("agent_authority_migration_per_pass")
         if (not isinstance(agent_proofs, list) or len(agent_proofs) != 2
                 or not all(valid_agent_proof(proof) for proof in agent_proofs)
@@ -77,9 +84,12 @@ def validate_report(report: dict[str, Any], *, repo_root: Path, backup_file: Pat
         else:
             return False
         order = lambda item: ({"table": 0, "schema": 1, "sequence": 2}.get(item.split(":", 1)[0], 3), item)
-        allowed = [sorted(set(agent["allowed_differences"]) | {item for item in signature
+        allowed = [sorted(set(agent["allowed_differences"]) | set(wanderer["allowed_differences"]) | {item for item in signature
                    if item != "table:schema_migrations" or not registry_added}, key=order)
-                   for agent, signature in zip(agent_proofs, signature_differences)]
+                   for agent, signature, wanderer in zip(agent_proofs, signature_differences, wanderer_proofs)]
+        if any(agent.get("wanderer_migration") is not None and agent["wanderer_migration"] != wanderer
+               for agent, wanderer in zip(agent_proofs, wanderer_proofs)):
+            return False
         return raw == allowed and phase.get("unexpected_old_differences_per_pass") == [[], []]
 
     require(report.get("report_contract") == REPORT_CONTRACT, "native_report_contract_missing")
@@ -124,6 +134,14 @@ def validate_report(report: dict[str, Any], *, repo_root: Path, backup_file: Pat
                 and run.get("present_required_table_count") == run["required_table_count"]
                 and run.get("index_failed") == 0 and run.get("skipped_step_count") == 0,
                 f"startup_run_{index + 1}_incomplete")
+        wanderer = run.get("wanderer_schema", {}) if isinstance(run, dict) else {}
+        require(wanderer.get("status") == "ok" and isinstance(wanderer.get("required_table_count"), int)
+                and wanderer["required_table_count"] > 0
+                and wanderer.get("present_required_table_count") == wanderer["required_table_count"]
+                and wanderer.get("missing_tables") == [] and wanderer.get("missing_columns") == []
+                and str(wanderer.get("world_schema_version")) == str(wanderer.get("expected_world_schema_version"))
+                and wanderer.get("expected_world_schema_version") is not None,
+                f"startup_run_{index + 1}_wanderer_schema_incomplete")
     isolation = report.get("isolation") or {}
     require(isolation.get("dedicated_new_cluster") is True and isolation.get("dedicated_new_database") is True
             and isolation.get("production_tables_modified") is False and isolation.get("app_or_workers_started") is False,

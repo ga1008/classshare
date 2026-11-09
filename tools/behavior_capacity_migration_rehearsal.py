@@ -60,9 +60,19 @@ def capture(conn, full_snapshot: dict[str, Any]) -> dict[str, Any]:
         if ((kind == "relation" and name == TABLE)
                 or (kind in {"column", "constraint", "trigger", "policy"} and name.startswith(TABLE + "."))):
             non_index[key] = value
+    # This proof owns recorder indexes and recorder-owned sequences only.
+    # The enclosing full snapshot still checks every database sequence; other
+    # deliberate migrations (e.g. removing an obsolete Agent identity) need
+    # their own exact proof and must not be contradicted by this index proof.
+    owned_sequences = {row[0] for row in conn.execute("""SELECT s.relname FROM pg_depend d
+        JOIN pg_class s ON s.oid=d.objid AND s.relkind='S'
+        JOIN pg_namespace sn ON sn.oid=s.relnamespace
+        JOIN pg_class t ON t.oid=d.refobjid JOIN pg_namespace tn ON tn.oid=t.relnamespace
+        WHERE d.classid='pg_class'::regclass AND d.refclassid='pg_class'::regclass
+          AND d.deptype IN ('a','i') AND sn.nspname='public' AND tn.nspname='public' AND t.relname=%s""", (TABLE,))}
     return {"present": present, "table": full_snapshot["tables"].get(TABLE),
             "non_index_schema": non_index, "indexes": indexes,
-            "sequences": full_snapshot["sequences"]}
+            "sequences": {name: value for name, value in full_snapshot["sequences"].items() if name in owned_sequences}}
 
 
 def _expected_index(name: str, value: dict[str, Any]) -> bool:

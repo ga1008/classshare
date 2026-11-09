@@ -26,6 +26,7 @@ from tools.assessment_migration_rehearsal import file_digest, quote_identifier, 
 from tools.signature_visibility_rehearsal import capture as capture_signature_visibility, prove as prove_signature_visibility
 from tools.agent_authority_migration_rehearsal import capture as capture_agent_authority, prove as prove_agent_authority
 from tools.behavior_capacity_migration_rehearsal import capture as capture_behavior_capacity, prove as prove_behavior_capacity
+from tools.wanderer_migration_rehearsal import capture as capture_wanderer, prove as prove_wanderer, startup_contract
 
 
 def digest(value: Any) -> str:
@@ -261,6 +262,22 @@ def apply_assessment_migrations(conn) -> None:
         from classroom_app.db.postgres import LanSharePostgresConnection
         from classroom_app.db.schema_teacher_identity import ensure_teacher_identity_schema
         ensure_teacher_identity_schema(LanSharePostgresConnection(conn), engine="postgres")
+    if conn.execute("SELECT to_regclass('public.wanderer_agents')").fetchone()[0]:
+        from classroom_app.db.schema_wanderers import ensure_wanderer_schema
+        from classroom_app.db.schema_wanderer_world import ensure_wanderer_world_schema
+        from classroom_app.db.schema_wanderer_runtime import ensure_wanderer_runtime_schema
+        from classroom_app.db.schema_wanderer_social import ensure_wanderer_social_schema, migrate_relationship_affinities
+        from classroom_app.db.schema_account_control import ensure_account_control_schema
+        from classroom_app.services.wanderer_resource_service import migrate_capacity, migrate_social_capacity
+        with _runtime_schema_adapter(conn) as adapter:
+            ensure_wanderer_schema(adapter, engine="postgres", allow_schema_changes=True)
+            ensure_wanderer_world_schema(adapter, engine="postgres", allow_schema_changes=True)
+            ensure_wanderer_runtime_schema(adapter, engine="postgres", allow_schema_changes=True)
+            ensure_wanderer_social_schema(adapter, engine="postgres", allow_schema_changes=True)
+            migrate_relationship_affinities(adapter)
+            migrate_capacity(adapter)
+            migrate_social_capacity(adapter)
+            ensure_account_control_schema(adapter)
 
 
 def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrations, progress: Callable = print):
@@ -271,6 +288,7 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
         signature_before = capture_signature_visibility(conn, before["tables"])
         agent_before = capture_agent_authority(conn, before["tables"])
         behavior_capacity_before = capture_behavior_capacity(conn, before)
+        wanderer_before = capture_wanderer(conn, before["tables"])
     if not {"assignments", "submissions"}.issubset(before["tables"]):
         raise ValueError("Required restored application tables are missing")
     progress(f"Baseline: {len(before['tables'])} tables, {sum(t['row_count'] for t in before['tables'].values())} rows")
@@ -286,18 +304,21 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
                 signature_after = capture_signature_visibility(conn, full["tables"])
                 agent_after = capture_agent_authority(conn, full["tables"])
                 behavior_capacity_after = capture_behavior_capacity(conn, full)
+                wanderer_after = capture_wanderer(conn, full["tables"])
             changes = differences(before, preserved)
             signature_proof = prove_signature_visibility(signature_before, signature_after)
-            agent_proof = prove_agent_authority(agent_before, agent_after)
+            wanderer_proof = prove_wanderer(wanderer_before, wanderer_after)
+            agent_proof = prove_agent_authority(agent_before, agent_after, wanderer_proof=wanderer_proof)
             behavior_capacity_proof = prove_behavior_capacity(behavior_capacity_before, behavior_capacity_after)
             allowed = (set(signature_proof["allowed_differences"]) | set(agent_proof["allowed_differences"])
-                       | set(behavior_capacity_proof["allowed_differences"]))
+                       | set(behavior_capacity_proof["allowed_differences"]) | set(wanderer_proof["allowed_differences"]))
             unexpected = [change for change in changes if change not in allowed]
             stages.append({"migration": number, "old_field_differences": changes,
                            "unexpected_old_field_differences": unexpected,
                            "signature_visibility_migration": signature_proof,
                            "agent_authority_migration": agent_proof,
                            "behavior_capacity_migration": behavior_capacity_proof,
+                           "wanderer_migration": wanderer_proof,
                            "old_projection": preserved, "full_schema_sha256": full["schema_sha256"]})
             progress(f"Migration {number}: old-data/schema differences={len(changes)}")
             if number == 1:
@@ -313,6 +334,7 @@ def rehearse(conn, *, backup: Path, migrate: Callable = apply_assessment_migrati
         not item["unexpected_old_field_differences"] and item["signature_visibility_migration"]["status"] == "ok"
         and item["agent_authority_migration"]["status"] == "ok"
         and item["behavior_capacity_migration"]["status"] == "ok"
+        and item["wanderer_migration"]["status"] == "ok"
         for item in stages)
     return {
         "status": "ok" if passed else "failed", "engine": "postgres", "source_dump_sha256": source_hash,
@@ -350,8 +372,10 @@ def run_startup_child(*, cluster_dir: Path, port: int, database: str) -> dict[st
     lines = captured.getvalue().splitlines()
     skipped_steps = sum(" step skipped:" in line or " schema step skipped:" in line for line in lines)
     indexes = result.get("performance_indexes", {})
+    with connect_offline(cluster_dir=cluster_dir, port=port, database=database) as conn:
+        wanderer_schema = startup_contract(conn)
     return {
-        "status": "ok" if not skipped_steps and not indexes.get("failed", 0) else "failed",
+        "status": "ok" if not skipped_steps and not indexes.get("failed", 0) and wanderer_schema["status"] == "ok" else "failed",
         "required_table_count": result.get("required_table_count"),
         "present_required_table_count": result.get("present_required_table_count"),
         "runtime_tables": result.get("runtime_tables"),
@@ -359,6 +383,7 @@ def run_startup_child(*, cluster_dir: Path, port: int, database: str) -> dict[st
         "runtime_constraints": result.get("runtime_constraints"),
         "index_created_or_already_present": indexes.get("created", 0), "index_failed": indexes.get("failed", 0),
         "skipped_step_count": skipped_steps, "captured_log_sha256": digest(lines),
+        "wanderer_schema": wanderer_schema,
     }
 
 

@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from tools.assessment_postgres_rehearsal import (
-    apply_assessment_migrations, connect_offline, differences, rehearse, snapshot, validate_target,
+    _runtime_schema_adapter, apply_assessment_migrations, connect_offline, differences, rehearse, snapshot, validate_target,
 )
 
 
@@ -65,6 +65,12 @@ class NativePostgresRehearsalTests(unittest.TestCase):
                 INSERT INTO submission_files VALUES(1,1,'DO_NOT_REPORT_FILENAME.png');
                 INSERT INTO original_types(raw_json,normalized_json,exact_decimal,happened_at,content,value,nullable_value)
                 VALUES ('{ "b":2, "a":1 }','{"b":2,"a":1}',123456789.123456789,'2026-01-01 00:00:00+08',decode('00ff0a','hex'),'-0',NULL);""")
+            # This release's recorder proof verifies an existing receipt store.
+            # Seed its real schema so unrelated migration tests exercise that
+            # contract instead of pretending a missing store is old data.
+            from classroom_app.db.schema_behavior_inbox import ensure_behavior_inbox_schema
+            with _runtime_schema_adapter(self.conn) as adapter:
+                ensure_behavior_inbox_schema(adapter, engine="postgres")
         self.temp = tempfile.TemporaryDirectory()
         self.backup = Path(self.temp.name) / "synthetic-input.dump"
         self.backup.write_bytes(b"Synthetic read-only source sentinel; not a production restore claim")
@@ -115,6 +121,28 @@ class NativePostgresRehearsalTests(unittest.TestCase):
         self.assertIn("table:submission_files", changes)
         self.assertIn("schema:column:submissions.feedback_md", changes)
         self.assertIn("sequence:original_types_id_seq", changes)
+
+    def test_recorder_proof_excludes_unrelated_sequence_but_the_complete_gate_protects_it(self):
+        from tools.behavior_capacity_migration_rehearsal import capture as capture_recorder, prove as prove_recorder
+        with self.conn.transaction():
+            before = snapshot(self.conn)
+            recorder_before = capture_recorder(self.conn, before)
+            self.conn.execute("SELECT nextval('original_types_id_seq')")
+            after = snapshot(self.conn)
+            recorder_after = capture_recorder(self.conn, after)
+        self.assertNotIn("original_types_id_seq", recorder_before["sequences"])
+        self.assertEqual("ok", prove_recorder(recorder_before, recorder_after)["status"])
+        self.assertIn("sequence:original_types_id_seq", differences(before, after))
+
+        def changes_unrelated_sequence(conn):
+            apply_assessment_migrations(conn)
+            conn.execute("SELECT nextval('original_types_id_seq')")
+
+        result = rehearse(self.conn, backup=self.backup, migrate=changes_unrelated_sequence, progress=lambda _: None)
+        self.assertEqual("failed", result["status"])
+        for stage in result["stages"]:
+            self.assertEqual("ok", stage["behavior_capacity_migration"]["status"])
+            self.assertIn("sequence:original_types_id_seq", stage["unexpected_old_field_differences"])
 
     def test_signature_scope_repair_allows_only_exact_scope_values_and_new_marker(self):
         with self.conn.transaction():

@@ -187,7 +187,7 @@ def _difference_order(name):
     return ({"table": 0, "schema": 1, "sequence": 2}.get(name.split(":", 1)[0], 3), name)
 
 
-def _prove(before, after):
+def _prove(before, after, wanderer_proof=None):
     blockers, expected_changes, actual_changes, allowed = [], [], [], set()
     if not _valid_capture(before) or not _valid_capture(after):
         return {"status": "failed", "blockers": ["invalid_agent_capture"], "expected_changes": [], "actual_changes": [], "allowed_differences": []}
@@ -300,7 +300,9 @@ def _prove(before, after):
 
     for table, original in before["authority_tables"].items():
         if after["authority_tables"].get(table) != original:
-            blockers.append("existing_agent_authority_or_receipts_changed:" + table)
+            from tools.wanderer_migration_rehearsal import authority_capture_matches
+            if not authority_capture_matches(wanderer_proof, table, original, after["authority_tables"].get(table)):
+                blockers.append("existing_agent_authority_or_receipts_changed:" + table)
     for table, current in after["authority_tables"].items():
         if table in before["authority_tables"]:
             continue
@@ -323,13 +325,16 @@ def _prove(before, after):
             "allowed_differences": sorted(allowed, key=_difference_order) if not blockers else []}
 
 
-def prove(before, after):
-    return {"contract": PROOF_CONTRACT, "before": before, "after": after, **_prove(before, after)}
+def prove(before, after, *, wanderer_proof=None):
+    result = {"contract": PROOF_CONTRACT, "before": before, "after": after, **_prove(before, after, wanderer_proof)}
+    if wanderer_proof is not None:
+        result["wanderer_migration"] = wanderer_proof
+    return result
 
 
 def valid_report_proof(proof):
     try:
         return (isinstance(proof, dict) and proof.get("contract") == PROOF_CONTRACT and proof.get("status") == "ok"
-                and proof == prove(proof["before"], proof["after"]))
+                and proof == prove(proof["before"], proof["after"], wanderer_proof=proof.get("wanderer_migration")))
     except (KeyError, TypeError, ValueError, AttributeError):
         return False

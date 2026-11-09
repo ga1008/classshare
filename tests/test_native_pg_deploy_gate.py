@@ -12,6 +12,7 @@ from tools.deploy.validate_native_pg_rehearsal import (
 )
 from tools.agent_authority_migration_rehearsal import prove as prove_agent_authority
 from tools.behavior_capacity_migration_rehearsal import prove as prove_behavior_capacity
+from tools.wanderer_migration_rehearsal import prove as prove_wanderer
 from tests.test_behavior_capacity_migration_rehearsal import baseline as capacity_baseline, migrated as capacity_migrated
 
 REPO = Path(__file__).resolve().parents[1]
@@ -28,7 +29,9 @@ class NativePostgresDeployGateTests(unittest.TestCase):
         self.backup = self.root / "source.dump"
         self.backup.write_bytes(b"PGDMP synthetic contract-test sentinel")
         run = {"status": "ok", "required_table_count": 2, "present_required_table_count": 2,
-               "index_failed": 0, "skipped_step_count": 0}
+               "index_failed": 0, "skipped_step_count": 0,
+               "wanderer_schema": {"status": "ok", "required_table_count": 1, "present_required_table_count": 1,
+                                   "missing_tables": [], "missing_columns": [], "world_schema_version": "5", "expected_world_schema_version": "5"}}
         self.report = {
             "report_contract": REPORT_CONTRACT, "status": "ok", "database_engine": "postgres",
             "source_export": {"remote_local_hash_equal": True, "unchanged_after_rehearsal": True,
@@ -47,10 +50,12 @@ class NativePostgresDeployGateTests(unittest.TestCase):
         empty_agent_proof = prove_agent_authority({"tables": {}, "authority_tables": {}}, {"tables": {}, "authority_tables": {}})
         capacity_before = capacity_baseline()
         capacity_proof = prove_behavior_capacity(capacity_before, capacity_migrated(capacity_before))
+        empty_wanderer = prove_wanderer({"tables": {}, "platform_columns": {}}, {"tables": {}, "platform_columns": {}})
         for phase in ("incremental", "full_startup"):
             self.report[phase]["agent_authority_migration_per_pass"] = [empty_agent_proof, copy.deepcopy(empty_agent_proof)]
             self.report[phase]["unexpected_old_differences_per_pass"] = [[], []]
             self.report[phase]["behavior_capacity_migration_per_pass"] = [capacity_proof, copy.deepcopy(capacity_proof)]
+            self.report[phase]["wanderer_migration_per_pass"] = [empty_wanderer, copy.deepcopy(empty_wanderer)]
 
     def tearDown(self):
         self.temp.cleanup()
@@ -121,6 +126,17 @@ class NativePostgresDeployGateTests(unittest.TestCase):
     def test_agent_proof_is_required_even_if_old_projection_has_no_differences(self):
         self.report["incremental"].pop("agent_authority_migration_per_pass")
         self.assertIn("incremental_differences_or_missing_checks", self.validate()["blockers"])
+
+    def test_wanderer_exact_proof_and_runtime_inventory_are_required(self):
+        for phase in ("incremental", "full_startup"):
+            changed = copy.deepcopy(self.report)
+            changed[phase].pop("wanderer_migration_per_pass")
+            self.assertIn(phase + "_differences_or_missing_checks", self.validate(changed)["blockers"])
+        for field, value in (("missing_columns", ["students.control_mode"]), ("missing_tables", ["wanderer_turns"]),
+                             ("world_schema_version", "4"), ("present_required_table_count", 0)):
+            changed = copy.deepcopy(self.report)
+            changed["full_startup"]["runs"][0]["wanderer_schema"][field] = value
+            self.assertIn("startup_run_1_wanderer_schema_incomplete", self.validate(changed)["blockers"])
 
     def test_recorder_index_proof_is_required_in_both_phases_even_when_sources_match(self):
         for phase in ("incremental", "full_startup"):
