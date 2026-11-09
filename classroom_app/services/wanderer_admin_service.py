@@ -132,7 +132,7 @@ _JSON_PATCH_FIELDS = {
     "interests_json": list,
 }
 _AVATAR_PATCH_FIELD = "avatar_silhouette"
-_PATCH_FIELDS = frozenset({"persona_prompt", "activity_level", "daily_action_budget", _AVATAR_PATCH_FIELD,
+_PATCH_FIELDS = frozenset({"persona_prompt", "activity_level", "daily_action_budget", "daily_wake_limit", _AVATAR_PATCH_FIELD,
                            *_JSON_PATCH_FIELDS})
 # ``avatar_file`` marker meaning "admin chose a silhouette": not a file name, so
 # the illustration is skipped and seeding never refills it (design §11).
@@ -141,7 +141,7 @@ _SETTING_FIELDS = frozenset({
     SETTING_ENABLED, SETTING_DAILY_AI_CALL_CAP, SETTING_TICK_BATCH_SIZE, SETTING_CLASSROOM_VISITS,
     SETTING_DAO_REVIEW_HOUR, SETTING_GENESIS_ENABLED, SETTING_LIFECYCLE_ENABLED,
     SETTING_REFLECTION_ENABLED, SETTING_REFLECTION_HOUR, SETTING_REFLECTION_BATCH_SIZE,
-    SETTING_PROMPT_CHAR_BUDGET, SETTING_MEMORY_RETENTION_DAYS, *GENESIS_INT_SETTINGS,
+    SETTING_PROMPT_CHAR_BUDGET, SETTING_MEMORY_RETENTION_DAYS, "autonomous_v2_enabled", "social_message_base", *GENESIS_INT_SETTINGS,
 })
 
 
@@ -506,6 +506,7 @@ def _profile_payload(wanderer: dict[str, Any]) -> dict[str, Any]:
         "persona_prompt": str(wanderer.get("persona_prompt") or ""),
         "public_intro": str(wanderer.get("public_intro") or ""),
         "activity_level": int(wanderer.get("activity_level") or 0),
+        "daily_wake_limit": int(wanderer.get("daily_wake_limit") or 0),
         "daily_action_budget": int(wanderer.get("daily_action_budget") or 0),
         "interaction_limit_penalty": int(wanderer.get("interaction_limit_penalty") or 0),
         "interaction_penalty_until": str(wanderer.get("interaction_penalty_until") or ""),
@@ -721,39 +722,30 @@ def social_conversations(conn: Any, wanderer_id: int, *, page: Any = 1, limit: A
     wanderer = require_wanderer(conn, wanderer_id)
     identity = f"student:{int(wanderer['student_id'])}"
     page_number, size, offset = _page_bounds(page, limit, 20)
-    conversations: list[dict[str, Any]] = []
-    try:
-        dm_rows = conn.execute(
-            "SELECT conversation_key, last_message_id FROM social_dm_participants WHERE identity = ?",
-            (identity,)).fetchall()
-    except Exception:  # noqa: BLE001
-        dm_rows = []
-    dm_people = []
-    for row in dm_rows:
-        data = _row_dict(row)
-        key = str(data.get("conversation_key") or "")
-        peers = [part for part in key.removeprefix("dm:").split("|") if part and part != identity]
-        dm_people.extend(peers)
-        conversations.append({"key": key, "type": "dm", "peer_identity": peers[0] if peers else "",
-                              "last_message_id": int(data.get("last_message_id") or 0)})
-    try:
-        group_rows = conn.execute(
-            "SELECT g.id, g.name, m.joined_at FROM social_group_members m JOIN social_groups g ON g.id = m.group_id "
-            "WHERE m.member_identity = ? AND m.left_at IS NULL AND g.dissolved_at IS NULL", (identity,)).fetchall()
-    except Exception:  # noqa: BLE001
-        group_rows = []
-    for row in group_rows:
-        data = _row_dict(row)
-        conversations.append({"key": f"group:{int(data.get('id'))}", "type": "group", "title": data.get("name"),
-                              "joined_at": data.get("joined_at"), "last_message_id": 0})
-    names = _identity_names(conn, dm_people)
-    for item in conversations:
-        if item["type"] == "dm":
-            person = names.get(item.get("peer_identity")) or {}
-            item["title"] = person.get("name") or item.get("peer_identity") or "好友"
-    conversations.sort(key=lambda item: int(item.get("last_message_id") or 0), reverse=True)
-    return {"items": conversations[offset:offset + size], "total": len(conversations),
-            "page": page_number, "limit": size}
+    # Page in SQL so thousands of retained groups/DMs do not load into Python.
+    source = """SELECT d.conversation_key AS key,'dm' AS type,'' AS title,
+        COALESCE((SELECT MAX(created_at) FROM social_messages m WHERE m.conversation_key=d.conversation_key),'') AS last_at,
+        d.last_message_id,NULL AS joined_at,NULL AS left_at,NULL AS dissolved_at
+        FROM social_dm_participants d WHERE d.identity=?
+        UNION ALL SELECT 'group:' || CAST(g.id AS TEXT),'group',g.name,
+        COALESCE((SELECT MAX(created_at) FROM social_messages sm WHERE sm.conversation_key='group:' || CAST(g.id AS TEXT)),m.joined_at),
+        COALESCE((SELECT MAX(id) FROM social_messages sm WHERE sm.conversation_key='group:' || CAST(g.id AS TEXT)),0),
+        m.joined_at,m.left_at,g.dissolved_at FROM social_group_members m JOIN social_groups g ON g.id=m.group_id WHERE m.member_identity=?
+        UNION ALL SELECT 'legacy:' || conversation_key,'legacy',conversation_key,MAX(created_at),MAX(id),NULL,NULL,NULL
+        FROM private_messages WHERE sender_identity=? OR recipient_identity=? GROUP BY conversation_key"""
+    args=(identity,identity,identity,identity)
+    total=int(conn.execute(f'SELECT COUNT(*) AS n FROM ({source}) conversations',args).fetchone()['n'])
+    rows=conn.execute(f'SELECT * FROM ({source}) conversations ORDER BY last_at DESC,key LIMIT ? OFFSET ?',(*args,size,offset)).fetchall()
+    items=[dict(row) for row in rows]
+    for item in items:
+        if item['type']=='dm':
+            peers=[p for p in item['key'].removeprefix('dm:').split('|') if p and p!=identity]
+            item['peer_identity']=peers[0] if peers else ''
+    names=_identity_names(conn,[item['peer_identity'] for item in items if item.get('peer_identity')])
+    for item in items:
+        if item['type']=='dm':
+            item['title']=(names.get(item.get('peer_identity')) or {}).get('name') or item.get('peer_identity') or '好友'
+    return {'items':items,'total':total,'page':page_number,'limit':size}
 
 
 def social_messages(conn: Any, wanderer_id: int, conversation_key: str, *, page: Any = 1,
@@ -763,6 +755,24 @@ def social_messages(conn: Any, wanderer_id: int, conversation_key: str, *, page:
     key = str(conversation_key or "").strip()
     if not key:
         raise ValueError("缺少会话标识")
+    if key.startswith('legacy:'):
+        original = key.removeprefix('legacy:')
+        allowed = conn.execute('SELECT 1 FROM private_messages WHERE conversation_key=? '
+                               'AND (sender_identity=? OR recipient_identity=?) LIMIT 1',(original,identity,identity)).fetchone()
+        if not allowed:
+            raise PermissionError('该历史会话不属于这位散修')
+        number,size,offset=_page_bounds(page,limit,50)
+        rows=conn.execute('SELECT * FROM private_messages WHERE conversation_key=? ORDER BY id DESC LIMIT ? OFFSET ?',
+                          (original,size,offset)).fetchall()
+        count=conn.execute('SELECT COUNT(*) AS n FROM private_messages WHERE conversation_key=?',(original,)).fetchone()['n']
+        from .message_center_service import _load_private_message_attachments
+        attachments=_load_private_message_attachments(conn,[int(row['id']) for row in rows])
+        for values in attachments.values():
+            for value in values:
+                value['download_url']=f"/api/manage/system/wanderers/{wanderer_id}/attachments/legacy/{value['id']}"
+        return {'items':[{**dict(row),'body':row['content'],'sender_name':row['sender_identity'],
+                          'attachments':attachments.get(int(row['id']),[])} for row in rows][::-1],
+                'total':count,'page':number,'limit':size,'conversation_key':key}
     if key.startswith("dm:"):
         allowed = conn.execute(
             "SELECT 1 FROM social_dm_participants WHERE identity = ? AND conversation_key = ? LIMIT 1",
@@ -771,17 +781,16 @@ def social_messages(conn: Any, wanderer_id: int, conversation_key: str, *, page:
         group_id = int(key.split(":", 1)[1] or 0)
         allowed = conn.execute(
             "SELECT 1 FROM social_group_members WHERE group_id = ? AND member_identity = ? "
-            "AND left_at IS NULL LIMIT 1", (group_id, identity)).fetchone()
+            "LIMIT 1", (group_id, identity)).fetchone()
     else:
         allowed = None
     if not allowed:
         raise PermissionError("该会话不属于这位散修")
     page_number, size, offset = _page_bounds(page, limit, 50)
-    count = conn.execute("SELECT COUNT(*) AS n FROM social_messages WHERE conversation_key = ? AND message_type IN "
-                         "('text','media','nudge')", (key,)).fetchone()
+    count = conn.execute("SELECT COUNT(*) AS n FROM social_messages WHERE conversation_key = ?", (key,)).fetchone()
     rows = conn.execute(
         "SELECT id, sender_identity, body, message_type, created_at, recalled_at FROM social_messages "
-        "WHERE conversation_key = ? AND message_type IN ('text','media','nudge') "
+        "WHERE conversation_key = ? "
         "ORDER BY id DESC LIMIT ? OFFSET ?", (key, size, offset)).fetchall()
     data = [_row_dict(row) for row in rows][::-1]
     sender_ids = [f"{row.get('sender_identity')}" for row in data]
@@ -791,19 +800,20 @@ def social_messages(conn: Any, wanderer_id: int, conversation_key: str, *, page:
     if ids:
         placeholders = ",".join("?" for _ in ids)
         for row in conn.execute(
-                f"SELECT message_id, media_kind, original_filename, mime_type, file_size FROM social_message_media "
+                f"SELECT id,message_id, media_kind, original_filename, mime_type, file_size FROM social_message_media "
                 f"WHERE message_id IN ({placeholders})", tuple(ids)).fetchall():
             item = _row_dict(row)
-            media[int(item["message_id"])] = {"kind": item.get("media_kind"), "filename": item.get("original_filename"),
-                                               "mime_type": item.get("mime_type"), "size": int(item.get("file_size") or 0)}
+            media.setdefault(int(item['message_id']),[]).append({'id':item['id'],'kind':item.get('media_kind'),
+                'filename':item.get('original_filename'),'mime_type':item.get('mime_type'),'size':int(item.get('file_size') or 0),
+                'download_url':f"/api/manage/system/wanderers/{wanderer_id}/attachments/social/{item['id']}"})
     items = []
     for row in data:
         person = names.get(str(row.get("sender_identity"))) or {}
         items.append({"id": int(row["id"]), "sender_identity": row.get("sender_identity"),
                       "sender_name": person.get("name") or row.get("sender_identity"),
-                      "body": "" if row.get("recalled_at") else str(row.get("body") or ""),
+                      "body": str(row.get("body") or ""),
                       "message_type": row.get("message_type"), "created_at": row.get("created_at"),
-                      "recalled": bool(row.get("recalled_at")), "media": media.get(int(row["id"]))})
+                      "recalled": bool(row.get("recalled_at")), "media": (media.get(int(row["id"])) or [None])[0], "attachments":media.get(int(row["id"]),[])})
     return {"items": items, "total": int(_row_dict(count).get("n") or 0), "page": page_number,
             "limit": size, "conversation_key": key}
 
@@ -933,6 +943,8 @@ def _validate_patch(patch: Any) -> dict[str, Any]:
         columns["activity_level"] = _bounded_int(patch["activity_level"], ACTIVITY_LEVEL_RANGE, "活跃度")
     if "daily_action_budget" in patch:
         columns["daily_action_budget"] = _bounded_int(patch["daily_action_budget"], DAILY_ACTION_BUDGET_RANGE, "每日动作预算")
+    if "daily_wake_limit" in patch:
+        columns["daily_wake_limit"] = _bounded_int(patch["daily_wake_limit"], (0, 10000), "每日独立唤醒额度")
     for key in _JSON_PATCH_FIELDS:
         if key in patch:
             columns[key] = _json_patch_value(key, patch[key])
@@ -989,6 +1001,9 @@ def update_talents(conn: Any, wanderer: dict[str, Any], raw: Any, reason: Any, *
     """Admin talent edit: validated, clamped, one review row with the old/new vector."""
     from .wanderer_life_core import normalize_talents
     from .wanderer_life_service import promote_life
+    from .wanderer_bond_service import lock_lifecycle,direct_partners
+    lock_lifecycle(conn,[wanderer['id'],*direct_partners(conn,wanderer['id'])])
+    wanderer=require_wanderer(conn,wanderer['id'])
 
     note = str(reason or "").strip()
     if not note:
@@ -1007,12 +1022,18 @@ def update_talents(conn: Any, wanderer: dict[str, Any], raw: Any, reason: Any, *
     changed = {key: [before[key], after[key]] for key in before if abs(before[key] - after[key]) > 1e-9}
     if not changed:
         raise ValueError("天赋没有变化")
-    conn.execute(
-        "UPDATE wanderer_agents SET talents_json = ?, updated_at = ? WHERE id = ?",
-        (json.dumps(after, ensure_ascii=False, sort_keys=True), local_iso(), int(wanderer["id"])),
-    )
+    from .wanderer_penalty_service import apply_penalty
+    from .wanderer_life_service import apply_talent_change
+    import uuid
+    negative = {f"talent:{key}": values[0]-values[1] for key, values in changed.items() if values[1]<values[0]}
+    if negative:
+        apply_penalty(conn, int(wanderer["id"]), negative, reason=f"管理员调整天赋：{note}", operation_id=f"admin-talents:{uuid.uuid4().hex}")
+    for key, values in changed.items():
+        if values[1]>values[0]:
+            apply_talent_change(conn, require_wanderer(conn,wanderer["id"]), key, values[1]-values[0], reason=note,created_by="admin")
+    after = require_wanderer(conn,wanderer["id"])["talents"]
     if "vitality" in changed:
-        promote_life(conn, wanderer, wanderer.get("tier"))
+        promote_life(conn, require_wanderer(conn,wanderer["id"]), wanderer.get("tier"))
         from .wanderer_identity_service import death_reason, mark_dead
 
         fresh = require_wanderer(conn, wanderer["id"])
@@ -1057,17 +1078,27 @@ def set_status(conn: Any, wanderer_id: Any, status: Any, *, actor: dict[str, Any
         raise ValueError("状态只能设为 active 或 paused")
     if wanderer.get("is_dead"):
         raise ValueError("散修已陨落，请使用「复活」")
-    _update_columns(conn, int(wanderer["id"]), {"status": wanted})
+    if wanted != wanderer.get("status"):
+        _update_columns(conn, int(wanderer["id"]), {"status": wanted})
+        conn.execute("UPDATE wanderer_agents SET authority_version=authority_version+1 WHERE id=?", (int(wanderer["id"]),))
     _invalidate(wanderer)
     return _card_for(conn, int(wanderer["id"]))
 
 
 def set_tier(conn: Any, wanderer_id: Any, tier: Any, reason: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
+    from .wanderer_bond_service import lock_lifecycle,direct_partners
+    lock_lifecycle(conn,[int(wanderer_id),*direct_partners(conn,int(wanderer_id))])
     wanderer = require_wanderer(conn, wanderer_id)
     target = _bounded_int(tier, (0, MAX_TIER), "境界")
     note = _tier_reason(reason)
     if wanderer.get("is_dead"):
         raise ValueError("散修已陨落，请先复活")
+    if target < clamp_tier(wanderer.get("tier")):
+        from .wanderer_penalty_service import apply_penalty
+        import uuid
+        result=apply_penalty(conn,int(wanderer["id"]),{"tier":clamp_tier(wanderer.get("tier"))-target},reason=f"管理员降阶：{note}",operation_id=f"admin-tier:{uuid.uuid4().hex}")
+        _invalidate(wanderer)
+        return {"settlement":result,"card":_card_for(conn,int(wanderer["id"]))}
     review_id = insert_dao_review(
         conn, wanderer_id=int(wanderer["id"]), review_kind="admin_override", verdict="noted",
         from_tier=clamp_tier(wanderer.get("tier")), to_tier=target, reason=note, created_by=_actor_label(actor),
@@ -1087,6 +1118,8 @@ def set_tier(conn: Any, wanderer_id: Any, tier: Any, reason: Any, *, actor: dict
 
 def reset_warnings(conn: Any, wanderer_id: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
     wanderer = require_wanderer(conn, wanderer_id)
+    from .wanderer_penalty_service import pardon_warnings
+    pardon_warnings(conn,int(wanderer['id']),reason=f'管理员撤销警告处罚（{_actor_label(actor)}）')
     _update_columns(conn, int(wanderer["id"]), {"warnings_count": 0})
     _invalidate(wanderer)
     return _card_for(conn, int(wanderer["id"]))
@@ -1096,27 +1129,26 @@ def wipe(conn: Any, wanderer_id: Any, *, actor: dict[str, Any]) -> dict[str, Any
     wanderer = require_wanderer(conn, wanderer_id)
     if wanderer.get("is_dead"):
         raise ValueError("散修已陨落")
-    forgotten = forget_all(conn, int(wanderer["id"]))
-    _update_columns(conn, int(wanderer["id"]), {"tier": 0, "cultivation_score": 0, "promotion_requested": 0})
-    mark_dead(conn, int(wanderer["id"]), f"管理员抹除（{_actor_label(actor)}）")
+    from .wanderer_penalty_service import wipe as quantified_wipe
+    import uuid
+    quantified_wipe(conn, int(wanderer["id"]), reason=f"管理员抹除（{_actor_label(actor)}）", operation_id=f"admin-wipe:{uuid.uuid4().hex}")
     _invalidate(wanderer)
-    return {"forgotten": forgotten, "card": _card_for(conn, int(wanderer["id"]))}
+    return {"forgotten": 0, "card": _card_for(conn, int(wanderer["id"]))}
 
 
 def revive(conn: Any, wanderer_id: Any, *, actor: dict[str, Any]) -> dict[str, Any]:
     from .wanderer_legacy_service import load_legacy, legacy_payload, void_legacy_for
     from .wanderer_life_core import lifespan_weeks_for, normalize_talents
-    from .wanderer_life_service import seed_after_revival
+    from .wanderer_life_service import seed_after_revival,archive_revival_knowledge
+    from .wanderer_resource_service import lock_actor_resources
 
+    lock_actor_resources(conn,int(wanderer_id))
     wanderer = require_wanderer(conn, wanderer_id)
     if not wanderer.get("is_dead"):
         raise ValueError("只有已陨落的散修可以复活")
     now = local_iso()
     talents = normalize_talents(wanderer.get("talents"), slug=wanderer.get("slug"))
-    conn.execute(
-        "UPDATE wanderer_knowledge_entries SET status = 'forgotten', updated_at = ? "
-        "WHERE wanderer_id = ? AND status = 'active'", (now, int(wanderer["id"])),
-    )
+    archive_revival_knowledge(conn,int(wanderer['id']))
     _update_columns(conn, int(wanderer["id"]), {
         "status": STATUS_ACTIVE, "tier": 0, "warnings_count": 0, "promotion_requested": 0,
         "appeal_requested": 0, "knowledge_chars": 0, "cultivation_score": 0,
@@ -1131,10 +1163,12 @@ def revive(conn: Any, wanderer_id: Any, *, actor: dict[str, Any]) -> dict[str, A
     seeded = seed_after_revival(conn, require_wanderer(conn, wanderer["id"]), legacy)
     conn.execute("UPDATE wanderer_agents SET cultivation_score = 0, updated_at = ? WHERE id = ?",
                  (now, int(wanderer["id"])))
+    from .wanderer_life_service import finish_revival
+    finish_revival(conn, int(wanderer["id"]))
     insert_dao_review(
         conn, wanderer_id=int(wanderer["id"]), review_kind="revive", verdict="revived",
         from_tier=clamp_tier(wanderer.get("tier")), to_tier=0,
-        reason="管理员复活，寿元重置，恢复初始人格知识。",
+        reason="管理员复活，寿元重置，保留人格与历史档案，知识须重新研读。",
         created_by=_actor_label(actor), evidence={"seed_knowledge": seeded, "life_reset": True},
     )
     _invalidate(wanderer)
@@ -1162,6 +1196,8 @@ def get_settings(conn: Any) -> dict[str, Any]:
         "env_enabled": _env_enabled(),
         "daily_ai_call_cap": daily_cap(conn),
         "tick_batch_size": max(low, min(high, batch)),
+        "autonomous_v2_enabled": _flag(wanderer_runtime_setting_get(conn, "autonomous_v2_enabled", "1"), True),
+        "social_message_base": _as_int(wanderer_runtime_setting_get(conn, "social_message_base", "20"), 20),
         "classroom_visits_enabled": _flag(wanderer_runtime_setting_get(conn, SETTING_CLASSROOM_VISITS), True),
         "dao_review_hour": hour if _HOUR_RE.match(hour) else DEFAULT_DAO_REVIEW_HOUR,
         "lifecycle_enabled": lifecycle_enabled(conn),
@@ -1208,6 +1244,8 @@ def _validate_settings(patch: Any) -> dict[str, str]:
     if unknown:
         raise ValueError(f"不支持的设置：{', '.join(unknown)}")
     validators = {
+        "autonomous_v2_enabled": lambda v: _bool_setting(v, "自主运行器开关"),
+        "social_message_base": lambda v: str(_bounded_int(v, (0, 10000), "独立交流基础额度")),
         SETTING_ENABLED: lambda v: _bool_setting(v, "启用开关"),
         SETTING_CLASSROOM_VISITS: lambda v: _bool_setting(v, "旁听课堂"),
         SETTING_DAILY_AI_CALL_CAP: lambda v: str(_bounded_int(v, DAILY_AI_CALL_CAP_RANGE, "每日 AI 调用上限")),

@@ -360,9 +360,11 @@ class WandererSocialTest(WandererWorldTestCase):
         self.assertIn("relation", prompt)
         self.assertNotIn("student_no_tail", prompt)
         self.assertNotIn("S-0001", prompt)
-        self.assertEqual(asyncio.run(start_friend_conversation(ctx)), [])  # no nag before a reply
+        reconsidered = asyncio.run(start_friend_conversation(ctx))
+        self.assertEqual(len(caller.calls), 2)  # the AI may consider a new outreach; no backend silence decision
+        self.assertEqual(reconsidered[-1]["outcome"], "skipped")  # repeated draft is still suppressed
 
-    def test_group_prompt_carries_dm_context_and_peer_lifespan(self):
+    def test_group_prompt_excludes_dm_context_and_keeps_peer_lifespan(self):
         key = self.befriend(self.real, self.lele)
         self.send(self.real, key, "昨天说的那本书我找到了")
         scene = {
@@ -376,9 +378,8 @@ class WandererSocialTest(WandererWorldTestCase):
         }
         with self.connect() as conn:
             prompt = build_system_prompt(conn, self.lele, scene=scene, thread_key="group:1")
-        self.assertIn("【跨场合的近期记忆】", prompt)
-        self.assertIn("昨天说的那本书我找到了", prompt)
-        self.assertIn("私聊·", prompt)
+        self.assertNotIn("昨天说的那本书我找到了", prompt)
+        self.assertNotIn("私聊·", prompt)
         self.assertIn("剩余寿元：42 天", prompt)
         self.assertIn("合成一班", prompt)
 
@@ -560,20 +561,22 @@ class WandererSocialTest(WandererWorldTestCase):
         delay = (datetime.fromisoformat(watches[0]["run_at"]) - datetime.now()).total_seconds()
         self.assertTrue(25 <= delay <= 121, delay)
 
-    def test_mention_forces_consideration_and_others_just_read(self):
+    def test_mention_and_other_group_members_reach_their_own_decision(self):
         group_id, key = self.make_group(self.atai, self.lele)
         self.send(self.real, key, "@阿泰 周末打球吗", mentions=[self.ident(self.atai)])
         summary = asyncio.run(watch_group(group_id, rng=FixedRandom(0.99)))
-        self.assertEqual([item["identity"] for item in summary["scheduled"]], [self.ident(self.atai)])
-        self.assertTrue(summary["scheduled"][0]["mentioned"])
-        self.assertTrue(5 <= summary["scheduled"][0]["delay"] <= 40)
-        self.assertEqual(summary["passed"], [self.ident(self.lele)])
+        self.assertEqual({item["identity"] for item in summary["scheduled"]}, {self.ident(self.atai), self.ident(self.lele)})
+        mentioned = next(item for item in summary["scheduled"] if item["identity"] == self.ident(self.atai))
+        self.assertTrue(mentioned["mentioned"])
+        self.assertTrue(5 <= mentioned["delay"] <= 80)
+        self.assertEqual(summary["passed"], [])
         cursor = self.rows("SELECT last_read_message_id FROM social_group_members WHERE member_identity = ?",
                            (self.ident(self.lele),))[0]["last_read_message_id"]
-        self.assertGreater(cursor, 0)
+        latest = self.rows("SELECT MAX(id) AS id FROM social_messages WHERE conversation_key=?", (key,))[0]["id"]
+        self.assertLess(cursor, latest)  # a schedule is not an observation/read receipt
         reply = [row for row in self.tasks("wanderer_social_reply") if row["payload"]["conversation_key"] == key]
-        self.assertEqual(len(reply), 1)
-        self.assertTrue(reply[0]["payload"]["mentioned"])
+        self.assertEqual(len(reply), 2)
+        self.assertTrue(any(r["payload"]["mentioned"] for r in reply))
         caller = StubCaller(turn("reply", ["打！"]))
         self.run_reply(self.atai, key, caller, mentioned=True)
         self.assertEqual([row["body"] for row in self.messages_from(self.ident(self.atai), key)], ["打！"])
@@ -592,14 +595,14 @@ class WandererSocialTest(WandererWorldTestCase):
         steps = [delays[0]] + [later - earlier for earlier, later in zip(delays, delays[1:])]
         self.assertTrue(all(5 <= step <= 40 for step in steps), steps)
 
-    def test_group_daily_cap_limits_unprompted_chatter(self):
+    def test_group_old_daily_cap_no_longer_discards_decisions(self):
         group_id, key = self.make_group(self.atai)
         self.insert_messages(key, self.ident(self.atai), GROUP_DAILY_CAP, prefix="cap")
         self.send(self.real, key, "还在吗")
         summary = asyncio.run(watch_group(group_id, rng=FixedRandom(0.0)))
-        self.assertEqual(summary["scheduled"], [])
+        self.assertEqual(len(summary["scheduled"]), 1)
         self.assertEqual(group_reply_probability(self.atai, interest=0, mentioned=False, streak=0,
-                                                 last_is_wanderer=False, sent_today=GROUP_DAILY_CAP), 0.0)
+                                                 last_is_wanderer=False, sent_today=GROUP_DAILY_CAP), 1.0)
 
     def test_group_duplicate_suggestion_is_suppressed(self):
         _, key = self.make_group(self.atai)
@@ -675,23 +678,20 @@ class WandererSocialTest(WandererWorldTestCase):
         self.assertLessEqual(delay, 12, delay)
         self.assertLessEqual(datetime.fromisoformat(second), datetime.fromisoformat(first))
 
-    def test_wanderer_loop_guard(self):
+    def test_wanderer_group_can_continue_past_two_ai_messages(self):
         group_id, key = self.make_group(self.atai, self.lele, self.xiaoman)
         self.send(self.real, key, "你们聊")
         self.send(self.ident(self.atai), key, "我先说")
         self.send(self.ident(self.lele), key, "@小满 你说呢", mentions=[self.ident(self.xiaoman)])
-        caller = StubCaller(turn("reply", ["嗯"]))
-        self.run_reply(self.xiaoman, key, caller, mentioned=True)  # even a mention does not break the guard
-        self.assertEqual(caller.calls, [])
-        self.assertIn("wanderer_loop", self.reasons(self.xiaoman))
+        caller = StubCaller(turn("reply", ["我也有新的想法"]))
+        self.run_reply(self.xiaoman, key, caller, mentioned=True)
+        self.assertEqual(len(caller.calls), 1)
+        self.assertNotIn("wanderer_loop", self.reasons(self.xiaoman))
         self.send(self.ident(self.lele), key, "@阿泰 你呢", mentions=[self.ident(self.atai)])
         summary = asyncio.run(watch_group(group_id, rng=FixedRandom(0.0)))
-        self.assertEqual(summary["scheduled"], [])  # two wanderer-only turns in a row: nobody joins in
-        human = group_reply_probability(self.lele, interest=0, mentioned=False, streak=0, last_is_wanderer=False,
-                                        sent_today=0)
-        after_wanderer = group_reply_probability(self.lele, interest=0, mentioned=False, streak=1,
-                                                 last_is_wanderer=True, sent_today=0)
-        self.assertLess(after_wanderer, human * 0.3)
+        self.assertTrue(summary["scheduled"])
+        self.assertEqual(group_reply_probability(self.lele, interest=0, mentioned=False, streak=9,
+                                                last_is_wanderer=True, sent_today=0), 1.0)
 
     def test_wanderer_never_answers_itself(self):
         _group_id, key = self.make_group(self.atai)

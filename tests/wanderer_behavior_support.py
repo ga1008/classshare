@@ -27,6 +27,9 @@ ONLY_BLOG = {"blog_browse": 1, "blog_like": 1, "blog_comment": 1, "reply": 1, "d
              "social": 0, "social_block": 0, "social_group": 0, "social_seek": 0, "manual_read": 0}
 ONLY_CLASSROOM = {**{key: 0 for key in ONLY_BLOG}, "classroom_visit": 1, "classroom_message": 1}
 _RESET_TABLES = (
+    "wanderer_penalty_reversals", "wanderer_penalty_allocations", "wanderer_penalty_debts", "wanderer_penalty_roots",
+    "wanderer_bonds", "wanderer_bond_requests", "wanderer_dao_history_blocks", "wanderer_life_ledger",
+    "wanderer_resource_usage", "wanderer_resource_reservations", "wanderer_capacity_allocations", "wanderer_cultivation_awards",
     "wanderer_daily_reflections", "wanderer_memory_chapters", "wanderer_episodic_memories",
     "wanderer_experience_notes",
     "wanderer_social_inbox",
@@ -124,7 +127,9 @@ class WandererWorldTestCase(WandererDbTestCase):
             conn.execute("DELETE FROM wanderer_runtime_settings")
             wanderer_runtime_setting_set(conn, daily_ai_calls_key(), "0")
             wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "4096")
+            wanderer_runtime_setting_set(conn, "autonomous_v2_enabled", "0")
             conn.execute("UPDATE wanderer_agents SET status = 'active', promotion_requested = 0, "
+                         "life_epoch=1,authority_version=1,life_bonus_seconds=0,daily_wake_limit=100, "
                          "promotion_requested_at = NULL, warnings_count = 0, last_warning_at = NULL, stats_json = '{}', "
                          "born_at = created_at, lifespan_weeks = 0, life_penalty_weeks = 0, life_extensions = 0, "
                          "talents_json = '{}', legacy_id = NULL, last_extend_at = NULL, last_appeal_at = NULL, "

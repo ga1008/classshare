@@ -578,6 +578,9 @@ def ensure_teacher_learning_material_owner(conn, material_id: int, teacher_id: i
 
 
 def _get_student_offering_ids(conn, student_id: int) -> list[int]:
+    from .account_control_service import student_is_ai_controlled
+    if student_is_ai_controlled(conn, student_id):
+        return []
     rows = conn.execute(
         """
         SELECT o.id
@@ -650,7 +653,8 @@ def ensure_user_material_access(
         if root is not None and str(_row_value_compat(root, "student_visible", 0)).lower() in {"1", "true"}:
             scope = str(_row_value_compat(root, "scope_level", "") or "")
             if scope in {"public", "school", "college", "department"} and can_read_scoped_resource(conn, root, user):
-                if scope != "public" or offering_ids or conn.execute(
+                from .account_control_service import student_is_ai_controlled
+                if scope != "public" or offering_ids or student_is_ai_controlled(conn, user_id) or conn.execute(
                     "SELECT 1 FROM students WHERE id = ? AND COALESCE(enrollment_status, 'active') = 'active'",
                     (user_id,),
                 ).fetchone():

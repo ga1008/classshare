@@ -42,7 +42,7 @@ async def run_claim(task: dict, *, factory=None, ai_caller=None, sleep=None) -> 
 
 async def _run_claim(task: dict, *, factory=None, ai_caller=None, sleep=None) -> str:
     from . import social_push_service
-    from .wanderer_actions_social import _sent_since, RATE_LIMIT, RATE_WINDOW_SECONDS, wanderer_streak
+    from .wanderer_actions_social import _sent_since, RATE_LIMIT, RATE_WINDOW_SECONDS
     from .social_common import iso_before
     ctx = actions.context(task, factory=factory, ai_caller=ai_caller, sleep=sleep)
     if ctx is None:
@@ -77,9 +77,6 @@ async def _run_claim(task: dict, *, factory=None, ai_caller=None, sleep=None) ->
             pass
         elif not window["new"]:
             response = {"status": "ok", "parts": [], "action": "skip", "mood": live["mood"], "reason": "没有待回应的有效消息"}
-        elif (window["new"][-1]["sender_identity"] in window["wanderer_ids"]
-              and wanderer_streak(window["rows"], window["wanderer_ids"]) >= 2):
-            response = {"status": "ok", "parts": [], "action": "skip", "mood": live["mood"], "reason": "结束散修之间的连续互答"}
         else:
             response = await _compose_or_handoff(ctx, live, window, factory=factory)
             if response is None:

@@ -83,6 +83,29 @@ def window_for(conn: Any, ctx: ActionContext, task: dict, *, snapshot=None) -> d
 
 
 async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
+    from .wanderer_runtime_service import runtime_enabled, wake_wanderer
+    with ctx.connect() as conn:
+        autonomous = runtime_enabled(conn)
+    if autonomous:
+        evidence = [{'ref':f"message:{row['id']}", 'kind':'social_message' if task['source']=='social' else 'private_message',
+                     'id':row['id']} for row in window['new']]
+        payload = {'conversation_key':task['conversation_key'], 'scope':{'kind':'conversation','key':task['conversation_key']},
+                   'peer_identity':task['peer_identity'], 'messages':[
+                       {key:row.get(key) for key in ('id','sender_identity','body','message_type','recalled_at','created_at')}
+                       for row in window['rows']], 'evidence':evidence,
+                   'reply_hint':({'capability':'social.send_message',
+                       'args':{'path_params':{'key':task['conversation_key']},'body':{'body':'本人决定的回复','body_format':'text'}}}
+                       if task['source']=='social' else {'capability':'legacy.send_message','args':{'body':{
+                           'contact_identity':task['peer_identity'],'class_offering_id':task.get('class_offering_id'),
+                           'content':'本人决定的回复'}}}),
+                   'notice':'原文只属于此会话；附件占位不代表已看过附件。是否回应、再联系或保持沉默由你决定。'}
+        result = await wake_wanderer(ctx.conn_factory,ctx.wanderer_id,source='inbox',
+            event_key=f"{task['id']}:{window['anchor']}",context=payload,ai_caller=ctx.ai_caller)
+        rounds = result.get('rounds') or [result]
+        considered = bool(rounds and rounds[0].get('status')=='ok')
+        return {'status':'ok' if considered else result.get('status'), 'parts':[], 'action':'skip',
+                'mood':'','reason':'已通过自主指令处理本次来信' if considered else result.get('error','等待唤醒'),
+                'ai_calls':result.get('ai_calls',0),'autonomous_runtime':True}
     from .wanderer_actions_social import chat_scene
     scene = chat_scene(ctx, window, "multi", False)
     scene["_learning_conversation_key"] = task["conversation_key"]
@@ -244,7 +267,7 @@ def finish(ctx: ActionContext, task: dict) -> tuple[bool, list]:
         apply_learning_safely(conn, ctx.wanderer, response.get("learning"))
         from .wanderer_episodic_memory_service import record_memory
         heard = [str(row.get("body") or "")[:600] for row in rows if row["sender_identity"] != ctx.identity]
-        if heard or response.get("parts"):
+        if (heard or response.get("parts")) and not response.get('autonomous_runtime'):
             record_memory(conn, ctx.wanderer, kind="conversation", title="一段私信交流",
                           content=("\n".join(f"对方：{item}" for item in heard[:6])
                                    + ("\n我回应：" + " / ".join(response["parts"]) if response.get("parts") else "")),

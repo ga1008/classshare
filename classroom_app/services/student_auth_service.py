@@ -75,7 +75,7 @@ def get_student_auth_record_by_identity(
     name: str,
     student_id_number: str,
 ):
-    return conn.execute(
+    row = conn.execute(
         """
         SELECT s.*, c.name AS class_name, c.created_by_teacher_id,
                c.department AS class_department
@@ -85,6 +85,8 @@ def get_student_auth_record_by_identity(
         """,
         (name.strip(), student_id_number.strip()),
     ).fetchone()
+    from .account_control_service import student_is_ai_controlled
+    return None if row is not None and student_is_ai_controlled(conn, row) else row
 
 
 def _password_reset_class_label(value: str) -> str:
@@ -176,7 +178,8 @@ def get_student_auth_record_for_password_login(conn: sqlite3.Connection, identif
 def can_student_use_identity_login(student_row) -> bool:
     if not student_row:
         return False
-    return not student_row["hashed_password"] or bool(student_row["password_reset_required"])
+    from .account_control_service import row_allows_human_auth
+    return row_allows_human_auth(student_row) and (not student_row["hashed_password"] or bool(student_row["password_reset_required"]))
 
 
 def parse_user_agent(user_agent: Optional[str]) -> dict:

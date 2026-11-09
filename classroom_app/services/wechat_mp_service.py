@@ -236,6 +236,9 @@ def create_binding(
     a different account simply repoints the row (old account keeps no
     stale claim on this phone).
     """
+    if str(user_role) == "student":
+        from .account_control_service import ensure_student_human_auth
+        ensure_student_human_auth(conn, user_pk)
     ensure_wechat_mp_schema(conn)
     now = datetime.now().isoformat()
     conn.execute(
@@ -323,6 +326,9 @@ def _hash_token(token: str) -> str:
 
 
 def issue_mp_session(conn: Any, *, user_role: str, user_pk: int, openid: str = "") -> str:
+    if user_role == "student":
+        from .account_control_service import ensure_student_human_auth
+        ensure_student_human_auth(conn, int(user_pk))
     ensure_wechat_mp_schema(conn)
     token = secrets.token_urlsafe(32)
     now = datetime.now(timezone.utc)
@@ -431,6 +437,9 @@ def load_mp_user(conn: Any, session: dict) -> Optional[dict]:
             (user_pk,),
         ).fetchone()
         if not row or not is_active_student_status(row["enrollment_status"]):
+            return None
+        from .account_control_service import student_is_ai_controlled
+        if student_is_ai_controlled(conn, user_pk):
             return None
         return {
             "id": row["id"],

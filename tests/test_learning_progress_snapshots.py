@@ -365,6 +365,18 @@ class LearningProgressSnapshotTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(first_mark["revealed_at"], stored["revealed_at"])
 
+    def test_weekly_roster_includes_linked_classes_and_primary_fallback_once(self):
+        self.conn.execute("INSERT INTO class_offerings(id,class_id,course_id,teacher_id) VALUES(1,10,20,30)")
+        self.conn.executemany("INSERT INTO students(id,class_id,name,student_id_number,enrollment_status) VALUES(?,?,?,? ,?)",
+                             [(2,10,'Primary','S002','active'),(3,11,'Linked','S003','active'),
+                              (4,11,'Withdrawn','S004','withdrawn'),(5,12,'Unrelated','S005','active')])
+        self.assertEqual(service._weekly_snapshot_student_ids(self.conn,1),[2])
+        self.conn.executemany("INSERT INTO class_offering_class_links(offering_id,teacher_id,class_id,is_primary,source) VALUES(1,30,?,?,?)",
+                             [(10,1,'manual'),(11,0,'manual')])
+        self.assertEqual(service._weekly_snapshot_student_ids(self.conn,1),[2,3])
+        self.assertEqual(service._weekly_snapshot_student_ids(self.conn,1,3),[3])
+        self.assertEqual(service._weekly_snapshot_student_ids(self.conn,1,5),[])
+
     def test_capture_weekly_snapshots_is_idempotent_and_updates_same_week(self):
         self.conn.execute(
             "INSERT INTO class_offerings (id, class_id, course_id, teacher_id, course_name) VALUES (1, 10, 20, 30, 'Course')"

@@ -141,7 +141,7 @@ class ResurrectionTest(WandererDbTestCase):
             conn.execute("UPDATE wanderer_agents SET last_resurrect_at = NULL")
             conn.commit()
 
-    def test_reviving_a_dao_wanderer_never_leaves_zero_knowledge(self):
+    def test_reviving_does_not_invent_unread_world_knowledge(self):
         with self.connect() as conn:
             persist_genesis_seed(conn, GENESIS_SEED, rationale="合成", activity={})
             conn.commit()
@@ -161,7 +161,7 @@ class ResurrectionTest(WandererDbTestCase):
                                   "AND status = 'active'", (revived["id"],)).fetchone()[0]
             reason = death_reason(conn, revived)
         self.assertTrue(result["ok"])
-        self.assertGreaterEqual(active, 1)
+        self.assertEqual(active, 0)
         self.assertEqual(reason, "")
 
     def test_tier_ten_wanderer_pays_weeks_to_revive_a_peer(self):

@@ -809,6 +809,8 @@ from .wanderer_reflection_service import handle_wanderer_daily_reflection  # noq
 
 # 散修 tick (10 min) + 即时回复 (被问/被@) + 天道 daily review + @天道 replies; all no-op while disabled.
 register_task_handler(TASK_KIND_WANDERER_TICK, handle_wanderer_tick)
+from .wanderer_runtime_service import handle_wake_events
+register_task_handler('wanderer_wake_events', handle_wake_events)
 register_task_handler(TASK_KIND_WANDERER_REPLY_TICK, handle_wanderer_reply_tick)
 register_task_handler(TASK_KIND_WANDERER_DAO_DAILY, handle_wanderer_dao_daily_review)
 register_task_handler(TASK_KIND_WANDERER_REFLECTION, handle_wanderer_daily_reflection)

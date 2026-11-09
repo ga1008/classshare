@@ -126,6 +126,7 @@ def record_memory(
     counterpart_identity: str = "",
     location: str = "",
     unresolved: bool = False,
+    mirror: bool = True,
 ) -> Optional[int]:
     """Insert one episode (idempotent by hash); returns its id or None."""
     text = str(content or "").strip()[:CONTENT_MAX_CHARS]
@@ -169,12 +170,13 @@ def record_memory(
             "SELECT id FROM wanderer_episodic_memories WHERE wanderer_id = ? AND episode_hash = ? LIMIT 1",
             (int(wanderer["id"]), digest)).fetchone()
         return int(_row_value(existing, "id")) if existing is not None else None
-    _append_mirror(episode_mirror_path(wanderer), {
+    if mirror:
+        _append_mirror(episode_mirror_path(wanderer), {
         "id": memory_id, "occurred_at": when, "kind": kind, "title": str(title or "")[:TITLE_MAX_CHARS],
         "content": text, "importance": level, "valence": _clamp(valence, -1.0, 1.0),
         "people": people_list, "tags": tag_list, "source_kind": source_kind, "source_ref": source_ref,
         "location": str(location or "")[:120],
-    })
+        })
     return memory_id
 
 

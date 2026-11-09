@@ -105,6 +105,9 @@ class RouteCapability:
     body_declared: bool = True
     body_fields: tuple[str, ...] = ()
     body_hints: tuple[str, ...] = ()
+    file_field_name: str = "files"
+    max_files: int = 16
+    forbidden_file_suffixes: tuple[str, ...] = ()
 
     @property
     def accepts_body(self) -> bool:
@@ -176,7 +179,10 @@ def _openapi_operation(app, method: str, path: str) -> dict[str, Any] | None:
         spec = app.openapi()
     except Exception:
         return None
-    return (spec.get("paths") or {}).get(path, {}).get(method.lower())
+    # Starlette converter syntax (/items/{id:int}) is normalized by FastAPI
+    # in OpenAPI (/items/{id}); use the same normalization for discovery.
+    schema_path = re.sub(r"\{([^}:]+):[^}]+\}", r"{\1}", path)
+    return (spec.get("paths") or {}).get(schema_path, {}).get(method.lower())
 
 
 def _non_json_response(route) -> bool:
@@ -234,12 +240,12 @@ def _body_field_names(schema: Any) -> tuple[str, ...]:
     return tuple(f"{name}*" if name in required else name for name in properties)
 
 
-def _undeclared_body(endpoint) -> tuple[str | None, tuple[str, ...]]:
+def _undeclared_body(endpoint, _depth=0) -> tuple[str | None, tuple[str, ...]]:
     """(transport, field hints) for handlers that consume ``request`` by hand."""
     try:
-        signature = inspect.signature(endpoint)
+        signature = inspect.signature(endpoint, eval_str=True)
         source = inspect.getsource(endpoint)
-    except (TypeError, OSError, ValueError):
+    except (TypeError, OSError, ValueError, NameError):
         return None, ()
     takes_request = any(param.annotation is Request or getattr(param.annotation, "__name__", "") == "Request"
                         for param in signature.parameters.values())
@@ -247,11 +253,20 @@ def _undeclared_body(endpoint) -> tuple[str | None, tuple[str, ...]]:
         return None, ()
     json_calls = list(_UNDECLARED_JSON.finditer(source))
     form_calls = list(_UNDECLARED_FORM.finditer(source))
+    helper_calls = []
+    if _depth < 2:
+        for match in re.finditer(r'(?:(?P<var>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*)?await\s+(?P<helper>[A-Za-z_][A-Za-z0-9_]*)\(request\)', source):
+            helper = getattr(endpoint, '__globals__', {}).get(match.group('helper'))
+            if inspect.isfunction(helper) and helper.__module__ == endpoint.__module__ and helper is not endpoint:
+                transport, _hints = _undeclared_body(helper, _depth + 1)
+                if transport:
+                    helper_calls.append((match, transport))
     # A handler that branches on content type (JSON vs multipart) or parses
     # the body more than once has no single shape to infer: stay blocked.
-    if len(json_calls) + len(form_calls) != 1 or "multipart" in source:
+    if len(json_calls) + len(form_calls) + len(helper_calls) != 1 or "multipart" in source:
         return None, ()
-    match, transport = (json_calls[0], "json") if json_calls else (form_calls[0], "form")
+    match, transport = ((json_calls[0], "json") if json_calls else
+                        (form_calls[0], "form") if form_calls else helper_calls[0])
     # Only fields read from the variable that holds the parsed body count as
     # hints; other dict lookups in the handler (AI responses, rows) do not.
     variable = match.group("var") or "data"
@@ -352,6 +367,12 @@ def _capability(app, row: dict[str, Any], classification: RouteClassification, *
         undeclared, hints = _undeclared_body(endpoint)
         if undeclared:
             body_declared, transport = False, undeclared
+    if not hints and row["method"] in BODY_METHODS and not _body_field_names(schema):
+        # Dict Body endpoints (notably social CRUD) declare a JSON object but
+        # consume named fields through the shared _field helper. Publish those
+        # field hints without inventing a second business validator.
+        source = inspect.getsource(endpoint)
+        hints = tuple(sorted(set(re.findall(r'''_field\(\s*\w+\s*,\s*["']([A-Za-z_][A-Za-z0-9_]*)["']''', source))))
     return RouteCapability(
         key=route_key(row["method"], row["path"]), label=_label(route, operation), method=row["method"], path=row["path"],
         module=getattr(endpoint, "__module__", ""), handler=getattr(endpoint, "__qualname__", ""),

@@ -1,24 +1,13 @@
-"""散修自己的关系与情绪 (docs/wanderer-lifecycle-2026-10-30.md §5).
-
-One row per (wanderer, peer): affinity −100..100, interaction count, the last
-mood/reason and the last eight feeling events. Feelings are *chosen by the
-wanderer*: a successful conversation turn may return
-``"feeling": {"affinity": -3..3, "reason": "..."}``; 亲和 scales gains and
-softens losses. With no feeling output only the interaction count moves — the
-service never invents an emotion from another person's words.
-
-Also provides the grief/reunion atmosphere around death and resurrection, the
-prompt block, admin lists and the public aggregate counts.
-"""
+"""Self-authored directed affinity: absolute 0..100, versioned and attributable."""
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Iterable, Optional
 
 from ..time_utils import local_iso
-from .wanderer_life_core import talent_value
 
-AFFINITY_MIN = -100.0
+AFFINITY_MIN = 0.0
 AFFINITY_MAX = 100.0
 FEELING_EVENT_LIMIT = 8
 FEELING_MAX_MOOD = 20
@@ -26,10 +15,10 @@ FEELING_MAX_REASON = 200
 FEELING_MAX_SCENE = 40
 PROMPT_RELATIONSHIPS = 6
 PROMPT_REASON_MAX = 120
-GRIEF_AFFINITY_THRESHOLD = 40.0
-GRIEF_DELTA = -6.0
-REUNION_DELTA = 5.0
-_FEELING_LABELS = ((60.0, "挚友"), (20.0, "亲近"), (-19.999, "平常"), (-59.999, "疏远"))
+GRIEF_AFFINITY_THRESHOLD = 70.0
+GRIEF_DELTA = 0.0
+REUNION_DELTA = 0.0
+_FEELING_LABELS = ((100.0, "倾心"), (80.0, "挚友"), (60.0, "亲近"), (40.0, "平常"), (20.0, "疏远"))
 
 
 def _row_value(row: Any, key: str, index: int = 0) -> Any:
@@ -88,21 +77,6 @@ def peer_kind(conn: Any, peer_identity: str) -> str:
     return kind["value"]
 
 
-def _charm(wanderer: dict[str, Any]) -> float:
-    return max(0.2, talent_value(wanderer.get("talents"), "charm"))
-
-
-def scale_delta(wanderer: dict[str, Any], delta: Any) -> float:
-    """Clamp one event to ±5; 亲和 multiplies gains and divides losses."""
-    try:
-        raw = max(-5.0, min(5.0, float(delta)))
-    except (TypeError, ValueError):
-        return 0.0
-    charm = _charm(wanderer)
-    scaled = raw * charm if raw >= 0 else raw / charm
-    return round(max(-5.0, min(5.0, scaled)), 1)
-
-
 def _existing(conn: Any, wanderer_id: int, peer_identity: str) -> Any:
     return conn.execute(
         "SELECT * FROM wanderer_relationships WHERE wanderer_id = ? AND peer_identity = ? LIMIT 1",
@@ -115,95 +89,154 @@ def _append_event(feelings: list[Any], event: dict[str, Any]) -> list[dict[str, 
     return [*items, event]
 
 
+def _prepare(conn: Any) -> None:
+    from ..db.schema_wanderer_social import ensure_wanderer_social_schema
+    ensure_wanderer_social_schema(conn)
+
+
+def affinity_states(conn: Any, wanderer_id: int, peer_identities: Iterable[str]) -> dict[str, dict[str, Any]]:
+    """One bounded read for a recipient roster, without one query per group member."""
+    _prepare(conn)
+    peers = list(dict.fromkeys(str(peer) for peer in peer_identities))
+    default = {"affinity":0.0,"revision":0,"origin":"unknown","legacy_affinity":None,"source_turn_id":""}
+    result = {peer:dict(default) for peer in peers}
+    if not peers:
+        return result
+    marks = ",".join("?" for _ in peers)
+    rows = conn.execute(
+        "SELECT r.peer_identity,r.affinity,v.revision,v.origin,v.legacy_affinity,v.source_turn_id "
+        "FROM wanderer_relationships r LEFT JOIN wanderer_relationship_versions v "
+        "ON v.wanderer_id=r.wanderer_id AND v.peer_identity=r.peer_identity "
+        f"WHERE r.wanderer_id=? AND r.peer_identity IN ({marks})", (int(wanderer_id),*peers)).fetchall()
+    for row in rows:
+        legacy = row["revision"] is None
+        result[row["peer_identity"]] = {
+            "affinity":max(0.0,min(100.0,(float(row["affinity"]) + 100) / 2 if legacy else float(row["affinity"]))),
+            "revision":int(row["revision"] or 0),"origin":"legacy" if legacy else row["origin"],
+            "legacy_affinity":row["affinity"] if legacy else row["legacy_affinity"],
+            "source_turn_id":row["source_turn_id"] or ""}
+    return result
+
+
+def affinity_state(conn: Any, wanderer_id: int, peer_identity: str) -> dict[str, Any]:
+    return affinity_states(conn,wanderer_id,[peer_identity])[peer_identity]
+
+
+def _ensure_relationship(conn: Any, wanderer: dict[str, Any], peer: str) -> None:
+    from .social_common import serialize_on
+    _prepare(conn)
+    serialize_on(conn, "wanderer-relationship", [f"{wanderer['id']}:{peer}"])
+    existing = _existing(conn, int(wanderer["id"]), peer)
+    state = affinity_state(conn, int(wanderer["id"]), peer)
+    now = local_iso()
+    if existing is None:
+        conn.execute("INSERT INTO wanderer_relationships (wanderer_id,peer_identity,peer_kind,affinity,interactions,"
+                     "last_delta,last_mood,last_reason,feelings_json,first_met_at,last_interaction_at,updated_at) "
+                     "VALUES (?,?,?,0,0,0,'','','[]',?,?,?)", (int(wanderer["id"]),peer,peer_kind(conn,peer),now,now,now))
+        # A removed relationship cannot inherit the old row's revision or origin.
+        conn.execute("DELETE FROM wanderer_relationship_versions WHERE wanderer_id=? AND peer_identity=?",
+                     (int(wanderer["id"]),peer))
+    elif state["origin"] == "legacy":
+        conn.execute("UPDATE wanderer_relationships SET affinity=? WHERE wanderer_id=? AND peer_identity=?",
+                     (state["affinity"],int(wanderer["id"]),peer))
+    conn.execute("INSERT INTO wanderer_relationship_versions "
+                 "(wanderer_id,peer_identity,revision,origin,legacy_affinity,updated_at) VALUES (?,?,0,?,?,?) "
+                 "ON CONFLICT (wanderer_id,peer_identity) DO NOTHING",
+                 (int(wanderer["id"]),peer,"legacy" if existing is not None else "unrated",state["legacy_affinity"],now))
+
+
+def set_affinity(conn: Any, wanderer: dict[str, Any], peer_identity: Any, value: Any, *,
+                 expected_revision: int, source_turn_id: Any, operation_id: str, reason: Any = "") -> dict[str, Any]:
+    """An absolute, directed AI decision. CAS + operation dedupe; never commits."""
+    from .social_common import SocialError, serialize_on
+    peer = _valid_peer(wanderer, peer_identity)
+    try:
+        number = float(value)
+        if isinstance(expected_revision,bool) or not isinstance(expected_revision,int) or expected_revision < 0:
+            raise ValueError("invalid revision")
+        revision = expected_revision
+    except (TypeError, ValueError):
+        raise SocialError("好感度和版本格式无效。", 400)
+    if not peer or isinstance(value, bool) or not math.isfinite(number) or not 0 <= number <= 100:
+        raise SocialError("好感度必须是 0 至 100 的绝对数值。", 400)
+    if not operation_id or not str(source_turn_id or "").strip():
+        raise SocialError("好感决定需要指令标识和来源回合。", 400)
+    role, pk = peer.split(":", 1)
+    if not pk.isdigit() or conn.execute(f"SELECT 1 FROM {'students' if role == 'student' else 'teachers'} WHERE id=?", (int(pk),)).fetchone() is None:
+        raise SocialError("联系对象不存在。", 404)
+    _prepare(conn)
+    serialize_on(conn, "wanderer-affinity-operation", [str(operation_id)])
+    done = conn.execute("SELECT * FROM wanderer_relationship_changes WHERE operation_id=?", (operation_id,)).fetchone()
+    if done is not None:
+        if (int(done["wanderer_id"]) != int(wanderer["id"]) or done["peer_identity"] != peer
+                or float(done["new_affinity"]) != number or done["source_turn_id"] != str(source_turn_id)
+                or done["reason"] != str(reason or "")[:FEELING_MAX_REASON]):
+            raise SocialError("指令标识已用于其他好感决定。", 409)
+        return {"peer_identity":peer,"affinity":float(done["new_affinity"]),"revision":int(done["revision"]),"replayed":True}
+    _ensure_relationship(conn, wanderer, peer)
+    state = affinity_state(conn, int(wanderer["id"]), peer)
+    if state["revision"] != revision:
+        raise SocialError("好感记录已改变，请读取最新版本后再决定。", 409)
+    now = local_iso()
+    reason = str(reason or "")[:FEELING_MAX_REASON]
+    conn.execute("UPDATE wanderer_relationships SET affinity=?,last_delta=?,last_reason=?,updated_at=? "
+                 "WHERE wanderer_id=? AND peer_identity=?", (number,number-state["affinity"],reason,now,int(wanderer["id"]),peer))
+    conn.execute("UPDATE wanderer_relationship_versions SET revision=revision+1,origin='self',source_turn_id=?,updated_at=? "
+                 "WHERE wanderer_id=? AND peer_identity=?", (str(source_turn_id),now,int(wanderer["id"]),peer))
+    conn.execute("INSERT INTO wanderer_relationship_changes "
+                 "(operation_id,wanderer_id,peer_identity,old_affinity,new_affinity,revision,source_turn_id,reason,created_at) "
+                 "VALUES (?,?,?,?,?,?,?,?,?)", (operation_id,int(wanderer["id"]),peer,state["affinity"],number,revision+1,str(source_turn_id),reason,now))
+    return {"peer_identity":peer,"affinity":number,"revision":revision+1,"delta":number-state["affinity"],"replayed":False}
+
+
 def record_feeling(conn: Any, wanderer: dict[str, Any], peer_identity: Any, *,
                    delta: Any = 0, mood: Any = "", reason: Any = "", scene: Any = "") -> Optional[dict[str, Any]]:
-    """Apply one feeling event and count the interaction. Caller commits."""
+    """Record an encounter. Legacy delta arguments no longer change self-authored affinity."""
     peer = _valid_peer(wanderer, peer_identity)
     if not peer:
         return None
-    wanderer_id = int(wanderer["id"])
-    existing = _existing(conn, wanderer_id, peer)
-    scaled = scale_delta(wanderer, delta)
+    _ensure_relationship(conn,wanderer,peer)
+    existing = _existing(conn,int(wanderer["id"]),peer)
+    state = affinity_state(conn,int(wanderer["id"]),peer)
     now = local_iso()
-    event = {"at": now, "delta": scaled, "mood": str(mood or "")[:FEELING_MAX_MOOD],
-             "reason": str(reason or "")[:FEELING_MAX_REASON], "scene": str(scene or "")[:FEELING_MAX_SCENE]}
-    if existing is None:
-        affinity = max(AFFINITY_MIN, min(AFFINITY_MAX, scaled))
-        conn.execute(
-            "INSERT INTO wanderer_relationships (wanderer_id, peer_identity, peer_kind, affinity, interactions, "
-            "last_delta, last_mood, last_reason, feelings_json, first_met_at, last_interaction_at, updated_at) "
-            "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)",
-            (wanderer_id, peer, peer_kind(conn, peer), affinity, scaled, event["mood"], event["reason"],
-             json.dumps([event], ensure_ascii=False), now, now, now),
-        )
-        return {"peer_identity": peer, "affinity": affinity, "delta": scaled}
-
-    feelings = _loads(_row_value(existing, "feelings_json"), list)
-    affinity = max(AFFINITY_MIN, min(AFFINITY_MAX, round(_as_float(_row_value(existing, "affinity")) + scaled, 1)))
-    interactions = int(_row_value(existing, "interactions") or 0) + 1
-    kind = str(_row_value(existing, "peer_kind") or "") or peer_kind(conn, peer)
-    conn.execute(
-        "UPDATE wanderer_relationships SET affinity = ?, interactions = ?, last_delta = ?, last_mood = ?, "
-        "last_reason = ?, feelings_json = ?, peer_kind = ?, last_interaction_at = ?, updated_at = ? "
-        "WHERE wanderer_id = ? AND peer_identity = ?",
-        (affinity, interactions, scaled, event["mood"], event["reason"],
-         json.dumps(_append_event(feelings, event), ensure_ascii=False), kind, now, now, wanderer_id, peer),
-    )
-    return {"peer_identity": peer, "affinity": affinity, "delta": scaled}
+    event = {"at":now,"delta":0,"mood":str(mood or "")[:FEELING_MAX_MOOD],
+             "reason":str(reason or "")[:FEELING_MAX_REASON],"scene":str(scene or "")[:FEELING_MAX_SCENE]}
+    conn.execute("UPDATE wanderer_relationships SET interactions=interactions+1,last_mood=?,last_reason=?,"
+                 "feelings_json=?,last_interaction_at=?,updated_at=? WHERE wanderer_id=? AND peer_identity=?",
+                 (event["mood"],event["reason"],json.dumps(_append_event(_loads(existing["feelings_json"],list),event),ensure_ascii=False),
+                  now,now,int(wanderer["id"]),peer))
+    return {"peer_identity":peer,**state,"delta":0}
 
 
 def note_interaction(conn: Any, wanderer: dict[str, Any], peer_identity: Any, *, scene: Any = "") -> None:
-    """Count an interaction without inventing a feeling. Caller commits."""
-    record_feeling(conn, wanderer, peer_identity, delta=0, reason="", scene=scene)
+    record_feeling(conn,wanderer,peer_identity,scene=scene)
 
 
 def adjust_relationship(conn: Any, wanderer: dict[str, Any], peer_identity: Any, *,
-                        affinity_delta: Any = 0, trust_delta: Any = 0, note: Any = "",
-                        scene: Any = "reflection") -> Optional[dict[str, Any]]:
-    """A reflection's small, bounded adjustment to an existing relationship."""
-    peer = _valid_peer(wanderer, peer_identity)
-    if not peer:
-        return None
-    existing = _existing(conn, int(wanderer["id"]), peer)
-    if existing is None:
-        return None
-    try:
-        delta = max(-2.0, min(2.0, float(affinity_delta)))
-    except (TypeError, ValueError):
-        delta = 0.0
-    try:
-        trust_delta = max(-0.2, min(0.2, float(trust_delta)))
-    except (TypeError, ValueError):
-        trust_delta = 0.0
-    affinity = max(AFFINITY_MIN, min(AFFINITY_MAX,
-                                     round(_as_float(_row_value(existing, "affinity")) + scale_delta(wanderer, delta), 1)))
-    trust = max(-1.0, min(1.0, round(_as_float(_row_value(existing, "trust")) + trust_delta, 3)))
-    familiarity = max(0.0, min(1.0, round(_as_float(_row_value(existing, "familiarity")) + 0.02, 3)))
-    feelings = _loads(_row_value(existing, "feelings_json"), list)
-    now = local_iso()
-    event = {"at": now, "delta": delta, "mood": "", "reason": str(note or "")[:FEELING_MAX_REASON],
-             "scene": str(scene or "")[:FEELING_MAX_SCENE]}
-    conn.execute(
-        "UPDATE wanderer_relationships SET affinity = ?, trust = ?, familiarity = ?, last_delta = ?, "
-        "last_reason = ?, feelings_json = ?, last_interaction_at = ?, updated_at = ? "
-        "WHERE wanderer_id = ? AND peer_identity = ?",
-        (affinity, trust, familiarity, delta, event["reason"],
-         json.dumps(_append_event(feelings, event), ensure_ascii=False), now, now,
-         int(wanderer["id"]), peer),
-    )
-    return {"peer_identity": peer, "affinity": affinity, "trust": trust, "delta": delta}
+                        affinity_delta: Any = 0, trust_delta: Any = 0, note: Any = "", scene: Any = "reflection",
+                        value: Any = None, expected_revision: int | None = None,
+                        source_turn_id: Any = "", operation_id: str = "") -> Optional[dict[str, Any]]:
+    if value is not None:
+        return set_affinity(conn,wanderer,peer_identity,value,expected_revision=expected_revision,
+                            source_turn_id=source_turn_id,operation_id=operation_id,reason=note)
+    return record_feeling(conn,wanderer,peer_identity,reason=note,scene=scene)
 
 
 def apply_turn_feeling(conn: Any, wanderer: dict[str, Any], peer_identity: Any, turn: Any, *,
                        scene: Any = "") -> Optional[dict[str, Any]]:
-    """The optional ``feeling`` object of one turn (already parsed) → one event."""
-    feeling = (turn or {}).get("feeling") if isinstance(turn, dict) else None
-    if not isinstance(feeling, dict):
-        return note_interaction(conn, wanderer, peer_identity, scene=scene)
-    return record_feeling(
-        conn, wanderer, peer_identity, delta=feeling.get("affinity") or 0, mood=turn.get("mood") or "",
-        reason=feeling.get("reason") or turn.get("reason") or "", scene=scene,
-    )
+    feeling = (turn or {}).get("feeling") if isinstance(turn,dict) else None
+    recorded = record_feeling(conn,wanderer,peer_identity,mood=(turn or {}).get("mood", ""),
+                              reason=(feeling or {}).get("reason", ""),scene=scene)
+    if not isinstance(feeling,dict) or feeling.get("value",feeling.get("affinity")) is None:
+        return recorded
+    # Compatibility turn consumers need an explicit revision/source before mutation.
+    # The unified command path always supplies these; old delta-shaped output is only an encounter.
+    if "expected_revision" not in feeling or not turn.get("turn_id"):
+        return recorded
+    return set_affinity(conn,wanderer,peer_identity,feeling.get("value",feeling.get("affinity")),
+                        expected_revision=feeling["expected_revision"],source_turn_id=turn["turn_id"],
+                        operation_id=feeling.get("operation_id") or f"{turn['turn_id']}:affinity:{peer_identity}",
+                        reason=feeling.get("reason", ""))
 
 
 # ---------------------------------------------------------------------------
@@ -236,13 +269,15 @@ def list_relationships(conn: Any, wanderer_id: int, *, limit: int = 20, by_abs: 
         (int(wanderer_id), max(1, int(limit)) * 4),
     ).fetchall()
     items = []
+    states = affinity_states(conn,int(wanderer_id),[str(row["peer_identity"]) for row in raw])
     for row in raw:
-        affinity = round(_as_float(_row_value(row, "affinity")), 1)
+        state = states[str(row["peer_identity"])]
+        affinity = state["affinity"]
         items.append({
             "peer_identity": str(_row_value(row, "peer_identity", 1) or ""),
             "peer_kind": str(_row_value(row, "peer_kind", 2) or "student"),
-            "affinity": affinity,
-            "label": affinity_label(affinity),
+            "affinity": affinity, **state,
+            "label": "尚未设定" if state["origin"] in {"unknown", "unrated"} else affinity_label(affinity),
             "interactions": int(_row_value(row, "interactions", 5) or 0),
             "last_delta": round(_as_float(_row_value(row, "last_delta", 6)), 1),
             "last_mood": str(_row_value(row, "last_mood", 7) or ""),
@@ -273,7 +308,7 @@ def relationship_block(conn: Any, wanderer: dict[str, Any]) -> str:
         kind = {"wanderer": "散修", "teacher": "老师"}.get(item["peer_kind"], "真实学生")
         reason = item["last_reason"] or item["last_mood"]
         suffix = f"——上次：{str(reason)[:PROMPT_REASON_MAX]}" if reason else ""
-        lines.append(f"- {item['name']}（{kind}）：{item['label']}（好感 {item['affinity']:+g}，"
+        lines.append(f"- {item['name']}（{kind}）：{item['label']}（好感 {item['affinity']:g}%，版本 {item['revision']}，"
                      f"信任 {item['trust']:+.2f}，熟悉 {item['familiarity']:.2f}）{suffix}")
     return ("【你与他人的关系】这只是你自己的感受，会随交流变化，不是对方的标签；回答时可以参考，但不必说出来。\n"
             + "\n".join(lines))
@@ -281,8 +316,8 @@ def relationship_block(conn: Any, wanderer: dict[str, Any]) -> str:
 
 def public_summary(conn: Any, wanderer_id: int) -> dict[str, int]:
     row = conn.execute(
-        "SELECT COUNT(*) AS n, SUM(CASE WHEN affinity >= 20 THEN 1 ELSE 0 END) AS close, "
-        "SUM(CASE WHEN affinity <= -20 THEN 1 ELSE 0 END) AS dislike "
+        "SELECT COUNT(*) AS n, SUM(CASE WHEN affinity >= 60 THEN 1 ELSE 0 END) AS close, "
+        "SUM(CASE WHEN affinity < 20 THEN 1 ELSE 0 END) AS dislike "
         "FROM wanderer_relationships WHERE wanderer_id = ?", (int(wanderer_id),),
     ).fetchone()
     return {"total": int(_row_value(row, "n") or 0), "close": int(_row_value(row, "close", 1) or 0),
@@ -325,7 +360,8 @@ def _event_for_peer(conn: Any, wanderer_id: int, peer_identity: str, *, delta: f
     if row is None:
         return
     feelings = _loads(_row_value(row, "feelings_json"), list)
-    affinity = max(AFFINITY_MIN, min(AFFINITY_MAX, round(_as_float(_row_value(row, "affinity")) + delta, 1)))
+    affinity = affinity_state(conn, int(wanderer_id), peer_identity)["affinity"]
+    delta = 0.0
     now = local_iso()
     event = {"at": now, "delta": round(delta, 1), "mood": mood, "reason": reason[:FEELING_MAX_REASON], "scene": scene}
     conn.execute(
@@ -337,7 +373,7 @@ def _event_for_peer(conn: Any, wanderer_id: int, peer_identity: str, *, delta: f
 
 
 def grieve_death(conn: Any, deceased: dict[str, Any]) -> int:
-    """Everyone who cared (and other wanderers who liked them) feels the loss. Caller commits."""
+    """Record the death notice for close peers; they choose their own response."""
     identity = f"student:{deceased.get('student_id')}"
     name = str(deceased.get("display_name") or "一位散修")
     touched = 0
@@ -347,13 +383,13 @@ def grieve_death(conn: Any, deceased: dict[str, Any]) -> int:
     ).fetchall()
     for row in rows:
         _event_for_peer(conn, int(_row_value(row, "wanderer_id")), identity, delta=GRIEF_DELTA,
-                        mood="难过", reason=f"听闻{name}陨落。", scene="death")
+                        mood="", reason=f"听闻{name}陨落，由你自行决定感受。", scene="death")
         touched += 1
     return touched
 
 
 def reunite(conn: Any, revived: dict[str, Any]) -> int:
-    """A revived wanderer's close peers feel relief. Caller commits."""
+    """Record the return notice; no automatic emotional or affinity change."""
     identity = f"student:{revived.get('student_id')}"
     name = str(revived.get("display_name") or "一位散修")
     touched = 0
@@ -363,6 +399,6 @@ def reunite(conn: Any, revived: dict[str, Any]) -> int:
     ).fetchall()
     for row in rows:
         _event_for_peer(conn, int(_row_value(row, "wanderer_id")), identity, delta=REUNION_DELTA,
-                        mood="欣慰", reason=f"{name}回来了。", scene="revive")
+                        mood="", reason=f"{name}回来了，由你自行决定感受。", scene="revive")
         touched += 1
     return touched

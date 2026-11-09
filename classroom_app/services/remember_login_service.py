@@ -266,6 +266,9 @@ def issue_remember_token(
     normalized_role = str(role or "").strip().lower()
     if normalized_role not in VALID_ROLES:
         raise ValueError("remember login supports students and teachers only")
+    if normalized_role == "student":
+        from .account_control_service import ensure_student_human_auth
+        ensure_student_human_auth(conn, user_id)
     now = _utc_now()
     selector, validator = _new_secret_pair()
     conn.execute(
@@ -511,6 +514,9 @@ def _account_token_data(conn: Any, user_id: str, role: str) -> Optional[dict[str
         (int(user_id),),
     ).fetchone()
     if row is None or str(row["enrollment_status"] or "active").strip().lower() != "active":
+        return None
+    from .account_control_service import student_is_ai_controlled
+    if student_is_ai_controlled(conn, int(user_id)):
         return None
     if int(row["password_reset_required"] or 0):
         return None

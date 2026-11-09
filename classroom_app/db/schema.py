@@ -48,6 +48,9 @@ from .schema_offering_class_links import ensure_offering_class_links_schema
 from .schema_offering_merge import ensure_offering_merge_schema
 from .schema_polls import ensure_poll_schema
 from .schema_wanderers import ensure_wanderer_schema
+from .schema_wanderer_world import ensure_wanderer_world_schema
+from .schema_wanderer_runtime import ensure_wanderer_runtime_schema
+from .schema_wanderer_social import ensure_wanderer_social_schema, migrate_relationship_affinities
 from .schema_social import ensure_social_schema
 from .schema_blog_closed_loop import backfill_blog_closed_loop_data, ensure_blog_closed_loop_schema
 from .schema_material_whiteboards import ensure_material_whiteboard_schema
@@ -223,18 +226,26 @@ def _init_database_unlocked():
             wanderer_conn = get_db_connection()
             try:
                 ensure_wanderer_schema(wanderer_conn, allow_schema_changes=True)
+                ensure_wanderer_world_schema(wanderer_conn, allow_schema_changes=True)
+                ensure_wanderer_runtime_schema(wanderer_conn, allow_schema_changes=True)
+                ensure_wanderer_social_schema(wanderer_conn, allow_schema_changes=True)
+                migrate_relationship_affinities(wanderer_conn)
+                from ..services.wanderer_resource_service import migrate_capacity
+                migrate_capacity(wanderer_conn)
                 wanderer_conn.commit()
             finally:
                 wanderer_conn.close()
             print("[DB] PostgreSQL wanderer tables ensured")
         except Exception as exc:
-            print(f"[DB] PostgreSQL wanderer schema step skipped: {exc}")
+            raise RuntimeError('PostgreSQL wanderer runtime migration failed; no partially migrated autonomous accounts may start') from exc
         # 好友/群组/统一在线 tables follow the same runtime-managed, engine-aware
         # pattern (docs/social-friends-groups-2026-10-27.md §1).
         try:
             social_conn = get_db_connection()
             try:
                 ensure_social_schema(social_conn)
+                from ..services.wanderer_resource_service import migrate_social_capacity
+                migrate_social_capacity(social_conn)
                 social_conn.commit()
             finally:
                 social_conn.close()
@@ -323,6 +334,8 @@ def _init_database_unlocked():
                 ensure_agent_interactions_schema(agent_ext_conn)
                 ensure_agent_children_schema(agent_ext_conn)
                 ensure_agent_platform_requests_schema(agent_ext_conn)
+                from .schema_account_control import ensure_account_control_schema
+                ensure_account_control_schema(agent_ext_conn)
                 agent_ext_conn.commit()
             finally:
                 agent_ext_conn.close()
@@ -456,7 +469,15 @@ def _init_database_unlocked():
             ensure_study_group_scheme_schema(conn)
             ensure_poll_schema(conn)
             ensure_wanderer_schema(conn, allow_schema_changes=True)
+            ensure_wanderer_world_schema(conn, allow_schema_changes=True)
+            ensure_wanderer_runtime_schema(conn, allow_schema_changes=True)
+            ensure_wanderer_social_schema(conn, allow_schema_changes=True)
+            migrate_relationship_affinities(conn)
+            from ..services.wanderer_resource_service import migrate_capacity
+            migrate_capacity(conn)
             ensure_social_schema(conn)
+            from ..services.wanderer_resource_service import migrate_social_capacity
+            migrate_social_capacity(conn)
             from ..services.assignment_student_window_service import ensure_student_window_schema
 
             ensure_student_window_schema(conn)
@@ -500,6 +521,8 @@ def _init_database_unlocked():
             ensure_agent_interactions_schema(conn)
             ensure_agent_children_schema(conn)
             ensure_agent_platform_requests_schema(conn)
+            from .schema_account_control import ensure_account_control_schema
+            ensure_account_control_schema(conn)
             ensure_lesson_plan_schema(conn)
             ensure_assessment_plan_schema(conn)
             ensure_teacher_evaluation_schema(conn)

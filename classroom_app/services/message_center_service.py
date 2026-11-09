@@ -2497,6 +2497,8 @@ def create_private_ai_reply_job(
         ),
         engine=engine,
     )
+    from .wanderer_ai_attribution import persist_job_attribution
+    persist_job_attribution(conn,job_id,job_kind="private_message_ai_jobs")
     row = conn.execute(
         """
         SELECT *
@@ -3014,6 +3016,10 @@ def mark_password_reset_request_notification_read(conn, request_id: int | str, t
     return int(cursor.rowcount or 0)
 
 
+from .wanderer_private_delivery_service import atomic_private_delivery
+
+
+@atomic_private_delivery
 def create_private_message(
     conn,
     user: dict,
@@ -3055,15 +3061,24 @@ def create_private_message(
         for item in prepared_attachments
     ):
         raise ValueError("AI 助教私信支持文字和图片，其他文件请使用课堂即时对话")
-    # 散修不是真人用户：它的发言上限由每日 AI 调用配额约束，
-    # 被问时的连发消息不应被 5 条/分钟的发送频率挡住。
-    if not bool(user.get("is_wanderer")):
-        _enforce_private_message_rate_limit(conn, sender_identity=current_identity)
-
     normalized_scope = _safe_int(contact.get("class_offering_id"))
     if normalized_scope is None:
         normalized_scope = _safe_int(class_offering_id)
     conversation_key = build_conversation_key(current_identity, str(contact["identity"]), normalized_scope)
+    from .wanderer_private_delivery_service import operation_for, record_operation
+    operation = operation_for(conn,user,contact_identity=str(contact["identity"]),class_offering_id=normalized_scope,
+                              content=normalized_content,attachments=prepared_attachments)
+    if operation and operation["message"]:
+        message_row = operation["message"]
+        loaded_attachments = _load_private_message_attachments(conn,[int(message_row["id"])])
+        return {"contact":dict(contact),"class_offering_id":normalized_scope,"conversation_key":conversation_key,
+                "message":message_row,"message_serialized":_serialize_private_message(message_row,current_identity=current_identity,
+                    blocked_identities=set(_load_blocked_identity_map(conn,current_identity).keys()),attachments_by_message=loaded_attachments),
+                "requires_ai_reply":str(contact["role"])==AI_ASSISTANT_ROLE,"replayed":True}
+    # Real accounts retain their ordinary frequency limits. AI delivery uses
+    # its personal model allowance plus the independent communication credits.
+    if not bool(user.get("is_wanderer")):
+        _enforce_private_message_rate_limit(conn,sender_identity=current_identity)
     latest_ai_reply_job = _load_latest_private_ai_reply_job_row(
         conn,
         requester_identity=current_identity,
@@ -3091,6 +3106,9 @@ def create_private_message(
         recipient_display_name=str(contact.get("display_name") or ""),
         content=normalized_content,
     )
+    from .wanderer_social_budget_service import charge_private_message
+    charge_private_message(conn,message_row)
+    record_operation(conn,operation,message_row)
     attachment_payloads = _insert_private_message_attachments(conn, message_row, prepared_attachments)
     _insert_private_message_audit(conn, message_row)
     if str(contact["role"]) in {"student", "teacher"}:
@@ -3552,14 +3570,16 @@ async def _process_claimed_private_ai_reply_job_row(job_row: dict[str, Any]) -> 
                 )
 
         user = await asyncio.to_thread(_load_user_sync)
-        reply = await generate_ai_private_reply(
-            user,
-            class_offering_id=int(job_row["class_offering_id"]),
-            conversation_key=str(job_row["conversation_key"] or ""),
-            request_message_id=int(job_row["request_message_id"]),
-            job_id=int(job_row["id"]),
-            attempt_count=int(job_row["attempt_count"]),
-        )
+        from .wanderer_ai_attribution import restored_job_attribution
+        with restored_job_attribution(job_row,get_db_connection,job_kind="private_message_ai_jobs"):
+            reply = await generate_ai_private_reply(
+                user,
+                class_offering_id=int(job_row["class_offering_id"]),
+                conversation_key=str(job_row["conversation_key"] or ""),
+                request_message_id=int(job_row["request_message_id"]),
+                job_id=int(job_row["id"]),
+                attempt_count=int(job_row["attempt_count"]),
+            )
         def _finish_job_sync() -> None:
             with get_db_connection() as conn:
                 _finish_private_ai_reply_job(
@@ -3715,13 +3735,17 @@ async def send_private_message_and_maybe_reply(
             )
             ai_reply_job = None
             if result["requires_ai_reply"] and result["class_offering_id"] is not None:
-                ai_reply_job = create_private_ai_reply_job(
-                    conn,
-                    user,
-                    conversation_key=str(result["conversation_key"]),
-                    class_offering_id=int(result["class_offering_id"]),
-                    request_message_id=int(result["message"]["id"]),
-                )
+                if result.get("replayed"):
+                    prior = conn.execute("SELECT * FROM private_message_ai_jobs WHERE request_message_id=?",(int(result["message"]["id"]),)).fetchone()
+                    ai_reply_job = _serialize_private_ai_reply_job(prior) if prior else None
+                else:
+                    ai_reply_job = create_private_ai_reply_job(
+                        conn,
+                        user,
+                        conversation_key=str(result["conversation_key"]),
+                        class_offering_id=int(result["class_offering_id"]),
+                        request_message_id=int(result["message"]["id"]),
+                    )
             conn.commit()
             return result, ai_reply_job
 

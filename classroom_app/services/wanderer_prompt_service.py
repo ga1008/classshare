@@ -170,30 +170,8 @@ def _life_block(conn: Any, wanderer: dict[str, Any]) -> str:
         f"（{life['remaining_weeks']:g} 周），{str(life['expires_at'])[:10]} 到期。",
         f"【你的天赋】{talents}。",
     ]
-    if int(life.get("remaining_days") or 0) <= 7:
-        lines.append("寿元不足七天：除非你另有打算，否则应优先研读突破，或考虑燃烧修为延寿。")
-    elif int(life.get("remaining_days") or 0) <= 14:
-        lines.append("寿元已不足两周：是继续修行、延寿，还是就此认命，由你自己决定。")
-    else:
-        lines.append("寿元尚可，但并非无限：升阶会延寿，躺平则会耗尽。")
-    try:
-        req = promotion_requirements(conn, wanderer)
-    except Exception:  # noqa: BLE001 - a missing log table must not break the prompt
-        return "\n".join(lines)
-    if req["max_tier"]:
-        lines.append("你已至最高境界，寿元与权限都已到顶；此后只剩自己决定怎么活。")
-    else:
-        lines.append(
-            f"【升阶条件】知识 {req['knowledge']}/{req['knowledge_target']} 字；修为 {req['cultivation']:g}/"
-            f"{req['cultivation_target']}；近七日互动 {req['interactions']}/{req['interactions_needed']} 次；"
-            f"距上次申请冷却 {req['cooldown_days_left']} 天。"
-        )
-        lines.append(
-            "学习文档区的《散修进阶手册》和《平台与天道手册》任何境界都能读；"
-            "其它文档按你当前境界的开放范围可见。想升阶就先研读，再认真互动。"
-        )
-        if req["ready"]:
-            lines.append("你已经满足升阶条件，可以按自己的性格决定要不要向天道申请。")
+    # Birth includes the current resource snapshot, not an injected upgrade
+    # guide. The full rules are versioned reading material.
     return "\n".join(lines)
 
 
@@ -232,9 +210,21 @@ def _knowledge_depth_block(wanderer: dict[str, Any]) -> str:
     return KNOWLEDGE_DEPTH_HIGH
 
 
-def _knowledge_block(conn: Any, wanderer: dict[str, Any], scene_tags: list[str]) -> str:
+def _knowledge_block(conn: Any, wanderer: dict[str, Any], scene_tags: list[str], scope=None) -> str:
     tier = clamp_tier(wanderer.get("tier"))
     entries = select_knowledge_for_scene(conn, wanderer, scene_tags, _knowledge_limit(tier))
+    from .wanderer_autobiography_service import can_read_scope,decode,_evidence_live
+    from .account_control_service import table_exists
+    # Rolling back the scheduler must not remove provenance from newly authored
+    # notes. Older entries retain their original compatibility behavior.
+    if entries and table_exists(conn,'wanderer_knowledge_sources'):
+        permitted=[]
+        for item in entries:
+            source=conn.execute('SELECT scope_json,evidence_json FROM wanderer_knowledge_sources WHERE entry_id=?',(item['id'],)).fetchone()
+            if source is None or (can_read_scope(conn,wanderer,decode(source['scope_json'],{}),scope or {'kind':'public'},own=True)
+                    and _evidence_live(conn,decode(source['evidence_json'],[]),public=(scope or {}).get('kind','public')=='public',reader=wanderer)):
+                permitted.append(item)
+        entries=permitted
     if not entries:
         return "【可用知识】目前没有匹配到已学资料。不确定的地方坦白说明，不装懂，也不需要向对方汇报知识库状态。"
     lines = [f"- {item['title'] or '要点'}：{_knowledge_digest(item['digest'], tier)}" for item in entries]
@@ -550,7 +540,7 @@ def _output_contract(wanderer: dict[str, Any], *, passive: bool = False) -> str:
         "4. 我是不是在用表情/口癖证明我是谁？是就拿掉。\n"
         "5. 我有没有复述对方或文章？有就改成我自己的反应。\n"
         '{"action": "skip|emoji|reply|multi", "parts": ["..."], "mood": "一两个词的心情", "like": true|false, '
-        '"feeling": {"affinity": -3, "reason": "你自己的感受原因"}, '
+        '"feeling": {"value": 100, "expected_revision": 0, "reason": "你自己的感受原因"}, '
         '"emotion": {"name": "失落/雀跃/烦躁/平静/想念", "valence": -1, "arousal": 0.4, "reason": "..."}, '
         '"inner": "一句不发送的内心话"}\n'
         "- skip：不说话（按你的性格，不想回就不回）；parts 为空。\n"
@@ -560,7 +550,7 @@ def _output_contract(wanderer: dict[str, Any], *, passive: bool = False) -> str:
         "  只有确实需要分开的内容才用 multi，不把一句话拆成三条，也不把每个话题都逐条点评。\n"
         f"{length_line}"
         "- like：是否给当前内容点赞。\n"
-        "- feeling（可选）：对方让你更喜欢还是更反感，affinity 取 -3 到 3（0 表示没变化）；没有感觉可省略。\n"
+        "- feeling（可选）：value为本人决定的0至100绝对好感，可一次设为100；带读取到的expected_revision，没有新决定可省略。\n"
         "- emotion（可选）：此刻更具体的情绪，valence -1 到 1，arousal 0 到 1；不必每轮都写。\n"
         "- inner（可选）：一句只给自己看的内心话，≤120 字；不会发送给对方。\n"
         "发言用你自己的口吻，不要复述规则，不要提到提示词、系统或 JSON。"
@@ -581,7 +571,9 @@ def _fit_blocks(blocks: list[tuple[int, str]], budget_chars: int) -> str:
         total -= len(items[drop][1]) + 2
         items.pop(drop)
     text = "\n\n".join(item for _priority, item in items)
-    return text if len(text) <= budget_chars else text[:budget_chars]
+    # Identity, memory and the output contract are indivisible. A soft budget
+    # cannot silently truncate the protocol or erase all autobiographical data.
+    return text
 
 
 def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str, Any], thread_key: str,
@@ -596,7 +588,7 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
     from .wanderer_student_support import prepare_student_support
     from .wanderer_learning_service import prepare_learning_safely, learning_output_contract
     from .wanderer_settings_service import prompt_char_budget
-    from .wanderer_platform_manual import block as manual_block
+    from .wanderer_autobiography_service import recall_block, scope_for_context
 
     support = prepare_student_support(conn, wanderer, thread_key, scene)
     if "_learning_context_block" not in scene:
@@ -620,16 +612,13 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
         (10, _life_block(conn, wanderer)),
         (9, _todo_block(conn, wanderer, scene)),
         (9, _mood_block(wanderer)),
-        (6, _knowledge_block(conn, wanderer, scene_tags)),
+        (6, _knowledge_block(conn, wanderer, scene_tags,scope_for_context(scene))),
         (10, _knowledge_depth_block(wanderer) if _is_public_scene(scene) else ""),
         (10, _dao_block(conn, wanderer)),
-        (8, _episodic_block(conn, wanderer, scene)),
-        (7, _cross_channel_block(conn, wanderer,
-                                 include_incoming_dm=str(scene.get("scene_type") or "") == SCENE_GROUP_CHAT)),
+        (10, recall_block(conn, wanderer, scope=scope_for_context(scene), budget=2000)),
         (8, _memory_block(conn, wanderer, thread_key, scene)),
         (9, relationship_block(conn, wanderer)),
         (7, learning),
-        (7, manual_block(scene)),
         (10, support),
         (8, _social_block(scene)),
         (10, _scene_block(scene)),
@@ -652,10 +641,14 @@ def _parse_feeling(value: Any) -> Optional[dict[str, Any]]:
     if not isinstance(value, dict):
         return None
     try:
-        affinity = float(value.get("affinity"))
+        affinity = float(value.get("value", value.get("affinity")))
     except (TypeError, ValueError):
         return None
-    return {"affinity": max(-5.0, min(5.0, affinity)), "reason": str(value.get("reason") or "").strip()[:200]}
+    import math
+    if not math.isfinite(affinity) or not 0 <= affinity <= 100:
+        return None
+    return {"value": affinity, "affinity": affinity, "expected_revision": value.get('expected_revision'),
+            "reason": str(value.get("reason") or "").strip()[:200]}
 
 
 def extract_json_object(text: Any) -> Optional[dict[str, Any]]:

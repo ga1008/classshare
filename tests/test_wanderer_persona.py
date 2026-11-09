@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from classroom_app.services import blog_persona_service, blog_service
 from classroom_app.services.cultivation_display_service import load_student_emblems
@@ -91,7 +92,7 @@ class PersonaUpgradeTest(WandererDbTestCase):
 class WandererSeedingTest(WandererDbTestCase):
     def test_seed_creates_twenty_hidden_students(self):
         self.assertEqual(len(self.seed_report["created"]), 20)
-        self.assertEqual(self.seed_report["knowledge_added"], 60)
+        self.assertEqual(self.seed_report["knowledge_added"], 0)
         with self.connect() as conn:
             rows = conn.execute(
                 "SELECT s.enrollment_status, s.hashed_password, s.student_id_number, c.name AS class_name, "
@@ -107,6 +108,7 @@ class WandererSeedingTest(WandererDbTestCase):
 
     def test_seeding_uses_select_then_insert_without_on_conflict(self):
         from classroom_app.services.wanderer_identity_service import ensure_wanderer_students
+        from classroom_app.services import account_control_service
 
         class Recorder:
             def __init__(self, conn):
@@ -120,7 +122,11 @@ class WandererSeedingTest(WandererDbTestCase):
                 return getattr(self.conn, name)
 
         seed = {**WANDERER_SEEDS[0], "slug": "seedcheck", "display_name": "种子校验", "persona_prompt": "测试人格"}
-        with self.connect() as conn:
+        real_table_exists = account_control_service.table_exists
+        # Recorder wraps SQLite solely to inspect seed SQL. Keep schema probes
+        # on its actual connection instead of mistaking this proxy for PostgreSQL.
+        with self.connect() as conn, patch.object(account_control_service, "table_exists",
+                side_effect=lambda wrapped, name: real_table_exists(getattr(wrapped, "conn", wrapped), name)):
             recorder = Recorder(conn)
             first = ensure_wanderer_students(recorder, [seed])
             second = ensure_wanderer_students(recorder, [seed])
@@ -156,7 +162,7 @@ class WandererSeedingTest(WandererDbTestCase):
         self.assertEqual(bailu["behaviors"]["promotion"], 0)
         self.assertEqual(lele["activity_level"], 5)
         self.assertEqual(lele["daily_action_budget"], 20)
-        self.assertGreater(lele["cultivation_score"], 0)
+        self.assertEqual(lele["cultivation_score"], 0)
         self.assertEqual(lele["schedule"]["active_hours"][0], [8, 12])
 
     def test_blog_persona_resolves_wanderer_with_label_and_badge(self):

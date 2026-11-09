@@ -19,6 +19,7 @@ Callers commit unless the docstring says otherwise.
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import timedelta
 from typing import Any, Iterable, Optional
 
@@ -170,12 +171,16 @@ def award_interaction_cultivation(conn: Any, wanderer: dict[str, Any], kinds: It
     if points <= 0:
         return 0.0
     wanderer_id = int(wanderer["id"])
+    from .wanderer_bond_service import lock_agents, direct_partners
+    lock_agents(conn,[wanderer_id,*direct_partners(conn,wanderer_id)])
     conn.execute("UPDATE wanderer_agents SET stats_json = stats_json WHERE id = ?", (wanderer_id,))
     row = conn.execute("SELECT stats_json FROM wanderer_agents WHERE id = ?", (wanderer_id,)).fetchone()
     stats = _loads(_row_value(row, "stats_json") if row is not None else "{}", dict)
     today = local_now().date().isoformat()
     already = _as_float(stats.get(_CULT_TODAY_KEY)) if stats.get(_CULT_DAY_KEY) == today else 0.0
-    granted = round(min(float(INTERACTION_DAILY_CULTIVATION_CAP), max(0.0, already + points)) - already, 2)
+    from .wanderer_cultivation_service import award_cultivation
+    granted = award_cultivation(conn, wanderer_id, points, "interaction", uuid.uuid4().hex,
+                                daily_cap=INTERACTION_DAILY_CULTIVATION_CAP)
     if granted <= 0:
         return 0.0
     stats = dict(stats)
@@ -183,9 +188,9 @@ def award_interaction_cultivation(conn: Any, wanderer: dict[str, Any], kinds: It
     stats[_CULT_TODAY_KEY] = round(already + granted, 2)
     stats[_CULT_TOTAL_KEY] = round(_as_float(stats.get(_CULT_TOTAL_KEY)) + granted, 2)
     conn.execute(
-        "UPDATE wanderer_agents SET cultivation_score = cultivation_score + ?, stats_json = ?, updated_at = ? "
+        "UPDATE wanderer_agents SET stats_json = ?, updated_at = ? "
         "WHERE id = ?",
-        (granted, json.dumps(stats, ensure_ascii=False, sort_keys=True), local_iso(), wanderer_id),
+        (json.dumps(stats, ensure_ascii=False, sort_keys=True), local_iso(), wanderer_id),
     )
     return granted
 
@@ -201,9 +206,8 @@ def award_search_cultivation(conn: Any, wanderer: dict[str, Any], count: int = 1
     amount = round(search_cultivation_gain(wanderer.get("tier")) * searches, 2)
     if amount <= 0:
         return 0.0
-    conn.execute("UPDATE wanderer_agents SET cultivation_score = cultivation_score + ?, updated_at = ? "
-                 "WHERE id = ?", (amount, local_iso(), int(wanderer["id"])))
-    return amount
+    from .wanderer_cultivation_service import award_cultivation
+    return award_cultivation(conn, int(wanderer["id"]), amount, "search", uuid.uuid4().hex)
 
 
 def interaction_cultivation_locked(conn: Any, wanderer: dict[str, Any], kind: Any) -> bool:
@@ -224,6 +228,11 @@ def interaction_cultivation_locked(conn: Any, wanderer: dict[str, Any], kind: An
 def extend_life(conn: Any, wanderer: dict[str, Any]) -> dict[str, Any]:
     """Burn 25% of cultivation for one more week. Caller commits."""
     from .wanderer_identity_service import current_life
+    from .wanderer_bond_service import lock_agents
+    lock_agents(conn,[wanderer['id']])
+    wanderer = _reload(conn,wanderer['id']) or wanderer
+    if wanderer.get('status') != 'active':
+        return {'ok':False,'reason':'只有在世且活动中的散修可以延寿'}
 
     life = current_life(wanderer)
     score = _as_float(wanderer.get("cultivation_score"))
@@ -237,9 +246,9 @@ def extend_life(conn: Any, wanderer: dict[str, Any]) -> dict[str, Any]:
     wanderer_id = int(wanderer["id"])
     now = local_iso()
     conn.execute(
-        "UPDATE wanderer_agents SET cultivation_score = MAX(0, cultivation_score - ?), "
+        "UPDATE wanderer_agents SET cultivation_score = ?, "
         "lifespan_weeks = ?, life_extensions = life_extensions + 1, last_extend_at = ?, updated_at = ? WHERE id = ?",
-        (cost, float(life.get("lifespan_weeks") or 0), now, now, wanderer_id),
+        (max(0,score-cost), float(life.get("lifespan_weeks") or 0), now, now, wanderer_id),
     )
     _invalidate(wanderer)
     fresh = _reload(conn, wanderer_id) or wanderer
@@ -251,35 +260,26 @@ def extend_life(conn: Any, wanderer: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def apply_life_penalty(conn: Any, wanderer: dict[str, Any], weeks: Any, *, reason: str,
-                       now: Any = None) -> dict[str, Any]:
+                       now: Any = None, operation_id: str | None = None) -> dict[str, Any]:
     """天罚扣寿 (气运 mitigates); expiry kills. Caller commits."""
-    from .wanderer_identity_service import current_life, mark_dead
+    from .wanderer_identity_service import current_life
+    from .wanderer_penalty_service import apply_penalty
 
     luck = talent_value(wanderer.get("talents"), "luck")
     effective = effective_penalty_weeks(weeks, luck)
     wanderer_id = int(wanderer["id"])
-    life = current_life(wanderer, now)
-    conn.execute(
-        "UPDATE wanderer_agents SET life_penalty_weeks = life_penalty_weeks + ?, lifespan_weeks = ?, "
-        "updated_at = ? WHERE id = ?",
-        (effective, float(life.get("lifespan_weeks") or 0), local_iso(), wanderer_id),
-    )
+    settlement = apply_penalty(conn, wanderer_id, {"life_seconds": round(effective * 604800)},
+                               reason=reason or "天罚扣寿", operation_id=operation_id or uuid.uuid4().hex)
     _invalidate(wanderer)
     fresh = _reload(conn, wanderer_id) or wanderer
     after = current_life(fresh, now)
     result = {"weeks": effective, "requested_weeks": _as_float(weeks), "remaining_days": after["remaining_days"],
-              "died": False}
-    if after.get("expired"):
-        from .wanderer_settings_service import lifecycle_enabled
-
-        if lifecycle_enabled(conn):
-            mark_dead(conn, wanderer_id, f"天罚折寿 {effective:g} 周，寿元耗尽：{str(reason or '')[:160]}")
-            result["died"] = True
+              "died": fresh.get("status") == "dead", "settlement": settlement}
     return result
 
 
 def apply_talent_change(conn: Any, wanderer: dict[str, Any], talent: Any, delta: Any, *, reason: str,
-                        created_by: str = "dao") -> dict[str, Any]:
+                        created_by: str = "dao", event_id: str | None = None) -> dict[str, Any]:
     """Clamped talent mutation; vitality changes recompute the lifespan. Caller commits."""
     key = str(talent or "").strip()
     if key not in TALENTS:
@@ -288,11 +288,33 @@ def apply_talent_change(conn: Any, wanderer: dict[str, Any], talent: Any, delta:
         step = float(delta)
     except (TypeError, ValueError) as exc:
         raise ValueError("天赋变化必须是数字") from exc
+    import math
+    if not math.isfinite(step):
+        raise ValueError('天赋变化必须是有限数字')
+    from .wanderer_bond_service import lock_lifecycle,direct_partners
+    lock_lifecycle(conn,[wanderer['id'],*direct_partners(conn,wanderer['id'])] if step<0 else [wanderer['id']])
+    wanderer=_reload(conn,wanderer['id']) or wanderer
+    from ..db.schema_wanderer_world import ensure_wanderer_world_schema
+    ensure_wanderer_world_schema(conn)
     current = normalize_talents(wanderer.get("talents"), slug=wanderer.get("slug"))
+    if step<0:
+        from .wanderer_penalty_service import apply_penalty
+        result=apply_penalty(conn,int(wanderer['id']),{f'talent:{key}':-step},reason=reason,operation_id=f'talent:{uuid.uuid4().hex}')
+        after=(_reload(conn,wanderer['id']) or wanderer)['talents'][key]
+        return {'key':key,'from':current[key],'to':after,'changed':after!=current[key],'settlement':result,'reason':str(reason)[:200],'created_by':created_by}
+    from decimal import Decimal,ROUND_HALF_UP
+    gain_units=int((Decimal(str(step))*1_000_000).to_integral_value(rounding=ROUND_HALF_UP))
+    gain_event=str(event_id or uuid.uuid4().hex)
+    previous=conn.execute('SELECT * FROM wanderer_talent_awards WHERE event_id=? AND owner_id=?',(gain_event,int(wanderer['id']))).fetchone()
+    if previous:
+        if previous['component']!=f'talent:{key}' or int(previous['gain_units'])!=gain_units:
+            raise ValueError('天赋收益编号已用于另一笔增益')
+        return json.loads(previous['result_json'])
+    from .wanderer_penalty_service import repay_gain_debt
+    repayment=repay_gain_debt(conn,int(wanderer['id']),f'talent:{key}',gain_units,gain_key=f'talent:{gain_event}')
+    net_step=(gain_units-int(repayment['paid_units']))/1_000_000
     low, high = talent_bounds(key)
-    new_value = round(max(low, min(high, current[key] + step)), 2)
-    if abs(new_value - current[key]) < 1e-9:
-        return {"key": key, "from": current[key], "to": current[key], "changed": False}
+    new_value = round(max(low, min(high, current[key] + net_step)), 6)
     updated = {**current, key: new_value}
     columns: list[Any] = [json.dumps(updated, ensure_ascii=False, sort_keys=True), local_iso()]
     sql = "UPDATE wanderer_agents SET talents_json = ?, updated_at = ?"
@@ -303,19 +325,29 @@ def apply_talent_change(conn: Any, wanderer: dict[str, Any], talent: Any, delta:
     columns.append(int(wanderer["id"]))
     conn.execute(sql, tuple(columns))
     _invalidate(wanderer)
-    return {"key": key, "from": current[key], "to": new_value, "changed": True,
+    result={"key": key, "from": current[key], "to": new_value, "changed": abs(new_value-current[key])>1e-9,
+            'gross_gain':gain_units/1_000_000,'debt_paid':int(repayment['paid_units'])/1_000_000,
+            'net_gain':round(new_value-current[key],6),'debt_allocations':repayment['allocations'],
             "reason": str(reason or "")[:200], "created_by": created_by}
+    conn.execute('INSERT INTO wanderer_talent_awards(event_id,owner_id,component,gain_units,result_json,life_epoch,created_at) VALUES(?,?,?,?,?,?,?)',
+                 (gain_event,int(wanderer['id']),f'talent:{key}',gain_units,json.dumps(result,ensure_ascii=False),int(wanderer.get('life_epoch') or 1),local_iso()))
+    return result
 
 
 def promote_life(conn: Any, wanderer: dict[str, Any], new_tier: Any) -> dict[str, Any]:
     """Recompute the stored lifespan for a new tier. Caller commits."""
+    from .wanderer_bond_service import lock_lifecycle
+    lock_lifecycle(conn,[wanderer['id']])
+    wanderer=_reload(conn,wanderer['id']) or wanderer
     talents = normalize_talents(wanderer.get("talents"), slug=wanderer.get("slug"))
     lifespan = lifespan_weeks_for(new_tier, talents["vitality"])
     conn.execute(
-        "UPDATE wanderer_agents SET lifespan_weeks = ?, updated_at = ? WHERE id = ?",
+        "UPDATE wanderer_agents SET lifespan_weeks = ?, authority_version=authority_version+1, updated_at = ? WHERE id = ?",
         (lifespan, local_iso(), int(wanderer["id"])),
     )
     _invalidate(wanderer)
+    from .wanderer_penalty_service import replay_debts
+    replay_debts(conn, int(wanderer["id"]))
     return {"lifespan_weeks": lifespan}
 
 
@@ -331,10 +363,9 @@ def set_life_penalty(conn: Any, wanderer: dict[str, Any], weeks_delta: Any, *, r
         from .wanderer_identity_service import current_life
 
         life = current_life(wanderer)
-        conn.execute(
-            "UPDATE wanderer_agents SET lifespan_weeks = ?, updated_at = ? WHERE id = ?",
-            (round(float(life.get("lifespan_weeks") or 0) + delta, 1), local_iso(), int(wanderer["id"])),
-        )
+        from .wanderer_bond_service import life_credit
+        life_credit(conn, int(wanderer["id"]), round(delta * 604800), source_key=uuid.uuid4().hex,
+                    kind="admin_grant", detail={"reason": reason})
         _invalidate(wanderer)
         fresh = _reload(conn, int(wanderer["id"])) or wanderer
         return {"granted_weeks": round(delta, 1), "life": current_life(fresh)}
@@ -362,6 +393,9 @@ def promotion_requirements(conn: Any, wanderer: dict[str, Any], *, now: Any = No
     capacity = knowledge_capacity_for(wanderer.get("tier"), talent_value(wanderer.get("talents"), "memory"))
     ratio = promotion_ratio(tier)
     knowledge_target = int(round(ratio * capacity))
+    from .wanderer_bond_service import shared_knowledge_qualification
+    learning = shared_knowledge_qualification(conn, int(wanderer["id"]))
+    knowledge = int(learning["knowledge_chars"])
     score = _as_float(wanderer.get("cultivation_score"))
     cultivation_needed = cultivation_target(tier)
     eloquence = talent_value(wanderer.get("talents"), "eloquence")
@@ -380,7 +414,8 @@ def promotion_requirements(conn: Any, wanderer: dict[str, Any], *, now: Any = No
         "max_tier": tier >= 10,
         "capacity": capacity,
         "ratio": ratio,
-        "knowledge": int(wanderer.get("knowledge_chars") or 0),
+        "knowledge": knowledge,
+        "knowledge_origins": learning["owners"],
         "knowledge_target": knowledge_target,
         "cultivation": round(score, 1),
         "cultivation_target": cultivation_needed,
@@ -388,7 +423,7 @@ def promotion_requirements(conn: Any, wanderer: dict[str, Any], *, now: Any = No
         "interactions_needed": interactions_needed,
         "cooldown_days_left": cooldown_left,
         "ready": bool(
-            tier < 10 and int(wanderer.get("knowledge_chars") or 0) >= knowledge_target
+            tier < 10 and knowledge >= knowledge_target
             and score >= cultivation_needed and interactions >= interactions_needed and cooldown_left == 0
         ),
     }
@@ -406,11 +441,11 @@ def life_payload(wanderer: dict[str, Any], *, now: Any = None) -> dict[str, Any]
     if penalty and until:
         try:
             if parse_datetime(until) and parse_datetime(until) >= (now or local_now()):
-                active_penalty = min(penalty, perks["daily_budget"] - 1)
+                active_penalty = perks['daily_budget'] if penalty >= 1_000_000 else min(penalty, perks["daily_budget"] - 1)
         except (TypeError, ValueError):
             active_penalty = 0
     if active_penalty:
-        perks = {**perks, "daily_budget": max(1, perks["daily_budget"] - active_penalty),
+        perks = {**perks, "daily_budget": max(0, perks["daily_budget"] - active_penalty),
                  "interaction_limit_penalty": active_penalty}
     return {
         **life,
@@ -474,18 +509,18 @@ def can_resurrect(conn: Any, reviver: dict[str, Any], *, now: Any = None) -> dic
 
 
 def seed_after_revival(conn: Any, target: dict[str, Any], legacy: Optional[dict[str, Any]] = None) -> int:
-    """A revived wanderer must never start with zero knowledge (that is an instant death)."""
-    from .wanderer_knowledge_service import add_knowledge
-    from .wanderer_persona_seeds import SEED_BY_SLUG, seed_initial_knowledge
+    """Identity survives revival; reading is still required before claiming knowledge."""
+    return 0
 
-    seed = SEED_BY_SLUG.get(str(target.get("slug") or ""))
-    if seed is not None:
-        return seed_initial_knowledge(conn, target, seed)
-    summary = str((legacy or {}).get("summary") or "").strip()
-    digest = summary[:800] or "醒来时只剩一点模糊的念头：还能再走一段。"
-    add_knowledge(conn, target, source_kind="legacy", source_ref=f"revive:{int(target['id'])}",
-                  title="残存的记忆", digest=digest, tags=["前世", "回忆"])
-    return 1
+
+def archive_revival_knowledge(conn, wanderer_id):
+    """Retain the previous life's notes while releasing their original occupancy."""
+    from .wanderer_resource_service import lock_actor_resources,release_capacity
+    lock_actor_resources(conn,int(wanderer_id))
+    rows=conn.execute("SELECT id FROM wanderer_knowledge_entries WHERE wanderer_id=? AND status='active'",(int(wanderer_id),)).fetchall()
+    for row in rows:
+        release_capacity(conn,int(wanderer_id),'knowledge_chars',f"knowledge:{row['id']}")
+    conn.execute("UPDATE wanderer_knowledge_entries SET status='forgotten',updated_at=? WHERE wanderer_id=? AND status='active'",(local_iso(),int(wanderer_id)))
 
 
 def resurrect(conn: Any, reviver: dict[str, Any], target: dict[str, Any], *, reason: str = "",
@@ -502,6 +537,13 @@ def resurrect(conn: Any, reviver: dict[str, Any], target: dict[str, Any], *, rea
         invalidate_wanderer_cache,
     )
 
+    from ..db.schema_wanderer_world import ensure_wanderer_world_schema
+    from .wanderer_bond_service import lock_agents
+    ensure_wanderer_world_schema(conn)
+    from .wanderer_resource_service import actor_resource_owner_ids
+    lock_agents(conn,set(actor_resource_owner_ids(conn,reviver['id']))|set(actor_resource_owner_ids(conn,target['id'])))
+    reviver = _reload(conn, reviver["id"]) or reviver
+    target = _reload(conn, target["id"]) or target
     check = can_resurrect(conn, reviver, now=now)
     if not check.get("ok"):
         raise ValueError(str(check.get("reason") or "无法复活"))
@@ -511,10 +553,7 @@ def resurrect(conn: Any, reviver: dict[str, Any], target: dict[str, Any], *, rea
     target_talents = normalize_talents(target.get("talents"), slug=target.get("slug"))
     lifespan = lifespan_weeks_for(0, target_talents["vitality"])
     now_text = local_iso()
-    conn.execute(
-        "UPDATE wanderer_knowledge_entries SET status = 'forgotten', updated_at = ? "
-        "WHERE wanderer_id = ? AND status = 'active'", (now_text, int(target["id"])),
-    )
+    archive_revival_knowledge(conn,int(target['id']))
     conn.execute(
         "UPDATE wanderer_agents SET status = ?, tier = 0, cultivation_score = 0, warnings_count = 0, "
         "last_warning_at = NULL, promotion_requested = 0, promotion_requested_at = NULL, promotion_note = '', "
@@ -539,6 +578,7 @@ def resurrect(conn: Any, reviver: dict[str, Any], target: dict[str, Any], *, rea
     seeded = seed_after_revival(conn, fresh_target, legacy)
     conn.execute("UPDATE wanderer_agents SET cultivation_score = 0, updated_at = ? WHERE id = ?",
                  (now_text, int(target["id"])))
+    finish_revival(conn, int(target["id"]))
     review_id = insert_dao_review(
         conn, wanderer_id=int(target["id"]), review_kind="revive", verdict="revived", from_tier=0, to_tier=0,
         reason=str(reason or f"由第 {clamp_tier(reviver.get('tier'))} 境散修「{reviver.get('display_name')}」复活。")[:300],
@@ -563,3 +603,13 @@ def resurrect(conn: Any, reviver: dict[str, Any], target: dict[str, Any], *, rea
             "target": {"id": int(target["id"]), "slug": target.get("slug"),
                        "display_name": target.get("display_name"), "seeded_knowledge": seeded},
             "reviver_life": current_life(_reload(conn, int(reviver["id"])) or reviver, moment)}
+
+
+def finish_revival(conn, wanderer_id):
+    """Fence the previous life and replay unpaid debt; historical rewards stay historical."""
+    from ..db.schema_wanderer_world import ensure_wanderer_world_schema
+    from .wanderer_penalty_service import replay_debts
+    ensure_wanderer_world_schema(conn)
+    conn.execute("UPDATE wanderer_penalty_debts SET balance_units=0,updated_at=? WHERE wanderer_id=? AND component='life_seconds'", (local_iso(), int(wanderer_id)))
+    conn.execute("UPDATE wanderer_agents SET life_epoch=life_epoch+1,authority_version=authority_version+1,life_bonus_seconds=0,life_gift_in_weeks=0,life_gift_out_weeks=0,updated_at=? WHERE id=?", (local_iso(), int(wanderer_id)))
+    replay_debts(conn, int(wanderer_id))

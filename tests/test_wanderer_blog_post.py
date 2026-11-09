@@ -153,13 +153,13 @@ class WandererBlogPostTest(WandererWorldTestCase):
         self.assertFalse(title.startswith("#"))
         self.assertTrue(body.startswith("记录"))
 
-    def test_post_draft_strips_platform_meta_and_trims_to_sentence(self):
+    def test_post_draft_preserves_world_identity_and_trims_to_sentence(self):
         raw = json.dumps({"action": "reply", "title": "散修日记",
                           "parts": ["我是来旁听的散修乐乐。今天在平台的互动区坐了一会儿。"],
                           "mood": "平静"}, ensure_ascii=False)
         action, title, body, mood = post_draft(raw, max_body=100)
-        self.assertEqual((action, title, mood), ("reply", "日记", "平静"))
-        self.assertEqual(body, "我是来旁听的乐乐。今天在这儿坐了一会儿。")
+        self.assertEqual((action, title, mood), ("reply", "散修日记", "平静"))
+        self.assertEqual(body, "我是来旁听的散修乐乐。今天在平台的互动区坐了一会儿。")
 
     def test_post_draft_uses_sentence_boundary_when_clipping(self):
         raw = json.dumps({"action": "reply", "title": "标题",

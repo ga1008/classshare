@@ -42,8 +42,8 @@ class StyleGuardTest(unittest.TestCase):
     def test_hedge_and_meta_are_reduced(self):
         result = guard_text("其实这个平台我还不熟，不过我会问。", channel="comment")
         self.assertNotIn("其实", result.text)
-        self.assertNotIn("平台", result.text)
-        self.assertIn("这里", result.text)
+        self.assertIn("平台", result.text)
+        self.assertEqual(result.text,"这个平台我还不熟，不过我会问。")
 
     def test_plain_text_is_untouched(self):
         result = guard_text("今天好热，我先去吃饭了。", channel="dm")

@@ -326,6 +326,9 @@ def create_access_token(data: dict, client_ip: str, *, conn=None, cache_generati
     user_id = str(data["id"])
     generation = cache_generation
     with (nullcontext(conn) if conn is not None else get_db_connection()) as active_conn:
+        if str(data.get("role") or "") == "student":
+            from .services.account_control_service import ensure_student_human_auth
+            ensure_student_human_auth(active_conn, user_id)
         if conn is None:
             from .services.account_credentials_service import lock_actor_authorization_transition
             lock_actor_authorization_transition(active_conn, role=str(data.get("role") or ""), user_id=int(user_id))
@@ -702,7 +705,12 @@ def get_current_user_optional(request: Request) -> Optional[dict]:
     confirmed_user = current_agent_user_route_request_user(request)
     if confirmed_user is not None:
         return confirmed_user
-    return get_active_user_from_request(request)
+    user = get_active_user_from_request(request)
+    if user and user.get("role") == "student":
+        from .services.account_control_service import ensure_student_human_auth
+        with get_db_connection() as conn:
+            ensure_student_human_auth(conn, user["id"])
+    return user
 
 
 def _permission_denied_headers(required_role: Optional[str] = None) -> dict[str, str]:
@@ -761,19 +769,26 @@ def _validate_student_identity(user: dict) -> None:
     if not user_id:
         raise _permission_denied("当前学生账号无效，请重新登录。", "student")
 
+    from .services.agent_platform_request_context import is_verified_wanderer_request_user
+    if is_verified_wanderer_request_user(user):
+        return  # The bound route dependency already revalidated its live turn.
+
     if _identity_cache_is_valid("student", user_id):
         return
 
     with get_db_connection() as conn:
         row = conn.execute(
             """
-            SELECT COALESCE(enrollment_status, 'active') AS enrollment_status
+            SELECT *
             FROM students
             WHERE id = ?
             LIMIT 1
             """,
             (user_id,),
         ).fetchone()
+        from .services.account_control_service import ensure_student_human_auth
+        if row is not None:
+            ensure_student_human_auth(conn, row)
 
     if row is None:
         invalidate_session_for_user(user_id, "student")

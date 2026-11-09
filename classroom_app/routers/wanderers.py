@@ -39,6 +39,9 @@ from ..time_utils import local_iso
 
 router = APIRouter()
 
+from .wanderer_reconciliation import router as reconciliation_router
+router.include_router(reconciliation_router)
+
 MANAGE_PREFIX = "/api/manage/system/wanderers"
 ENGINE_NOT_READY = "行为引擎尚未就绪"
 RUN_KIND_TICK = "tick"
@@ -356,13 +359,69 @@ async def api_wanderer_conversations(wanderer_id: int, page: int = 1, limit: int
             response_class=JSONResponse)
 async def api_wanderer_conversation_messages(wanderer_id: int, conversation_key: str, page: int = 1, limit: int = 50,
                                              user: dict = Depends(get_current_teacher)):
-    return _ok(**_run_admin(user, lambda conn: admin.social_messages(
-        conn, wanderer_id, conversation_key, page=page, limit=limit)))
+    from ..services.wanderer_workspace_service import audit_access
+    def read(conn):
+        result=admin.social_messages(conn,wanderer_id,conversation_key,page=page,limit=limit)
+        audit_access(conn,wanderer_id,user['id'],'conversation',f'{conversation_key}:page:{page}')
+        return result
+    return _ok(**_run_admin(user, read,commit=True))
 
 
 # ---------------------------------------------------------------------------
 # public card
 # ---------------------------------------------------------------------------
+
+@router.get(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/workspace", response_class=JSONResponse)
+async def api_wanderer_workspace(wanderer_id: int, section: str='overview', cursor: int | None=None,
+                                 limit: int=30, q: str='', kind: str='', user: dict=Depends(get_current_teacher)):
+    from ..services.wanderer_workspace_service import workspace_page, audit_access
+    def read(conn):
+        result=workspace_page(conn,wanderer_id,section=section,cursor=cursor,limit=limit,q=q,kind=kind)
+        audit_access(conn,wanderer_id,user['id'],section,f'{kind}:{cursor}')
+        return result
+    return _ok(**_run_admin(user,read,commit=True))
+
+
+@router.get(f'{MANAGE_PREFIX}/{{wanderer_id:int}}/attachments/{{source}}/{{attachment_id:int}}')
+async def api_wanderer_attachment(wanderer_id:int,source:str,attachment_id:int,user:dict=Depends(get_current_teacher)):
+    from fastapi.responses import FileResponse
+    from ..services.wanderer_workspace_service import attachment,audit_access
+    def read(conn):
+        payload=attachment(conn,wanderer_id,source,attachment_id)
+        audit_access(conn,wanderer_id,user['id'],'attachment',f'{source}:{attachment_id}')
+        return payload
+    payload=_run_admin(user,read,commit=True)
+    return FileResponse(payload['path'],filename=payload['filename'],media_type='application/octet-stream',
+                        headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'})
+
+
+@router.post(f'{MANAGE_PREFIX}/{{wanderer_id:int}}/events/{{event_id}}/reconsider',response_class=JSONResponse)
+async def api_wanderer_reconsider(wanderer_id:int,event_id:str,user:dict=Depends(get_current_teacher)):
+    from ..services.wanderer_runtime_service import retry_failed_event
+    from ..services.wanderer_workspace_service import audit_access
+    def retry(conn):
+        result=retry_failed_event(conn,wanderer_id,event_id)
+        audit_access(conn,wanderer_id,user['id'],'reconsider',event_id)
+        return result
+    return _ok(**_run_admin(user,retry,commit=True))
+
+
+@router.get('/api/wanderers/{student_id:int}/memory', response_class=JSONResponse)
+async def api_wanderer_public_memory(student_id: int, before: int | None=None, limit: int=30,
+                                     q: str='', order: str='desc', user: dict=Depends(get_current_user)):
+    from ..services.wanderer_autobiography_service import timeline
+    from ..services.wanderer_identity_service import load_wanderers_by_student_ids
+    with get_db_connection() as conn:
+        found = load_wanderers_by_student_ids(conn,[student_id])
+        wanderer = found.get(student_id)
+        if not wanderer:
+            raise HTTPException(404,'不是散修')
+        try:
+            result = timeline(conn,wanderer,before=before,limit=limit,query=q,order=order)
+        except ValueError as exc:
+            raise HTTPException(400,str(exc)) from exc
+    return _ok(**result)
+
 
 @router.get("/api/wanderers/{student_id:int}/card", response_class=JSONResponse)
 async def api_wanderer_public_card(student_id: int, user: dict = Depends(get_current_user)):

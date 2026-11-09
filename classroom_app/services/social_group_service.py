@@ -39,6 +39,7 @@ from .social_conversation_service import (
 )
 from .social_identity_service import load_people, public_users
 from .social_relations import are_friends, group_member_identities
+from . import wanderer_social_resource_service as world_resources
 
 GROUP_MAX_MEMBERS = 200
 MAX_GROUPS_PER_PERSON = 50
@@ -115,6 +116,7 @@ def _display(conn: Any, group_id: int, identities: Iterable[str]) -> str:
 # ---------------------------------------------------------------------------
 
 def _add_member_row(conn: Any, group_id: int, identity: str, role: str, existing: Optional[dict]) -> None:
+    world_resources.occupy(conn,identity,'group_memberships',f'member:{int(group_id)}')
     timestamp = now_iso()
     last_row = conn.execute("SELECT MAX(id) AS n FROM social_messages WHERE conversation_key = ?",
                             (group_key(group_id),)).fetchone()
@@ -143,7 +145,7 @@ def _skip_reason(conn: Any, group_id: int, inviter: str, identity: str, person: 
         return "只能邀请好友进群"
     if blocked_either(conn, inviter, identity):
         return "暂时无法邀请该用户"
-    if _groups_joined(conn, identity) >= MAX_GROUPS_PER_PERSON:
+    if not world_resources.room(conn,identity,'group_memberships',_groups_joined(conn,identity),MAX_GROUPS_PER_PERSON):
         return f"对方加入的群聊已达 {MAX_GROUPS_PER_PERSON} 个上限"
     if capacity <= 0:
         return f"群成员已达 {GROUP_MAX_MEMBERS} 人上限"
@@ -332,12 +334,13 @@ def create_group(conn: Any, user: dict, name: Any, member_identities: Any,
         raise SocialError("建群至少需要选择 1 位好友。", 400)
     # All joins take the same ordered person locks before a group lock. This
     # protects per-person group caps even when different groups invite at once.
+    world_resources.lock_people(conn,[me,*wanted])
     serialize_on(conn, "social-group-membership", [me, *wanted])
     if not any(are_friends(conn, me, item) for item in wanted):
         raise SocialError("只能拉自己的好友进群。", 400)
-    if _groups_created(conn, me) >= MAX_CREATED_GROUPS:
+    if not world_resources.room(conn,me,'owned_groups',_groups_created(conn,me),MAX_CREATED_GROUPS):
         raise SocialError(f"你创建的群聊已达 {MAX_CREATED_GROUPS} 个上限。", 409)
-    if _groups_joined(conn, me) >= MAX_GROUPS_PER_PERSON:
+    if not world_resources.room(conn,me,'group_memberships',_groups_joined(conn,me),MAX_GROUPS_PER_PERSON):
         raise SocialError(f"你加入的群聊已达 {MAX_GROUPS_PER_PERSON} 个上限。", 409)
     timestamp = now_iso()
     group_id = execute_insert_returning_id(
@@ -345,6 +348,7 @@ def create_group(conn: Any, user: dict, name: Any, member_identities: Any,
         "INSERT INTO social_groups (name, owner_identity, max_members, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (title, me, GROUP_MAX_MEMBERS, timestamp, timestamp),
     )
+    world_resources.occupy(conn,me,'owned_groups',f'owned_group:{group_id}')
     _add_member_row(conn, group_id, me, ROLE_OWNER, None)
     result = _invite(conn, load_group(conn, group_id), me, wanted)
     if not result["added"]:
@@ -352,6 +356,8 @@ def create_group(conn: Any, user: dict, name: Any, member_identities: Any,
     text = f"{_display(conn, group_id, [me])} 创建了群聊，并邀请 {_display(conn, group_id, result['added'])} 加入"
     insert_system_message(conn, group_key(group_id), text, events)
     _changed(events, conn, group_id, "created")
+    from .wanderer_social_triggers import on_group_membership_changed
+    on_group_membership_changed(conn, group_id, me, [me, *result["added"]], event_kind="group_created")
     return {**group_card(conn, me, group_id), "skipped": result["skipped"]}
 
 
@@ -389,8 +395,7 @@ def add_members(conn: Any, user: dict, group_id: int, identities: Any, events: O
     wanted = _identity_list(identities or [])
     if not wanted:
         raise SocialError("请选择要邀请的好友。", 400)
-    serialize_on(conn, "social-group-membership", [me, *wanted])
-    serialize_on(conn, "social-attention", [group_key(group_id)])
+    _lock_membership_change(conn,group_id,[me,*wanted])
     group = _active_group(conn, group_id)
     _require_member(conn, group_id, me)
     result = _invite(conn, group, me, wanted)
@@ -398,18 +403,31 @@ def add_members(conn: Any, user: dict, group_id: int, identities: Any, events: O
         text = f"{_display(conn, group_id, [me])} 邀请 {_display(conn, group_id, result['added'])} 加入了群聊"
         insert_system_message(conn, group_key(group_id), text, events)
         _changed(events, conn, group_id, "members_added")
+        from .wanderer_social_triggers import on_group_membership_changed
+        on_group_membership_changed(conn, group_id, me, result["added"], event_kind="group_joined")
     return result
 
 
 def _mark_left(conn: Any, group_id: int, identity: str) -> None:
+    world_resources.release(conn,identity,'group_memberships',f'member:{int(group_id)}')
     conn.execute("UPDATE social_group_members SET left_at = ?, role = ? WHERE group_id = ? AND member_identity = ?",
                  (now_iso(), ROLE_MEMBER, int(group_id), identity))
+
+
+def _lock_membership_change(conn,group_id,extra=()):
+    people=set(group_member_identities(conn,group_id))|set(extra)
+    world_resources.lock_people(conn,people)
+    serialize_on(conn,'social-group-membership',people)
+    serialize_on(conn,'social-attention',[group_key(group_id)])
+    if not set(group_member_identities(conn,group_id)).issubset(people):
+        raise SocialError('群成员刚发生变化，请重新读取后再试。',409)
+    return people
 
 
 def remove_member(conn: Any, user: dict, group_id: int, identity: Any, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
     target = normalize_identity(identity)
-    serialize_on(conn, "social-attention", [group_key(group_id)])
+    _lock_membership_change(conn,group_id,[me,target])
     _active_group(conn, group_id)
     mine = _require_member(conn, group_id, me, roles=(ROLE_OWNER, ROLE_ADMIN))
     theirs = load_membership(conn, group_id, target)
@@ -427,7 +445,7 @@ def remove_member(conn: Any, user: dict, group_id: int, identity: Any, events: O
 
 def leave_group(conn: Any, user: dict, group_id: int, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
-    serialize_on(conn, "social-attention", [group_key(group_id)])
+    _lock_membership_change(conn,group_id,[me])
     _active_group(conn, group_id)
     mine = _require_member(conn, group_id, me)
     if mine["role"] == ROLE_OWNER:
@@ -441,9 +459,12 @@ def leave_group(conn: Any, user: dict, group_id: int, events: Optional[list] = N
 
 def dissolve_group(conn: Any, user: dict, group_id: int, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
-    serialize_on(conn, "social-attention", [group_key(group_id)])
+    _lock_membership_change(conn,group_id,[me])
     _active_group(conn, group_id)
     _require_member(conn, group_id, me, roles=(ROLE_OWNER,))
+    for identity in group_member_identities(conn,group_id):
+        world_resources.release(conn,identity,'group_memberships',f'member:{int(group_id)}')
+    world_resources.release(conn,me,'owned_groups',f'owned_group:{int(group_id)}')
     insert_system_message(conn, group_key(group_id), f"{_display(conn, group_id, [me])} 解散了群聊", events)
     _changed(events, conn, group_id, "dissolved")
     timestamp = now_iso()
@@ -462,10 +483,21 @@ def _require_other_member(conn: Any, group_id: int, me: str, target: str) -> dic
 def transfer_owner(conn: Any, user: dict, group_id: int, identity: Any, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
     target = normalize_identity(identity)
-    serialize_on(conn, "social-attention", [group_key(group_id)])
+    _lock_membership_change(conn,group_id,[me,target])
     _active_group(conn, group_id)
     _require_member(conn, group_id, me, roles=(ROLE_OWNER,))
     _require_other_member(conn, group_id, me, target)
+    if world_resources.actor_id(conn,target) is None and _groups_created(conn,target)>=MAX_CREATED_GROUPS:
+        raise SocialError(f'对方创建的群聊已达 {MAX_CREATED_GROUPS} 个上限。',409)
+    conn.execute('SAVEPOINT group_owner_capacity')
+    try:
+        world_resources.release(conn,me,'owned_groups',f'owned_group:{int(group_id)}')
+        world_resources.occupy(conn,target,'owned_groups',f'owned_group:{int(group_id)}')
+        conn.execute('RELEASE SAVEPOINT group_owner_capacity')
+    except Exception:
+        conn.execute('ROLLBACK TO SAVEPOINT group_owner_capacity')
+        conn.execute('RELEASE SAVEPOINT group_owner_capacity')
+        raise
     conn.execute("UPDATE social_group_members SET role = ? WHERE group_id = ? AND member_identity = ?",
                  (ROLE_MEMBER, int(group_id), me))
     conn.execute("UPDATE social_group_members SET role = ? WHERE group_id = ? AND member_identity = ?",

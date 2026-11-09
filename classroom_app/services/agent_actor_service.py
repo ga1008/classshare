@@ -25,13 +25,20 @@ class AgentActor:
     is_super_admin: bool
     memberships: tuple[dict[str, str], ...]
     class_id: int | None = None
+    wanderer_id: int | None = None
+    life_epoch: int = 0
+    authority_version: int = 0
 
     @property
     def key(self) -> str:
         return f"{self.role}:{self.id}"
 
     def as_user(self) -> dict[str, Any]:
-        return {"id": self.id, "role": self.role, "name": self.name}
+        result = {"id": self.id, "role": self.role, "name": self.name}
+        if self.wanderer_id is not None:
+            result.update(is_wanderer=True, wanderer_id=self.wanderer_id, control_mode="ai",
+                          life_epoch=self.life_epoch, authority_version=self.authority_version)
+        return result
 
     def public_context(self) -> dict[str, Any]:
         return {
@@ -52,10 +59,12 @@ class AgentActor:
             for item in self.memberships
         })
         payload = [self.key, self.is_super_admin, self.class_id, scopes]
+        if self.wanderer_id is not None:
+            payload.extend(["ai", self.wanderer_id, self.life_epoch, self.authority_version])
         return hashlib.sha256(json.dumps(payload, ensure_ascii=True).encode()).hexdigest()
 
 
-def resolve_agent_actor(conn, role: str, actor_id: Any) -> AgentActor:
+def resolve_agent_actor(conn, role: str, actor_id: Any, *, service_wanderer: dict | None = None) -> AgentActor:
     normalized_role = str(role or "").strip().lower()
     try:
         if isinstance(actor_id, bool):
@@ -86,10 +95,19 @@ def resolve_agent_actor(conn, role: str, actor_id: Any) -> AgentActor:
         ).fetchone()
         if not row or normalize_student_enrollment_status(row["enrollment_status"]) != STUDENT_STATUS_ACTIVE:
             raise HTTPException(status_code=403, detail="任务所属学生账号已停用或不存在。")
+        from .account_control_service import student_is_ai_controlled
+        is_ai = student_is_ai_controlled(conn, pk)
+        if is_ai and (service_wanderer is None or int(service_wanderer.get("student_id") or 0) != pk):
+            raise HTTPException(403, "AI 专管账号必须通过散修运行授权执行。")
+        if service_wanderer is not None and not is_ai:
+            raise HTTPException(403, "散修运行身份与账号控制方式不一致。")
         return AgentActor(
             role=normalized_role, id=pk, name=str(row["name"] or ""),
             is_super_admin=False, memberships=(org_scope_from_row(row),),
-            class_id=int(row["class_id"]) if row["class_id"] is not None else None,
+            class_id=None if is_ai else (int(row["class_id"]) if row["class_id"] is not None else None),
+            wanderer_id=int(service_wanderer["id"]) if is_ai else None,
+            life_epoch=int(service_wanderer.get("life_epoch") or 1) if is_ai else 0,
+            authority_version=int(service_wanderer.get("authority_version") or 1) if is_ai else 0,
         )
     raise HTTPException(status_code=403, detail="Agent 仅支持有效的教师或学生身份。")
 

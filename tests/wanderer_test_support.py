@@ -37,6 +37,12 @@ class WandererDbTestCase(unittest.TestCase):
 
     def setUp(self):
         reset_wanderer_caches()
+        # Existing suites exercise the retained rollback adapter. V2 acceptance
+        # explicitly enables the new runtime; production defaults to v2.
+        from classroom_app.services.wanderer_settings_service import wanderer_runtime_setting_set
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, "autonomous_v2_enabled", "0")
+            conn.commit()
 
     @staticmethod
     def connect():

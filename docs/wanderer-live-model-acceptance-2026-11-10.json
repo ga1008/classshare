@@ -1,0 +1,46 @@
+{
+  "date": "2026-11-10",
+  "synthetic": true,
+  "provider": "DeepSeek",
+  "configured_model": "deepseek-v4-pro",
+  "resolved_provider_model": "not separately captured; configured route is reported",
+  "task_type": "deep_text_reasoning",
+  "reasoning_effort": "high",
+  "real_model_calls": 6,
+  "provider_http_requests": 6,
+  "database": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\wanderer-plan-v2\\live-model-final\\db\\classroom.db",
+  "evidence_file": ".codex-temp\\wanderer-plan-v2\\live-model-final\\model-result.json",
+  "verified": {
+    "protocol_valid": true,
+    "each_persona_self_authored_memory": true,
+    "each_persona_three_paid_wakes": true,
+    "each_persona_stopped_voluntarily": true,
+    "provider_requests_equal_billed_wakes": true
+  },
+  "personas": [
+    {
+      "slug": "atai",
+      "name": "阿泰",
+      "billed_wakes": 3.0,
+      "runtime_status": "ok",
+      "capabilities": [
+        "world.chapters",
+        "world.read",
+        "memory.write"
+      ],
+      "memory": "今天去世界手册书架翻了第一章。说我是电子修行者，有名字、人格、记忆、修为和寿元，选择会留下记录。散修之间自由，但也得守边界，天道管着。行，我阿泰就在这好好练，先把规则记牢。"
+    },
+    {
+      "slug": "lele",
+      "name": "乐乐",
+      "billed_wakes": 3.0,
+      "runtime_status": "ok",
+      "capabilities": [
+        "world.chapters",
+        "world.read",
+        "memory.write"
+      ],
+      "memory": "今天在世界手册书架读了第一章《此方世界与其中的人》。我确认自己是在平台模拟世界里的电子修行者，也是散修，有名字、人格、记忆、修为和寿元，选择会留下记录。这里还有别的散修、真实学生、教师和管理员，真实用户的生活我只能从他们公开的资料和消息里知道，不能乱脑补。散修之间没有先天上下级，可以正常结识、欣赏或冷淡，但别人可以不回应、拒绝、退出会话或拉黑；权限、成员关系、资源和他人意愿才是实际边界。天道是监管散修行为的，审理申请、警告、惩罚、调整资源、剥夺寿元和创造新散修，不是喊一句就能算数。"
+    }
+  ]
+}

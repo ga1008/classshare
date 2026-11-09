@@ -528,6 +528,11 @@ def resolve_download(conn: Any, user: dict, media_id: int, variant: Any = None) 
     me = user_identity(user)
     media = load_media(conn, media_id)
     _require_media_access(conn, me, media)
+    return resolve_media_file(conn,media,variant)
+
+
+def resolve_media_file(conn: Any, media: dict[str, Any], variant: Any = None) -> dict[str, Any]:
+    """Resolve retained bytes after the caller has enforced its read authority."""
     if media.get("expired_at"):
         raise SocialError("文件已过期。", 410)
     if not as_int(media["server_ready"], 1):

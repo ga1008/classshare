@@ -205,7 +205,8 @@ class ParseTurnOutputTest(unittest.TestCase):
 
     def test_optional_feeling_is_kept_and_clamped(self):
         turn = parse_turn_output('{"action":"reply","parts":["嗯"],"feeling":{"affinity":9,"reason":"很真诚"}}')
-        self.assertEqual(turn["feeling"], {"affinity": 5.0, "reason": "很真诚"})
+        self.assertEqual(turn["feeling"], {"value":9.0,"affinity":9.0,"expected_revision":None,"reason":"很真诚"})
+        self.assertEqual(parse_turn_output('{"action":"reply","feeling":{"value":100,"expected_revision":2}}')['feeling']['value'],100)
         self.assertNotIn("feeling", parse_turn_output('{"action":"reply","parts":["嗯"]}'))
         self.assertNotIn("feeling", parse_turn_output('{"action":"reply","parts":["嗯"],"feeling":{"affinity":"x"}}'))
 
@@ -223,7 +224,7 @@ class LifecyclePromptTest(WandererDbTestCase):
         self.assertIn("剩余约", prompt)
         self.assertIn("【你的天赋】", prompt)
         self.assertIn("悟性", prompt)
-        self.assertIn("【升阶条件】", prompt)
+        self.assertNotIn("【升阶条件】", prompt)
         self.assertIn("修为", prompt)
 
 

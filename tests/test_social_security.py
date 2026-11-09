@@ -132,6 +132,20 @@ class UploadAbuseTest(_Base):  # H2, M14
 
 
 class WebSocketAbuseTest(_Base):  # H3, M9
+    def client_as(self, identity):
+        # Production sockets share one worker/event loop. TestClient otherwise
+        # opens a new loop per websocket and correctly trips the presence guard.
+        import anyio
+        client=super().client_as(identity)
+        portal_cm=anyio.from_thread.start_blocking_portal()
+        client.portal=portal_cm.__enter__()
+        self.addCleanup(portal_cm.__exit__,None,None,None)
+        def drain_presence():
+            result=client.portal.call(presence_service.stop_presence_runtime)
+            self.assertTrue(result['clean'],result)
+        self.addCleanup(drain_presence)
+        return client
+
     def setUp(self):
         super().setUp()
         verify = patch("classroom_app.routers.social_ws.verify_token", side_effect=fake_verify_token)

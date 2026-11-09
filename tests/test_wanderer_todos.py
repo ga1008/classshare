@@ -25,6 +25,14 @@ class StubCaller:
 class WandererTodoTest(WandererDbTestCase):
     def setUp(self):
         super().setUp()
+        with self.connect() as conn:
+            conn.execute('DELETE FROM wanderer_todos')
+            conn.execute("DELETE FROM scheduled_tasks WHERE task_kind='wanderer_todo_wake'")
+            conn.execute("DELETE FROM wanderer_capacity_allocations WHERE resource='todo_capacity'")
+            conn.execute("DELETE FROM wanderer_resource_usage WHERE resource IN ('todo_capacity','cultivation_todo')")
+            conn.execute("DELETE FROM wanderer_resource_reservations WHERE resource='cultivation_todo'")
+            conn.execute("DELETE FROM wanderer_cultivation_awards WHERE kind='todo'")
+            conn.commit()
         patcher = patch.dict(os.environ, {"WANDERER_ENABLED": "true"})
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -59,6 +67,7 @@ class WandererTodoTest(WandererDbTestCase):
     def test_capacity_limit_and_complete_flow(self):
         with self.connect() as conn:
             wanderer = {**self.wanderer(conn, "atai"), "tier": 0}
+            conn.execute('UPDATE wanderer_agents SET tier=0 WHERE id=?',(wanderer['id'],))
             for index in range(3):
                 todos.apply_todo_ops(conn, wanderer, [{"op": "create", "title": f"事{index}"}])
             fourth = todos.apply_todo_ops(conn, wanderer, [{"op": "create", "title": "第四件"}])

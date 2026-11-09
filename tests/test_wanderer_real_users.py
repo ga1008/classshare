@@ -145,7 +145,8 @@ class RealUserRulesTest(WandererWorldTestCase):
 
         with self.connect() as conn:
             wanderer = self.wanderer(conn, "atai")
-            quota = snapshot_for_wanderer(conn, {**wanderer, "tier": 5})
+            conn.execute('UPDATE wanderer_agents SET tier=5 WHERE id=?',(wanderer['id'],))
+            quota = snapshot_for_wanderer(conn, wanderer)
         self.assertEqual(quota["limit"], 24)
         self.assertEqual(quota["available"], True)
         text = search_context_block({"limit": 24, "used": 2, "remaining": 22, "history": [
@@ -167,6 +168,6 @@ class RealUserRulesTest(WandererWorldTestCase):
             _apply_interaction_limit_row(conn, wanderer, entry, None)
             conn.commit()
             fresh = self.wanderer(conn, "atai")
-        self.assertEqual(fresh["interaction_limit_penalty"], 20)
+        self.assertEqual(fresh["interaction_limit_penalty"], 1_000_000)
         self.assertGreaterEqual(fresh["interaction_penalty_until"], datetime.now().isoformat(timespec="seconds"))
-        self.assertEqual(daily_budget(fresh), 4)
+        self.assertEqual(daily_budget(fresh), 0)

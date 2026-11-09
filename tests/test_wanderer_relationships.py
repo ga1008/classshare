@@ -1,138 +1,114 @@
-import unittest
-
-from classroom_app.services.wanderer_identity_service import load_wanderer_by_slug
+"""Isolated CAS, migration and self-authored affinity tests."""
+from classroom_app.db.schema_wanderer_social import ensure_wanderer_social_schema, migrate_relationship_affinities
+from classroom_app.services.social_common import SocialError
 from classroom_app.services.wanderer_relationship_service import (
-    affinity_label,
-    apply_turn_feeling,
-    grieve_death,
-    list_relationships,
-    mutual_affinity,
-    note_interaction,
-    public_summary,
-    record_feeling,
-    relationship_block,
+    affinity_state, set_affinity, note_interaction, record_feeling, grieve_death,
+    apply_turn_feeling, list_relationships, relationship_block, mutual_affinity,
 )
 from tests.wanderer_test_support import WandererDbTestCase
-
-TALENTS = '{"insight":1.0,"memory":1.0,"vitality":1.0,"eloquence":1.0,"charm":%s,"luck":1.0}'
 
 
 class RelationshipTest(WandererDbTestCase):
     def setUp(self):
         super().setUp()
         with self.connect() as conn:
-            conn.execute("DELETE FROM wanderer_relationships")
-            conn.execute("DELETE FROM wanderer_legacies")
-            conn.execute("DELETE FROM wanderer_action_log")
-            conn.execute("UPDATE wanderer_agents SET status = 'active', born_at = created_at, "
-                         "lifespan_weeks = 0, life_penalty_weeks = 0, life_extensions = 0, legacy_id = NULL")
+            ensure_wanderer_social_schema(conn)
+            for table in ("wanderer_relationship_changes","wanderer_relationship_versions","wanderer_relationships"):
+                conn.execute(f"DELETE FROM {table}")
+            self.a = self.wanderer(conn,"linwanzhou")
+            self.b = self.wanderer(conn,"suqinghe")
+            self.peer = f"student:{self.b['student_id']}"
             conn.commit()
 
-    def _wanderer(self, conn, slug, charm=1.0):
-        conn.execute("UPDATE wanderer_agents SET talents_json = ? WHERE slug = ?", (TALENTS % charm, slug))
-        conn.commit()
-        return load_wanderer_by_slug(conn, slug)
+    def decide(self,conn,value,revision=0,operation="decide-1",actor=None,peer=None):
+        return set_affinity(conn,actor or self.a,peer or self.peer,value,expected_revision=revision,
+                            source_turn_id="turn-1",operation_id=operation,reason="我自己的感受")
 
-    def test_positive_and_negative_feelings_scale_with_charm(self):
+    def test_can_jump_to_100_then_zero_without_charm(self):
         with self.connect() as conn:
-            kind = self._wanderer(conn, "linwanzhou", charm=1.5)
-            up = record_feeling(conn, kind, "student:4242", delta=2, mood="高兴", reason="聊得来", scene="social_dm")
-            down = record_feeling(conn, kind, "student:4242", delta=-4, mood="厌烦", reason="对方刻薄")
-            conn.commit()
-        self.assertEqual(up["affinity"], 3.0)
-        self.assertEqual(down["affinity"], 0.3)  # 3.0 − 2.7
+            self.a["talents"]={"charm":0.2}
+            self.assertEqual(self.decide(conn,100)["affinity"],100)
+            self.assertEqual(self.decide(conn,0,1,"decide-2")["affinity"],0)
+            self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["revision"],2)
 
-    def test_affinity_is_clamped_and_labeled(self):
+    def test_operation_replay_and_revision_conflict(self):
         with self.connect() as conn:
-            wanderer = self._wanderer(conn, "linwanzhou", charm=1.0)
-            for _ in range(30):
-                record_feeling(conn, wanderer, "student:4242", delta=5)
-                record_feeling(conn, wanderer, "teacher:7", delta=-5)
-            conn.commit()
-            high = conn.execute("SELECT affinity FROM wanderer_relationships WHERE peer_identity='student:4242'").fetchone()
-            low = conn.execute("SELECT affinity FROM wanderer_relationships WHERE peer_identity='teacher:7'").fetchone()
-        self.assertEqual(high["affinity"], 100.0)
-        self.assertEqual(low["affinity"], -100.0)
-        self.assertEqual(affinity_label(high["affinity"]), "挚友")
-        self.assertEqual(affinity_label(low["affinity"]), "厌恶")
+            self.decide(conn,100)
+            self.assertTrue(self.decide(conn,100)["replayed"])
+            with self.assertRaises(SocialError) as stale:
+                self.decide(conn,80,0,"stale")
+            self.assertEqual(stale.exception.status_code,409)
+            with self.assertRaises(SocialError):
+                self.decide(conn,80,1,"decide-1")
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_relationship_changes").fetchone()[0],1)
 
-    def test_no_feeling_only_counts_the_interaction(self):
+    def test_reject_nonfinite_out_of_range_and_self(self):
         with self.connect() as conn:
-            wanderer = self._wanderer(conn, "linwanzhou")
-            note_interaction(conn, wanderer, "student:4242", scene="social_dm")
-            conn.commit()
-            row = conn.execute("SELECT affinity, interactions FROM wanderer_relationships LIMIT 1").fetchone()
-            unchanged = list_relationships(conn, wanderer["id"])[0]
-        self.assertEqual(row["affinity"], 0.0)
-        self.assertEqual(row["interactions"], 1)
-        self.assertEqual(unchanged["label"], "平常")
+            for value in (-1,101,float("nan"),float("inf"),True):
+                with self.assertRaises(SocialError):
+                    self.decide(conn,value)
+            with self.assertRaises(SocialError):
+                self.decide(conn,100,peer=f"student:{self.a['student_id']}")
 
-    def test_prompt_block_is_bounded_and_carries_reason(self):
+    def test_encounter_and_grief_never_choose_affinity(self):
         with self.connect() as conn:
-            wanderer = self._wanderer(conn, "linwanzhou")
-            for index in range(8):
-                for _ in range(5):  # 5 × 5 = 25 affinity → 亲近
-                    record_feeling(conn, wanderer, f"student:{500 + index}", delta=5, mood="平静",
-                                   reason=f"第{index}次聊得不错")
-            conn.commit()
-            block = relationship_block(conn, wanderer)
-        self.assertIn("【你与他人的关系】", block)
-        self.assertIn("亲近", block)
-        self.assertIn("聊得不错", block)
-        self.assertLessEqual(block.count("\n"), 7)  # intro + at most six people
+            self.decide(conn,100)
+            record_feeling(conn,self.a,self.peer,delta=-5,reason="收到消息")
+            self.assertEqual(grieve_death(conn,self.b),1)
+            self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["affinity"],100)
+            self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["revision"],1)
 
-    def test_grief_lowers_affinity_of_those_who_cared(self):
+    def test_unversioned_legacy_feeling_only_records_encounter(self):
         with self.connect() as conn:
-            mourner = self._wanderer(conn, "linwanzhou")
-            friend = load_wanderer_by_slug(conn, "suqinghe")
-            for _ in range(10):
-                record_feeling(conn, mourner, f"student:{friend['student_id']}", delta=5)
-            conn.commit()
-            touched = grieve_death(conn, friend)
-            conn.commit()
-            row = conn.execute("SELECT affinity, last_mood, last_reason FROM wanderer_relationships "
-                               "WHERE wanderer_id = ?", (mourner["id"],)).fetchone()
-        self.assertEqual(touched, 1)
-        self.assertEqual(row["affinity"], 44.0)
-        self.assertEqual(row["last_mood"], "难过")
-        self.assertIn("陨落", row["last_reason"])
+            apply_turn_feeling(conn,self.a,self.peer,{"feeling":{"affinity":3}})
+            self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["affinity"],0)
+            apply_turn_feeling(conn,self.a,self.peer,{"turn_id":"turn-7","feeling":{"value":100,"expected_revision":0}})
+            self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["affinity"],100)
 
-    def test_mutual_affinity_needs_both_directions(self):
+    def test_migration_keeps_original_and_runs_once(self):
         with self.connect() as conn:
-            a = self._wanderer(conn, "linwanzhou")
-            b = load_wanderer_by_slug(conn, "suqinghe")
-            for _ in range(9):
-                record_feeling(conn, a, f"student:{b['student_id']}", delta=5)
-            conn.commit()
-            one_sided = mutual_affinity(conn, a, f"student:{b['student_id']}", minimum=40)
-            for _ in range(9):
-                record_feeling(conn, b, f"student:{a['student_id']}", delta=5)
-            conn.commit()
-            both = mutual_affinity(conn, a, f"student:{b['student_id']}", minimum=40)
-        self.assertFalse(one_sided)
-        self.assertTrue(both)
+            note_interaction(conn,self.a,self.peer)
+            conn.execute("DELETE FROM wanderer_relationship_versions")
+            conn.execute("UPDATE wanderer_relationships SET affinity=-60")
+            self.assertEqual(migrate_relationship_affinities(conn),1)
+            self.assertEqual(migrate_relationship_affinities(conn),0)
+            state=affinity_state(conn,self.a["id"],self.peer)
+            self.assertEqual(state["affinity"],20)
+            self.assertEqual(state["legacy_affinity"],-60)
+            self.assertEqual(state["origin"],"legacy")
+            self.decide(conn,100)
+            self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["legacy_affinity"],-60)
 
-    def test_public_summary_counts_bonds(self):
+    def test_panel_prompt_and_mutual_are_directed(self):
         with self.connect() as conn:
-            wanderer = self._wanderer(conn, "linwanzhou", charm=1.0)
-            for _ in range(5):
-                record_feeling(conn, wanderer, "student:4242", delta=5)
-                record_feeling(conn, wanderer, "student:4243", delta=-5)
-            record_feeling(conn, wanderer, "student:4244", delta=0)
-            conn.commit()
-            summary = public_summary(conn, wanderer["id"])
-        self.assertEqual(summary, {"total": 3, "close": 1, "dislike": 1})
+            self.decide(conn,100)
+            self.assertFalse(mutual_affinity(conn,self.a,self.peer,minimum=100))
+            self.decide(conn,100,operation="back",actor=self.b,peer=f"student:{self.a['student_id']}")
+            self.assertTrue(mutual_affinity(conn,self.a,self.peer,minimum=100))
+            row=list_relationships(conn,self.a["id"])[0]
+            self.assertEqual(row["revision"],1)
+            self.assertEqual(row["origin"],"self")
+            self.assertIn("100%",relationship_block(conn,self.a))
+            self.assertIn("版本 1",relationship_block(conn,self.a))
 
-    def test_apply_turn_feeling_accepts_parsed_turn(self):
+    def test_competing_connections_cannot_overwrite_same_revision(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+        barrier=Barrier(2)
+        def change(value):
+            with self.connect() as conn:
+                barrier.wait(timeout=10)
+                try:
+                    self.decide(conn,value,operation=f"concurrent-{value}")
+                    conn.commit()
+                    return "updated"
+                except SocialError as exc:
+                    conn.rollback()
+                    return exc.status_code
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            result=list(pool.map(change,(20,100)))
+        self.assertEqual(result.count("updated"),1)
+        self.assertEqual(result.count(409),1)
         with self.connect() as conn:
-            wanderer = self._wanderer(conn, "linwanzhou")
-            apply_turn_feeling(conn, wanderer, "student:4242",
-                               {"feeling": {"affinity": 2, "reason": "很真诚"}, "mood": "开心"}, scene="social_dm")
-            conn.commit()
-            row = conn.execute("SELECT affinity, last_reason FROM wanderer_relationships").fetchone()
-        self.assertEqual(row["affinity"], 2.0)
-        self.assertEqual(row["last_reason"], "很真诚")
-
-
-if __name__ == "__main__":
-    unittest.main()
+            self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["revision"],1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_relationship_changes").fetchone()[0],1)

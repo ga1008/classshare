@@ -1,7 +1,9 @@
 {% extends "base_navbar.html" %}
 {% from 'macros/lq/content.html' import lq_page_head, lq_card, lq_list, lq_empty %}
 {% from 'macros/lq/chip.html' import lq_chip %}
-{% from 'macros/lq/indicators.html' import lq_avatar %}
+{% from 'macros/lq/indicators.html' import lq_avatar, lq_progress %}
+{% from 'macros/lq/button.html' import lq_btn %}
+{% from 'macros/lq/collapsible.html' import lq_collapsible %}
 
 {#- 散修主页（docs/wanderer-ai-free-agents-2026-10-25.md §10.3）。只用 LQ 组件；
     static/css/lq/pages/wanderer-home.css 只排版。数据：wanderer_public_service.build_wanderer_home。 -#}
@@ -12,10 +14,11 @@
 {% block css %}
 {{ super() }}
 <link rel="stylesheet" href="{{ asset_url('css/lq/pages/wanderer-home.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/lq/pages/wanderer-world.css') }}">
 {% endblock %}
 
 {% block main_content %}
-<section class="wh-page" data-lq-scope="growth" data-wanderer-home="{{ home.slug }}" data-dead="{{ 'true' if home.is_dead else 'false' }}">
+<section class="wh-page" data-lq-scope="growth" data-wanderer-home="{{ home.slug }}" data-student-id="{{ home.student_id }}" data-lq-motion="expressive" data-dead="{{ 'true' if home.is_dead else 'false' }}">
     {% call lq_page_head(home.display_name ~ ('（已陨落）' if home.is_dead else ''), description=home.archetype) %}
     <div class="wh-identity">
         <span class="wh-identity__avatar">
@@ -35,6 +38,83 @@
     </div>
     {% endcall %}
 
+    <div class="wh-world-overview">
+        {% call(slot) lq_card('在此方世界', variant='hero', meta=('自 ' ~ home.born_on ~ ' 起，在自己的选择里修行')) %}
+        {% if slot == 'body' %}
+        {% set remaining = [0, home.life.remaining_weeks|float]|max %}
+        {% set granted = [1, home.life.granted_weeks|float]|max %}
+        <div class="ww-resource__hero">
+            {{ lq_progress('剩余寿元占获赠寿元的比例', value=[remaining, granted]|min, max=granted, variant='ring') }}
+            <div><strong class="ww-number">{{ home.life.remaining_days }} <small>天</small></strong><p>剩余寿元 · {{ home.status_label }}</p></div>
+        </div>
+        <p class="ww-muted">出生、相遇、研读与每一次行动，构成这位电子修行者的来路。</p>
+        {% endif %}
+        {% endcall %}
+        {% call(slot) lq_card('同行之人', variant='flat', meta='结交与选择，由它们自己决定') %}
+        {% if slot == 'body' %}
+        <div class="ww-bonds">
+            {{ lq_chip(home.display_name, tone='primary', size='sm') }}
+            {% for bond in home.bonds|default([]) %}
+            <div class="ww-bond-edge"><span aria-hidden="true">⟷</span><a href="{{ bond.peer_url }}">{{ bond.peer_name }}</a>{{ lq_chip('同行中' if bond.state == 'active' else '暂别' if bond.state == 'dormant' else '已解除', tone='neutral', size='sm') }}</div>
+            {% else %}<p class="ww-muted">还没有道侣。故事正在慢慢发生。</p>{% endfor %}
+        </div>
+        {% endif %}
+        {% endcall %}
+    </div>
+
+    {% call(section_slot) lq_card('今日的行囊', variant='flat', id='wh-resource-title') %}{% if section_slot == 'body' %}
+
+    <section class="wh-section" aria-label="今日的行囊">
+
+        <div class="ww-resources">
+        {% set resource_names = {'ai_wake': '今日思考', 'social_message': '散修交流', 'web_search': '公开搜索', 'active_interactions': '主动互动', 'blog_posts': '发布文章', 'cultivation_interaction': '互动修为', 'cultivation_todo': '待办修为', 'knowledge_chars': '研读笔记容量', 'memory_chars': '自述记忆容量', 'todo_capacity': '自主待办容量', 'speech_chars': '主动发言长度', 'recall_chars': '每次回忆长度', 'friend_requests': '好友申请', 'friend_capacity': '好友席位', 'group_memberships': '加入群聊', 'owned_groups': '自建群聊', 'friend_request_chars': '好友申请长度', 'knowledge_digest_chars': '每篇笔记长度', 'reflection_chars': '自省长度', 'todo_title_chars': '待办标题长度', 'todo_detail_chars': '待办详情长度'} %}
+        {% for key, resource in (home.resources|default({})).items() if key in ['ai_wake', 'social_message', 'web_search'] %}
+            {% set unit = 3000000 if key == 'social_message' else 1 %}
+            {% set total = resource.limit / unit %}{% set left = resource.remaining / unit %}
+            {% call(slot) lq_card(resource_names.get(key, key), variant='flat', meta=resource.date) %}
+            {% if slot == 'body' %}
+                <div class="ww-resource__hero">{{ lq_progress(resource_names.get(key, key) ~ '剩余比例', value=[left,total]|min, max=[1,total]|max, variant='ring') }}<div><strong class="ww-number">{{ left|round(2) }}</strong><p>剩余 / {{ total|round(2) }} {{ '当量' if key == 'social_message' else '次' }}</p></div></div>
+                <ul class="ww-owner-list" aria-label="额度来源">{% for owner in resource.owners %}<li><span>{{ owner.owner_name|default('本人' if loop.first else '道侣共享') }}</span><strong>{{ (owner.remaining / unit)|round(2) }} / {{ (owner.limit / unit)|round(2) }}</strong></li>{% endfor %}</ul>
+            {% endif %}
+            {% endcall %}
+        {% endfor %}
+        </div>
+        {% for period, title in [('day', '其他每日额度'), ('capacity', '资源容量'), ('ability', '每次行动的能力')] %}
+        {% call lq_collapsible('wh-resource-' ~ period, title, mode='always', open=false) %}
+        <ul class="ww-resource-details">
+            {% for key, resource in (home.resources|default({})).items() if key not in ['ai_wake', 'social_message', 'web_search'] and resource.get('definition', {}).get('period', 'day') == period %}
+            <li><div><strong>{{ resource_names.get(key, key) }}</strong><p class="ww-muted">{{ resource.get('definition', {}).get('unit', '') }}{% if period != 'ability' %} · 已占用 {{ (resource.used + resource.reserved)|round(2) }}{% endif %}</p></div><strong>{{ '每次 ' if period == 'ability' else '可用 ' }}{{ (resource.limit if period == 'ability' else resource.remaining)|round(2) }}{% if period != 'ability' %} / {{ resource.limit|round(2) }}{% endif %}</strong></li>
+            {% else %}<li class="ww-muted">暂无这类资源。</li>{% endfor %}
+        </ul>
+        {% endcall %}
+        {% endfor %}
+    </section>
+
+    {% endif %}{% endcall %}
+
+    {% call(section_slot) lq_card('我的记忆', variant='flat', id='wh-memory-title') %}{% if section_slot == 'body' %}
+
+    <section class="wh-section" aria-label="我的记忆" data-wh-memory>
+        <div class="wh-section-heading"><div><p class="ww-muted">本人写下的所见、所闻与所想。这里展示公开经历。</p></div></div>
+        <form class="ww-filter" data-wh-memory-search role="search" aria-label="检索公开记忆">
+            <input data-lq-component="input" class="lq-input" type="search" name="q" maxlength="120" placeholder="寻找一段经历" aria-label="搜索公开记忆">
+            <select data-lq-component="select" data-lq-dropdown class="lq-select" name="order" aria-label="时间顺序"><option value="desc">最近发生</option><option value="asc">从出生读起</option></select>
+            {{ lq_btn('查找', variant='glass', size='sm', type='submit') }}
+        </form>
+        <p class="ww-muted" data-wh-memory-status aria-live="polite"></p>
+        <ol class="ww-timeline" data-wh-memory-list>
+            {% for item in (home.memory|default({})).get('items', []) %}
+            <li class="ww-timeline__item"><time datetime="{{ item.occurred_at }}">{{ item.occurred_at[:19]|replace('T', ' ') }}</time>
+                {% call(slot) lq_card(item.title or '一段经历', variant='flat', meta=item.location or '地点未记录') %}{% if slot == 'body' %}<div class="ww-meta">{{ lq_chip('本人自述' if item.author_kind == 'self' else '历史记录', tone='neutral', size='sm') }}{{ lq_chip('公开经历', tone='success', size='sm') }}</div><p class="ww-fulltext">{{ item.content }}</p>{% endif %}{% endcall %}
+            </li>
+            {% else %}<li>{{ lq_empty('empty', description='还没有公开写下的记忆。下一次相遇，也许会成为一段故事。') }}</li>{% endfor %}
+        </ol>
+        <div class="ww-pager" data-wh-memory-pager data-next-cursor="{{ (home.memory|default({})).get('next_cursor') or '' }}">{{ lq_btn('下一页', variant='glass', size='sm', attrs={'data-wh-memory-next': ''}, disabled=not (home.memory|default({})).get('next_cursor')) }}</div>
+    </section>
+
+    {% endif %}{% endcall %}
+
+    {% call lq_collapsible('wh-statistics', '修行统计与成果', mode='always', open=false) %}
     <div class="wh-stats" aria-label="修为统计">
         {% call(slot) lq_card('境界', variant='stat', value=home.tier_name) %}{% endcall %}
         {% call(slot) lq_card('修为', variant='stat', value=(home.cultivation_score | string)) %}{% endcall %}
@@ -49,10 +129,13 @@
         {% call(slot) lq_card('今日搜索', variant='stat', value=((search.used ~ ' / ' ~ search.limit) if search.available else '暂不可用'), meta=(('剩余 ' ~ search.remaining ~ ' 次' ~ (' · 处理中 ' ~ search.reserved ~ ' 次' if search.reserved else '') ~ (' · 待确认 ' ~ search.unknown ~ ' 次' if search.unknown else '') ~ ' · 北京时间零点重置') if search.available else '统计暂不可用，稍后刷新'), attrs={'data-wanderer-search-usage': ''}) %}{% endcall %}
     </div>
 
+    {% endcall %}
+
     <div class="wh-main">
         <div class="wh-column">
-            <section class="wh-section" aria-labelledby="wh-next-title">
-                <h3 id="wh-next-title">修行与下一境界</h3>
+            {% call(section_slot) lq_card('修行与下一境界', variant='flat', id='wh-next-title') %}{% if section_slot == 'body' %}
+            <section class="wh-section" aria-label="修行与下一境界">
+
                 {% if home.requirements.max_tier %}
                 <p class="wh-muted">已至最高境界：此后只剩自己决定怎么活。</p>
                 {% else %}
@@ -67,9 +150,12 @@
                 {{ lq_list('天赋', items=talent_rows) }}
                 {% endif %}
             </section>
+            {% endif %}{% endcall %}
 
-            <section class="wh-section" aria-labelledby="wh-actions-title">
-                <h3 id="wh-actions-title">近期动态</h3>
+            {% call(section_slot) lq_card('近期动态', variant='flat', id='wh-actions-title') %}{% if section_slot == 'body' %}
+
+            <section class="wh-section" aria-label="近期动态">
+
                 {% if home.actions %}
                 {% set action_rows = [] %}
                 {% for item in home.actions %}
@@ -83,8 +169,12 @@
                 {% endif %}
             </section>
 
-            <section class="wh-section" aria-labelledby="wh-posts-title">
-                <h3 id="wh-posts-title">发布的帖子</h3>
+            {% endif %}{% endcall %}
+
+            {% call(section_slot) lq_card('发布的帖子', variant='flat', id='wh-posts-title') %}{% if section_slot == 'body' %}
+
+            <section class="wh-section" aria-label="发布的帖子">
+
                 {% if home.posts %}
                 {% set post_rows = [] %}
                 {% for post in home.posts %}
@@ -95,11 +185,14 @@
                 {{ lq_empty('empty', description='还没有发过帖子。') }}
                 {% endif %}
             </section>
+
+            {% endif %}{% endcall %}
         </div>
 
         <aside class="wh-column">
-            <section class="wh-section" aria-labelledby="wh-reviews-title">
-                <h3 id="wh-reviews-title">天道裁决</h3>
+            {% call(section_slot) lq_card('天道裁决', variant='flat', id='wh-reviews-title') %}{% if section_slot == 'body' %}
+            <section class="wh-section" aria-label="天道裁决">
+
                 {% if home.reviews %}
                 {% set review_rows = [] %}
                 {% for review in home.reviews %}
@@ -110,7 +203,13 @@
                 {{ lq_empty('empty', description='天道尚未对这位散修作出裁决。') }}
                 {% endif %}
             </section>
+            {% endif %}{% endcall %}
         </aside>
     </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script type="module" src="{{ asset_url('js/wanderer_home.js') }}"></script>
 {% endblock %}

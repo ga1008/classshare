@@ -44,6 +44,10 @@ class FakePostgresConnection:
         normalized = " ".join(str(sql).split())
         if "pg_get_constraintdef" in normalized and "behavior_write_inbox_state_check" in normalized:
             return FakeCursor([{"definition": "CHECK(state IN ('pending','applied','quarantined','discarded'))"}])
+        if "FROM pg_constraint" in normalized and "agent_platform_request_authority_source" in normalized:
+            return FakeCursor([{'present':1}])
+        if normalized.startswith("SELECT id,control_mode,hashed_password FROM students WHERE"):
+            return FakeCursor([])
         if normalized in ("SET LOCAL lock_timeout = '5s'", "SET LOCAL statement_timeout = '60s'"):
             return FakeCursor([])
         if "pg_advisory_xact_lock" in normalized:
@@ -381,6 +385,11 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "schema_career_path.py",
             "schema_lesson_plans.py",
             "schema_life_tips.py",
+            # Dedicated startup migrations have native PostgreSQL coverage.
+            "schema_account_control.py",
+            "schema_wanderer_world.py",
+            "schema_wanderer_runtime.py",
+            "schema_wanderer_social.py",
             # Both database startup paths call ensure_signature_workflow_schema,
             # which ensures these additive batch/snapshot/export tables.
             "schema_material_signatures.py",
@@ -871,7 +880,17 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             ) as resume_schema, patch(
                 "classroom_app.db.schema_agent_ext._SCHEMA_READY", False
             ):
-                report = database.init_database()
+                from contextlib import ExitStack
+                with ExitStack() as migrations:
+                    runtime_mocks={name:migrations.enter_context(patch('classroom_app.db.schema.'+name)) for name in (
+                        'ensure_wanderer_schema','ensure_wanderer_world_schema','ensure_wanderer_runtime_schema',
+                        'ensure_wanderer_social_schema','migrate_relationship_affinities')}
+                    migrations.enter_context(patch('classroom_app.services.wanderer_resource_service.migrate_capacity'))
+                    migrations.enter_context(patch('classroom_app.services.wanderer_resource_service.migrate_social_capacity'))
+                    report = database.init_database()
+                    for name,mock in runtime_mocks.items():
+                        if name.startswith('ensure_'):
+                            mock.assert_called_once_with(conn,allow_schema_changes=True)
         finally:
             config.DB_ENGINE = original_engine
 

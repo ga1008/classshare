@@ -78,7 +78,7 @@ class EpisodicMemoryTest(WandererDbTestCase):
             prompt = build_system_prompt(conn, wanderer, scene={"kind": "私聊"}, thread_key="dm:student:2",
                                          budget_chars=35_000)
         self.assertLessEqual(len(prompt), 35_000)
-        self.assertIn("【自传式记忆】", prompt)
+        self.assertIn("【我的记忆】", prompt)
 
 
 if __name__ == "__main__":

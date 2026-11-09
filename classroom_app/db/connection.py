@@ -88,11 +88,71 @@ def _apply_sqlite_pragmas(conn: sqlite3.Connection) -> None:
 class LanShareSQLiteConnection(sqlite3.Connection):
     """SQLite connection that also closes when used as a context manager."""
 
+    def execute(self, sql, parameters=()):
+        from .service_execution_guard import before_statement, after_statement
+        before_statement(self, sql)
+        result = super().execute(sql, parameters)
+        after_statement(self, sql)
+        return result
+
+    def executemany(self, sql, parameters):
+        from .service_execution_guard import before_statement
+        before_statement(self, sql)
+        return super().executemany(sql, parameters)
+
+    def executescript(self, sql):
+        from .service_execution_guard import before_script
+        before_script(sql)
+        return super().executescript(sql)
+
+    def commit(self):
+        from .service_execution_guard import before_commit, clear
+        try:
+            before_commit(self)
+            return super().commit()
+        except Exception:
+            super().rollback()
+            raise
+        finally:
+            clear(self)
+
+    def rollback(self):
+        from .service_execution_guard import clear
+        try:
+            return super().rollback()
+        finally:
+            clear(self)
+
+    def cursor(self, factory=None):
+        return super().cursor(factory or LanShareSQLiteCursor)
+
     def __exit__(self, exc_type, exc_value, traceback):
         try:
-            return super().__exit__(exc_type, exc_value, traceback)
+            if exc_type is None:
+                self.commit()
+            else:
+                self.rollback()
         finally:
             self.close()
+
+
+class LanShareSQLiteCursor(sqlite3.Cursor):
+    def execute(self, sql, parameters=()):
+        from .service_execution_guard import before_statement, after_statement
+        before_statement(self.connection, sql)
+        result = super().execute(sql, parameters)
+        after_statement(self.connection, sql)
+        return result
+
+    def executemany(self, sql, parameters):
+        from .service_execution_guard import before_statement
+        before_statement(self.connection, sql)
+        return super().executemany(sql, parameters)
+
+    def executescript(self, sql):
+        from .service_execution_guard import before_script
+        before_script(sql)
+        return super().executescript(sql)
 
 
 def get_db_connection():

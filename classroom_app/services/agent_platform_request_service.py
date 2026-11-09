@@ -7,6 +7,7 @@ capability can record the final observation after its task authority expires.
 It cannot authorize another request or business mutation.
 """
 import asyncio
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 import hashlib
 import json
@@ -25,6 +26,9 @@ from .agent_platform_request_context import _RequestIdentity, _request_identity,
 from .agent_platform_request_registry import arguments, matched_route, resolve_capability, platform_request_catalog
 from .agent_platform_route_capability import ROUTE_KEY_PREFIX, RouteCapability, resolve_route_capability, route_arguments
 from .agent_request_context import _broker_identity
+from .platform_execution_authority import (
+    WandererServiceAuthority, verify_platform_authority,
+)
 
 MAX_RESPONSE_BYTES = 128 * 1024
 # Waiting threshold, not a hard execution deadline. Native router threads cannot
@@ -32,6 +36,12 @@ MAX_RESPONSE_BYTES = 128 * 1024
 WAIT_TIMEOUT_SECONDS = 15
 _CAPACITY = threading.BoundedSemaphore(2)
 _EXECUTION_HOST_ID = str(uuid.uuid4())
+
+
+def authority_connection(source):
+    # Keep the ordinary executor's connection boundary, including its test and
+    # embedding injection points. Service calls can supply an isolated factory.
+    return source.conn_factory() if isinstance(source, WandererServiceAuthority) and source.conn_factory is not None else get_db_connection()
 
 
 def _canonical(value):
@@ -59,6 +69,16 @@ def _intent_body(operation, operation_id, body):
 class _Settlement:
     request_id: str
     secret: str = field(repr=False)
+    conn_factory: object = field(default=None, repr=False, compare=False)
+
+
+@contextmanager
+def _settlement_connection(claim):
+    from ..db.service_execution_guard import suspend_service_guard
+    # Late host evidence must survive revocation; this never authorizes another
+    # native business write or supplies a source to the original request.
+    with suspend_service_guard(), (claim.conn_factory() if claim.conn_factory is not None else get_db_connection()) as conn:
+        yield conn
 
 
 def _public(row):
@@ -80,14 +100,16 @@ def _admit(token, operation, operation_id, path, query, body, normalized):
         raise HTTPException(400, '平台请求操作编号必须为 UUID。') from None
     required_scope = 'platform:write' if operation.mutates else 'platform:read'
     now = int(time.time())
-    with get_db_connection() as conn:
-        grant = verify_task_delegation(conn, token, purpose='tools', required_scope=required_scope, lock_task=True)
-        if not grant.delegation.get('source_session_hash'):
-            raise HTTPException(403, '该平台请求能力要求当前登录会话授权。')
+    with authority_connection(token) as conn:
+        if isinstance(token, WandererServiceAuthority):
+            from .wanderer_resource_service import lock_actor_resources
+            lock_actor_resources(conn, token.wanderer_id)
+        grant = verify_platform_authority(conn, token, required_scope=required_scope, lock=True)
         # Use the same task -> actor session -> request lock order as manual
         # reconciliation, so an old grant cannot race the intent lock release.
-        conn.execute('UPDATE user_sessions SET expires_at=expires_at WHERE session_user_key=?', (grant.actor.key,))
-        grant = verify_task_delegation(conn, token, purpose='tools', required_scope=required_scope, lock_task=True)
+        if grant.principal_kind == 'human_delegation':
+            conn.execute('UPDATE user_sessions SET expires_at=expires_at WHERE session_user_key=?', (grant.actor.key,))
+            grant = verify_platform_authority(conn, token, required_scope=required_scope, lock=True)
         request_json = _canonical({'capability_key': operation.key, 'method': operation.method, 'path': path,
                                    'query': query.decode(), 'body_hash': _hash(body), 'parameters': normalized})
         request_hash = _hash(request_json)
@@ -95,9 +117,7 @@ def _admit(token, operation, operation_id, path, query, body, normalized):
         prior = conn.execute('SELECT * FROM agent_platform_requests WHERE actor_role=? AND actor_id=? AND operation_id=?',
                              (grant.actor.role, grant.actor.id, operation_id)).fetchone()
         if prior:
-            if (prior['request_hash'] != request_hash or int(prior['task_id']) != int(grant.task['id'])
-                    or prior['source_session_hash'] != grant.delegation['source_session_hash']
-                    or prior['authority_fingerprint'] != grant.actor.authority_fingerprint
+            if (prior['request_hash'] != request_hash or not grant.matches_receipt(prior)
                     or prior['route_source_sha256'] != operation.source_sha256):
                 raise HTTPException(409, '该操作编号已绑定其他请求或权限来源。')
             return None, grant, _public(prior)
@@ -105,43 +125,60 @@ def _admit(token, operation, operation_id, path, query, body, normalized):
         # After human reconciliation only a future task may make another call.
         unknown = conn.execute("""SELECT id FROM agent_platform_requests WHERE actor_role=? AND actor_id=? AND intent_hash=?
             AND mutates=1 AND ((reconciliation_status='pending' AND status IN ('admitted','executing','submitted','uncertain'))
-              OR (task_id=? AND reconciliation_status='cleared'))""",
-            (grant.actor.role, grant.actor.id, intent_hash, grant.task['id'])).fetchone() if operation.mutates else None
+              OR (task_id=? AND reconciliation_status='cleared')
+              OR (wanderer_id=? AND turn_id=? AND reconciliation_status='cleared'))""",
+            (grant.actor.role, grant.actor.id, intent_hash, grant.task_id, grant.wanderer_id, grant.turn_id)).fetchone() if operation.mutates else None
         if unknown is not None:
             raise HTTPException(409, {'message': '相同意图的请求尚未结清，不能另换编号重试。', 'request_id': unknown['id'], 'requires_reconciliation': True})
         if operation.mutates:
             cleared = conn.execute("""SELECT MAX(reconciled_at) AS latest FROM agent_platform_requests
                 WHERE actor_role=? AND actor_id=? AND intent_hash=? AND reconciliation_status='cleared'""",
                 (grant.actor.role,grant.actor.id,intent_hash)).fetchone()
-            if cleared['latest'] is not None and int(grant.delegation['created_at']) <= int(cleared['latest']):
+            if (cleared['latest'] is not None and grant.principal_kind == 'human_delegation'
+                    and grant.created_at <= int(cleared['latest'])):
                 raise HTTPException(409, '人工核对后的操作需要新任务和晚于核对时间的新授权。')
-        claim = _Settlement(str(uuid.uuid4()), secrets.token_urlsafe(32))
+        claim = _Settlement(str(uuid.uuid4()), secrets.token_urlsafe(32),
+                            token.conn_factory if isinstance(token, WandererServiceAuthority) else None)
+        if isinstance(token, WandererServiceAuthority):
+            from .wanderer_platform_resources import reserve_action_resources
+            reserve_action_resources(conn, token, operation, operation_id)
         inserted = conn.execute("""INSERT INTO agent_platform_requests
           (id,operation_id,task_id,attempt_id,fencing_token,delegation_id,actor_role,actor_id,
            source_session_hash,authority_fingerprint,capability_key,method,path,route_source_sha256,
-           request_hash,intent_hash,request_json,settlement_hash,mutates,execution_host_id,status,created_at,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'admitted',?,?) ON CONFLICT DO NOTHING""",
-          (claim.request_id,operation_id,grant.task['id'],grant.attempt['id'],grant.attempt['fencing_token'],
-           grant.delegation['id'],grant.actor.role,grant.actor.id,grant.delegation['source_session_hash'],
+           request_hash,intent_hash,request_json,settlement_hash,mutates,execution_host_id,status,created_at,updated_at,
+           principal_kind,wanderer_id,turn_id,life_epoch,authority_version)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'admitted',?,?,?,?,?,?,?) ON CONFLICT DO NOTHING""",
+          (claim.request_id,operation_id,grant.task_id,grant.attempt_id,grant.fencing_token,
+           grant.delegation_id,grant.actor.role,grant.actor.id,grant.source_session_hash,
            grant.actor.authority_fingerprint,operation.key,operation.method,path,operation.source_sha256,
-           request_hash,intent_hash,request_json,_hash(claim.secret),int(operation.mutates),_EXECUTION_HOST_ID,now,now))
+           request_hash,intent_hash,request_json,_hash(claim.secret),int(operation.mutates),_EXECUTION_HOST_ID,now,now,
+           grant.principal_kind,grant.wanderer_id,grant.turn_id,grant.life_epoch,grant.authority_version))
         if inserted.rowcount != 1: raise HTTPException(409, '该操作编号或未结清意图已被其他请求占用。')
         conn.commit()  # This durable boundary precedes every original router call.
     return claim, grant, None
 
 
 def _mark_executing(claim, token, required_scope):
-    with get_db_connection() as conn:
-        verified = verify_task_delegation(conn, token, purpose='tools', required_scope=required_scope, lock_task=True)
+    with authority_connection(token) as conn:
+        if isinstance(token, WandererServiceAuthority):
+            from .wanderer_resource_service import lock_actor_resources
+            lock_actor_resources(conn, token.wanderer_id)
+        verified = verify_platform_authority(conn, token, required_scope=required_scope, lock=True)
+        admitted = conn.execute('SELECT * FROM agent_platform_requests WHERE id=?', (claim.request_id,)).fetchone()
+        if (admitted is None or not verified.matches_receipt(admitted)
+                or admitted['attempt_id'] != verified.attempt_id or admitted['delegation_id'] != verified.delegation_id):
+            raise HTTPException(409, '执行授权来源已变化。')
         changed = conn.execute("""UPDATE agent_platform_requests SET status='executing',updated_at=?
-            WHERE id=? AND settlement_hash=? AND status='admitted' AND delegation_id=? AND attempt_id=? AND fencing_token=?""",
-            (int(time.time()),claim.request_id,_hash(claim.secret),verified.delegation['id'],verified.attempt['id'],verified.attempt['fencing_token']))
+            WHERE id=? AND settlement_hash=? AND status='admitted' AND fencing_token=? AND principal_kind=?
+              AND authority_fingerprint=?""",
+            (int(time.time()),claim.request_id,_hash(claim.secret),verified.fencing_token,
+             verified.principal_kind,verified.actor.authority_fingerprint))
         if changed.rowcount != 1: raise HTTPException(409, '该请求不能再次进入执行。')
         conn.commit()
 
 
 def _uncertain(claim, reason):
-    with get_db_connection() as conn:
+    with _settlement_connection(claim) as conn:
         conn.execute("""UPDATE agent_platform_requests SET status='uncertain',result_json=?,updated_at=?
             WHERE id=? AND settlement_hash=? AND settled_at IS NULL""",
             (_canonical({'outcome':'uncertain','reason':reason,'follow_up':'reconcile_existing_request_no_automatic_retry'}),
@@ -162,7 +199,7 @@ def _settle(claim, status, observation):
     encoded = _canonical(observation)
     if len(encoded.encode()) > MAX_RESPONSE_BYTES + 8192: raise ValueError('Observation exceeds receipt bound')
     now = int(time.time())
-    with get_db_connection() as conn:
+    with _settlement_connection(claim) as conn:
         changed = conn.execute("""UPDATE agent_platform_requests SET status=?,result_json=?,updated_at=?,settled_at=?
             WHERE id=? AND settlement_hash=? AND settled_at IS NULL""",
             (status,encoded,now,now,claim.request_id,_hash(claim.secret)))
@@ -181,7 +218,7 @@ def _settle(claim, status, observation):
 
 def _finish_host_execution(claim):
     """Process-owned completion fact; timeouts/reapers cannot synthesize it."""
-    with get_db_connection() as conn:
+    with _settlement_connection(claim) as conn:
         conn.execute("""UPDATE agent_platform_requests SET host_execution_finished_at=?,updated_at=?
             WHERE id=? AND settlement_hash=? AND execution_host_id=? AND host_execution_finished_at IS NULL""",
             (int(time.time()),int(time.time()),claim.request_id,_hash(claim.secret),_EXECUTION_HOST_ID))
@@ -202,13 +239,30 @@ def get_platform_request_receipt(token, operation_id):
 def _authorize_return(token, original, required_scope):
     # A host-owned receipt may settle after revocation, but revoked model
     # callers must not receive private response content from the old request.
-    with get_db_connection() as conn:
-        current = verify_task_delegation(conn,token,purpose='tools',required_scope=required_scope)
-    if (current.actor.key != original.actor.key or current.actor.authority_fingerprint != original.actor.authority_fingerprint
-            or current.attempt['id'] != original.attempt['id']
-            or current.attempt['fencing_token'] != original.attempt['fencing_token']
-            or current.delegation['source_session_hash'] != original.delegation['source_session_hash']):
+    try:
+        with authority_connection(token) as conn:
+            current = verify_platform_authority(conn,token,required_scope=required_scope)
+    except HTTPException:
+        if isinstance(token, WandererServiceAuthority):
+            raise HTTPException(409, {'message': '原运行身份已失效；结果已留存，只能由管理端核对。',
+                                     'requires_reconciliation': True}) from None
+        raise
+    if not current.same_source(original):
         raise HTTPException(401,'当前权限来源不允许读取刚完成的请求结果。')
+
+
+def _settle_service_action_resources(token, operation, operation_id, normalized, receipt):
+    if not isinstance(token, WandererServiceAuthority):
+        return
+    from .wanderer_platform_resources import action_resources, settle_action_resources
+    if not action_resources(operation):
+        return
+    from ..db.service_execution_guard import suspend_service_guard
+    from .wanderer_platform_results import normalize_platform_result
+    with suspend_service_guard(), authority_connection(token) as conn:
+        result = normalize_platform_result(conn, token, operation, normalized, receipt)
+        settle_action_resources(conn, token, operation, operation_id, result.get('status'))
+        conn.commit()
 
 
 # 4xx codes that mean "the request itself was refused" (shape, missing target,
@@ -231,7 +285,7 @@ def _error_detail(response, limit=400):
     return json.dumps(payload, ensure_ascii=False)[:limit]
 
 
-def _observation(response, operation=None):
+def _observation(response, operation=None, *, service_source=False):
     result = {'http_status':response.status_code,'body_sha256':_hash(response.content),
               'verified_business':False, 'follow_up':'inspect_observed_result'}
     if not 200 <= response.status_code < 300:
@@ -249,6 +303,10 @@ def _observation(response, operation=None):
                 result['reconciliation'] = 'not_occurred'
                 result['follow_up'] = 'fix_request_per_error_detail_then_retry_with_new_operation_id'
         return 'uncertain', result
+    if (service_source and operation is not None and operation.path in {'/api/ai/chat','/api/ai/workspace-chat'}
+            and 'application/x-ndjson' in response.headers.get('content-type','').lower()):
+        from .wanderer_platform_results import observe_chat_stream
+        return observe_chat_stream(response, result)
     if 'application/json' not in response.headers.get('content-type','').lower():
         result['follow_up'] = 'needs_response_adapter'
         return 'uncertain', result
@@ -285,15 +343,18 @@ def _observation(response, operation=None):
 
 async def _execute(app, token, operation_id, operation, route, path, query, body, normalized, admission, files=None):
     content_type = 'application/json'
-    if isinstance(operation, RouteCapability):
+    if isinstance(operation, RouteCapability) and not (isinstance(token, WandererServiceAuthority) and operation.allows_files and (files or operation.transport == 'form')):
         # Generic routes already carry an encoded body (JSON or urlencoded form).
         content_type = operation.content_type
-    elif operation.transport == 'form':
+    elif operation.transport == 'form' or (isinstance(token, WandererServiceAuthority) and operation.allows_files and files):
         def prepare_form():
             from .agent_platform_multipart_service import encode_form_upload
-            with get_db_connection() as conn:
-                grant = verify_task_delegation(conn, token, purpose='tools', required_scope='platform:write')
-                return encode_form_upload(conn, grant, operation, normalized, files)
+            with authority_connection(token) as conn:
+                authority = verify_platform_authority(conn, token, required_scope='platform:write')
+                if authority.principal_kind == 'wanderer_service' and (files or isinstance(operation, RouteCapability)):
+                    from .wanderer_platform_files import encode_wanderer_upload
+                    return encode_wanderer_upload(conn, authority, operation, normalized, files)
+                return encode_form_upload(conn, authority.original_grant, operation, normalized, files)
         body, content_type, normalized = await run_in_threadpool(prepare_form)
     if admission.get('stop_requested'):
         raise asyncio.CancelledError
@@ -301,10 +362,16 @@ async def _execute(app, token, operation_id, operation, route, path, query, body
     admission['claim'] = claim
     if prior is not None: return prior
     required_scope = 'platform:write' if operation.mutates else 'platform:read'
-    identity = _RequestIdentity(grant.delegation['id'],grant.actor.role,grant.actor.id,int(grant.task['id']),
-        grant.attempt['id'],int(grant.attempt['fencing_token']),grant.delegation['source_session_hash'],
-        grant.actor.authority_fingerprint,operation_id,operation.method,path,query,_hash(body),route,object(),required_scope)
+    identity = _RequestIdentity(grant.delegation_id,grant.actor.role,grant.actor.id,grant.task_id,
+        grant.attempt_id,grant.fencing_token,grant.source_session_hash,
+        grant.actor.authority_fingerprint,operation_id,operation.method,path,query,_hash(body),route,object(),required_scope,
+        service_authority=token if isinstance(token, WandererServiceAuthority) else None)
     marker = _request_identity.set(identity)
+    from .wanderer_ai_attribution import _attribution, from_service_authority
+    attribution = from_service_authority(token, grant.actor) if isinstance(token, WandererServiceAuthority) else None
+    if attribution is not None:
+        attribution.operation_id = operation_id
+    ai_marker = _attribution.set(attribution)
     receipt = None
     try:
         if admission.get('stop_requested'):
@@ -348,14 +415,16 @@ async def _execute(app, token, operation_id, operation, route, path, query, body
         async with httpx.AsyncClient(transport=transport,base_url='http://lanshare-agent.internal',follow_redirects=False) as client:
             response = await client.request(operation.method,path + ('?' + query.decode() if query else ''),content=body,
                 headers={'accept':'application/json','accept-encoding':'identity',**({'content-type':content_type} if body else {})})
-        status,observation = _observation(response, operation)
+        status,observation = _observation(response, operation, service_source=isinstance(token, WandererServiceAuthority))
         receipt = await run_in_threadpool(_settle,claim,status,observation)
+        await run_in_threadpool(_settle_service_action_resources, token, operation, operation_id, normalized, receipt)
         await run_in_threadpool(_authorize_return,token,grant,required_scope)
         return receipt
     except BaseException:
         await run_in_threadpool(_uncertain,claim,'request_did_not_produce_a_settled_observation')
         raise
     finally:
+        _attribution.reset(ai_marker)
         try:
             await run_in_threadpool(_finish_host_execution,claim)
             if receipt is not None: receipt['host_execution_finished'] = True
@@ -386,6 +455,23 @@ def _admit_danger(token, operation, safety_check, *, reviewed=False):
     assessment = assess_route(operation.method, operation.path, getattr(operation, 'handler', ''))
     if assessment.hard_blocked:
         evaluate_safety_check(assessment, None, prior_destructive_count=0, confirmation_valid=False)
+    if isinstance(token, WandererServiceAuthority):
+        # Autonomous service intent is distinct from a real person's answer.
+        # Never translate this into user_confirmed or manufacture question IDs.
+        with authority_connection(token) as conn:
+            authority = verify_platform_authority(conn, token, required_scope='platform:write' if operation.mutates else 'platform:read')
+        if safety_check is not None and (not isinstance(safety_check, dict) or set(safety_check) - {'confirmed','reason','target_count'}):
+            raise HTTPException(400, '散修自主确认仅接受 confirmed/reason/target_count，不接受真人确认字段。')
+        if not assessment.destructive:
+            return {}
+        if (not isinstance(safety_check, dict) or safety_check.get('confirmed') is not True
+                or not isinstance(safety_check.get('reason'), str) or not 4 <= len(safety_check['reason']) <= 1000
+                or type(safety_check.get('target_count', 1)) is not int
+                or not 1 <= safety_check.get('target_count', 1) <= 20):
+            raise HTTPException(428, {'code':'wanderer_self_confirmation_required',
+                'message':'此操作需要本人自主确认：safety_check={confirmed:true,reason:具体理由,target_count:影响数量}。'})
+        return {**safety_check, 'source':'wanderer_service', 'turn_id':authority.turn_id,
+                'life_epoch':authority.life_epoch, 'authority_version':authority.authority_version}
     if not assessment.destructive or (reviewed and not assessment.bulk and safety_check is None):
         return {}
     check = normalize_safety_check(safety_check)
@@ -431,15 +517,21 @@ async def dispatch_platform_request(app, token, capability_key, operation_id, *,
     they pass the hard-block list and the verified self-check (agent_danger_guard)."""
     if _request_identity.get() is not None or _broker_identity.get() is not None:
         raise HTTPException(403,'不允许嵌套 Agent 平台请求。')
-    if isinstance(capability_key, str) and capability_key.startswith(ROUTE_KEY_PREFIX):
+    service_source = isinstance(token, WandererServiceAuthority)
+    if service_source:
+        from .wanderer_platform_service import resolve_wanderer_capability
+        operation, route = resolve_wanderer_capability(app, capability_key)
+    if (service_source and isinstance(operation, RouteCapability)) or (not service_source and isinstance(capability_key, str) and capability_key.startswith(ROUTE_KEY_PREFIX)):
         # Digital-twin layer: any mounted JSON route outside the hard exclusions,
         # governed by classification instead of a hand-written adapter.
-        operation, route = resolve_route_capability(app, capability_key)
-        if files is not None:
+        if not service_source:
+            operation, route = resolve_route_capability(app, capability_key)
+        if files is not None and not (service_source and operation.allows_files):
             raise HTTPException(400, '平台路由能力不支持任务附件。')
         path, query, raw, normalized = route_arguments(operation, path_params=path_params, query_params=query_params, body=body)
     else:
-        operation,route = resolve_capability(app,capability_key)
+        if not service_source:
+            operation,route = resolve_capability(app,capability_key)
         if files is not None and (operation.transport != 'form' or not operation.allows_files):
             raise HTTPException(400,'该平台能力不支持任务附件。')
         if operation.transport not in {'json', 'form'}:

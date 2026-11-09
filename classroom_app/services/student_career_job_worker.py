@@ -5,7 +5,7 @@ import asyncio
 import importlib
 import os
 import socket
-from contextlib import suppress
+from contextlib import suppress, nullcontext
 from datetime import timedelta
 from typing import Any
 
@@ -53,6 +53,12 @@ def _lock_job(conn, job: dict[str, Any], status: str, *, lock: bool = True) -> d
 
 def _apply_result(job: dict[str, Any]) -> bool:
     """Business publication and job completion commit together, or neither does."""
+    from .wanderer_ai_attribution import restored_job_attribution
+    with restored_job_attribution(job, get_db_connection):
+        return _apply_attributed_result(job)
+
+
+def _apply_attributed_result(job: dict[str, Any]) -> bool:
     with get_db_connection() as conn:
         if get_configured_db_engine() == "sqlite":
             conn.execute("BEGIN IMMEDIATE")
@@ -92,17 +98,21 @@ def _apply_result(job: dict[str, Any]) -> bool:
 
 
 def _safe_failure(exc: Exception) -> tuple[str, str, bool]:
+    from .ai_usage_budget_service import AIUsageBudgetError
     status_code = getattr(getattr(exc, "response", None), "status_code", None) or getattr(exc, "status_code", None)
     code = type(exc).__name__
     # Technical detail stays in the private task ledger, never the public API.
     message = str(exc).strip() or code
-    permanent = status_code in {400, 401, 403, 404, 413, 415, 422}
+    permanent = status_code in {400, 401, 403, 404, 413, 415, 422} or isinstance(exc, AIUsageBudgetError)
     return code, message[:1200], permanent
 
 
 def _fail_job(job: dict[str, Any], exc: Exception, *, delivery: bool = False) -> str:
+    from .ai_usage_budget_service import AIUsageBudgetError
+    from ..db.service_execution_guard import suspend_service_guard
     code, message, permanent = _safe_failure(exc)
-    with get_db_connection() as conn:
+    revoked = isinstance(exc, AIUsageBudgetError)
+    with (suspend_service_guard() if revoked else nullcontext()), get_db_connection() as conn:
         if get_configured_db_engine() == "sqlite":
             conn.execute("BEGIN IMMEDIATE")
         expected_status = "result_ready" if delivery else "running"
@@ -128,7 +138,7 @@ def _fail_job(job: dict[str, Any], exc: Exception, *, delivery: bool = False) ->
         except (TypeError, ValueError):
             pass
         handler = registered_student_career_handlers().get(current["task_type"])
-        if terminal and not cancelled and handler and handler.fail:
+        if terminal and not cancelled and not revoked and handler and handler.fail:
             handler.fail(conn, current, durable.load_ai_job_payload(current), code, message)
         if not _lock_job(conn, current, expected_status):
             conn.rollback()
@@ -186,13 +196,21 @@ async def _execute(job: dict[str, Any]) -> None:
     if not await asyncio.to_thread(start_attempt):
         return
     done = asyncio.Event()
-    computation = asyncio.create_task(handler.execute(job, durable.load_ai_job_payload(job)))
+    async def attributed_execute():
+        from .wanderer_ai_attribution import restored_job_attribution
+        with restored_job_attribution(job, get_db_connection):
+            return await handler.execute(job, durable.load_ai_job_payload(job))
+    computation = asyncio.create_task(attributed_execute())
     heartbeat = asyncio.create_task(_heartbeat(job, done, computation))
     try:
         result = await asyncio.wait_for(computation, timeout=handler.timeout_seconds)
         if not isinstance(result, dict):
             raise ValueError("Career handler returned an invalid result")
-        await asyncio.to_thread(durable.store_ai_job_result, job, result, policy_version="student-career-v1", require_valid_lease=True)
+        def store_result():
+            from .wanderer_ai_attribution import restored_job_attribution
+            with restored_job_attribution(job, get_db_connection):
+                return durable.store_ai_job_result(job, result, policy_version="student-career-v1", require_valid_lease=True)
+        await asyncio.to_thread(store_result)
         # Delivery is claimed separately, so a process exit here is replayable.
     except asyncio.CancelledError:
         if _stop is not None and _stop.is_set():

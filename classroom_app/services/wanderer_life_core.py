@@ -164,7 +164,7 @@ def normalize_talents(raw: Any, *, slug: Any = "") -> dict[str, float]:
             value = float(source.get(key)) if key in source else base[key]
         except (TypeError, ValueError):
             value = base[key]
-        result[key] = round(_clamp(value, *talent_bounds(key)), 2)
+        result[key] = round(_clamp(value, *talent_bounds(key)), 6)
     return result
 
 
@@ -198,6 +198,7 @@ def life_state(
     vitality: Any = 1.0,
     gift_in_weeks: Any = 0,
     gift_out_weeks: Any = 0,
+    bonus_seconds: Any = 0,
     now: Optional[datetime] = None,
 ) -> dict[str, Any]:
     """Everything a prompt, page or test needs to know about one life.
@@ -228,7 +229,7 @@ def life_state(
         gift_out = max(0.0, float(gift_out_weeks or 0))
     except (TypeError, ValueError):
         gift_in, gift_out = 0.0, 0.0
-    granted = round(weeks + extension_count * LIFE_EXTENSION_WEEKS + gift_in, 1)
+    granted = weeks + extension_count * LIFE_EXTENSION_WEEKS + gift_in + int(bonus_seconds or 0) / 604800.0
     effective = max(0.0, granted - penalty - gift_out)
     expires = born + timedelta(weeks=effective)
     remaining_seconds = (expires - moment).total_seconds()
@@ -240,12 +241,14 @@ def life_state(
         "lifespan_weeks": round(weeks, 1),
         "granted_weeks": granted,
         "extensions": extension_count,
-        "penalty_weeks": round(penalty, 1),
+        "penalty_weeks": penalty,
         "gift_in_weeks": round(gift_in, 1),
         "gift_out_weeks": round(gift_out, 1),
         "weeks_lived": round(max(0.0, lived_seconds) / 604800.0, 1),
         "remaining_weeks": round(max(0, remaining_days) / 7.0, 1),
         "remaining_days": remaining_days,
+        "remaining_seconds": max(0, int(math.ceil(remaining_seconds))),
+        "bonus_seconds": int(bonus_seconds or 0),
         "expired": remaining_days <= 0,
         "urgent": 0 < remaining_days <= URGENT_REMAINING_DAYS,
         "critical": 0 < remaining_days <= CRITICAL_REMAINING_DAYS,
@@ -293,7 +296,7 @@ def knowledge_capacity_for(tier: Any, memory: Any = 1.0) -> int:
 
 
 def promotion_ratio(tier: Any) -> float:
-    return PROMOTION_KNOWLEDGE_RATIO[clamp_tier(tier)]
+    return PROMOTION_KNOWLEDGE_RATIO[min(len(PROMOTION_KNOWLEDGE_RATIO) - 1, clamp_tier(tier))]
 
 
 def knowledge_digest_limit(tier: Any) -> int:

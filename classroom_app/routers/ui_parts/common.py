@@ -495,6 +495,9 @@ def _build_student_login_token(student_row, client_ip: str, *, conn=None, cache_
 def _ensure_student_can_login(student_row) -> None:
     if not student_row:
         return
+    from ...services.account_control_service import row_allows_human_auth
+    if not row_allows_human_auth(student_row):
+        raise HTTPException(403, "此账号由 AI 专管，不允许人工登录、设密或绑定。")
     normalized_status = normalize_student_enrollment_status(
         student_row["enrollment_status"] if "enrollment_status" in student_row.keys() else STUDENT_STATUS_ACTIVE
     )

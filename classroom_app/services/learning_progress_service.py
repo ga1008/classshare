@@ -20,7 +20,7 @@ from ..database import get_db_connection
 from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
 from .exam_json_service import EXAM_JSON_TEMPLATE, normalize_exam_json_payload, normalize_exam_scoring_payload
 from .ai_gateway_service import ai_gateway_post
-from .offering_membership_service import offering_class_ids
+from .offering_membership_service import offering_class_ids, offering_student_where
 from .material_mastery_check_service import (
     grade_material_mastery_check,
     normalize_material_mastery_check_payload,
@@ -2190,9 +2190,8 @@ def _weekly_snapshot_student_ids(conn, offering_id, student_id=None):
     actor_filter = " AND s.id=?" if student_id is not None else ""
     params = (offering_id, int(student_id)) if student_id is not None else (offering_id,)
     return [int(row["id"]) for row in conn.execute(
-        """SELECT s.id FROM students s JOIN class_offerings o
-           ON (s.class_id=o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links l
-               WHERE l.offering_id=o.id AND l.class_id=s.class_id))
+        f"""SELECT s.id FROM students s JOIN class_offerings o
+           ON {offering_student_where(offering_alias='o',student_alias='s')}
            WHERE o.id=? AND COALESCE(s.enrollment_status,'active')='active'""" + actor_filter + " ORDER BY s.id",
         params,
     ).fetchall()]

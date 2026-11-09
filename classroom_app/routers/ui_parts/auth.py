@@ -408,6 +408,8 @@ async def _perform_student_password_setup(request, setup_token, password, confir
             student_row = get_student_auth_record_by_pk(conn, int(token_payload["student_id"]))
             if not student_row:
                 raise HTTPException(status_code=404, detail="学生账号不存在。")
+            from ...services.account_control_service import ensure_student_human_auth
+            ensure_student_human_auth(conn, student_row)
             _ensure_student_can_login(student_row)
 
             if flow_type == "password_reset":

@@ -33,7 +33,7 @@ class ManualLibraryTest(WandererDbTestCase):
                 "SELECT id, name, preview_type, scope_level, wanderer_min_tier FROM course_materials "
                 "WHERE parent_id = ? AND node_type = 'file' ORDER BY name", (int(folder["id"]),)
             ).fetchall()
-            self.assertEqual([row["name"] for row in rows], ["平台与天道手册.md", "散修进阶手册.md"])
+            self.assertEqual([row["name"] for row in rows], ["平台与天道手册.md", "散修进阶手册.md", "此方世界：散修世界手册.md"])
             for row in rows:
                 self.assertEqual(row["preview_type"], "markdown")
                 self.assertEqual(row["scope_level"], "public")
@@ -42,7 +42,7 @@ class ManualLibraryTest(WandererDbTestCase):
                 "SELECT COUNT(*) AS n FROM material_search_documents d JOIN course_materials m ON m.id = d.material_id "
                 "WHERE d.status = 'ready' AND d.chunk_count > 0 AND m.name LIKE '%手册.md'"
             ).fetchone()
-            self.assertEqual(int(indexed["n"]), 2)
+            self.assertEqual(int(indexed["n"]), 3)
 
             wanderer = self.wanderer(conn, "chenmo")
             names = {item["material_name"] for item in readable_materials(conn, wanderer)}
@@ -109,8 +109,8 @@ class ManualLibraryTest(WandererDbTestCase):
                 "SELECT c.* FROM material_search_chunks c JOIN course_materials m ON m.id = c.material_id "
                 "WHERE m.parent_id = ? ORDER BY c.id", (folder_id,),
             ).fetchall()]
-            self.assertEqual(len(files_before), 2)
-            self.assertEqual(len(documents_before), 2)
+            self.assertEqual(len(files_before), 3)
+            self.assertEqual(len(documents_before), 3)
             self.assertTrue(chunks_before)
             conn.execute("UPDATE course_materials SET root_id = NULL WHERE id = ?", (folder_id,))
             conn.commit()
@@ -154,7 +154,7 @@ class ManualLibraryTest(WandererDbTestCase):
 
             repaired = self._seed(conn)
             self.assertEqual(repaired["folder_id"], folder_id)
-            self.assertEqual((repaired["created"], repaired["updated"]), (2, 0))
+            self.assertEqual((repaired["created"], repaired["updated"]), (3, 0))
             self.assertEqual(conn.execute(
                 "SELECT root_id FROM course_materials WHERE id = ?", (folder_id,),
             ).fetchone()[0], folder_id)
@@ -163,7 +163,7 @@ class ManualLibraryTest(WandererDbTestCase):
                 "JOIN material_search_documents d ON d.material_id = m.id WHERE m.parent_id = ? ORDER BY m.name",
                 (folder_id,),
             ).fetchall()
-            self.assertEqual([row["name"] for row in rows], ["平台与天道手册.md", "散修进阶手册.md"])
+            self.assertEqual([row["name"] for row in rows], ["平台与天道手册.md", "散修进阶手册.md", "此方世界：散修世界手册.md"])
             self.assertTrue(all(row["root_id"] == folder_id and row["status"] == "ready" and row["chunk_count"] > 0
                                 for row in rows))
             again = self._seed(conn)

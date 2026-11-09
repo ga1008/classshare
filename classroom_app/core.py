@@ -41,7 +41,8 @@ templates.env.globals["lq_dialog_props"] = lq_dialog_props
 templates.env.globals["lq_family_enabled"] = lq_family_enabled
 
 # AI 服务的 HTTP 客户端
-ai_client = httpx.AsyncClient(base_url=AI_ASSISTANT_URL, timeout=120.0)
+from .services.ai_budget_client import AIBudgetAwareClient
+ai_client = AIBudgetAwareClient(base_url=AI_ASSISTANT_URL, timeout=120.0)
 
 # 修复：COURSE_INFO 是必须的，用于存放由启动器传入的配置
 COURSE_INFO: Dict[str, Any] = {

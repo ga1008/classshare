@@ -50,7 +50,7 @@ class PlatformMetaTest(unittest.TestCase):
             "我是散修乐乐": "我是乐乐",
         }
         for text, expected in cases.items():
-            self.assertEqual(strip_platform_meta(text), expected)
+            self.assertEqual(strip_platform_meta(text), text)
 
     def test_plain_text_is_untouched(self):
         for text in ("今天天气不错。", "哈哈哈哈", "2*3=6 吗"):

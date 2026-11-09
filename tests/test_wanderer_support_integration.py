@@ -329,6 +329,9 @@ class SupportIntegrationTest(WandererWorldTestCase):
             source_id = conn.execute("SELECT MAX(id) AS id FROM chat_logs").fetchone()["id"]
             conn.commit()
         offering = {"id": self.offering_id, "course_name": "课程", "class_name": "合成班"}
+        # These scenarios exercise support recovery after an explicitly allowed
+        # synthetic classroom visit; real AI classroom denial is tested separately.
+        self.enterContext(patch("classroom_app.services.resource_access_service.ensure_classroom_access", return_value=offering))
         self.enterContext(patch.object(classroom, "classroom_visits_enabled", return_value=True))
         self.enterContext(patch.object(classroom, "current_offerings", return_value=[offering]))
         self.enterContext(patch.object(classroom, "_pick_offering", return_value=offering))

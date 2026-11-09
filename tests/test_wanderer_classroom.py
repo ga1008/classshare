@@ -28,6 +28,18 @@ class ClassroomVisitTest(WandererWorldTestCase):
         speak.start()
         self.addCleanup(speak.stop)
         self.chen = self.set_wanderer("chenmo", behaviors_json=ONLY_CLASSROOM, activity_level=1)
+        # These are legacy presentation/throttle unit tests with an explicitly
+        # authorized synthetic room. Real AI-class exclusion is covered by
+        # test_wanderer_account_control, without mocking the access policy.
+        from classroom_app.services import resource_access_service
+        original_access = resource_access_service.ensure_classroom_access
+        def synthetic_room_access(conn, offering_id, user, **kwargs):
+            if offering_id == self.offering_id and int(user["id"]) == self.chen["student_id"]:
+                return {"id": self.offering_id}
+            return original_access(conn, offering_id, user, **kwargs)
+        access = patch.object(resource_access_service, "ensure_classroom_access", synthetic_room_access)
+        access.start()
+        self.addCleanup(access.stop)
 
     def _chat_rows(self):
         return self.rows("SELECT * FROM chat_logs WHERE class_offering_id = ? ORDER BY id", (self.offering_id,))

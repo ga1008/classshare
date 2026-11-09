@@ -72,7 +72,44 @@ def snapshot_for_wanderer(conn, wanderer: dict) -> dict:
             conn, actor_kind=actor['actor_kind'], actor_id=actor['actor_id'], channel=actor['channel'], days=7)}
     except Exception:  # noqa: BLE001 - history is informational, never blocks a search
         quota = {**quota, 'history': []}
-    return quota
+    from .wanderer_resource_service import snapshot
+    world = snapshot(conn,int(wanderer['id']),'web_search')
+    return {**quota,**world,'occupied':world['used']+world['reserved']}
+
+
+def _world_search_key(actor_id, logical_call_id):
+    return f"web-search:{int(actor_id)}:{hashlib.sha256(str(logical_call_id).encode()).hexdigest()}"
+
+
+def _world_reservation(conn, row):
+    if not row or row.get('actor_kind') != 'wanderer':
+        return None
+    from ..db.connection import get_configured_db_engine
+    if get_configured_db_engine() == 'postgres':
+        ready=conn.execute("SELECT to_regclass('wanderer_resource_reservations') AS name").fetchone()['name']
+    else:
+        ready=conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='wanderer_resource_reservations'").fetchone()
+    if not ready:
+        return None
+    return conn.execute('SELECT * FROM wanderer_resource_reservations WHERE operation_id=?',(_world_search_key(row['actor_id'],row['logical_call_id']),)).fetchone()
+
+
+def _lock_world_search(conn,row):
+    if _world_reservation(conn,row):
+        from .wanderer_resource_service import lock_actor_resources
+        lock_actor_resources(conn,row['actor_id'])
+
+
+def _settle_world_search(conn,row):
+    reserved=_world_reservation(conn,row)
+    if not reserved or reserved['state']!='reserved':
+        return
+    from .wanderer_resource_service import settle
+    state=row['state']
+    if state in {'reserved','sent'} and row['lease_until']<=ledger._stamp(aware_local_now()):
+        state='released' if state=='reserved' else 'unknown'
+    if state in ledger.TERMINAL_STATES:
+        settle(conn,reserved['operation_id'],release=state in {'released','failed','empty'})
 
 
 def search_context_block(quota: dict) -> str:
@@ -177,7 +214,9 @@ async def _search(actor, query, logical_call_id, *, client=None) -> dict:
 def _release_unsent(receipt, code):
     try:
         with get_db_connection() as conn:
+            _lock_world_search(conn,ledger.get_call(conn,receipt['call_id']))
             ledger.release_unsent(conn, receipt['call_id'], receipt['dispatch_token'], error=code)
+            _settle_world_search(conn,ledger.get_call(conn,receipt['call_id']))
             conn.commit()
     except Exception as error:
         logger.warning('Search release deferred: %s', type(error).__name__)
@@ -197,7 +236,47 @@ async def search_for_wanderer(wanderer: dict, query: str, logical_call_id: str, 
             return row and row['status'] == 'active' and int(row['student_id']) == int(wanderer.get('student_id') or 0)
     if not await asyncio.to_thread(active):
         raise HTTPException(403, '散修当前不可使用搜索')
-    return await _search(actor, query, logical_call_id, client=client)
+    normalize_query(query)
+    if not isinstance(logical_call_id,str) or not 1<=len(logical_call_id)<=200:
+        raise HTTPException(422,'搜索请求编号不正确')
+    def reserve_world():
+        from .wanderer_resource_service import reserve,lock_actor_resources
+        with get_db_connection() as conn:
+            lock_actor_resources(conn,actor['actor_id'])
+            calls=conn.execute("SELECT * FROM ai_web_search_calls WHERE actor_kind='wanderer' AND actor_id=? AND channel='wanderer' AND (logical_call_id=? OR (budget_date=? AND state IN ('reserved','sent')))",(actor['actor_id'],logical_call_id,aware_local_now().date().isoformat())).fetchall()
+            for call in calls:
+                _settle_world_search(conn,dict(call))
+            old=next((call for call in calls if call['logical_call_id']==logical_call_id),None)
+            if old is not None:
+                conn.commit()
+                return True
+            result=reserve(conn,actor['actor_id'],'web_search',1,_world_search_key(actor['actor_id'],logical_call_id))
+            conn.commit()
+            return result['ok']
+    if not await asyncio.to_thread(reserve_world):
+        with get_db_connection() as conn:
+            quota=snapshot_for_wanderer(conn,wanderer)
+        return {'status':'quota_exhausted','results':[],'text':'','error':'daily_limit','quota':quota}
+    # The existing ledger remains the signed dispatch/replay ledger. Personal
+    # policy is enforced once by the owner-preserving world reservation above.
+    actor['limit']=1_000_000_000
+    try:
+        result=await _search(actor,query,logical_call_id,client=client)
+    finally:
+        def finish_world():
+            from .wanderer_resource_service import settle
+            with get_db_connection() as conn:
+                row=conn.execute("SELECT * FROM ai_web_search_calls WHERE actor_kind='wanderer' AND actor_id=? AND channel='wanderer' AND logical_call_id=?",(actor['actor_id'],logical_call_id)).fetchone()
+                if row is not None:
+                    _lock_world_search(conn,dict(row))
+                    _settle_world_search(conn,dict(row))
+                else:
+                    settle(conn,_world_search_key(actor['actor_id'],logical_call_id),release=True)
+                conn.commit()
+        await asyncio.shield(asyncio.to_thread(finish_world))
+    with get_db_connection() as conn:
+        result['quota']=snapshot_for_wanderer(conn,wanderer)
+    return result
 
 
 async def dispatch_reserved_search(payload: dict, *, api_key: str, enabled: bool, provider_call=None) -> dict:
@@ -212,8 +291,18 @@ async def dispatch_reserved_search(payload: dict, *, api_key: str, enabled: bool
                 raise HTTPException(403, 'search reservation not authorized')
             if not hmac.compare_digest(row['fingerprint'], search_fingerprint(query)):
                 raise HTTPException(409, 'search reservation does not match query')
+            _lock_world_search(conn,row)
+            world_reservation=_world_reservation(conn,row)
+            if world_reservation and row['state']=='reserved':
+                from .wanderer_resource_service import validate_reservation
+                if not validate_reservation(conn,world_reservation['operation_id']):
+                    released=ledger.release_unsent(conn,call_id,token,error='world_authority_changed')
+                    _settle_world_search(conn,ledger.get_call(conn,call_id))
+                    conn.commit()
+                    return {'won':False,'call':released}
             if not enabled or not api_key:
                 receipt = ledger.release_unsent(conn, call_id, token, error='provider_unavailable')
+                _settle_world_search(conn,ledger.get_call(conn,call_id))
                 conn.commit()
                 return {'won': False, 'call': receipt}
             receipt = ledger.mark_sent(conn, call_id, token)
@@ -263,6 +352,8 @@ async def dispatch_reserved_search(payload: dict, *, api_key: str, enabled: bool
 
 def _settle(call_id, token, outcome, results, error):
     with get_db_connection() as conn:
+        _lock_world_search(conn,ledger.get_call(conn,call_id))
         receipt = ledger.settle(conn, call_id, token, outcome=outcome, result={'results': results}, error=error)
+        _settle_world_search(conn,ledger.get_call(conn,call_id))
         conn.commit()
         return _reply(receipt)

@@ -58,8 +58,8 @@ class ManualPromptAndActionTest(WandererDbTestCase):
             wanderer = self.wanderer(conn, "atai")
             prompt = build_system_prompt(conn, wanderer, scene={"kind": "审核好友申请", "title": "某人 的好友申请"},
                                          thread_key="social:friend:student:2")
-        self.assertIn("好友申请到底怎么运作", prompt)
-        self.assertIn("同一条", prompt)
+        self.assertNotIn("好友申请到底怎么运作", prompt)
+        self.assertIn("好友申请", prompt)
 
     def test_read_manual_records_a_located_memory_and_its_daily_limit(self):
         ctx = self._ctx(StubCaller(json.dumps({"topic": "friend_requests", "reason": "我一直以为他每天申请"},

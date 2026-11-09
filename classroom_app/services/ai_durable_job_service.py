@@ -331,6 +331,9 @@ def create_ai_job(
         row = conn.execute("SELECT * FROM ai_jobs WHERE dedupe_key = ? LIMIT 1", (normalized_dedupe,)).fetchone()
     if row is None:
         raise RuntimeError("AI job insert completed without a readable row")
+    if created:
+        from .wanderer_ai_attribution import persist_job_attribution
+        persist_job_attribution(conn, row["id"])
     return _row_dict(row), created
 
 

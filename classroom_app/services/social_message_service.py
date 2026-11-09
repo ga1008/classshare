@@ -16,6 +16,7 @@ later via ``POST /media/{id}/backfill``.
 from __future__ import annotations
 
 from typing import Any, Optional
+from functools import wraps
 
 from .rate_limit_service import RateLimitExceededError, calculate_retry_after_seconds
 from .social_common import (
@@ -53,6 +54,23 @@ MENTION_ALL = "all"
 MENTION_LIMIT = 50
 BODY_FORMATS = ("md", "text")
 COUNTED_TYPES = ("text", "media", "nudge")
+
+
+def _atomic_delivery(fn):
+    """A caught send failure must not leave an unpaid message or partial debit."""
+    @wraps(fn)
+    def wrapped(conn, user, *args, **kwargs):
+        serialize_on(conn, "social-send", [user_identity(user)])
+        conn.execute("SAVEPOINT social_atomic_delivery")
+        try:
+            result = fn(conn, user, *args, **kwargs)
+        except Exception:
+            conn.execute("ROLLBACK TO SAVEPOINT social_atomic_delivery")
+            conn.execute("RELEASE SAVEPOINT social_atomic_delivery")
+            raise
+        conn.execute("RELEASE SAVEPOINT social_atomic_delivery")
+        return result
+    return wrapped
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +210,7 @@ def _validated_body(payload: dict[str, Any]) -> tuple[str, str]:
     return body, body_format
 
 
+@_atomic_delivery
 def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], events: Optional[list] = None) -> dict[str, Any]:
     from . import social_media_service as media_service
     from .social_notification_service import consume_mention, mention_quota, notify_message
@@ -236,6 +255,8 @@ def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], event
         reply_to_id=_valid_reply(conn, parsed["key"], payload.get("reply_to_id")), mentions=mentions,
         client_nonce=nonce,
     )
+    from .wanderer_social_budget_service import charge_message
+    charge_message(conn, me, parsed, message_id=message_id, reply_to_id=payload.get("reply_to_id"))
     media_service.attach_media(conn, message_id, tokens)
     if lan_specs:
         media_service.attach_lan_media(conn, message_id, me, parsed["peer"], lan_specs)
@@ -322,6 +343,7 @@ def _nudge_target(conn: Any, me: str, parsed: dict[str, Any], target: Any) -> st
     return identity
 
 
+@_atomic_delivery
 def nudge(conn: Any, user: dict, key: Any, target: Any = None, events: Optional[list] = None) -> dict[str, Any]:
     """拍一拍: a stored ``nudge`` message plus a ``nudge`` push; once per pair per minute."""
     from .social_notification_service import notify_message
@@ -344,6 +366,8 @@ def nudge(conn: Any, user: dict, key: Any, target: Any = None, events: Optional[
     names = load_people(conn, [me, whom])
     body = f"{(names.get(me) or {}).get('name', '')} 拍了拍 {(names.get(whom) or {}).get('name', '')}"
     message_id = insert_message(conn, key=parsed["key"], sender=me, body=body, message_type="nudge", mentions=[whom])
+    from .wanderer_social_budget_service import charge_message
+    charge_message(conn, me, parsed, message_id=message_id)
     message = serialize_messages(conn, me, [load_message_row(conn, message_id)])[0]
     notify_message(conn, me, parsed, message)
     _wake_wanderers(conn, parsed, me)

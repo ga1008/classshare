@@ -16,11 +16,9 @@ Scheduler-side group handlers registered by ``wanderer_social_triggers``:
   → always considered; topic interest; talkativeness). Chosen ones get a
   ``wanderer_social_reply`` task, staggered 5–40 s apart; the others just read.
 
-Cost and loop guards: the daily AI cap (capped → emoji in DMs, silence in
-groups); ≤ 6 wanderer messages per conversation per 10 min; ≤ 20 messages per
-wanderer per group per day; never answers its own messages; a wanderer message
-is answered by another wanderer only with probability 0.25 and never after two
-wanderer-only turns in a row. Sends go through ``social_message_service`` with
+Every real message can reach the AI decision runtime, including long AI-only
+conversations. Wake budgets and transactional communication credits bound the
+work; ordinary account permissions and short-term delivery rate limits apply. Sends go through ``social_message_service`` with
 the wanderer's student-shaped user, so friendship, block, membership and rate
 rules apply exactly as for a person. No connection is held across a model call
 or a pause.
@@ -76,10 +74,8 @@ RATE_LIMIT = 6
 GROUP_DAILY_CAP = 20
 TYPING_SECONDS_PER_CHAR = 0.12
 TYPING_BOUNDS = (1.0, 8.0)
-WANDERER_REACT_PROB = 0.25
 # 直接对话（私聊 / 被 @）不设会话与群日限额，条数上限只由输出合同约束。
 DIRECT_REPLY_QUOTA = 5
-WANDERER_STREAK_LIMIT = 2
 NUDGE_BACK_PROB = 0.04
 NUDGED_BACK_PROB = 0.5
 STAGGER_SECONDS = (5, 40)
@@ -202,7 +198,7 @@ def _gate(conn: Any, identity: str, window: dict[str, Any], *, require_new: bool
     ``direct`` marks a message addressed to the wanderer (a DM or an @-mention).
     Those bypass the per-conversation rate limit and the per-group daily cap:
     被问/被@ 不计入互动限额 (docs/wanderer-reply-priority-2026-10-28.md). The AI
-    daily cap and the AI-to-AI loop guard still apply.
+    daily wake budgets and the independent communication resource still apply.
     """
     parsed, key = window["parsed"], window["key"]
     if parsed["type"] == "dm":
@@ -212,15 +208,9 @@ def _gate(conn: Any, identity: str, window: dict[str, Any], *, require_new: bool
         return "dissolved", 0
     if require_new and not window["new"]:
         return "nothing_new", 0
-    if check_streak and window["streak"] >= WANDERER_STREAK_LIMIT:
-        return "wanderer_loop", 0
     if direct:
         return "", DIRECT_REPLY_QUOTA
     quota = RATE_LIMIT - _sent_since(conn, identity, key, iso_before(seconds=RATE_WINDOW_SECONDS))
-    if parsed["type"] == "group":
-        quota = min(quota, GROUP_DAILY_CAP - _sent_since(conn, identity, key, utc_day_start_iso()))
-        if quota <= 0:
-            return "group_daily_cap", 0
     return ("rate_limited", 0) if quota <= 0 else ("", quota)
 
 
@@ -362,7 +352,7 @@ async def _compose(ctx: ActionContext, window: dict[str, Any], mode: str,
     turn = result.get("turn") or {}
     action = str(turn.get("action") or "skip")
     if result.get("status") == "capped":
-        return ([emoji_for(ctx)] if window["type"] == "dm" else []), 0, "", "capped", {}
+        return [], 0, "", "capped", {}
     parts = turn_parts(ctx, turn, limit=not passive)
     return ([] if action == "skip" else parts), int(result.get("ai_calls") or 0), str(turn.get("mood") or ""), action, turn
 
@@ -406,21 +396,8 @@ async def post_parts(ctx: ActionContext, window: dict[str, Any], parts: list[str
 
 
 async def _maybe_nudge(ctx: ActionContext, window: dict[str, Any]) -> bool:
-    if window["type"] != "dm":
-        return False
-    nudged_me = any(row.get("message_type") == "nudge" for row in window["new"])
-    chance = NUDGED_BACK_PROB * sociability(ctx.wanderer) if nudged_me else NUDGE_BACK_PROB
-    if ctx.rng.random() >= chance:
-        return False
-    events: list = []
-    try:
-        with ctx.connect() as conn:
-            nudge(conn, build_wanderer_user_dict(ctx.wanderer), window["key"], None, events)
-            conn.commit()
-    except (SocialError, RateLimitExceededError):
-        return False
-    await social_push_service.push_events(events)
-    return True
+    """Nudges require an explicit model command, never a backend random choice."""
+    return False
 
 
 async def _remember_exchange(ctx: ActionContext, window: dict[str, Any], said: tuple[str, ...] | list[str] = ()) -> None:
@@ -459,13 +436,8 @@ async def _skip(ctx: ActionContext, window: Optional[dict[str, Any]], reason: st
 
 
 def _pick_mode(ctx: ActionContext, window: dict[str, Any], mentioned: bool) -> str:
-    """'' to stay silent (another 散修 spoke and the roll said no), else a policy mode."""
-    latest = window["new"][-1]
-    if (latest["sender_identity"] in window["wanderer_ids"] and window["type"] == "dm" and not mentioned
-            and ctx.rng.random() >= WANDERER_REACT_PROB):
-        return ""
-    mode = policy_roll(ctx)
-    return "reply" if mentioned and mode == "ignore" else mode
+    """The model decides whether to speak; personality never drops an event."""
+    return "reply"
 
 
 async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool = False) -> list[dict[str, Any]]:
@@ -481,18 +453,17 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
     if reason == "nothing_new":
         return []
     if reason:
-        if window:
-            await _mark_read(ctx, window)
-        return await _skip(ctx, window, reason)
+        return await _skip(ctx, window, reason, heard=False)
     from .wanderer_student_support import fallback_for_scene
     support = fallback_for_scene(ctx.wanderer, chat_scene(ctx, window, "reply", mentioned), f"social:{key}")
     if support:
         window["_support_fallback"] = support
     mode = "reply" if support else _pick_mode(ctx, window, mentioned)
-    await _mark_read(ctx, window)
     if mode in {"", "ignore"}:
         return await _skip(ctx, window, "wanderer_pause" if not mode else "ignore_policy")
     parts, calls, mood, action, turn = await _compose(ctx, window, mode, mentioned)
+    if action == "capped":
+        return [outcome("deferred", "capped", ai_calls=0)]
     parts = parts[:quota]
     echo_dropped = 0
     repetition_dropped = 0
@@ -511,11 +482,14 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
             own_recent = recent_self_texts(conn, ctx.wanderer_id)
         parts, repetition_dropped = filter_repetition_parts(parts, own_recent)
     if not parts:
+        await _mark_read(ctx, window)
         reason = "group_echo" if echo_dropped else "repetition" if repetition_dropped else f"turn:{action}"
         return await _skip(ctx, window, reason, ai_calls=calls, mood=mood)
     sent, error = await post_parts(ctx, window, parts, direct=direct)
     nudged = await _maybe_nudge(ctx, window) if sent else False
     status = "ok" if sent == len(parts) else "failed"
+    if status == "ok":
+        await _mark_read(ctx, window)
     peer = str(window["new"][-1]["sender_identity"]) if window.get("new") else ""
     gain = {"gained": 0.0, "real_user": False, "tier": 0, "name": ""}
     if sent and peer:
@@ -549,17 +523,8 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
 
 def group_reply_probability(wanderer: dict[str, Any], *, interest: float, mentioned: bool, streak: int,
                             last_is_wanderer: bool, sent_today: int) -> float:
-    """Chance that a wanderer joins in now (pure; no AI)."""
-    if streak >= WANDERER_STREAK_LIMIT:
-        return 0.0
-    if mentioned:
-        return 1.0  # @ 是直接对话，不受群日上限约束；AI 循环保护仍在上一条
-    if sent_today >= GROUP_DAILY_CAP:
-        return 0.0
-    chance = 0.05 + 0.3 * sociability(wanderer) + min(0.3, 0.1 * float(interest))
-    if last_is_wanderer:
-        chance *= WANDERER_REACT_PROB
-    return round(min(0.85, chance), 3)
+    """Compatibility helper: every new conversation may reach the decision runtime."""
+    return 1.0
 
 
 def _mark_group_read(conn: Any, group_id: int, identity: str, last_id: int) -> None:
@@ -594,8 +559,14 @@ def _consider(conn: Any, wanderer: dict[str, Any], identity: str, group_id: int,
 
 
 async def watch_group(group_id: int, *, conn_factory: ConnFactory = None, rng: Optional[random.Random] = None,
-                      now: Optional[datetime] = None) -> dict[str, Any]:
+                      now: Optional[datetime] = None, ai_caller: Any = None) -> dict[str, Any]:
     """Each wanderer member decides independently; chosen ones are scheduled with a stagger."""
+    from .wanderer_runtime_service import runtime_enabled
+    with _connect(conn_factory) as conn:
+        use_runtime = runtime_enabled(conn)
+    if use_runtime:
+        from .wanderer_group_runtime_service import run_group_runtime
+        return await run_group_runtime(group_id,conn_factory=conn_factory,ai_caller=ai_caller)
     rng = rng or random.Random()
     moment = now or datetime.now()
     scheduled: list[dict[str, Any]] = []
@@ -633,7 +604,10 @@ async def watch_group(group_id: int, *, conn_factory: ConnFactory = None, rng: O
                 elif is_awake_now(wanderer, moment):
                     delay = float(offset)
             if delay is None:
-                _mark_group_read(conn, int(group_id), identity, seen["last_id"])  # read, chose silence
+                # Sleeping/budget deferred work remains unread until a real decision.
+                wait = seconds_until_awake(wanderer, moment)
+                if wait is not None:
+                    schedule_social_reply(conn, wanderer, key, delay_seconds=wait, mentioned=seen["mentioned"], now=moment)
                 passed.append(identity)
                 continue
             schedule_social_reply(conn, wanderer, key, delay_seconds=delay, mentioned=seen["mentioned"], now=moment)
@@ -664,6 +638,16 @@ async def handle_wanderer_social_reply(task: dict[str, Any], *, ai_caller: Any =
                 enqueue_social(conn, wanderer, key, peer)
                 conn.commit()
         return "queued: durable dm inbox"
+    from .wanderer_runtime_service import runtime_enabled
+    with _connect(conn_factory) as conn:
+        use_runtime = runtime_enabled(conn)
+        wanderer = load_wanderer(conn,as_int(payload.get("wanderer_id"))) if use_runtime else None
+    if use_runtime:
+        from .wanderer_group_runtime_service import run_member_group
+        if wanderer is None:
+            return "skipped: inactive"
+        result = await run_member_group(wanderer,int(key.split(":",1)[1]),conn_factory=conn_factory,ai_caller=ai_caller)
+        return f"group runtime: {result.get('status')} ai_calls={result.get('ai_calls',0)}"
     ctx, reason = social_context(payload.get("wanderer_id"), conn_factory=conn_factory, ai_caller=ai_caller,
                                  sleep=sleep, rng=rng)
     if ctx is None:
@@ -676,10 +660,11 @@ async def handle_wanderer_social_reply(task: dict[str, Any], *, ai_caller: Any =
 
 
 async def handle_wanderer_group_watch(task: dict[str, Any], *, conn_factory: ConnFactory = None,
-                                      rng: Optional[random.Random] = None, now: Optional[datetime] = None) -> str:
+                                      rng: Optional[random.Random] = None, now: Optional[datetime] = None,
+                                      ai_caller: Any = None) -> str:
     payload = task.get("payload") or {}
     group_id = as_int(payload.get("group_id"))
     if group_id <= 0:
         return "skipped: missing group"
-    summary = await watch_group(group_id, conn_factory=conn_factory, rng=rng, now=now)
+    summary = await watch_group(group_id, conn_factory=conn_factory, rng=rng, now=now,ai_caller=ai_caller)
     return f"group watch: {summary['status']} scheduled={len(summary['scheduled'])} passed={len(summary['passed'])}"

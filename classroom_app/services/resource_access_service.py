@@ -84,7 +84,11 @@ def _load_student_context(conn: sqlite3.Connection, student_id: int) -> dict[str
         """,
         (student_id,),
     ).fetchone()
-    if not row or str(row["enrollment_status"] or "active") != "active":
+    if not row:
+        return None
+    from .account_control_service import student_is_ai_controlled
+    ai_controlled = student_is_ai_controlled(conn, row)
+    if str(row["enrollment_status"] or "active") != "active" and not ai_controlled:
         return None
     scope = build_org_scope(
         school_code=row["school_code"],
@@ -94,7 +98,7 @@ def _load_student_context(conn: sqlite3.Connection, student_id: int) -> dict[str
     )
     return {
         "id": int(row["id"]),
-        "class_id": int(row["class_id"]),
+        "class_id": None if ai_controlled else int(row["class_id"]),
         "scope": scope,
     }
 
@@ -332,11 +336,15 @@ def can_manage_scoped_resource(conn: sqlite3.Connection, row: Any, user: dict[st
 
 
 def _student_in_course(conn: sqlite3.Connection, student_id: int, course_id: int) -> bool:
+    from .account_control_service import student_is_ai_controlled
+    from .offering_membership_service import offering_student_where
+    if student_is_ai_controlled(conn, student_id):
+        return False
     row = conn.execute(
-        """
+        f"""
         SELECT 1
         FROM class_offerings o
-        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
+        JOIN students s ON {offering_student_where()}
         WHERE o.course_id = ?
           AND s.id = ?
           AND COALESCE(s.enrollment_status, 'active') = 'active'
@@ -348,11 +356,15 @@ def _student_in_course(conn: sqlite3.Connection, student_id: int, course_id: int
 
 
 def _student_in_classroom(conn: sqlite3.Connection, student_id: int, class_offering_id: int) -> bool:
+    from .account_control_service import student_is_ai_controlled
+    from .offering_membership_service import offering_student_where
+    if student_is_ai_controlled(conn, student_id):
+        return False
     row = conn.execute(
-        """
+        f"""
         SELECT 1
         FROM class_offerings o
-        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
+        JOIN students s ON {offering_student_where()}
         WHERE o.id = ?
           AND s.id = ?
           AND COALESCE(s.enrollment_status, 'active') = 'active'

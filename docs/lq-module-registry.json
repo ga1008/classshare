@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-09",
+ "generatedAt": "2026-11-10",
  "generator": "python tools/ui/lq_module_registry.py",
  "modules": {
   "materials": {
@@ -892,7 +892,7 @@
     "rules": "禁止 div 模拟按钮；颜色只来自变体不传任意色；固定宽度长标签用 overflow-label。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。"
    },
    "consumers": {
-    "count": 280,
+    "count": 282,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -1167,6 +1167,10 @@
       "hits": 36
      },
      {
+      "path": "templates/manage/system/wanderers.html",
+      "hits": 35
+     },
+     {
       "path": "static/js/semester_calendar.js",
       "hits": 34
      },
@@ -1177,10 +1181,6 @@
      {
       "path": "templates/manage/system/smart_classroom_integrations.html",
       "hits": 34
-     },
-     {
-      "path": "templates/manage/system/wanderers.html",
-      "hits": 33
      },
      {
       "path": "static/js/academic_final_materials.js",
@@ -1971,6 +1971,10 @@
       "hits": 2
      },
      {
+      "path": "templates/wanderers/home.html",
+      "hits": 2
+     },
+     {
       "path": "frontend/src/islands/dashboard-quick-actions.tsx",
       "hits": 1
      },
@@ -1996,6 +2000,10 @@
      },
      {
       "path": "static/js/social/social_dom.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/wanderer_world_views.js",
       "hits": 1
      },
      {
@@ -2135,7 +2143,7 @@
     "rules": "芯片是单行胶囊：不换行，过长标签以省略号截断（2026-10-24）。"
    },
    "consumers": {
-    "count": 39,
+    "count": 40,
     "files": [
      {
       "path": "static/js/materials_sync_report.js",
@@ -2144,6 +2152,10 @@
      {
       "path": "static/js/materials_library_cards.js",
       "hits": 13
+     },
+     {
+      "path": "templates/wanderers/home.html",
+      "hits": 8
      },
      {
       "path": "static/js/course_schedule_deck.js",
@@ -2175,10 +2187,6 @@
      },
      {
       "path": "templates/manage/system/password_resets.html",
-      "hits": 4
-     },
-     {
-      "path": "templates/wanderers/home.html",
       "hits": 4
      },
      {
@@ -2290,6 +2298,10 @@
       "hits": 1
      },
      {
+      "path": "static/js/wanderer_world_views.js",
+      "hits": 1
+     },
+     {
       "path": "templates/manage/work_inbox.html",
       "hits": 1
      }
@@ -2330,7 +2342,7 @@
     "rules": "保留浏览器的展开、焦点和键盘行为。 2026-10-27 社交页用 createCollapsible/enhanceCollapsible 组织申请、好友与推荐；只渲染非空分组，好友首次默认展开，更新列表保留展开状态。分组是 data-lq-surface=\"embedded\"，不产生额外材质；summary 保留共享内边距和原生键盘/焦点。"
    },
    "consumers": {
-    "count": 9,
+    "count": 12,
     "files": [
      {
       "path": "static/js/cultivation_panel.js",
@@ -2341,11 +2353,23 @@
       "hits": 5
      },
      {
+      "path": "templates/manage/system/wanderers.html",
+      "hits": 3
+     },
+     {
       "path": "static/js/dashboard.js",
       "hits": 2
      },
      {
       "path": "static/js/social/friends_modal.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/wanderer_workspace.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/wanderer_world_views.js",
       "hits": 2
      },
      {
@@ -2361,11 +2385,11 @@
       "hits": 2
      },
      {
-      "path": "static/js/manage_filter_chips.js",
-      "hits": 1
+      "path": "templates/wanderers/home.html",
+      "hits": 2
      },
      {
-      "path": "templates/manage/system/wanderers.html",
+      "path": "static/js/manage_filter_chips.js",
       "hits": 1
      }
     ]
@@ -2485,7 +2509,7 @@
     "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。"
    },
    "consumers": {
-    "count": 178,
+    "count": 180,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -2500,6 +2524,10 @@
       "hits": 30
      },
      {
+      "path": "templates/wanderers/home.html",
+      "hits": 29
+     },
+     {
       "path": "templates/assignment_detail_teacher.html",
       "hits": 23
      },
@@ -2510,14 +2538,6 @@
      {
       "path": "templates/dev/lq_content.html",
       "hits": 20
-     },
-     {
-      "path": "static/js/manage_wanderers.js",
-      "hits": 18
-     },
-     {
-      "path": "templates/wanderers/home.html",
-      "hits": 18
      },
      {
       "path": "templates/assignment_detail_student.html",
@@ -2542,6 +2562,10 @@
      {
       "path": "templates/manage/system/password_resets.html",
       "hits": 13
+     },
+     {
+      "path": "static/js/manage_wanderers.js",
+      "hits": 12
      },
      {
       "path": "templates/submission_detail.html",
@@ -2582,6 +2606,10 @@
      {
       "path": "templates/manage/system/smart_classroom_integrations.html",
       "hits": 9
+     },
+     {
+      "path": "static/js/wanderer_world_views.js",
+      "hits": 8
      },
      {
       "path": "templates/manage/courses.html",
@@ -2705,6 +2733,10 @@
      },
      {
       "path": "static/js/profile_signatures.js",
+      "hits": 5
+     },
+     {
+      "path": "static/js/wanderer_workspace.js",
       "hits": 5
      },
      {
@@ -4535,7 +4567,7 @@
     "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。"
    },
    "consumers": {
-    "count": 183,
+    "count": 185,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -4551,7 +4583,7 @@
      },
      {
       "path": "templates/manage/system/wanderers.html",
-      "hits": 72
+      "hits": 76
      },
      {
       "path": "templates/assignment_detail_teacher.html",
@@ -5050,6 +5082,10 @@
       "hits": 4
      },
      {
+      "path": "static/js/wanderer_workspace.js",
+      "hits": 4
+     },
+     {
       "path": "templates/career_path.html",
       "hits": 4
      },
@@ -5071,6 +5107,10 @@
      },
      {
       "path": "templates/resume/builder.html",
+      "hits": 4
+     },
+     {
+      "path": "templates/wanderers/home.html",
       "hits": 4
      },
      {
@@ -5319,7 +5359,7 @@
     "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem=\"off\"。 2026-10-27 四种顶栏好友入口共用 data-social 钩子与 LQ Badge，数字放入口右上角；免打扰消息仍纳入未读。角标是显示状态，不能承载读取确认或权限逻辑。"
    },
    "consumers": {
-    "count": 20,
+    "count": 21,
     "files": [
      {
       "path": "templates/dev/lq_presentation.html",
@@ -5346,6 +5386,10 @@
       "hits": 3
      },
      {
+      "path": "templates/wanderers/home.html",
+      "hits": 3
+     },
+     {
       "path": "frontend/src/components/action-entry.tsx",
       "hits": 2
      },
@@ -5367,6 +5411,10 @@
      },
      {
       "path": "static/js/social/social_dom.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/wanderer_world_views.js",
       "hits": 2
      },
      {
@@ -5395,10 +5443,6 @@
      },
      {
       "path": "templates/partials/profile/messages.html",
-      "hits": 1
-     },
-     {
-      "path": "templates/wanderers/home.html",
       "hits": 1
      }
     ]
@@ -5898,7 +5942,7 @@
     "files": [
      {
       "path": "templates/manage/system/wanderers.html",
-      "hits": 24
+      "hits": 27
      },
      {
       "path": "static/js/collaboration.js",
@@ -6396,7 +6440,7 @@
     "rules": ""
    },
    "consumers": {
-    "count": 25,
+    "count": 26,
     "files": [
      {
       "path": "static/js/academic_schedule_sync.js",
@@ -6492,6 +6536,10 @@
      },
      {
       "path": "static/js/social/user_card.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/wanderer_world_views.js",
       "hits": 2
      },
      {
@@ -7041,6 +7089,14 @@
   "wanderer-home": {
    "css": "static/css/lq/pages/wanderer-home.css",
    "linkedBy": [
+    "templates/wanderers/home.html"
+   ],
+   "bundledInIndex": false
+  },
+  "wanderer-world": {
+   "css": "static/css/lq/pages/wanderer-world.css",
+   "linkedBy": [
+    "templates/manage/system/wanderers.html",
     "templates/wanderers/home.html"
    ],
    "bundledInIndex": false
@@ -8114,6 +8170,19 @@
    "button",
    "declarative"
   ],
+  "static/js/wanderer_workspace.js": [
+   "collapsible",
+   "content",
+   "forms"
+  ],
+  "static/js/wanderer_world_views.js": [
+   "button",
+   "chip",
+   "collapsible",
+   "content",
+   "indicators",
+   "skeleton"
+  ],
   "static/js/whiteboard/board.js": [
    "button",
    "domain-controls"
@@ -9096,9 +9165,12 @@
    "materials"
   ],
   "templates/wanderers/home.html": [
+   "button",
    "chip",
+   "collapsible",
    "content",
    "cultivation-emblem",
+   "forms",
    "indicators"
   ],
   "templates/wrong_book.html": [

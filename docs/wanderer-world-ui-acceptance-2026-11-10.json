@@ -1,0 +1,231 @@
+{
+  "accepted_scope": "wanderer public home and admin workspace only",
+  "static_graph": "f49372ecc33a46caf2cd77b094fd0410075051fb96f7be8c2a3f76f2ffdb0d5e",
+  "source_sha256": {
+    "templates/wanderers/home.html": "26d20a9baac13e3a0007c5164034c66f0956d8237e80d93388987822d6047e29",
+    "templates/manage/system/wanderers.html": "41d5baf05a29fc81579bcf6ce1b896317b64da35644fda2f0b0d775cf32aaa84",
+    "static/js/wanderer_home.js": "5804aff89ef5aff27c6073e8b9d5eb4d9a6dde391915903f3332dd029f587ae5",
+    "static/js/wanderer_workspace.js": "b2ffc3f1ecd6dd74ebcf3f1f0a09861c83b802b5dba20e7682b4fb4a27a7bad4",
+    "static/js/wanderer_world_views.js": "6dc237fb601cde466f4dad7b66ec3ca552d2c44b5ccd273726daf3e028a4734b",
+    "static/js/manage_wanderers.js": "9bb240b8f0c409276bb9e19f744be41d0521131291b157da6b316a673d7703e4",
+    "static/css/lq/pages/wanderer-world.css": "dc054568e29b8c4d4a5eb641fe1ac5afec036faab649bd5d37a1f72b37136a2d",
+    "static/css/lq/pages/wanderers.css": "1abb60176f82bd6230e9b6b57afe834337433712c6478f16b4e2025ecfcd4720"
+  },
+  "browser": {
+    "pass": true,
+    "graph": "f49372ecc33a46caf2cd77b094fd0410075051fb96f7be8c2a3f76f2ffdb0d5e",
+    "geometry": [
+      {
+        "width": 320,
+        "dark": false,
+        "page": "public",
+        "overflow": 0
+      },
+      {
+        "width": 320,
+        "dark": false,
+        "page": "admin",
+        "box": {
+          "x": 16,
+          "y": 72,
+          "width": 288,
+          "height": 828
+        },
+        "overflow": 0
+      },
+      {
+        "width": 320,
+        "dark": true,
+        "page": "public",
+        "overflow": 0
+      },
+      {
+        "width": 320,
+        "dark": true,
+        "page": "admin",
+        "box": {
+          "x": 16,
+          "y": 72,
+          "width": 288,
+          "height": 828
+        },
+        "overflow": 0
+      },
+      {
+        "width": 390,
+        "dark": false,
+        "page": "public",
+        "overflow": 0
+      },
+      {
+        "width": 390,
+        "dark": false,
+        "page": "admin",
+        "box": {
+          "x": 16,
+          "y": 72,
+          "width": 358,
+          "height": 828
+        },
+        "overflow": 0
+      },
+      {
+        "width": 390,
+        "dark": true,
+        "page": "public",
+        "overflow": 0
+      },
+      {
+        "width": 390,
+        "dark": true,
+        "page": "admin",
+        "box": {
+          "x": 16,
+          "y": 72,
+          "width": 358,
+          "height": 828
+        },
+        "overflow": 0
+      },
+      {
+        "width": 768,
+        "dark": false,
+        "page": "public",
+        "overflow": 0
+      },
+      {
+        "width": 768,
+        "dark": false,
+        "page": "admin",
+        "box": {
+          "x": 16,
+          "y": 16,
+          "width": 736,
+          "height": 868
+        },
+        "overflow": 0
+      },
+      {
+        "width": 768,
+        "dark": true,
+        "page": "public",
+        "overflow": 0
+      },
+      {
+        "width": 768,
+        "dark": true,
+        "page": "admin",
+        "box": {
+          "x": 16,
+          "y": 16,
+          "width": 736,
+          "height": 868
+        },
+        "overflow": 0
+      },
+      {
+        "width": 1440,
+        "dark": false,
+        "page": "public",
+        "overflow": 0
+      },
+      {
+        "width": 1440,
+        "dark": false,
+        "page": "admin",
+        "box": {
+          "x": 200,
+          "y": 16,
+          "width": 1040,
+          "height": 868
+        },
+        "overflow": 0
+      },
+      {
+        "width": 1440,
+        "dark": true,
+        "page": "public",
+        "overflow": 0
+      },
+      {
+        "width": 1440,
+        "dark": true,
+        "page": "admin",
+        "box": {
+          "x": 200,
+          "y": 16,
+          "width": 1040,
+          "height": 868
+        },
+        "overflow": 0
+      }
+    ],
+    "errors": [],
+    "checks": [
+      "public headings and memory times on shared card surfaces",
+      "all server-authorized retained ledger kinds selectable, readable and selection preserved",
+      "8 layouts for public/admin",
+      "7 admin sections and 7 relation kinds",
+      "daily wake limit save and restore",
+      "30/8 memory pages",
+      "private only admin",
+      "30/6 full group transcripts including membership event",
+      "focus return",
+      "12 public page",
+      "empty search",
+      "503 retry",
+      "warning reversal explanation and cancel",
+      "uncertain native write reconciliation",
+      "failed event reconsideration",
+      "all 42 retained ledger kinds have Chinese labels and pass authenticated page reads"
+    ],
+    "admin_record_kind_count": 42
+  },
+  "bounds": {
+    "synthetic": true,
+    "database": "C:\\Users\\AngelWei\\Nutstore\\1\\Projects\\lanshare\\.codex-temp\\wanderer-plan-v2\\bounds-1110\\db\\classroom.db",
+    "backend": "isolated SQLite",
+    "model_calls": 0,
+    "memory_records": 20000,
+    "wanderers": 100,
+    "pending_events": 200,
+    "reads": {
+      "admin_memory_page": {
+        "elapsed_ms": 5.88,
+        "sql_statements": 19,
+        "returned": 30,
+        "json_bytes": 24789
+      },
+      "admin_memory_next_page": {
+        "elapsed_ms": 4.75,
+        "sql_statements": 20,
+        "returned": 30,
+        "json_bytes": 24789
+      },
+      "public_memory_page": {
+        "elapsed_ms": 0.37,
+        "sql_statements": 2,
+        "returned": 12,
+        "json_bytes": 9890
+      },
+      "admin_100_cards": {
+        "elapsed_ms": 39.35,
+        "sql_statements": 18,
+        "returned": 100,
+        "json_bytes": 104961
+      }
+    },
+    "queue": {
+      "requested": 20,
+      "processed": 20,
+      "elapsed_ms": 26.4,
+      "max_requested": 1000,
+      "hard_cap_processed": 100,
+      "worker": "stubbed before any model call"
+    }
+  },
+  "runtime_fixture": "synthetic, loopback-only, application workers disabled, no model or real database",
+  "global_audit_acceptance": "pending",
+  "browser_fixture": ".codex-temp/wanderer-plan-v2/ui-world-ledgers",
+  "last_verified": "2026-11-10"
+}

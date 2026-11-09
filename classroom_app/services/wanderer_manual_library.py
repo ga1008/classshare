@@ -277,9 +277,11 @@ def platform_manual_markdown() -> str:
 
 
 def _manual_document_factories() -> tuple[tuple[str, Callable[[], str]], ...]:
+    from .wanderer_world_service import world_manual_markdown
     return (
         ("散修进阶手册", advancement_manual_markdown),
         ("平台与天道手册", platform_manual_markdown),
+        ("此方世界：散修世界手册", world_manual_markdown),
     )
 
 
@@ -360,6 +362,8 @@ def ensure_manual_materials(conn: Any) -> dict[str, Any]:
     Caller commits. Re-running startup is not authorization to replace a
     teacher's edited manual, revision, access scope, or search index.
     """
+    from .wanderer_world_service import ensure_world_chapters
+    ensure_world_chapters(conn)
     teacher_id = _owner_teacher_id(conn)
     if teacher_id is None:
         return {"status": "skipped", "reason": "no_teacher"}

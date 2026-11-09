@@ -151,6 +151,11 @@ def encode_form_upload(conn, grant, operation, normalized, file_refs):
         files.append((name, data))
         references.append({"path": relative.as_posix(), "filename": name, "task_id": int(task["id"]),
                            "sha256": digest, "size": len(data)})
+    return encode_form_parts(values, files, field_name, references, normalized)
+
+
+def encode_form_parts(values, files, field_name, references, normalized):
+    """Shared deterministic wire encoding after each principal authorizes bytes."""
     # Stable wire bytes are essential: replaying an operation must not get a
     # fresh random multipart boundary and fail its durable request hash check.
     fingerprint = json.dumps([values, [(item["filename"], item["sha256"]) for item in references]],

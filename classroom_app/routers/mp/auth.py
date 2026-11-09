@@ -57,6 +57,9 @@ class MpTeacherBindRequest(BaseModel):
 
 
 def _ensure_student_active(student_row) -> None:
+    from ...services.account_control_service import row_allows_human_auth
+    if not row_allows_human_auth(student_row):
+        raise HTTPException(403, "此账号由 AI 专管，不允许人工登录或绑定。")
     status_value = (
         student_row["enrollment_status"]
         if "enrollment_status" in student_row.keys()

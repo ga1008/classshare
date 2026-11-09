@@ -19,6 +19,7 @@ from typing import Any, Iterable, Optional
 
 from ..db.connection import execute_insert_returning_id
 from ..db.schema_wanderers import ensure_wanderer_schema
+from ..db.schema_wanderer_world import ensure_wanderer_world_schema
 from ..time_utils import local_iso, local_now, parse_datetime
 from .wanderer_life_core import (
     active_speech_limit,
@@ -108,6 +109,7 @@ _INT_FIELDS = (
     "id", "student_id", "tier", "activity_level", "daily_action_budget",
     "warnings_count", "knowledge_chars", "promotion_requested",
     "life_extensions", "appeal_requested", "persona_version", "interaction_limit_penalty",
+    "life_epoch", "authority_version", "daily_wake_limit", "life_bonus_seconds",
 )
 
 _SELECT_WANDERER = """
@@ -175,6 +177,7 @@ def _hydrate(row: Any) -> dict[str, Any]:
         penalty_weeks=_as_float(data.get("life_penalty_weeks")),
         gift_in_weeks=_as_float(data.get("life_gift_in_weeks")),
         gift_out_weeks=_as_float(data.get("life_gift_out_weeks")),
+        bonus_seconds=data.get("life_bonus_seconds", 0),
         vitality=talents["vitality"],
     )
     return {
@@ -316,11 +319,14 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
 def ensure_wanderer_students_detailed(conn: Any, seeds: Iterable[dict[str, Any]]) -> dict[str, Any]:
     """Create missing rows; returns ``{"class_id", "students": {slug: sid}, "created": [slug]}``."""
     ensure_wanderer_schema(conn)
+    ensure_wanderer_world_schema(conn)
     class_id = ensure_wanderer_placeholder_class(conn)
     students: dict[str, int] = {}
     created: list[str] = []
     for seed in seeds:
         student_id = _ensure_student_row(conn, seed, class_id)
+        from .account_control_service import mark_student_ai_controlled
+        mark_student_ai_controlled(conn, student_id)
         students[seed["slug"]] = student_id
         if _insert_agent_row(conn, seed, student_id):
             created.append(seed["slug"])
@@ -453,6 +459,9 @@ def build_wanderer_user_dict(wanderer: dict[str, Any]) -> dict[str, Any]:
         "class_name": WANDERER_CLASS_NAME,
         "is_wanderer": True,
         "wanderer_id": int(wanderer["id"]),
+        "control_mode": "ai",
+        "life_epoch": int(wanderer.get("life_epoch") or 1),
+        "authority_version": int(wanderer.get("authority_version") or 1),
     }
 
 
@@ -589,6 +598,7 @@ def current_life(wanderer: dict[str, Any], now: Any = None) -> dict[str, Any]:
         gift_out_weeks=(wanderer.get("life_gift_out_weeks") if "life_gift_out_weeks" in wanderer
                         else stored.get("gift_out_weeks")),
         vitality=talent_value(wanderer.get("talents"), "vitality"),
+        bonus_seconds=wanderer.get("life_bonus_seconds", 0),
         now=now,
     )
 
@@ -597,7 +607,7 @@ def death_reason(conn: Any, wanderer: dict[str, Any], *, now: Any = None) -> str
     """'' when alive; otherwise the reason written into the death verdict.
 
     Expiry is ignored while the ``lifecycle_enabled`` runtime switch is off
-    (emergency stop), but the original zero-knowledge rule always applies.
+    (emergency stop). Empty knowledge is not itself a cause of death.
     """
     if str(wanderer.get("status") or "") == STATUS_DEAD:
         return "已陨落"
@@ -609,17 +619,7 @@ def death_reason(conn: Any, wanderer: dict[str, Any], *, now: Any = None) -> str
             tier = clamp_tier(wanderer.get("tier"))
             return (f"寿元耗尽（第 {tier} 境，寿元 {life['granted_weeks']:g} 周，"
                     f"{str(life['expires_at'])[:10]} 到期）。")
-    if clamp_tier(wanderer.get("tier")) != 0:
-        return ""
-    try:
-        score = float(wanderer.get("cultivation_score") or 0)
-    except (TypeError, ValueError):
-        score = 0.0
-    if score > 0:
-        return ""
-    if active_knowledge_count(conn, int(wanderer["id"])) > 0:
-        return ""
-    return "知识尽失、修为归零，判定陨落。"
+    return ""
 
 
 def evaluate_death(conn: Any, wanderer: dict[str, Any]) -> bool:
@@ -629,9 +629,17 @@ def evaluate_death(conn: Any, wanderer: dict[str, Any]) -> bool:
 
 def mark_dead(conn: Any, wanderer_id: int, reason: str) -> int:
     """Set status=dead, record the verdict and keep the life trajectory. Returns the review id."""
+    ensure_wanderer_world_schema(conn)
+    from .wanderer_bond_service import lock_agents, suspend_on_death, direct_partners
+    peers = [int(r["peer"]) for r in conn.execute("SELECT CASE WHEN first_id=? THEN second_id ELSE first_id END AS peer FROM wanderer_bonds WHERE state='active' AND (first_id=? OR second_id=?)",(int(wanderer_id),int(wanderer_id),int(wanderer_id))).fetchall()]
+    lock_agents(conn, [wanderer_id, *peers])
     wanderer = load_wanderer(conn, wanderer_id)
     if wanderer is None:
         raise ValueError("散修不存在")
+    if wanderer.get("status") == STATUS_DEAD:
+        prior = conn.execute("SELECT id FROM wanderer_dao_reviews WHERE wanderer_id=? AND review_kind='death' ORDER BY id DESC LIMIT 1",(int(wanderer_id),)).fetchone()
+        return int(prior["id"]) if prior else int(wanderer.get("last_review_id") or 0)
+    suspend_on_death(conn, wanderer_id)
     tier = clamp_tier(wanderer.get("tier"))
     review_id = insert_dao_review(
         conn, wanderer_id=int(wanderer_id), review_kind="death", verdict="died",
@@ -640,7 +648,7 @@ def mark_dead(conn: Any, wanderer_id: int, reason: str) -> int:
     now = local_iso()
     conn.execute(
         "UPDATE wanderer_agents SET status = ?, promotion_requested = 0, appeal_requested = 0, "
-        "last_review_id = ?, last_review_at = ?, updated_at = ? WHERE id = ?",
+        "last_review_id = ?, last_review_at = ?, updated_at = ?, life_epoch=life_epoch+1, authority_version=authority_version+1 WHERE id = ?",
         (STATUS_DEAD, review_id, now, now, int(wanderer_id)),
     )
     invalidate_wanderer_cache([wanderer["student_id"]])

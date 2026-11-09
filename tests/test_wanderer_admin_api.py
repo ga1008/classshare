@@ -136,7 +136,7 @@ class WandererAdminApiTest(WandererDbTestCase):
         self.assertEqual(detail.status_code, 200)
         body = detail.json()["detail"]
         self.assertEqual(len(body["stats"]["daily"]), 7)
-        self.assertEqual(body["knowledge"]["active_count"], 3)
+        self.assertEqual(body["knowledge"]["active_count"], 0)
         self.assertTrue(body["profile"]["persona_prompt"])
         self.assertIn("behaviors", body["profile"])
         self.assertIn("active", body["memory"])
@@ -157,7 +157,7 @@ class WandererAdminApiTest(WandererDbTestCase):
             response = client.get(f"{API}/{card['id']}/{kind}?page=1")
             self.assertEqual(response.status_code, 200, kind)
             self.assertEqual({"items", "page", "limit", "total", "pages"} - set(response.json()), set())
-        self.assertEqual(len(client.get(f"{API}/{card['id']}/knowledge").json()["items"]), 3)
+        self.assertEqual(len(client.get(f"{API}/{card['id']}/knowledge").json()["items"]), 0)
         self.assertEqual(client.get(f"{API}/999999").status_code, 404)
 
     def test_permissions(self):
@@ -225,20 +225,21 @@ class WandererAdminApiTest(WandererDbTestCase):
     def test_wipe_then_revive(self):
         client = self.super_client()
         wid = self.wanderer_ids[3]
+        before_count=client.get(f"{API}/{wid}/knowledge").json()['summary']['active_count']
         self.assertEqual(client.post(f"{API}/{wid}/wipe", json={}).status_code, 400)
         wiped = client.post(f"{API}/{wid}/wipe", json={"confirm": True})
         self.assertEqual(wiped.status_code, 200, wiped.text)
         self.assertEqual(wiped.json()["card"]["status"], "dead")
-        self.assertEqual(wiped.json()["forgotten"], 3)
+        self.assertEqual(wiped.json()["forgotten"], 0)
         knowledge = client.get(f"{API}/{wid}/knowledge").json()
-        self.assertEqual(knowledge["summary"]["active_count"], 0)
-        self.assertTrue(all(item["status"] == "forgotten" for item in knowledge["items"]))
+        self.assertEqual(knowledge["summary"]["active_count"], before_count)
+        self.assertTrue(all(item["status"] == "active" for item in knowledge["items"]))
         self.assertEqual(client.post(f"{API}/{wid}/status", json={"status": "active"}).status_code, 400)
 
         revived = client.post(f"{API}/{wid}/revive")
         self.assertEqual(revived.status_code, 200, revived.text)
         self.assertEqual((revived.json()["card"]["status"], revived.json()["card"]["tier"]), ("active", 0))
-        self.assertEqual(client.get(f"{API}/{wid}/knowledge").json()["summary"]["active_count"], 3)
+        self.assertEqual(client.get(f"{API}/{wid}/knowledge").json()["summary"]["active_count"], 0)
         kinds = [item["review_kind"] for item in client.get(f"{API}/{wid}/reviews").json()["items"]]
         self.assertEqual(kinds[:2], ["revive", "death"])
         self.assertEqual(client.post(f"{API}/{wid}/revive").status_code, 400)
@@ -445,7 +446,12 @@ class WandererAdminApiTest(WandererDbTestCase):
         self.assertIn('name="reflection_hour"', response.text)
         self.assertIn('name="prompt_char_budget"', response.text)
         self.assertIn('data-lq-tab="memory"', response.text)
-        self.assertIn('data-lq-tab="social"', response.text)
+        for tab in ('overview','memory','conversations','relations','activity','resources','identity'):
+            self.assertIn(f'data-lq-tab="{tab}"',response.text)
+        for control in ('daily_wake_limit','autonomous_v2_enabled'):
+            self.assertIn(f'name="{control}"',response.text)
+        for action in ('data-wd-persona-form','data-wd-life-form','data-wd-tier-form','data-wd-talent-form'):
+            self.assertIn(action,response.text)
 
     # -- round 2: genesis (design §10.2 / §10.6) ------------------------------
 
@@ -494,6 +500,97 @@ class WandererAdminApiTest(WandererDbTestCase):
         card = client.get(API).json()["wanderers"][0]
         self.assertEqual((card["origin"], card["origin_label"]), ("seed", "种子"))
         self.assertTrue(card["homepage_url"].startswith("/wanderers/"))
+
+    def test_workspace_sections_and_history_are_admin_only(self):
+        wid=self.wanderer_ids[0]
+        client=self.super_client()
+        for section in ('overview','memory','conversations','relations','activity','resources','identity'):
+            response=client.get(f'{API}/{wid}/workspace',params={'section':section})
+            self.assertEqual(response.status_code,200,(section,response.text[:500]))
+        for kind in ('friends','requests','groups','blocked','bond_requests','relationships','relationship_changes'):
+            response=client.get(f'{API}/{wid}/workspace',params={'section':'relations','kind':kind,'q':'合成'})
+            self.assertEqual(response.status_code,200,(kind,response.text[:500]))
+        self.assertEqual(self.plain_client().get(f'{API}/{wid}/workspace?section=memory').status_code,403)
+        self.assertEqual(self.student_client().get(f'{API}/{wid}/workspace?section=memory').status_code,403)
+        with self.connect() as conn:
+            self.assertGreaterEqual(conn.execute('SELECT COUNT(*) AS n FROM wanderer_admin_access WHERE wanderer_id=?',(wid,)).fetchone()['n'],14)
+
+    def test_admin_memory_pagination_retains_private_full_text(self):
+        from classroom_app.services.wanderer_autobiography_service import write_memory
+        from classroom_app.time_utils import local_iso
+        wid=self.wanderer_ids[0]
+        with self.connect() as conn:
+            w=wanderer_identity_service.load_wanderer(conn,wid)
+            write_memory(conn,w,{'content':'管理员可审阅的私密全文_验收','location':'私室'},turn_id='admin-test',
+                         operation_id='admin-private-fixture',scope={'kind':'private'},available_evidence=[])
+            conn.commit()
+        response=self.super_client().get(f'{API}/{wid}/workspace?section=memory&q=私密全文_验收')
+        self.assertEqual(response.status_code,200,response.text[:300])
+        self.assertEqual(response.json()['items'][0]['content'],'管理员可审阅的私密全文_验收')
+        public=self.student_client().get(f"/api/wanderers/{w['student_id']}/memory?q=私密全文_验收")
+        self.assertEqual(public.status_code,200)
+        self.assertEqual(public.json()['items'],[])
+
+    def test_all_retained_ledger_kinds_are_scoped_paged_and_admin_only(self):
+        import json
+        from unittest.mock import patch
+        from classroom_app.time_utils import local_iso
+        from classroom_app.services import wanderer_bond_service as bonds, wanderer_resource_service as resources
+        from classroom_app.services.wanderer_penalty_service import apply_penalty,reverse_penalty
+        from classroom_app.services.wanderer_cultivation_service import award_cultivation
+        from classroom_app.services.wanderer_life_service import apply_talent_change
+        from classroom_app.services.wanderer_workspace_service import RECORDS
+        a,b,c=self.wanderer_ids[-3:]
+        with patch('classroom_app.services.heavenly_dao_service.notify_wanderer'):
+            with self.connect() as conn:
+                conn.execute("UPDATE wanderer_agents SET status='active',born_at=?,lifespan_weeks=52,life_penalty_weeks=0,cultivation_score=0 WHERE id IN (?,?,?)",(local_iso(),a,b,c))
+                first,second=sorted((a,b))
+                conn.execute("INSERT INTO wanderer_bonds(id,pair_key,first_id,second_id,state,first_request_id,last_request_id,created_at,updated_at) VALUES('admin-ledger-bond',?,?,?,'active','fixture','fixture',?,?) ON CONFLICT(pair_key) DO UPDATE SET state='active'",
+                             (f'{first}:{second}',first,second,local_iso(),local_iso()))
+                self.assertTrue(resources.consume(conn,b,'ai_wake',1,'admin-ledger-loan',base_limits={a:1000,b:0})['ok'])
+                self.assertTrue(resources.resize_capacity(conn,b,'knowledge_chars','admin-ledger-capacity',10,base_limits={a:1000,b:0})['ok'])
+                apply_penalty(conn,a,{'cultivation':20},reason='完整原始裁决',operation_id='admin-ledger-penalty')
+                award_cultivation(conn,a,5,'knowledge','admin-ledger-gain')
+                apply_talent_change(conn,wanderer_identity_service.load_wanderer(conn,a),'luck',0.1,reason='合成增益',event_id='admin-ledger-talent')
+                reverse_penalty(conn,'admin-ledger-penalty',reason='证据纠正',operation_id='admin-ledger-reverse')
+                request=bonds.propose(conn,a,c,operation_id='admin-ledger-review',reason='申请审阅')
+                conn.execute("UPDATE wanderer_bond_requests SET review_token='private-review-token' WHERE id=?",(request['id'],))
+                for index in range(3):
+                    conn.execute('INSERT INTO wanderer_dao_history_blocks(request_id,block_id,content_hash,content_json,created_at) VALUES(?,?,?,?,?)',
+                                 (request['id'],f'block-{index}','hash',json.dumps({'record':f'完整历史{index}','api_key':'do-not-return','reasoning_content':'hidden-chain'}),local_iso()))
+                conn.execute("INSERT INTO wanderer_dao_history_blocks(request_id,block_id,content_hash,content_json,created_at) VALUES('unrelated-request','unrelated-block','hash','{}',?)",(local_iso(),))
+                conn.commit()
+        client=self.super_client()
+        def page(owner,kind,**params):
+            response=client.get(f'{API}/{owner}/workspace',params={'section':'identity','kind':kind,**params})
+            self.assertEqual(response.status_code,200,(kind,response.text[:500]))
+            return response.json()
+        listing=page(a,'')
+        self.assertEqual(set(listing['summary']['record_kinds']),set(RECORDS))
+        for kind in RECORDS:
+            page(a,kind,limit=1)
+        loans=page(a,'resource_reservations',q='admin-ledger-loan')['items']
+        self.assertEqual([(r['actor_id'],r['operation_id']) for r in loans],[(b,'admin-ledger-loan')])
+        self.assertIn('admin-ledger-capacity',{r['object_key'] for r in page(a,'capacity')['items']})
+        self.assertEqual(page(c,'resource_reservations',q='admin-ledger-loan')['items'],[])
+        self.assertEqual(page(b,'penalty_roots',q='完整原始裁决')['items'][0]['id'],'admin-ledger-penalty')
+        self.assertEqual(page(b,'penalty_reversals',q='证据纠正')['items'][0]['root_id'],'admin-ledger-penalty')
+        self.assertTrue(page(a,'gain_debt_payments',q='admin-ledger-gain')['items'])
+        self.assertTrue(page(a,'talent_awards',q='合成增益')['items'])
+        first_page=page(a,'dao_history_blocks',limit=2)
+        second_page=page(a,'dao_history_blocks',limit=2,cursor=first_page['next_cursor'])
+        self.assertEqual((first_page['total'],len(first_page['items']),len(second_page['items'])),(3,2,1))
+        self.assertEqual(page(b,'dao_history_blocks')['items'],[])
+        serialized=json.dumps(first_page)
+        self.assertNotIn('do-not-return',serialized)
+        self.assertNotIn('hidden-chain',serialized)
+        self.assertNotIn('private-review-token',json.dumps(page(a,'bond_requests')))
+        self.assertEqual(self.plain_client().get(f'{API}/{a}/workspace?section=identity&kind=dao_history_blocks').status_code,403)
+        self.assertEqual(self.student_client().get(f'{API}/{a}/workspace?section=identity&kind=penalty_roots').status_code,403)
+
+    def test_unrelated_attachment_cannot_be_read_through_admin_ai_scope(self):
+        response=self.super_client().get(f'{API}/{self.wanderer_ids[0]}/attachments/legacy/999999')
+        self.assertEqual(response.status_code,403,response.text)
 
     def test_genesis_reviews_expose_activity_snapshot(self):
         wid = self.wanderer_ids[6]

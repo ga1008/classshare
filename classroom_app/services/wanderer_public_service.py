@@ -29,7 +29,7 @@ PUBLIC_REVIEWS = {
     ("discipline", "warning"): "天道警告", ("discipline", "demoted"): "天道降阶",
     ("death", "died"): "陨落", ("revive", "revived"): "复活", ("genesis", "created"): "天道造人",
     ("appeal", "upheld"): "抗辩获准", ("appeal", "rejected_appeal"): "抗辩驳回",
-    ("penalty", "deducted"): "天道折寿", ("talent", "adjusted"): "天道改命",
+    ("penalty", "deducted"): "天道处罚", ("talent", "adjusted"): "天道改命",
 }
 ORIGIN_LABELS = {"seed": "种子散修", "dao": "天道所造", "reincarnated": "转世之身"}
 
@@ -112,7 +112,7 @@ def recent_public_actions(conn: Any, wanderer_id: int) -> list[dict[str, Any]]:
     for item in rows:
         kind = str(item.get("action_kind") or "")
         post_id = _post_id_of(item)
-        if kind != "classroom_message" and post_id not in visible:
+        if kind == "classroom_message" or post_id not in visible:
             continue  # the post was removed, withheld or is not public
         actions.append({
             "kind": kind, "label": PUBLIC_ACTION_LABELS.get(kind, kind),
@@ -171,7 +171,9 @@ def public_reviews(conn: Any, wanderer_id: int) -> list[dict[str, Any]]:
         if label is None:
             continue
         reviews.append({"kind": str(item.get("review_kind")), "verdict": str(item.get("verdict")), "label": label,
-                        "reason": str(item.get("reason") or "")[:300], "date": _date(item.get("created_at"))})
+                        "reason": "裁决已记录，详细依据按原权限查看。",
+                        "from_tier":item.get('from_tier'),"to_tier":item.get('to_tier'),
+                        "date": _date(item.get("created_at"))})
         if len(reviews) >= REVIEWS_LIMIT:
             break
     return reviews
@@ -183,6 +185,10 @@ def build_wanderer_home(conn: Any, viewer: dict[str, Any], slug: str) -> Optiona
     from .wanderer_life_core import talent_effects, tier_perks
     from .wanderer_life_service import promotion_requirements
     from .wanderer_relationship_service import public_summary
+    from .wanderer_autobiography_service import timeline
+    from .wanderer_resource_service import limits
+    from .wanderer_bond_service import list_bonds
+    from .wanderer_workspace_service import bond_projection, resource_projection
 
     clean = str(slug or "").strip()
     if not clean or len(clean) > 40:
@@ -216,6 +222,9 @@ def build_wanderer_home(conn: Any, viewer: dict[str, Any], slug: str) -> Optiona
         "talents": talent_effects(wanderer.get("talents")),
         "requirements": promotion_requirements(conn, wanderer),
         "relationships": public_summary(conn, int(wanderer["id"])),
+        "memory": timeline(conn,wanderer,limit=12),
+        "resources": resource_projection(conn,int(wanderer['id'])),
+        "bonds": bond_projection(conn,int(wanderer['id'])),
         "stats": _stats(conn, wanderer),
         "web_search_usage": web_search_usage(conn, wanderer),
         "actions": recent_public_actions(conn, int(wanderer["id"])),

@@ -250,22 +250,41 @@ class LanSharePostgresConnection:
         return self._raw_connection
 
     def execute(self, sql: str, params: Sequence[Any] | None = None) -> Any:
+        from .service_execution_guard import before_statement, after_statement
+        before_statement(self, sql)
         converted = sqlite_sql_to_psycopg(sql)
         if params is None:
-            return self._raw_connection.execute(converted)
-        return self._raw_connection.execute(converted, tuple(params))
+            result = self._raw_connection.execute(converted)
+        else:
+            result = self._raw_connection.execute(converted, tuple(params))
+        after_statement(self, sql)
+        return result
 
     def executemany(self, sql: str, params_seq: Iterable[Sequence[Any]]) -> Any:
+        from .service_execution_guard import before_statement
+        before_statement(self, sql)
         converted = sqlite_sql_to_psycopg(sql)
         with self._raw_connection.cursor() as cursor:
             cursor.executemany(converted, [tuple(params) for params in params_seq])
             return cursor
 
     def commit(self) -> None:
-        self._raw_connection.commit()
+        from .service_execution_guard import before_commit, clear
+        try:
+            before_commit(self)
+            self._raw_connection.commit()
+        except Exception:
+            self._raw_connection.rollback()
+            raise
+        finally:
+            clear(self)
 
     def rollback(self) -> None:
-        self._raw_connection.rollback()
+        from .service_execution_guard import clear
+        try:
+            self._raw_connection.rollback()
+        finally:
+            clear(self)
 
     def close(self) -> None:
         raw = self._raw_connection

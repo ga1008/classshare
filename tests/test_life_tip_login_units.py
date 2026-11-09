@@ -4,7 +4,7 @@ import asyncio
 import json
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tests.sqlite_database_fixture import isolated_sqlite_database
 from classroom_app import database
@@ -85,23 +85,34 @@ class LifeTipLoginUnitsTests(unittest.TestCase):
 class LifeTipStartupTests(unittest.IsolatedAsyncioTestCase):
     async def test_main_warmup_is_off_loop_before_the_next_startup_connection(self):
         from classroom_app import app as application
-        entered,release=threading.Event(),threading.Event()
+        entered,release=asyncio.Event(),threading.Event()
+        loop=asyncio.get_running_loop()
         main_thread=threading.get_ident();worker_threads=[]
         def warm():
-            worker_threads.append(threading.get_ident());entered.set()
-            if not release.wait(5):raise AssertionError('warm release missing')
+            worker_threads.append(threading.get_ident());loop.call_soon_threadsafe(entered.set)
+            if not release.wait(20):raise AssertionError('warm release missing')
             return True
+        attendance_connection=MagicMock()
         with patch.object(application,'ensure_runtime_directories'),patch.object(application,'init_database'), \
+             patch.object(application.presence_service,'start_presence_runtime'), \
+             patch('classroom_app.services.login_attendance_jobs.ensure_tasks') as attendance_tasks, \
              patch.object(tips,'warm_life_tip_runtime',side_effect=warm), \
-             patch.object(application,'get_db_connection',side_effect=RuntimeError('next startup unit')) as borrow:
+             patch.object(application,'get_db_connection',side_effect=[attendance_connection,RuntimeError('next startup unit')]) as borrow:
             task=asyncio.create_task(application.startup_event())
+            entered_task=asyncio.create_task(entered.wait())
             try:
-                for _ in range(100):
-                    if entered.is_set():break
-                    await asyncio.sleep(.01)
-                self.assertTrue(entered.is_set());self.assertEqual(0,borrow.call_count)
+                done,_=await asyncio.wait((task,entered_task),timeout=10,return_when=asyncio.FIRST_COMPLETED)
+                if task in done:
+                    await task  # Report an unexpected early startup failure directly.
+                self.assertIn(entered_task,done)
+                self.assertEqual(1,borrow.call_count)  # Attendance initializes before tip warmup.
+                attendance_tasks.assert_called_once_with(attendance_connection.__enter__.return_value)
+                attendance_connection.__enter__.return_value.commit.assert_called_once()
                 self.assertNotEqual(main_thread,worker_threads[0])
-            finally:release.set()
+            finally:
+                release.set()
+                if not entered_task.done():
+                    entered_task.cancel()
             with self.assertRaisesRegex(RuntimeError,'next startup unit'):await task
 
 

@@ -97,8 +97,17 @@ async def broadcast_classroom_message(class_offering_id: int, message: dict[str,
 # Choosing a classroom
 # ---------------------------------------------------------------------------
 
-def current_offerings(conn: Any) -> list[dict[str, Any]]:
+def current_offerings(conn: Any, wanderer: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Offerings of the current semester (never the wanderers' own placeholder class)."""
+    # The management placeholder is not a classroom enrollment. The ordinary
+    # resource policy remains the authority; a future public-auditing policy
+    # must be implemented there, not as an AI-only read of every chat room.
+    if wanderer is None:
+        return []
+    from .resource_access_service import ensure_classroom_access
+    from .wanderer_identity_service import build_wanderer_user_dict
+    from fastapi import HTTPException
+    user = build_wanderer_user_dict(wanderer)
     rows = conn.execute(
         """
         SELECT o.id, o.semester, c.name AS course_name, cl.name AS class_name
@@ -116,7 +125,13 @@ def current_offerings(conn: Any) -> list[dict[str, Any]]:
     for row in rows:
         identity = parse_semester_identity(row["semester"])
         if identity is not None and identity.code == code:
-            offerings.append(dict(row))
+            try:
+                ensure_classroom_access(conn, int(row["id"]), user)
+            except HTTPException as exc:
+                if exc.status_code not in (403, 404):
+                    raise
+            else:
+                offerings.append(dict(row))
     return offerings
 
 
@@ -148,6 +163,9 @@ def session_state(conn: Any, class_offering_id: int, now: datetime) -> dict[str,
 
 
 def _chat_lines(ctx: ActionContext, conn: Any, class_offering_id: int) -> list[str]:
+    from .resource_access_service import ensure_classroom_access
+    from .wanderer_identity_service import build_wanderer_user_dict
+    ensure_classroom_access(conn, class_offering_id, build_wanderer_user_dict(ctx.wanderer))
     rows = [dict(row) for row in conn.execute(
         "SELECT user_id, user_name, user_role, message FROM chat_logs WHERE class_offering_id = ? "
         f"ORDER BY id DESC LIMIT {CHAT_CONTEXT_LIMIT}",
@@ -225,6 +243,10 @@ def _support_messages(conn: Any, offering_id: int, ctx: ActionContext, *, throug
 
 async def _post_message(ctx: ActionContext, offering_id: int, text: str) -> dict[str, Any]:
     from .chat_handler import save_chat_message
+    from .resource_access_service import ensure_classroom_access
+    from .wanderer_identity_service import build_wanderer_user_dict
+    with ctx.connect() as conn:
+        ensure_classroom_access(conn, offering_id, build_wanderer_user_dict(ctx.wanderer))
 
     now = ctx.current_time()
     stored = await save_chat_message(offering_id, {
@@ -324,7 +346,7 @@ async def visit_classroom(ctx: ActionContext) -> list[dict[str, Any]]:
     """Visit one current-semester classroom; maybe leave one message."""
     with ctx.connect() as conn:
         allowed = classroom_visits_enabled(conn) and behavior_on(ctx.wanderer, "classroom_visit")
-        offerings = current_offerings(conn) if allowed else []
+        offerings = current_offerings(conn, ctx.wanderer) if allowed else []
     if not allowed:
         return []
     if not offerings:

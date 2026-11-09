@@ -234,7 +234,7 @@ class SmartAttendanceDashboardIntegrationTests(unittest.TestCase):
         ensure_attendance_report_schema(conn, engine="sqlite")
         ensure_login_attendance_schema(conn, engine="sqlite")
         ensure_retake_schema(conn, engine="sqlite", force=True)
-        ensure_offering_class_links_schema(conn, engine="sqlite")
+        ensure_offering_class_links_schema(conn, engine="sqlite", force=True)
         schema.ensure_approval_workflow_schema(conn)
         conn.executescript("""
             INSERT INTO teachers(id,name,email,hashed_password) VALUES(1,'Synthetic teacher','appeal@example.invalid','x');

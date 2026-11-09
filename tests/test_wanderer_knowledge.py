@@ -131,6 +131,39 @@ class WandererKnowledgeTest(WandererDbTestCase):
         self.assertAlmostEqual(second["score_delta"], round(0.5 * bonus, 2))
         self.assertAlmostEqual(after - before, round(2.5 * bonus, 2))
 
+    def test_shortening_and_archiving_do_not_reopen_rewarded_source_growth(self):
+        with self.connect() as conn:
+            wanderer=_neutral(conn,self.wanderer(conn,'chenmo'))
+            def write(text):
+                return add_knowledge(conn,wanderer,source_kind='material_page',source_ref='growth:one',
+                                     title='Source growth',digest=text,rng=lambda:1.0)
+            first=write('a'*200)
+            short=write('b'*50)
+            rebuilt=write('c'*200)
+            conn.execute("UPDATE wanderer_knowledge_entries SET status='forgotten' WHERE id=?",(first['entry_id'],))
+            restored=write('d'*200)
+            larger=write('e'*250)
+            bonus=core.tier_income_multiplier(wanderer['tier'])
+            self.assertEqual([short['score_delta'],rebuilt['score_delta'],restored['score_delta']],[0,0,0])
+            self.assertAlmostEqual(larger['score_delta'],round(0.5*bonus,2))
+            self.assertEqual(conn.execute('SELECT rewarded_chars FROM wanderer_knowledge_growth WHERE entry_id=?',(first['entry_id'],)).fetchone()[0],250)
+            conn.rollback()
+
+    def test_growth_migration_keeps_larger_archived_revision(self):
+        import json
+        from classroom_app.time_utils import local_iso
+        with self.connect() as conn:
+            wanderer=_neutral(conn,self.wanderer(conn,'chenmo'))
+            args=dict(source_kind='material_page',source_ref='growth:migration',title='Migration',rng=lambda:1.0)
+            first=add_knowledge(conn,wanderer,digest='a'*50,**args)
+            conn.execute('DELETE FROM wanderer_knowledge_growth WHERE entry_id=?',(first['entry_id'],))
+            conn.execute('INSERT INTO wanderer_knowledge_revisions(entry_id,revision,wanderer_id,turn_id,record_json,created_at) VALUES(?,1,?,?,?,?)',
+                         (first['entry_id'],wanderer['id'],'historical',json.dumps({'chars':200,'digest':'old'*66}),local_iso()))
+            rebuilt=add_knowledge(conn,wanderer,digest='b'*200,**args)
+            self.assertEqual(rebuilt['score_delta'],0)
+            self.assertEqual(conn.execute('SELECT rewarded_chars FROM wanderer_knowledge_growth WHERE entry_id=?',(first['entry_id'],)).fetchone()[0],200)
+            conn.rollback()
+
     def test_rejects_bad_input(self):
         with self.connect() as conn:
             wanderer = self.wanderer(conn, "chenmo")
@@ -142,6 +175,8 @@ class WandererKnowledgeTest(WandererDbTestCase):
     def test_scene_selection_prefers_tag_overlap_and_bumps_use(self):
         with self.connect() as conn:
             wanderer = self.wanderer(conn, "suqinghe")
+            add_knowledge(conn,wanderer,source_kind='material_page',source_ref='fixture:stacks',title='栈与队列',
+                          digest='栈后进先出，队列先进先出。',tags=['数据结构'],rng=lambda:1.0)
             picked = select_knowledge_for_scene(conn, wanderer, ["数据结构"], 1)
             count = conn.execute(
                 "SELECT use_count FROM wanderer_knowledge_entries WHERE id = ?", (picked[0]["id"],)
@@ -150,15 +185,15 @@ class WandererKnowledgeTest(WandererDbTestCase):
         self.assertEqual(picked[0]["title"], "栈与队列")
         self.assertEqual(count, 1)
 
-    def test_death_after_wipe_at_tier_zero(self):
+    def test_empty_knowledge_does_not_kill_at_tier_zero(self):
         with self.connect() as conn:
-            wanderer = self.wanderer(conn, "lurenjia")  # tier 0 with seed knowledge
+            wanderer = self.wanderer(conn, "lurenjia")
             self.assertFalse(evaluate_death(conn, wanderer))
             forgotten = forget_all(conn, wanderer["id"])
             wiped = load_wanderer(conn, wanderer["id"])
-            self.assertEqual(forgotten, 3)
+            self.assertEqual(forgotten, 0)
             self.assertEqual(wiped["knowledge_chars"], 0)
-            self.assertTrue(evaluate_death(conn, wiped))
+            self.assertFalse(evaluate_death(conn, wiped))
             self.assertFalse(evaluate_death(conn, {**wiped, "tier": 1}))
             self.assertFalse(evaluate_death(conn, {**wiped, "cultivation_score": 0.5}))
             review_id = mark_dead(conn, wanderer["id"], "知识尽失")

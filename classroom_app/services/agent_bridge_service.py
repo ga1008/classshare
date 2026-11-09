@@ -230,7 +230,7 @@ def describe_schema(conn, engine: str) -> dict[str, list[str]]:
     return tables
 
 
-def read_platform_file(raw_path: str, *, filename: str | None = None) -> dict[str, Any]:
+def read_platform_file(raw_path: str, *, filename: str | None = None, authorized_roots=None) -> dict[str, Any]:
     """Read a confined stable snapshot; document parsers never reopen runner paths."""
     from .agent_platform_multipart_service import _open_confined
 
@@ -239,7 +239,9 @@ def read_platform_file(raw_path: str, *, filename: str | None = None) -> dict[st
     resolved = Path(raw_path).absolute()
     allowed_root = None
     relative = None
-    for candidate in allowed_file_roots():
+    # Additional roots are supplied only by an ACL-checked native attachment
+    # adapter; tool/request JSON never receives this Python-only parameter.
+    for candidate in (allowed_file_roots() if authorized_roots is None else authorized_roots):
         try:
             root = candidate.absolute()
             relative = resolved.relative_to(root)

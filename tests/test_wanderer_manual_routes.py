@@ -43,14 +43,14 @@ class ManualRoutesTest(WandererDbTestCase):
         material = response.json()["material"]
         self.assertEqual(material["id"], self.folder_id)
         self.assertEqual(material["root_id"], self.folder_id)
-        self.assertEqual(material["child_count"], 2)
+        self.assertEqual(material["child_count"], 3)
 
     def test_repaired_folder_tree_shows_both_manuals(self):
         response = self.client.get(f"/api/materials/{self.folder_id}/tree")
         self.assertEqual(response.status_code, 200, response.text)
         payload = response.json()
         self.assertEqual(payload["tree"]["id"], self.folder_id)
-        self.assertEqual(payload["stats"]["file_count"], 2)
+        self.assertEqual(payload["stats"]["file_count"], 3)
         self.assertEqual({child["name"] for child in payload["tree"]["children"]}, set(self.files))
         for child in payload["tree"]["children"]:
             self.assertEqual(child["root_id"], self.folder_id)

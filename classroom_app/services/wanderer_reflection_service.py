@@ -326,6 +326,34 @@ async def run_reflection(ctx: ActionContext, *, force: bool = False) -> dict[str
     now = ctx.current_time()
     date = reflection_date(now)
     ctx.reload()
+    from .wanderer_runtime_service import runtime_enabled, wake_wanderer
+    with ctx.connect() as conn:
+        autonomous = runtime_enabled(conn)
+    if autonomous:
+        with ctx.connect() as conn:
+            row=ensure_reflection(conn,ctx.wanderer,date)
+            conn.commit()
+        result = await wake_wanderer(ctx.conn_factory, ctx.wanderer_id, source='reflection', event_key=date,
+            context={'scope':{'kind':'private'},'date':date,'reason':'到了你回顾今日经历的时间，可自行整理记忆与计划。'},
+            ai_caller=ctx.ai_caller, force=force)
+        rounds=result.get('rounds') or [result]
+        considered=any(item.get('status')=='ok' for item in rounds)
+        state='applied' if considered else 'skipped_capped' if result.get('status')=='capped' else result.get('status','failed')
+        memories=[r.get('result',{}).get('memory_id') for r in result.get('receipts',[]) if r.get('status')=='succeeded' and isinstance(r.get('result'),dict) and r['result'].get('memory_id')]
+        with ctx.connect() as conn:
+            summaries=[]
+            if memories:
+                summaries=[r['content'] for r in conn.execute('SELECT content FROM wanderer_episodic_memories '
+                           f"WHERE id IN ({','.join('?' for _ in memories)}) AND wanderer_id=? ORDER BY occurred_at,id",(*memories,ctx.wanderer_id)).fetchall()]
+            if row:
+                _set_status(conn,row['id'],state,ai_calls=result.get('ai_calls',0),error=result.get('error',''),
+                    output_json=json.dumps({'today':{'summary':'\n'.join(summaries)},'runtime_turns':[r.get('turn_id') for r in rounds]},ensure_ascii=False),
+                    applied_json=json.dumps({'new_episodes':memories,'runtime_event':date}),applied_at=local_iso() if considered else None)
+            if considered:
+                conn.execute('UPDATE wanderer_agents SET last_reflection_at=? WHERE id=?',(local_iso(),ctx.wanderer_id))
+            conn.commit()
+        return {'status':state,
+                'ai_calls':result.get('ai_calls',0),'runtime':result}
     with ctx.connect() as conn:
         row = ensure_reflection(conn, ctx.wanderer, date)
         conn.commit()

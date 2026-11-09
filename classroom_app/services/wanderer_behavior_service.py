@@ -189,6 +189,8 @@ def ensure_wanderer_scheduled_tasks(conn: Any) -> dict[str, int]:
                     run_at=next_review_run_at(now, hour, minute), recurrence=DAO_INTERVAL_SECONDS,
                     title="天道每日审核", max_attempts=DAO_MAX_ATTEMPTS, force=hour_changed),
     }
+    ids['wake_events'] = _arm(conn,task_kind='wanderer_wake_events',dedupe_key='wanderer:wake-events',
+        run_at=now+timedelta(seconds=30),recurrence=30,title='散修执行回执与待唤醒事件',max_attempts=TICK_MAX_ATTEMPTS)
     if hour_changed:
         wanderer_runtime_setting_set(conn, SETTING_DAO_REVIEW_HOUR_ARMED, wanted_hour)
     # Seed/refresh the always-readable manuals in the learning library. Idempotent
@@ -256,7 +258,7 @@ def daily_budget(wanderer: dict[str, Any]) -> int:
     if penalty and until:
         try:
             if datetime.fromisoformat(until) >= local_now():
-                budget = max(1, budget - penalty)
+                budget = 0 if penalty >= 1_000_000 else max(1, budget - penalty)
         except ValueError:
             pass
     return budget
@@ -284,7 +286,8 @@ def select_awake_wanderers(
             continue
         if not wanted and not is_awake(wanderer, now, rng):
             continue
-        if today_action_count(conn, int(wanderer["id"]), now) >= daily_budget(wanderer):
+        from .wanderer_runtime_service import runtime_enabled
+        if not runtime_enabled(conn) and today_action_count(conn, int(wanderer["id"]), now) >= daily_budget(wanderer):
             continue
         candidates.append(wanderer)
     rng.shuffle(candidates)
@@ -320,6 +323,8 @@ def select_tick_wanderers(
     wanted = {as_int(item) for item in wanderer_ids or [] if as_int(item) > 0}
     active = [w for w in list_wanderers(conn, statuses=[STATUS_ACTIVE])
               if not wanted or int(w["id"]) in wanted]
+    from .wanderer_runtime_service import runtime_enabled
+    autonomous = runtime_enabled(conn)
     if reply_only:
         waiting = [w for w in active if _waiting_for_blog_reply(conn, w)]
         rng.shuffle(waiting)
@@ -333,7 +338,7 @@ def select_tick_wanderers(
     if wanted:
         # Admin "run now": everyone chosen still gets a full turn when it can;
         # over-budget chosen wanderers only answer the people waiting for them.
-        normal = [w for w in active if today_action_count(conn, int(w["id"]), now) < daily_budget(w)]
+        normal = [w for w in active if autonomous or today_action_count(conn, int(w["id"]), now) < daily_budget(w)]
         rng.shuffle(normal)
         picked: list[tuple[dict[str, Any], bool]] = [(w, False) for w in normal[:limit]]
         remaining = limit - len(picked)
@@ -350,7 +355,7 @@ def select_tick_wanderers(
     awake = [
         w for w in active
         if int(w["id"]) not in taken and is_awake(w, now, rng)
-        and today_action_count(conn, int(w["id"]), now) < daily_budget(w)
+        and (autonomous or today_action_count(conn, int(w["id"]), now) < daily_budget(w))
     ]
     rng.shuffle(awake)
     picked.extend((w, False) for w in awake[:remaining])
@@ -542,6 +547,19 @@ async def run_wanderer_actions(
     ``reply_only`` answers waiting people and nothing else: no browsing, no
     posting, no reflection, no budget consumption beyond the AI calls themselves.
     """
+    from .wanderer_runtime_service import runtime_enabled, wake_wanderer
+    with ctx.connect() as conn:
+        autonomous = runtime_enabled(conn)
+    if autonomous:
+        result = await wake_wanderer(ctx.conn_factory, ctx.wanderer_id, source='blog_reply' if reply_only else 'timer',
+            event_key=f"{ctx.current_time().isoformat(timespec='minutes')}:{int(reply_only)}",
+            context={'scope': {'kind': 'public'}, 'reason': '有待查看的回复' if reply_only else '你按自己的作息醒来。'},
+            ai_caller=ctx.ai_caller,force=not ctx.special)
+        ctx.ai_calls += int(result.get('ai_calls') or 0)
+        return {'wanderer_id': ctx.wanderer_id, 'slug':ctx.wanderer.get('slug'), 'died':_check_death(ctx),
+                'actions':[r.get('command_id') for r in result.get('receipts',[])],
+                'failed':int(result.get('status')=='failed'), 'ai_calls':ctx.ai_calls,
+                'stopped':result.get('status') in {'blocked','capped'}, 'runtime':result}
     if reply_only:
         done = await _run_guarded(ctx, "replies", ACTIONS["replies"])
         _award_outcomes(ctx, done)
@@ -652,6 +670,10 @@ async def run_wanderer_tick_once(
 
 async def _social_upkeep(conn_factory: Optional[Callable[[], Any]], summaries: list[dict[str, Any]], *,
                         ai_caller: Optional[AiCaller], sleep: Optional[SleepFn], now: datetime) -> dict[str, Any]:
+    from .wanderer_runtime_service import runtime_enabled
+    with _connection(conn_factory) as conn:
+        if runtime_enabled(conn):
+            return {"mode": "autonomous", "reason": "交友、建群与主动交流由散修在统一唤醒中决定"}
     from .wanderer_social_friends import run_social_upkeep
 
     ids = [int(item["wanderer_id"]) for item in summaries if not item.get("died") and not item.get("error")]
@@ -669,6 +691,11 @@ async def _tick_body(
     reply_only: bool = False,
 ) -> None:
     """Select and run the batch, appending each finished wanderer to ``summaries``."""
+    from .wanderer_runtime_service import runtime_enabled, drain_wake_events
+    with _connection(conn_factory) as conn:
+        autonomous = runtime_enabled(conn)
+    if autonomous:
+        await drain_wake_events(conn_factory, ai_caller=ai_caller, limit=limit or 20)
     with _connection(conn_factory) as conn:
         batch = select_tick_wanderers(
             conn, now=moment, rng=rng, limit=limit or tick_batch_size(conn),

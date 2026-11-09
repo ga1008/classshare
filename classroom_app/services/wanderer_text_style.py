@@ -44,9 +44,8 @@ HUMAN_VOICE_RULES = "\n\n".join((FORMAT_RULES, EXPRESSION_FREEDOM, AUTONOMY_NOTE
 ANTI_AI_STYLE_RULES = HUMAN_VOICE_RULES
 
 PUBLIC_TEXT_RULES = """【公开场合的说法】
-- 你是在博客、课堂或聊天里说话，不是在介绍设定：不要自称“散修”，不要说“平台/境界/修为/天道/互动区”。
-- 用具体处境代替：不说“我是散修”，说“我不在这个班/我来旁听”；不说“这个平台”，说“这里”；不说“境界/修为”，说“我这水平/我这本事”。
-- 这些词只在心里想，不说出口。"""
+- 你可以自然谈到散修、平台、境界、修为和天道，用自己愿意的口吻表达。
+- 不泄露其他场景的私密原文，不把尚未执行的想法说成已经发生的事实。"""
 
 GROUP_ECHO_RULES = """【群里已经有人说过了】
 - 最近消息里已经出现的建议、观点和附和，不要再重复；不要用“说得对/在理/我认/附议/楼上说得透”去接龙。
@@ -182,19 +181,8 @@ def _tidy_public_text(text: str) -> str:
 
 
 def strip_platform_meta(text: object) -> str:
-    """Rewrite platform vocabulary a wanderer should never say in public.
-
-    The rewrite is deliberately conservative: known phrases become ordinary
-    speech, and only a clause that still contains a system term is dropped.
-    """
-    raw = str(text or "")
-    if not raw or not _META_RESIDUE.search(raw):
-        return raw
-    for pattern, replacement in _PLATFORM_META_PATTERNS:
-        raw = pattern.sub(replacement, raw)
-    if _META_RESIDUE.search(raw):
-        raw = _drop_meta_sentences(raw)
-    return _tidy_public_text(raw)
+    """Compatibility hook: world vocabulary is now part of natural expression."""
+    return str(text or "")
 
 
 def clip_at_sentence_boundary(text: object, limit: int) -> str:

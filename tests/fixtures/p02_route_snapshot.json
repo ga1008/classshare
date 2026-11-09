@@ -1961,6 +1961,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{class_offering_id}/activity-evidence",
+    "methods": [
+      "GET"
+    ],
+    "name": "classroom_activity_evidence",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{class_offering_id}/assessment-classifications",
     "methods": [
       "GET"
@@ -1982,6 +1990,14 @@
       "POST"
     ],
     "name": "ingest_behavior_batch",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{class_offering_id}/behavior/diagnostics",
+    "methods": [
+      "POST"
+    ],
+    "name": "ingest_collection_diagnostics",
     "include_in_schema": true
   },
   {
@@ -2526,6 +2542,286 @@
       "PATCH"
     ],
     "name": "update_classroom_todo",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/dashboard",
+    "methods": [
+      "GET"
+    ],
+    "name": "dashboard",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/dashboard/students/{student_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "dashboard_student",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/dashboard/visibility",
+    "methods": [
+      "GET"
+    ],
+    "name": "dashboard_visibility",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/history",
+    "methods": [
+      "GET"
+    ],
+    "name": "history",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/policy",
+    "methods": [
+      "PUT"
+    ],
+    "name": "policy",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_round",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/appeals",
+    "methods": [
+      "POST"
+    ],
+    "name": "appeal",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/end",
+    "methods": [
+      "POST"
+    ],
+    "name": "end",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/auto-sync",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_auto_sync",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/auto-sync",
+    "methods": [
+      "PUT"
+    ],
+    "name": "configure_auto_sync",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/auto-sync/pause",
+    "methods": [
+      "POST"
+    ],
+    "name": "pause_auto_sync",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/auto-sync/reauthorize",
+    "methods": [
+      "POST"
+    ],
+    "name": "reauthorize_auto_sync",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/auto-sync/retry",
+    "methods": [
+      "POST"
+    ],
+    "name": "retry_auto_sync",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/bindings",
+    "methods": [
+      "GET"
+    ],
+    "name": "bindings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/bindings",
+    "methods": [
+      "POST"
+    ],
+    "name": "bind",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/bindings/{binding_id}/reauthorize",
+    "methods": [
+      "POST"
+    ],
+    "name": "reauthorize",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/capabilities",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_capabilities",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/checkins",
+    "methods": [
+      "POST"
+    ],
+    "name": "checkins",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/preview",
+    "methods": [
+      "POST"
+    ],
+    "name": "preview",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/runs",
+    "methods": [
+      "GET"
+    ],
+    "name": "runs",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/runs",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_run",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/runs/{run_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "run",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/runs/{run_id}/pause",
+    "methods": [
+      "POST"
+    ],
+    "name": "pause",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/runs/{run_id}/refresh",
+    "methods": [
+      "POST"
+    ],
+    "name": "refresh",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/slot-options",
+    "methods": [
+      "POST"
+    ],
+    "name": "slot_options",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/source-options",
+    "methods": [
+      "POST"
+    ],
+    "name": "source_options",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/recalculate",
+    "methods": [
+      "POST"
+    ],
+    "name": "recalculate",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/records",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "change",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/students/{student_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/void",
+    "methods": [
+      "POST"
+    ],
+    "name": "void",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "session",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/me",
+    "methods": [
+      "GET"
+    ],
+    "name": "me",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/rounds",
+    "methods": [
+      "POST"
+    ],
+    "name": "create",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/smart-attendance/records/{source_key}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_record",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/smart-attendance/records/{source_key}/appeals",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_appeal",
     "include_in_schema": true
   },
   {
@@ -3694,6 +3990,46 @@
       "POST"
     ],
     "name": "api_manage_life_tips_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/login-attendance/archive/history",
+    "methods": [
+      "GET"
+    ],
+    "name": "archived_history",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/login-attendance/archive/rounds/{round_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "archived_round",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/login-attendance/attention",
+    "methods": [
+      "GET"
+    ],
+    "name": "attention",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/login-attendance/attention/{request_id}/ack",
+    "methods": [
+      "POST"
+    ],
+    "name": "acknowledge",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/login-attendance/attention/{request_id}/claim",
+    "methods": [
+      "POST"
+    ],
+    "name": "claim",
     "include_in_schema": true
   },
   {
@@ -5169,6 +5505,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/attachments/{source}/{attachment_id:int}",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_wanderer_attachment",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/system/wanderers/{wanderer_id:int}/conversations",
     "methods": [
       "GET"
@@ -5182,6 +5526,14 @@
       "GET"
     ],
     "name": "api_wanderer_conversation_messages",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/events/{event_id}/reconsider",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_wanderer_reconsider",
     "include_in_schema": true
   },
   {
@@ -5294,6 +5646,30 @@
       "POST"
     ],
     "name": "api_wipe_wanderer",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/workspace",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_wanderer_workspace",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id}/commands/{operation_id}/reconcile",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_reconciliation",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id}/commands/{operation_id}/reconcile",
+    "methods": [
+      "POST"
+    ],
+    "name": "save_reconciliation",
     "include_in_schema": true
   },
   {
@@ -7886,6 +8262,14 @@
       "GET"
     ],
     "name": "api_wanderer_public_card",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/wanderers/{student_id:int}/memory",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_wanderer_public_memory",
     "include_in_schema": true
   },
   {

@@ -192,10 +192,14 @@ def _log_todo(conn: Any, wanderer_id: int, kind: str, todo: dict[str, Any], **de
         pass
 
 
-def _award_completion(conn: Any, wanderer: dict[str, Any], *, now: datetime) -> float:
+def _award_completion(conn: Any, wanderer: dict[str, Any], *, now: datetime, todo_id: int) -> float:
     """Small cultivation for finishing a self-set to-do, capped per local day."""
     # Serialize the read/modify/write against concurrent tick/inbox lanes.
-    conn.execute("UPDATE wanderer_agents SET stats_json=stats_json WHERE id=?", (int(wanderer["id"]),))
+    from .wanderer_resource_service import lock_actor_resources
+    lock_actor_resources(conn, int(wanderer['id']))
+    if conn.execute('SELECT 1 FROM wanderer_cultivation_awards WHERE wanderer_id=? AND event_id=?',
+                    (int(wanderer['id']),f'todo:{todo_id}:complete')).fetchone():
+        return 0.0
     row = conn.execute("SELECT stats_json FROM wanderer_agents WHERE id = ?", (int(wanderer["id"]),)).fetchone()
     try:
         stats = json.loads(str(_row_value(row, "stats_json", 0) or "{}"))
@@ -203,15 +207,17 @@ def _award_completion(conn: Any, wanderer: dict[str, Any], *, now: datetime) -> 
         stats = {}
     today = now.date().isoformat()
     already = float(stats.get("todo_cult") or 0) if stats.get("todo_cult_day") == today else 0.0
-    grant = round(min(TODO_DONE_CULTIVATION, max(0.0, TODO_DONE_DAILY_CAP - already)), 2)
+    from .wanderer_cultivation_service import award_cultivation
+    grant = award_cultivation(conn, int(wanderer['id']), TODO_DONE_CULTIVATION, 'todo',
+                              f'todo:{todo_id}:complete', daily_cap=TODO_DONE_DAILY_CAP)
     if grant <= 0:
         return 0.0
     stats["todo_cult_day"] = today
     stats["todo_cult"] = round(already + grant, 2)
     conn.execute(
-        "UPDATE wanderer_agents SET cultivation_score = cultivation_score + ?, stats_json = ?, updated_at = ? "
+        "UPDATE wanderer_agents SET stats_json = ?, updated_at = ? "
         "WHERE id = ?",
-        (grant, json.dumps(stats, ensure_ascii=False, sort_keys=True), local_iso(), int(wanderer["id"])),
+        (json.dumps(stats, ensure_ascii=False, sort_keys=True), local_iso(), int(wanderer["id"])),
     )
     return grant
 
@@ -221,8 +227,11 @@ def apply_todo_ops(conn: Any, wanderer: dict[str, Any], ops: Any, *, now: Any = 
     """Validate and apply up to ``TODO_OPS_MAX`` operations. Never raises for bad input."""
     moment = _now(now)
     # Serialize capacity checks and writes for one wanderer (tick + inbox lanes).
-    conn.execute("UPDATE wanderer_agents SET updated_at = updated_at WHERE id = ?", (int(wanderer["id"]),))
-    capacity = todo_capacity(wanderer.get("tier"))
+    from .wanderer_resource_service import lock_actor_resources, capacity as resource_capacity, resize_capacity, release_capacity, ability_limit
+    lock_actor_resources(conn, int(wanderer['id']))
+    capacity = resource_capacity(conn, int(wanderer['id']), 'todo_capacity')['limit']
+    title_max=int(ability_limit(conn,int(wanderer['id']),'todo_title_chars'))
+    detail_max=int(ability_limit(conn,int(wanderer['id']),'todo_detail_chars'))
     items = [item for item in (ops if isinstance(ops, list) else []) if isinstance(item, dict)][:TODO_OPS_MAX]
     applied: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
@@ -231,7 +240,7 @@ def apply_todo_ops(conn: Any, wanderer: dict[str, Any], ops: Any, *, now: Any = 
         op = str(entry.get("op") or entry.get("action") or "").strip().lower()
         todo_id = as_int(entry.get("id"))
         if op == "create":
-            title = _clean(entry.get("title"), TODO_TITLE_MAX)
+            title = _clean(entry.get("title"), title_max)
             if not title:
                 errors.append({"op": op, "error": "missing_title"})
                 continue
@@ -247,11 +256,16 @@ def apply_todo_ops(conn: Any, wanderer: dict[str, Any], ops: Any, *, now: Any = 
                 conn,
                 "INSERT INTO wanderer_todos (wanderer_id, title, detail, schedule_kind, due_at, remind_at, "
                 "status, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)",
-                (int(wanderer["id"]), title, _clean(entry.get("detail"), TODO_DETAIL_MAX), kind, due_at,
+                (int(wanderer["id"]), title, _clean(entry.get("detail"), detail_max), kind, due_at,
                  remind_at, _clean(source, 20) or "self", timestamp, timestamp),
             ))
             todo = {"id": new_id, "wanderer_id": int(wanderer["id"]), "title": title,
                     "status": "pending", "remind_at": remind_at}
+            allocated = resize_capacity(conn, int(wanderer['id']), 'todo_capacity', f'todo:{new_id}', 1)
+            if not allocated['ok']:
+                conn.execute('DELETE FROM wanderer_todos WHERE id=? AND wanderer_id=?', (new_id, int(wanderer['id'])))
+                errors.append({'op':op,'error':'shared_capacity_exhausted'})
+                continue
             _arm_wake(conn, todo, moment)
             _log_todo(conn, int(wanderer["id"]), "todo_create", todo)
             applied.append({"op": op, "id": new_id, "title": title, "schedule": kind})
@@ -265,6 +279,7 @@ def apply_todo_ops(conn: Any, wanderer: dict[str, Any], ops: Any, *, now: Any = 
             continue
         todo = dict(row)
         if op in {"delete", "cancel"}:
+            release_capacity(conn, int(wanderer['id']), 'todo_capacity', f"todo:{todo['id']}")
             conn.execute(
                 "UPDATE wanderer_todos SET status = 'cancelled', updated_at = ? WHERE id = ?",
                 (local_iso(), int(todo["id"])),
@@ -275,12 +290,13 @@ def apply_todo_ops(conn: Any, wanderer: dict[str, Any], ops: Any, *, now: Any = 
             continue
         if op == "complete":
             if todo.get("status") == "pending":
+                release_capacity(conn, int(wanderer['id']), 'todo_capacity', f"todo:{todo['id']}")
                 conn.execute(
                     "UPDATE wanderer_todos SET status = 'done', completed_at = ?, updated_at = ? WHERE id = ?",
                     (local_iso(), local_iso(), int(todo["id"])),
                 )
                 cancel_tasks_by_dedupe(conn, todo_dedupe_key(todo["id"]))
-                _award_completion(conn, wanderer, now=moment)
+                _award_completion(conn, wanderer, now=moment, todo_id=int(todo['id']))
                 _log_todo(conn, int(wanderer["id"]), "todo_complete", todo)
                 completed += 1
                 applied.append({"op": "complete", "id": int(todo["id"]), "title": todo.get("title")})
@@ -289,8 +305,8 @@ def apply_todo_ops(conn: Any, wanderer: dict[str, Any], ops: Any, *, now: Any = 
             if str(todo.get("status") or "") != "pending" and pending_todo_count(conn, int(wanderer["id"])) >= capacity:
                 errors.append({"op": op, "id": int(todo["id"]), "error": "capacity"})
                 continue
-            title = _clean(entry.get("title"), TODO_TITLE_MAX) if "title" in entry else str(todo.get("title") or "")
-            detail = (_clean(entry.get("detail"), TODO_DETAIL_MAX) if "detail" in entry
+            title = _clean(entry.get("title"), title_max) if "title" in entry else str(todo.get("title") or "")
+            detail = (_clean(entry.get("detail"), detail_max) if "detail" in entry
                       else str(todo.get("detail") or ""))
             if "due_at" in entry or any(key in entry for key in ("due_in_minutes", "due_in_hours", "due_in_days")):
                 kind, due_at, remind_at = _parse_due(entry, moment)
@@ -300,6 +316,10 @@ def apply_todo_ops(conn: Any, wanderer: dict[str, Any], ops: Any, *, now: Any = 
             else:
                 kind, due_at, remind_at = (str(todo.get("schedule_kind") or "none"),
                                            todo.get("due_at"), todo.get("remind_at"))
+            allocated = resize_capacity(conn, int(wanderer['id']), 'todo_capacity', f"todo:{todo['id']}", 1)
+            if not allocated['ok']:
+                errors.append({'op':op,'id':todo['id'],'error':'shared_capacity_exhausted'})
+                continue
             conn.execute(
                 "UPDATE wanderer_todos SET title = ?, detail = ?, schedule_kind = ?, due_at = ?, remind_at = ?, "
                 "status = 'pending', updated_at = ? WHERE id = ?",
@@ -352,8 +372,16 @@ async def run_todo_wake(wanderer_id: int, todo_id: int, *, ai_caller: Any = None
         return {"status": "skipped", "reason": "not_pending"}
     ctx = ActionContext(conn_factory=factory, wanderer=wanderer, ai_caller=ai_caller,
                         sleep=sleep or asyncio.sleep, special=True)
-    result = await run_turn(ctx, scene=_wake_scene(todo), thread_key=f"todo:{int(todo['id'])}",
-                            suffix="todo_wake")
+    from .wanderer_runtime_service import runtime_enabled, wake_wanderer
+    with factory() as conn:
+        autonomous = runtime_enabled(conn)
+    if autonomous:
+        result = await wake_wanderer(factory, wanderer_id, source='todo',
+            event_key=f"todo:{todo_id}:{todo.get('remind_at') or todo.get('updated_at')}",
+            context={'scope':{'kind':'private'},'todo':todo,'reason':'你给自己安排的提醒已到。'}, ai_caller=ai_caller)
+    else:
+        result = await run_turn(ctx, scene=_wake_scene(todo), thread_key=f"todo:{int(todo['id'])}",
+                                suffix="todo_wake")
     calls = int(result.get("ai_calls") or 0)
     old_remind = todo.get("remind_at")
     with factory() as conn:

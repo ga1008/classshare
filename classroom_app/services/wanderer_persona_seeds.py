@@ -962,6 +962,8 @@ def _reply_policy(value: Any) -> dict[str, Any]:
 
 
 def _initial_knowledge(value: Any) -> list[dict[str, Any]]:
+    if value is None or value == []:
+        return []
     if not isinstance(value, list) or len(value) != 3:
         raise SeedValidationError("initial_knowledge 须正好 3 条")
     items = []
@@ -1048,17 +1050,8 @@ def get_seed(slug: str) -> dict[str, Any] | None:
 
 
 def seed_initial_knowledge(conn: Any, wanderer: dict[str, Any], seed: dict[str, Any]) -> int:
-    """Write the seed's three knowledge entries (``source_kind='seed'``). Returns the count."""
-    from .wanderer_knowledge_service import add_knowledge
-
-    count = 0
-    for index, item in enumerate(seed.get("initial_knowledge") or [], start=1):
-        add_knowledge(
-            conn, wanderer, source_kind="seed", source_ref=f"seed:{seed['slug']}:{index}",
-            title=item["title"], digest=item["digest"], tags=item.get("tags") or [],
-        )
-        count += 1
-    return count
+    """New identities learn through reading; old persisted seed notes remain intact."""
+    return 0
 
 
 def upgrade_seed_personas(conn: Any) -> list[str]:
@@ -1098,7 +1091,7 @@ def upgrade_seed_personas(conn: Any) -> list[str]:
 
 
 def seed_wanderers(conn: Any) -> dict[str, Any]:
-    """Ensure the placeholder class, 20 student rows and agent rows; seed knowledge for new agents.
+    """Ensure the placeholder class, 20 student rows and agents with no learned knowledge.
 
     Idempotent: an existing agent (including its edited persona or dead status)
     is left as is, except that untouched v1 seed sheets are upgraded to v2.

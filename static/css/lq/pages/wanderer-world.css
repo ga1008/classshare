@@ -1,0 +1,56 @@
+/* World data layouts. LQ owns surfaces, controls, focus, motion and transparency. */
+.wh-world-overview { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: var(--ls-s-4); }
+.wh-section-heading { display: flex; justify-content: space-between; align-items: start; gap: var(--ls-s-3); }
+.wh-section-heading h2, .wh-section > h2 { margin: 0; font-size: var(--ls-t-title2); }
+.ww-summary, .ww-records, [data-wd-workspace] { display: grid; gap: var(--ls-s-3); min-width: 0; }
+.ww-filter { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ls-s-2); }
+.ww-filter input { flex: 1 1 180px; min-width: 0; }
+.ww-filter select { max-width: 220px; }
+.ww-meta, .ww-status, .ww-pager { display: flex; align-items: center; flex-wrap: wrap; gap: var(--ls-s-2); }
+.ww-pager { justify-content: center; }
+.ww-muted { color: hsl(var(--lq-material-muted, var(--ls-ink-2))); margin: 0; font-size: var(--ls-t-sub); overflow-wrap: anywhere; }
+.ww-resources { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ls-s-3); }
+.ww-resource__hero { display: flex; align-items: center; gap: var(--ls-s-4); padding-block: var(--ls-s-2); }
+.ww-resource__hero .lq-progress--ring { width: 76px; height: 76px; flex: 0 0 76px; }
+.ww-resource__hero p { margin: var(--ls-s-1) 0 0; }
+.ww-number { font-size: clamp(1.5rem, 3vw, 2.3rem); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.ww-number small { font-size: var(--ls-t-body); }
+.ww-owner-list { list-style: none; margin: var(--ls-s-2) 0 0; padding: 0; display: grid; gap: var(--ls-s-1); font-size: var(--ls-t-caption); }
+.ww-owner-list li { display: flex; justify-content: space-between; gap: var(--ls-s-2); overflow-wrap: anywhere; }
+.ww-fulltext { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; margin: var(--ls-s-2) 0 0; }
+.ww-timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--ls-s-4); }
+.ww-timeline__item { display: grid; grid-template-columns: minmax(90px, 150px) minmax(0, 1fr); gap: var(--ls-s-3); align-items: start; }
+.ww-timeline__item > time { font-size: var(--ls-t-caption); font-variant-numeric: tabular-nums; padding-top: var(--ls-s-3); overflow-wrap: anywhere; }
+.ww-timeline__item > article { min-width: 0; }
+.ww-bonds { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ls-s-3); padding-block: var(--ls-s-3); }
+.ww-bond-edge { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--ls-s-2); }
+.ww-bond-edge > span:first-child { font-size: 1.5rem; }
+.ww-affinity { display: grid; grid-template-columns: minmax(0, 1fr) 4em; align-items: center; gap: var(--ls-s-3); }
+.ww-affinity progress { width: 100%; }
+.ww-flow { list-style: none; margin: var(--ls-s-2) 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--ls-s-2); }
+.ww-flow li { display: flex; align-items: center; gap: var(--ls-s-2); min-width: 0; }
+.ww-flow strong, .ww-flow small { display: block; overflow-wrap: anywhere; }
+.ww-raw { font-family: ui-monospace, monospace; font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 65vh; overflow: auto; margin: 0; }
+.ww-conversations { display: grid; grid-template-columns: minmax(180px, .65fr) minmax(0, 1.8fr); gap: var(--ls-s-4); align-items: start; }
+.ww-conversation-list, .ww-transcript { display: grid; gap: var(--ls-s-2); min-width: 0; }
+.ww-conversation-list { max-height: 55vh; overflow: auto; align-content: start; }
+.ww-conversation-list button { justify-content: start; white-space: normal; text-align: start; }
+.ww-transcript .lq-bubble { max-width: 100%; }
+.ww-transcript .lq-bubble__content { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 800px) {
+    .ww-resources { grid-template-columns: minmax(0, 1fr); }
+    .wh-world-overview { grid-template-columns: minmax(0, 1fr); }
+    .ww-resource__hero { justify-content: start; }
+    .ww-conversations { grid-template-columns: minmax(0, 1fr); }
+    .ww-conversation-list { max-height: 220px; }
+    .ww-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 500px) {
+    .ww-timeline__item { grid-template-columns: minmax(0, 1fr); gap: var(--ls-s-1); }
+    .ww-timeline__item > time { padding-top: 0; }
+    .ww-filter > input { flex-basis: 100%; }
+    .ww-filter select { max-width: 100%; }
+}
+
+.ww-resource-details { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--ls-s-3); }
+.ww-resource-details > li { display: flex; align-items: start; justify-content: space-between; gap: var(--ls-s-3); flex-wrap: wrap; }

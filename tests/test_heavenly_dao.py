@@ -162,14 +162,17 @@ class HeavenlyDaoTest(WandererWorldTestCase):
         self.assertEqual((agent["tier"], agent["promotion_requested"], agent["warnings_count"]), (2, 1, 0))
         self.assertEqual(self.reviews(atai["id"]), [])
 
-    def test_death_when_knowledge_and_cultivation_are_gone(self):
+    def test_empty_knowledge_is_alive_until_lifespan_expires(self):
         xiaoman = self.set_wanderer("xiaoman", tier=0)
         with self.connect() as conn:
             forget_all(conn, xiaoman["id"])
             conn.commit()
         summary = self.review(StubCaller(NO_DISCIPLINE), [xiaoman["id"]])
-        self.assertEqual(summary["counts"]["died"], 1)
-        self.assertEqual(self.agent(xiaoman["id"])["status"], "dead")
+        self.assertEqual(summary["counts"]["died"], 0)
+        self.assertEqual(self.agent(xiaoman["id"])["status"], "active")
+        self.set_wanderer("xiaoman",born_at=(datetime.now()-timedelta(days=60)).isoformat(timespec="seconds"))
+        summary=self.review(StubCaller(NO_DISCIPLINE),[xiaoman["id"]])
+        self.assertEqual(summary["counts"]["died"],1)
         death = self.reviews(xiaoman["id"], "death")
         self.assertEqual(death[0]["verdict"], "died")
         self.assertTrue(self.dao_notes(xiaoman))
@@ -292,7 +295,7 @@ class GenesisTest(WandererWorldTestCase):
         self.assertEqual(evidence["avatar_silhouette"], "student_f")
         self.assertEqual(agent["avatar_file"], "")
         knowledge = self.rows("SELECT * FROM wanderer_knowledge_entries WHERE wanderer_id = ?", (agent["id"],))
-        self.assertEqual(len(knowledge), 3)
+        self.assertEqual(len(knowledge), 0)
         student = self.rows("SELECT * FROM students WHERE id = ?", (agent["student_id"],))[0]
         self.assertEqual((student["enrollment_status"], student["name"]), ("wanderer", "许小雨"))
         audit = json.loads(self.rows("SELECT evidence_json FROM wanderer_dao_reviews "

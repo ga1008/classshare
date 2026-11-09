@@ -13,9 +13,9 @@ import { createContent } from './lq/content.js';
 import { createForm } from './lq/forms.js';
 import { createInsight } from './lq/insights.js';
 import { tabs as createTabs } from './lq/navigation.js';
+import { createWandererWorkspace } from './wanderer_workspace.js';
 
 const API_ROOT = '/api/manage/system/wanderers';
-const PAGE_LIMIT = 30;
 const KNOWLEDGE_LIMIT = 50;
 const STATUS_TONES = { active: 'success', paused: 'warning', dead: 'neutral' };
 const BEHAVIOR_LABELS = {
@@ -41,7 +41,7 @@ const state = {
     wanderers: Array.isArray(boot.wanderers) ? boot.wanderers : [],
     detail: null,
     detailId: null,
-    pages: { actions: 1, reviews: 1, knowledge: 1 },
+    pages: { knowledge: 1 },
     serial: 0,
 };
 
@@ -68,12 +68,10 @@ const detailEls = {
     tierForm: $('[data-wd-tier-form]', els.detailRoot),
     lifeForm: $('[data-wd-life-form]', els.detailRoot),
     wipeConfirm: $('[data-wd-wipe-confirm]', els.detailRoot),
+    warningConfirm: $('[data-wd-warning-confirm]', els.detailRoot),
     panels: {
         overview: $('[data-wd-panel="overview"]', els.detailRoot),
-        actions: $('[data-wd-panel="actions"]', els.detailRoot),
-        reviews: $('[data-wd-panel="reviews"]', els.detailRoot),
         memory: $('[data-wd-panel="memory"]', els.detailRoot),
-        social: $('[data-wd-panel="social"]', els.detailRoot),
     },
     knowledge: $('[data-wd-knowledge]', els.detailRoot),
     personaForm: $('[data-wd-persona-form]', els.detailRoot),
@@ -87,6 +85,7 @@ const detailEls = {
 };
 let modal = null;
 let tabController = null;
+let workspace = null;
 
 /* ---------------------------------------------------------------- helpers */
 
@@ -285,6 +284,7 @@ function settingsPayload(form) {
     const data = new FormData(form);
     return {
         daily_ai_call_cap: Number(data.get('daily_ai_call_cap')),
+        autonomous_v2_enabled: form.elements.autonomous_v2_enabled.checked ? 1 : 0,
         tick_batch_size: Number(data.get('tick_batch_size')),
         dao_review_hour: String(data.get('dao_review_hour') || ''),
         classroom_visits_enabled: form.elements.classroom_visits_enabled.checked ? 1 : 0,
@@ -465,12 +465,6 @@ function renderOverviewTab(detail) {
 
 /* ---------------------------------------------------------------- memory / social tabs */
 
-function memoryRow(item) {
-    const importance = Math.round((Number(item.importance) || 0) * 100);
-    return { title: `${item.title || item.kind} · ${importance}`, meta: `${formatTime(item.occurred_at)} · ${item.kind} · ${item.status}`,
-        description: (item.content || '').slice(0, 220) };
-}
-
 function renderMemoryTab(detail) {
     const panel = detailEls.panels.memory;
     const memory = detail.memory || {};
@@ -490,88 +484,8 @@ function renderMemoryTab(detail) {
     });
     const reflect = button('立即自省', { 'data-wd-reflect-now': '' });
     reflect.addEventListener('click', () => postAction('/reflect-now', {}, reflect, '已开始自省'));
-    const reflectionItems = (detail.reflections || []).map(item => ({
-        title: `${item.date} · ${item.status}`,
-        meta: item.summary || item.error || '暂无摘要',
-    }));
-    const host = el('div', { class: 'wd-memory__list' }, [el('p', { class: 'wd-muted', text: '正在读取记忆…' })]);
-    panel.replaceChildren(...[
-        el('div', { class: 'wd-stats' }, [stats, moodCard, tuningCard]),
-        el('div', { class: 'wd-inline-form__actions' }, [reflect]),
-        reflectionItems.length ? createContent('list', { label: '最近自省', items: reflectionItems })
-            : emptyState('还没有自省记录'),
-        host,
-    ]);
-    const serial = state.serial;
-    apiFetch(`${API_ROOT}/${state.detailId}/memory?limit=20&include_archived=true`, { silent: true }).then((data) => {
-        if (serial !== state.serial) return;
-        const items = (data.items || []).map(memoryRow);
-        host.replaceChildren(items.length ? createContent('list', { label: '最近记忆', items }) : emptyState('还没有记忆'));
-    }).catch((error) => {
-        if (serial === state.serial) host.replaceChildren(el('p', { class: 'wd-muted', text: errorMessage(error, '记忆读取失败') }));
-    });
-}
-
-function personRow(item) {
-    const direction = item.direction === 'out' ? '我发出' : item.direction === 'in' ? '对方发来' : item.status;
-    return { title: `${item.name || item.peer_identity}${item.is_wanderer ? '（散修）' : ''}`,
-        meta: `${direction} · ${formatTime(item.created_at)}${item.request_message ? ' · ' + item.request_message : ''}` };
-}
-
-function renderSocialTab(detail) {
-    const panel = detailEls.panels.social;
-    const host = el('div', { class: 'wd-social__body' }, [el('p', { class: 'wd-muted', text: '正在读取社交资料…' })]);
-    panel.replaceChildren(host);
-    const serial = state.serial;
-    apiFetch(`${API_ROOT}/${state.detailId}/social`, { silent: true }).then((data) => {
-        if (serial !== state.serial) return;
-        const groups = (data.groups || []).map(item => ({ title: item.name, meta: `${item.role} · ${item.members} 人 · ${formatTime(item.joined_at)}` }));
-        const blocked = (data.blocked || []).map(item => ({ title: item.name || item.blocked_identity, meta: formatTime(item.created_at) }));
-        const chats = el('div', { class: 'wd-social__chats' }, [el('p', { class: 'wd-muted', text: '正在读取会话…' })]);
-        const transcript = el('div', { class: 'wd-social__transcript', 'aria-live': 'polite' }, [
-            el('p', { class: 'wd-muted', text: '选择左侧会话查看交流内容。' }),
-        ]);
-        host.replaceChildren(...[
-            el('div', { class: 'wd-stats' }, [
-                createContent('card', { title: '好友', variant: 'stat', value: data.counts?.friends ?? 0 }),
-                createContent('card', { title: '待处理', variant: 'stat', value: data.counts?.pending ?? 0 }),
-                createContent('card', { title: '群组', variant: 'stat', value: data.counts?.groups ?? 0 }),
-                createContent('card', { title: '黑名单', variant: 'stat', value: data.counts?.blocked ?? 0 }),
-            ]),
-            listOrEmpty('好友', (data.friends || []).map(personRow)),
-            listOrEmpty('待处理申请', (data.pending || []).map(personRow)),
-            listOrEmpty('群组', groups),
-            listOrEmpty('黑名单', blocked),
-            el('div', { class: 'wd-social__layout' }, [chats, transcript]),
-        ]);
-        const loadMessages = async (key) => {
-            transcript.replaceChildren(el('p', { class: 'wd-muted', text: '正在读取对话…' }));
-            const result = await apiFetch(`${API_ROOT}/${state.detailId}/conversations/${encodeURIComponent(key)}/messages?limit=50`, { silent: true });
-            if (serial !== state.serial) return;
-            const rows = (result.items || []).map(item => el('div', {
-                class: `wd-social__bubble${item.sender_identity === data.identity ? ' wd-social__bubble--mine' : ''}`,
-            }, [
-                el('strong', { text: item.sender_name || item.sender_identity }),
-                el('span', { class: 'wd-muted', text: ` · ${formatTime(item.created_at)}` }),
-                el('p', { text: item.recalled ? '（已撤回）' : item.body }),
-                item.media ? el('span', { class: 'wd-muted', text: `附件：${item.media.filename || item.media.kind}` }) : null,
-            ]));
-            transcript.replaceChildren(...(rows.length ? rows : [el('p', { class: 'wd-muted', text: '暂无可见消息。' })]));
-        };
-        const loadChats = async () => {
-            const result = await apiFetch(`${API_ROOT}/${state.detailId}/conversations?limit=50`, { silent: true });
-            if (serial !== state.serial) return;
-            const list = (result.items || []).map(item => {
-                const node = button(`${item.type === 'group' ? '群' : '私聊'} · ${item.title || item.key}`, { 'data-wd-conversation': item.key });
-                node.addEventListener('click', () => loadMessages(item.key));
-                return node;
-            });
-            chats.replaceChildren(...(list.length ? list : [el('p', { class: 'wd-muted', text: '还没有会话。' })]));
-        };
-        loadChats().catch((error) => chats.replaceChildren(el('p', { class: 'wd-muted', text: errorMessage(error, '会话读取失败') })));
-    }).catch((error) => {
-        if (serial === state.serial) host.replaceChildren(el('p', { class: 'wd-muted', text: errorMessage(error, '社交资料读取失败') }));
-    });
+    panel.replaceChildren(el('div', { class: 'wd-stats' }, [stats, moodCard, tuningCard]),
+        el('div', { class: 'wd-inline-form__actions' }, [reflect]));
 }
 
 /* ---------------------------------------------------------------- detail: paged tabs */
@@ -584,8 +498,6 @@ function knowledgeRow(item) {
 }
 
 const PAGED_TABS = {
-    actions: { label: '行为记录', limit: PAGE_LIMIT, target: () => detailEls.panels.actions, toRow: actionRow },
-    reviews: { label: '天道裁决', limit: PAGE_LIMIT, target: () => detailEls.panels.reviews, toRow: reviewRow },
     knowledge: { label: '知识条目', limit: KNOWLEDGE_LIMIT, target: () => detailEls.knowledge, toRow: knowledgeRow },
 };
 
@@ -639,6 +551,7 @@ function fillPersonaForm(profile) {
     form.elements.persona_prompt.value = profile.persona_prompt;
     form.elements.activity_level.value = profile.activity_level;
     form.elements.daily_action_budget.value = profile.daily_action_budget;
+    form.elements.daily_wake_limit.value = profile.daily_wake_limit ?? 100;
     for (const field of REPLY_POLICY_FIELDS) form.elements[field].value = profile.reply_policy?.[field] ?? '';
     form.elements.active_hours.value = JSON.stringify(profile.schedule?.active_hours || []);
     detailEls.behaviors.replaceChildren(...behaviorSwitches(profile.behaviors || {}));
@@ -715,6 +628,7 @@ function personaPatch() {
         persona_prompt: form.elements.persona_prompt.value,
         activity_level: Number(form.elements.activity_level.value),
         daily_action_budget: Number(form.elements.daily_action_budget.value),
+        daily_wake_limit: Number(form.elements.daily_wake_limit.value),
         reply_policy_json: replyPolicyPatch(form, profile.reply_policy || {}),
         schedule_json: { ...(profile.schedule || {}), active_hours: parseActiveHours(form.elements.active_hours.value) },
         behaviors_json: { ...(profile.behaviors || {}), ...behaviors },
@@ -809,10 +723,12 @@ function applyDetail(detail, { keepForm = false } = {}) {
     detailEls.title.textContent = detail.card.display_name;
     detailEls.subtitle.textContent = `${detail.card.archetype} · ${detail.card.slug}`;
     renderOverviewTab(detail);
+    renderMemoryTab(detail);
     fillAvatarForm(detail);
     if (!keepForm) fillPersonaForm(detail.profile);
     syncActionButtons(detail.card);
     replaceCard(detail.card);
+    workspace?.refresh();
 }
 
 async function reloadDetail(options = {}) {
@@ -872,7 +788,7 @@ const DETAIL_ACTIONS = {
         detailEls.lifeForm.elements.reason.value = '';
         toggleInline(detailEls.lifeForm, true);
     },
-    'reset-warnings': (control) => postAction('/reset-warnings', {}, control, '警告已清零'),
+    'reset-warnings': () => toggleInline(detailEls.warningConfirm, true),
     review: (control) => runEngineForDetail(control, `/${state.detailId}/review-now`, {}, '天道审核'),
     tick: (control) => runEngineForDetail(control, '/tick-now', { wanderer_id: state.detailId }, '跑一轮'),
     wipe: () => toggleInline(detailEls.wipeConfirm, true),
@@ -893,8 +809,13 @@ function onDetailClick(event) {
     }
     const cancel = event.target.closest('[data-wd-cancel]');
     if (cancel) {
-        const target = { tier: detailEls.tierForm, life: detailEls.lifeForm }[cancel.dataset.wdCancel];
+        const target = { tier: detailEls.tierForm, life: detailEls.lifeForm, 'reset-warnings': detailEls.warningConfirm }[cancel.dataset.wdCancel];
         toggleInline(target || detailEls.wipeConfirm, false);
+        return;
+    }
+    const warning = event.target.closest('[data-wd-confirm="reset-warnings"]');
+    if (warning) {
+        postAction('/reset-warnings', {}, warning, '警告处罚已撤销，关联责任已同步纠正').then(result => { if (result) toggleInline(detailEls.warningConfirm, false); });
         return;
     }
     const confirm = event.target.closest('[data-wd-confirm="wipe"]');
@@ -937,19 +858,19 @@ function bindDetail() {
 /* ---------------------------------------------------------------- modal lifecycle */
 
 function onTabChange({ key }) {
-    if (key === 'actions' || key === 'reviews') showPaged(key);
-    if (key === 'persona') showPaged('knowledge');
-    if (key === 'memory' && state.detail) renderMemoryTab(state.detail);
-    if (key === 'social' && state.detail) renderSocialTab(state.detail);
+    workspace?.activate(key);
+    if (key === 'identity') showPaged('knowledge');
 }
 
 function resetDetailPanels() {
     state.detail = null;
-    state.pages = { actions: 1, reviews: 1, knowledge: 1 };
+    workspace?.reset();
+    state.pages = { knowledge: 1 };
     detailEls.tierForm.hidden = true;
     detailEls.lifeForm.hidden = true;
     detailEls.wipeConfirm.hidden = true;
-    for (const panel of [...Object.values(detailEls.panels), detailEls.knowledge]) {
+    detailEls.warningConfirm.hidden = true;
+    for (const panel of [...Object.values(detailEls.panels), detailEls.knowledge].filter(Boolean)) {
         panel.replaceChildren(el('p', { class: 'wd-muted', text: '正在读取…' }));
     }
 }
@@ -957,8 +878,9 @@ function resetDetailPanels() {
 function ensureModal() {
     modal ??= createDomainModal(els.detailRoot, {
         type: 'modal', surface: detailEls.surface, initialFocus: detailEls.close,
-        onClose: () => { els.detailRoot.hidden = true; state.serial += 1; },
+        onClose: () => { els.detailRoot.hidden = true; state.serial += 1; workspace?.cancel(); },
     });
+    workspace ??= createWandererWorkspace(els.detailRoot, { getId: () => state.detailId });
     tabController ??= createTabs($('#wd-tabs', els.detailRoot), { onChange: onTabChange });
 }
 
@@ -976,6 +898,7 @@ async function openDetail(id, trigger) {
     tabController.select('overview', { notify: false });
     try {
         await reloadDetail();
+        workspace.activate('overview');
     } catch (error) {
         detailEls.panels.overview.replaceChildren(emptyState(errorMessage(error, '散修详情读取失败'), 'error'));
     }

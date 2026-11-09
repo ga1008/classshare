@@ -108,3 +108,6 @@
 - JS strings with UI markup remain candidates unless proven to be plain-text sinks; dynamically assembled markup and runtime-only API content still require DOM inventory.
 - Source occurrences cannot enumerate data-dependent instance counts, authorization branches, native popups, shadow DOM, portal/iframe states, or generated server HTML.
 - Pair the source inventory with the isolated runtime route/DOM/state matrix; all pending and unknown records need an owner, contract, and scenario or an explicit reviewed exception.
+
+
+2026-11-10 散修主页与七区管理工作区的来源盘点、LQ 复用、隔离浏览器与有界负载验收见 [专项记录](wanderer-world-ui-acceptance-2026-11-10.md)、[全平台源码快照](lq-platform-component-audit-2026-11-10.json) 及 [机器验收记录](wanderer-world-ui-acceptance-2026-11-10.json)。本次仅核验散修相关消费方；其他页面的 pending/unknown 保持原状态。

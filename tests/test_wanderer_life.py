@@ -169,6 +169,7 @@ class WandererLifeDbTest(WandererDbTestCase):
         with self.connect() as conn:
             wanderer = self._update(conn, "xiaoman", tier=0, knowledge_chars=2400, cultivation_score=30.0,
                                     promotion_requested=0, promotion_requested_at=None, talents_json=TALENTS_NEUTRAL)
+            conn.execute("INSERT INTO wanderer_knowledge_entries(wanderer_id,source_kind,source_ref,title,digest,chars,status,created_at,updated_at) VALUES(?,'world','fixture','实际学习',?,2400,'active',?,?)",(wanderer['id'],'学习'*1200,_ago(1),_ago(1)))
             for _index in range(5):
                 conn.execute(
                     "INSERT INTO wanderer_action_log (wanderer_id, action_kind, outcome, detail_json, created_at) "

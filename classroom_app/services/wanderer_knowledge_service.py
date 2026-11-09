@@ -10,6 +10,7 @@ least-used entries are *forgotten* (``status='forgotten'``, row kept) and a
 from __future__ import annotations
 
 import json
+import hashlib
 import random
 from typing import Any, Callable, Iterable, Optional
 
@@ -25,7 +26,7 @@ from .wanderer_life_core import (
     talent_value,
 )
 
-SOURCE_KINDS = frozenset({"material_page", "material", "blog_post", "classroom", "seed", "reflection", "legacy"})
+SOURCE_KINDS = frozenset({"material_page", "material", "blog_post", "classroom", "seed", "reflection", "legacy", "world"})
 KNOWLEDGE_TITLE_MAX_CHARS = 120
 _MAX_TAGS = 12
 
@@ -93,6 +94,32 @@ def _upsert_entry(conn: Any, wanderer_id: int, fields: dict[str, Any], existing:
     )
 
 
+def _rewarded_chars(conn: Any, existing: Any) -> int:
+    """A source's lifetime learning watermark survives shortening and archiving."""
+    if existing is None:
+        return 0
+    entry_id=int(_row_value(existing,'id'))
+    progress=conn.execute('SELECT rewarded_chars FROM wanderer_knowledge_growth WHERE entry_id=?',(entry_id,)).fetchone()
+    if progress is not None:
+        return int(progress['rewarded_chars'])
+    # Existing saved knowledge is already learned. On first migration also use
+    # preserved revisions, so an earlier shortening cannot reopen earned growth.
+    maximum=int(_row_value(existing,'chars',1) or 0)
+    from .account_control_service import table_exists
+    if table_exists(conn,'wanderer_knowledge_revisions'):
+        cursor=conn.execute('SELECT record_json FROM wanderer_knowledge_revisions WHERE entry_id=?',(entry_id,))
+        while True:
+            rows=cursor.fetchmany(100)
+            if not rows:
+                break
+            for row in rows:
+                try:
+                    maximum=max(maximum,int(json.loads(row['record_json']).get('chars') or 0))
+                except (ValueError,TypeError,AttributeError):
+                    continue
+    return maximum
+
+
 def _forget_until_within(conn: Any, wanderer_id: int, capacity: int, keep_entry_id: int) -> list[int]:
     """Forget oldest least-used entries (never the one just written) until within capacity."""
     forgotten: list[int] = []
@@ -136,10 +163,17 @@ def add_knowledge(
     ensure_wanderer_schema(conn)
     if source_kind not in SOURCE_KINDS:
         raise ValueError(f"unknown knowledge source_kind: {source_kind}")
-    clean_digest = str(digest or "").strip()[:knowledge_digest_limit(wanderer.get("tier"))]
+    from .wanderer_resource_service import ability_limit
+    clean_digest = str(digest or "").strip()[:int(ability_limit(conn,int(wanderer['id']),'knowledge_digest_chars'))]
     if not clean_digest:
         raise ValueError("知识摘要不能为空")
     wanderer_id = int(wanderer["id"])
+    from .wanderer_resource_service import lock_actor_resources, resize_capacity, capacity as resource_capacity
+    from .wanderer_runtime_service import runtime_enabled
+    lock_actor_resources(conn, wanderer_id)
+    current=conn.execute('SELECT life_epoch,authority_version FROM wanderer_agents WHERE id=?',(wanderer_id,)).fetchone()
+    if current is None or any(key in wanderer and int(wanderer[key])!=int(current[key]) for key in ('life_epoch','authority_version')):
+        raise PermissionError('生命或权限已变化，不能写入旧思考的知识')
     fields = {
         "source_kind": source_kind,
         "source_ref": str(source_ref or "")[:200],
@@ -149,14 +183,20 @@ def add_knowledge(
         "tags_json": json.dumps(_clean_tags(tags), ensure_ascii=False),
     }
     existing = _existing_entry(conn, wanderer_id, source_kind, fields["source_ref"])
-    previous_active_chars = (
-        int(_row_value(existing, "chars", 1) or 0)
-        if existing is not None and str(_row_value(existing, "status", 2)) == "active" else 0
-    )
+    previous_rewarded_chars = _rewarded_chars(conn, existing)
     entry_id = _upsert_entry(conn, wanderer_id, fields, existing)
-    capacity = knowledge_capacity_for(wanderer.get("tier"), talent_value(wanderer.get("talents"), "memory"))
-    forgotten = _forget_until_within(conn, wanderer_id, capacity, entry_id)
-    new_chars = max(0, fields["chars"] - previous_active_chars)
+    capacity = resource_capacity(conn, wanderer_id, 'knowledge_chars')['limit']
+    if runtime_enabled(conn):
+        allocation = resize_capacity(conn, wanderer_id, 'knowledge_chars', f'knowledge:{entry_id}', fields['chars'])
+        if not allocation['ok']:
+            raise ValueError('知识容量不足；请先用knowledge.archive整理旧知识，原文不会删除')
+        forgotten = []
+    else:
+        forgotten = _forget_until_within(conn, wanderer_id, capacity, entry_id)
+    new_chars = max(0, fields["chars"] - previous_rewarded_chars)
+    conn.execute('INSERT INTO wanderer_knowledge_growth(entry_id,wanderer_id,rewarded_chars,updated_at) VALUES(?,?,?,?) '
+                 'ON CONFLICT(entry_id) DO UPDATE SET rewarded_chars=excluded.rewarded_chars,updated_at=excluded.updated_at',
+                 (entry_id,wanderer_id,max(previous_rewarded_chars,fields['chars']),local_iso()))
     crit = False
     score_delta = 0.0
     if new_chars:
@@ -166,11 +206,16 @@ def add_knowledge(
             tier=wanderer.get("tier"),
         )
     knowledge_chars = _active_chars(conn, wanderer_id)
-    conn.execute(
-        "UPDATE wanderer_agents SET knowledge_chars = ?, cultivation_score = cultivation_score + ?, "
-        "updated_at = ? WHERE id = ?",
-        (knowledge_chars, score_delta, local_iso(), wanderer_id),
-    )
+    if score_delta:
+        from .wanderer_cultivation_service import award_cultivation
+        content_hash = hashlib.sha256(clean_digest.encode()).hexdigest()
+        event_id = f"knowledge:{entry_id}:{content_hash}"
+        # Re-reading an archived digest is useful but is not a second learning award.
+        awarded = conn.execute('SELECT 1 FROM wanderer_cultivation_awards WHERE wanderer_id=? AND event_id=?',
+                               (wanderer_id,event_id)).fetchone()
+        score_delta = 0.0 if awarded else award_cultivation(conn, wanderer_id, score_delta, 'knowledge', event_id)
+    conn.execute("UPDATE wanderer_agents SET knowledge_chars=?,updated_at=? WHERE id=?",
+                 (knowledge_chars, local_iso(), wanderer_id))
     invalidate_wanderer_cache([wanderer.get("student_id")])
     return {
         "entry_id": entry_id,
@@ -230,7 +275,8 @@ def knowledge_summary(conn: Any, wanderer: dict[str, Any]) -> dict[str, Any]:
     ).fetchone()
     count = int(_row_value(row, "n") or 0)
     chars = int(_row_value(row, "total", 1) or 0)
-    capacity = knowledge_capacity_for(wanderer.get("tier"), talent_value(wanderer.get("talents"), "memory"))
+    from .wanderer_resource_service import capacity as resource_capacity
+    capacity = resource_capacity(conn, int(wanderer['id']), 'knowledge_chars')['limit']
     return {
         "active_count": count,
         "chars": chars,

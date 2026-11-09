@@ -140,6 +140,8 @@ class _AIJob:
     metadata: dict[str, Any] = field(compare=False)
     enqueued_at: float = field(compare=False)
     prompt_tokens_estimate: int = field(compare=False)
+    attribution: Any = field(default=None, compare=False, repr=False)
+    logical_call_id: str | None = field(default=None, compare=False)
 
 
 class _AIGateway:
@@ -173,7 +175,13 @@ class _AIGateway:
         started = time.perf_counter()
         queue_wait_ms = int(max(0, started - job.enqueued_at) * 1000)
         try:
-            caller = getattr(job.client, job.method)
+            if job.attribution is not None:
+                from .wanderer_ai_attribution import reserve_call
+                await asyncio.to_thread(reserve_call, job.attribution, job.logical_call_id)
+            # Our shared client routes direct tool calls through this gateway;
+            # use its raw method here so one request cannot recurse or double bill.
+            caller = getattr(job.client, "_post_without_gateway", None) if job.method == "post" else None
+            caller = caller or getattr(job.client, job.method)
             response = await caller(job.endpoint, **job.kwargs)
             duration_ms = int(max(0, time.perf_counter() - started) * 1000)
             status_code = getattr(response, "status_code", None)
@@ -239,6 +247,7 @@ async def ai_gateway_post(
     teacher_id: int | None = None,
     source_ref: str = "",
     metadata: dict[str, Any] | None = None,
+    logical_call_id: str | None = None,
     **kwargs: Any,
 ) -> Any:
     normalized_priority = _priority_label(priority)
@@ -278,6 +287,9 @@ async def ai_gateway_post(
         request_kwargs["timeout"] = timeout
     loop = asyncio.get_running_loop()
     future = loop.create_future()
+    from .wanderer_ai_attribution import current_attribution
+    attribution = current_attribution()
+    attributed_id = attribution.next_call(endpoint, json_payload, logical_call_id) if attribution is not None else None
     job = _AIJob(
         priority_rank=AI_PRIORITY_ORDER[normalized_priority],
         sequence=next(_SEQUENCE),
@@ -295,6 +307,8 @@ async def ai_gateway_post(
         metadata=dict(metadata or {}),
         enqueued_at=time.perf_counter(),
         prompt_tokens_estimate=_estimate_tokens(json_payload),
+        attribution=attribution,
+        logical_call_id=attributed_id,
     )
     return await _get_gateway().submit(job)
 

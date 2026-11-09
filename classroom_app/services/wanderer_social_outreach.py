@@ -1,7 +1,7 @@
 """An optional, budgeted tick action: decide whether to start talking to a friend."""
 from __future__ import annotations
 
-from datetime import timedelta
+import uuid
 from typing import Any
 
 from .social_common import blocked_either, dm_key
@@ -13,30 +13,16 @@ from .wanderer_repetition_guard import filter_repetition_parts, recent_self_text
 from .wanderer_style_guard import guard_parts
 from .wanderer_social_triggers import SOCIAL_BEHAVIOR, is_awake_now
 
-OUTREACH_DAILY_LIMIT = 2
 OUTREACH_TARGET_TYPE = "social_outreach"
-FRIEND_COOLDOWN_HOURS = 12
 
 
 def outreach_candidates(conn: Any, ctx: ActionContext) -> list[str]:
-    """No nags: one consideration per friend per half day, at most two initiations daily."""
-    sent = conn.execute(
-        "SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND target_type = ? "
-        "AND action_kind = 'social_message' AND created_at >= ?",
-        (ctx.wanderer_id, OUTREACH_TARGET_TYPE, day_start_iso(ctx.current_time())),
-    ).fetchone()
-    if int(sent["n"] or 0) >= OUTREACH_DAILY_LIMIT:
-        return []
-    considered = {str(row["target_id"]) for row in conn.execute(
-        "SELECT target_id FROM wanderer_action_log WHERE wanderer_id = ? AND target_type = ? AND created_at >= ?",
-        (ctx.wanderer_id, OUTREACH_TARGET_TYPE,
-         (ctx.current_time() - timedelta(hours=FRIEND_COOLDOWN_HOURS)).isoformat(timespec="seconds")),
-    ).fetchall()}
+    """Eligible contacts; the AI chooses outreach using its actual remaining resources."""
     pairs = friendship_rows(conn, ctx.identity, statuses=("accepted",))
     identities = [other_side(row, ctx.identity) for row in pairs]
     people = load_people(conn, identities)
     return [peer for peer in identities if (people.get(peer) or {}).get("active")
-            and dm_key(ctx.identity, peer) not in considered and not blocked_either(conn, ctx.identity, peer)]
+            and not blocked_either(conn, ctx.identity, peer)]
 
 
 async def start_friend_conversation(ctx: ActionContext) -> list[dict[str, Any]]:
@@ -56,9 +42,6 @@ async def start_friend_conversation(ctx: ActionContext) -> list[dict[str, Any]]:
             candidate = load_window(conn, ctx.identity, dm_key(ctx.identity, peer))
             if candidate is None or candidate["new"]:
                 continue  # incoming messages have their own reply task
-            counted = [row for row in candidate["rows"] if _counted(row)]
-            if counted and counted[-1]["sender_identity"] == ctx.identity:
-                continue  # wait for the friend rather than repeatedly demanding attention
             reason, quota = _gate(conn, ctx.identity, candidate, require_new=False)
             if not reason:
                 window = candidate
@@ -93,7 +76,7 @@ async def start_friend_conversation(ctx: ActionContext) -> list[dict[str, Any]]:
         await remember(ctx, f"social:{key}")
         return [outcome("skip", "skipped", ai_calls=calls)]
     anchor = max((int(row["id"]) for row in window["rows"]), default=0)
-    window["nonce_prefix"] = f"wanderer-outreach:{ctx.wanderer_id}:{anchor}:{ctx.current_time().date().isoformat()}"
+    window["nonce_prefix"] = f"wanderer-outreach:{ctx.wanderer_id}:{uuid.uuid4().hex[:20]}"
     sent, error = await post_parts(ctx, window, parts)
     status = "ok" if sent == len(parts) else "failed"
     record_action(ctx, "social_message", target_type=OUTREACH_TARGET_TYPE, target_id=key, ai_calls=calls,

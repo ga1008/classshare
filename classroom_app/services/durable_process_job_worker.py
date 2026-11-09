@@ -211,6 +211,10 @@ async def _lease_heartbeat(job: dict[str, Any], stop: asyncio.Event, attendance_
                 return
 
 
+from .wanderer_ai_attribution import durable_attribution
+
+
+@durable_attribution
 async def _execute(job: dict[str, Any]) -> None:
     payload = load_ai_job_payload(job)
     with get_db_connection() as conn:

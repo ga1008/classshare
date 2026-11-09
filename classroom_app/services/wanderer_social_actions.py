@@ -17,10 +17,6 @@ from .wanderer_identity_service import build_wanderer_user_dict
 from .wanderer_prompt_service import extract_json_object
 from .wanderer_text_style import strip_platform_meta
 
-BLOCK_AFFINITY = -60.0
-UNBLOCK_AFFINITY = -20.0
-GROUP_CREATE_WEEKLY_LIMIT = 1
-GROUP_INVITE_DAILY_LIMIT = 2
 
 
 def _me(ctx: ActionContext) -> str:
@@ -49,7 +45,7 @@ def _friends(conn: Any, ctx: ActionContext) -> list[dict[str, Any]]:
         return []
     peers = [str(_row_value(row, "identity_b") if _row_value(row, "identity_a") == me else _row_value(row, "identity_a"))
              for row in rows]
-    peers = [peer for peer in dict.fromkeys(peers) if peer.startswith("student:")]
+    peers = list(dict.fromkeys(peers))
     try:
         people = _people(conn, peers)
     except Exception:  # noqa: BLE001
@@ -84,27 +80,12 @@ async def _decide(ctx: ActionContext, *, scene: dict[str, Any], suffix: str) -> 
 
 
 def _block_candidates(conn: Any, ctx: ActionContext) -> list[dict[str, Any]]:
-    if _recent_count(conn, ctx, "social_block", 7) >= 1:
-        return []
-    return [item for item in _friends(conn, ctx) if item["affinity"] <= BLOCK_AFFINITY
-            and item["interactions"] >= 2]
+    return _friends(conn, ctx)
 
 
 def _unblock_candidates(conn: Any, ctx: ActionContext) -> list[str]:
-    try:
-        from .social_common import blocked_by
-        blocked = blocked_by(conn, _me(ctx))
-    except Exception:  # noqa: BLE001
-        return []
-    found = []
-    for peer in blocked:
-        if not peer.startswith("student:"):
-            continue
-        rel = conn.execute("SELECT affinity FROM wanderer_relationships WHERE wanderer_id = ? AND peer_identity = ?",
-                           (ctx.wanderer_id, peer)).fetchone()
-        if float(_row_value(rel, "affinity") or 0) > UNBLOCK_AFFINITY:
-            found.append(peer)
-    return found
+    from .social_common import blocked_by
+    return list(blocked_by(conn, _me(ctx)))
 
 
 def _group_context(conn: Any, ctx: ActionContext) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, set[str]]]:
@@ -134,13 +115,12 @@ def available_actions(conn: Any, ctx: ActionContext) -> list[str]:
             options.append("social_unblock")
     if behavior_on(ctx.wanderer, "social_group"):
         groups, friends, members = _group_context(conn, ctx)
-        if len(friends) >= 2 and _recent_count(conn, ctx, "social_group_create", 7) < GROUP_CREATE_WEEKLY_LIMIT:
+        if friends:
             options.append("social_group_create")
         if any(friend["identity"] not in members[group["id"]] for group in groups
                for friend in friends if group["role"] in {"owner", "admin"}):
             options.append("social_group_invite")
-        from .wanderer_emotion_service import tuning_for_today
-        if groups and tuning_for_today(ctx.wanderer).get("initiative", 0) < 0:
+        if groups:
             options.append("social_group_leave")
     return options
 
@@ -156,17 +136,14 @@ async def maybe_block(ctx: ActionContext) -> list[dict[str, Any]]:
     if not behavior_on(ctx.wanderer, "social_block"):
         return []
     with ctx.connect() as conn:
-        if _recent_count(conn, ctx, "social_block", 7) >= 1:
-            return []
-        candidates = [item for item in _friends(conn, ctx) if item["affinity"] <= BLOCK_AFFINITY
-                      and item["interactions"] >= 2]
+        candidates = _block_candidates(conn, ctx)
     if not candidates:
         return []
     candidate = min(candidates, key=lambda item: item["affinity"])
     scene = {
         "kind": "处理一段让你不舒服的关系", "title": "要不要拉黑",
-        "meta": f"{candidate['name']} 让你很反感（好感 {candidate['affinity']:+.0f}）",
-        "body": "你反复感到被冒犯或消耗。拉黑会让对方从你的好友列表消失；也可以只是暂时不理。",
+        "meta": f"联系人 {candidate['name']}（你记录的好感 {candidate['affinity']:.0f}%）",
+        "body": "依据真实交流经历自行决定是否调整联系。拉黑会让对方从好友列表消失。",
         "task": "按你的性格决定是否拉黑对方。不要因为一次小摩擦就拉黑，也不要在长期越界后还勉强自己。",
         "output_contract": '只输出 JSON：{"action":"block|skip","target":"student:12","reason":"你的真实理由"}。',
     }
@@ -202,16 +179,7 @@ async def maybe_unblock(ctx: ActionContext) -> list[dict[str, Any]]:
     if not behavior_on(ctx.wanderer, "social_block"):
         return []
     with ctx.connect() as conn:
-        from .social_common import blocked_by
-        candidates = []
-        for peer in blocked_by(conn, _me(ctx)):
-            if not peer.startswith("student:"):
-                continue
-            rel = conn.execute("SELECT affinity FROM wanderer_relationships WHERE wanderer_id = ? AND peer_identity = ?",
-                               (ctx.wanderer_id, peer)).fetchone()
-            affinity = float(_row_value(rel, "affinity") or 0) if rel else 0.0
-            if affinity > UNBLOCK_AFFINITY:
-                candidates.append(peer)
+        candidates = _unblock_candidates(conn, ctx)
         people = _people(conn, candidates)
     if not candidates:
         return []
@@ -245,10 +213,8 @@ async def maybe_create_group(ctx: ActionContext) -> list[dict[str, Any]]:
     if not behavior_on(ctx.wanderer, "social_group"):
         return []
     with ctx.connect() as conn:
-        if _recent_count(conn, ctx, "social_group_create", 7) >= GROUP_CREATE_WEEKLY_LIMIT:
-            return []
         friends = _friends(conn, ctx)
-    if len(friends) < 2:
+    if not friends:
         return []
     roster = "；".join(f"{item['identity']}={item['name']}（{item['is_wanderer'] and '散修' or '真实学生'}）"
                       for item in friends[:8])
@@ -295,8 +261,6 @@ async def maybe_invite_group(ctx: ActionContext) -> list[dict[str, Any]]:
         return []
     me = _me(ctx)
     with ctx.connect() as conn:
-        if _recent_count(conn, ctx, "social_group_invite", 1) >= GROUP_INVITE_DAILY_LIMIT:
-            return []
         rows = conn.execute(
             "SELECT g.id, g.name, m.role FROM social_group_members m JOIN social_groups g ON g.id = m.group_id "
             "WHERE m.member_identity = ? AND m.left_at IS NULL AND g.dissolved_at IS NULL "

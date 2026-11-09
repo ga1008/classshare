@@ -61,8 +61,10 @@ def drain_social_executor() -> None:
 
 async def run_db(fn: Callable[..., Any], *args: Any) -> Any:
     """Run blocking social DB work on the dedicated executor."""
+    from contextvars import copy_context
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(social_executor(), functools.partial(fn, *args))
+    context = copy_context()
+    return await loop.run_in_executor(social_executor(), context.run, functools.partial(fn, *args))
 
 
 def serialize_on(conn: Any, namespace: str, values: Iterable[str]) -> None:

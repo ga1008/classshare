@@ -204,7 +204,7 @@ _SEED_EXAMPLE = {
     "reply_policy": {"ignore_prob": 0.3, "emoji_only_prob": 0.1, "multi_part_prob": 0.2, "max_parts": 2,
                      "post_prob": 0.08},
     "taboos": ["1–5 条禁忌"],
-    "initial_knowledge": [{"title": "短标题", "digest": "一两句知识要点", "tags": ["标签"]}] * 3,
+    "initial_knowledge": [],
     "daily_action_budget": 10,
 }
 
@@ -237,7 +237,7 @@ def genesis_message(existing: list[dict[str, str]], planned: int, activity: dict
         "1. 每位的性格、原型、兴趣、说话方式都要与下列已有散修明显不同，也彼此不同；不要再造「礼貌 AI 助手」。\n"
         "2. slug 用 3–24 位小写拼音字母或数字，不得与已有 slug 重复；display_name 用 2–4 个汉字的中文名或 2–12 位英文昵称，"
         "不得与已有散修重名，也不要用常见的真实人名组合。\n"
-        "3. 新散修从零开始修行（第 0 境），initial_knowledge 正好 3 条，只是背景常识。\n"
+        "3. 新散修从零开始修行（第 0 境），initial_knowledge 必须为空数组；人格背景不等于已经研读的知识。\n"
         "4. 字段与示例完全一致，数值在示例给出的范围内；文字自然、口语，不用 Markdown。\n"
         "5. speech_style.voice_profile 选择最符合个人气质的一项，出生即绑定对应讲话指南和情境案例。"
         "catchphrases 可以为空，最多四条低频偏好，不用固定口头禅或表情替代完整性格。"
@@ -382,8 +382,18 @@ async def run_genesis(conn_factory: ConnFactory = None, *, activity: Optional[di
     creator = "admin" if manual else "dao"
     reincarnated = 0
     with _connection(conn_factory) as conn:
+        from ..db.schema_wanderer_world import ensure_wanderer_world_schema
+        ensure_wanderer_world_schema(conn)
+        conn.execute("UPDATE wanderer_world_schema SET value=value WHERE key='version'")
+        fresh_plan = plan_genesis(conn, measured, now, manual=manual)
+        room = min(int(plan["planned"]), int(fresh_plan["planned"]))
+        if room <= 0:
+            conn.commit()
+            return {**summary, "status": "skipped", "reason": "造人容量在裁决期间已变化"}
+        available_legacies = {int(item["id"]) for item in pending_legacies(conn, 1000)}
+        legacies = [item for item in legacies if int(item["id"]) in available_legacies]
         legacy_ids = {int(item["id"]) for item in legacies}
-        seeds, rejected = select_valid_seeds(conn, payload.get("seeds"), plan["planned"], legacy_ids=legacy_ids)
+        seeds, rejected = select_valid_seeds(conn, payload.get("seeds"), room, legacy_ids=legacy_ids)
         created_ids = []
         for seed in seeds:
             legacy = next((item for item in legacies if int(item["id"]) == int(seed.get("legacy_id") or 0)), None)
@@ -393,7 +403,7 @@ async def run_genesis(conn_factory: ConnFactory = None, *, activity: Optional[di
                 created_ids.append(wanderer_id)
                 reincarnated += int(legacy is not None)
         if not created_ids and legacies:
-            fallback_ids = _fallback_reincarnations(conn, legacies, plan["planned"], measured, creator)
+            fallback_ids = _fallback_reincarnations(conn, legacies, room, measured, creator)
             created_ids.extend(fallback_ids)
             reincarnated += len(fallback_ids)
         conn.commit()

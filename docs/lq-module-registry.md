@@ -1,6 +1,6 @@
 # LQ 模块使用记录本
 
-生成于 2026-11-09，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
+生成于 2026-11-10，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
 
 ## 怎么用
 
@@ -27,17 +27,17 @@
 | [React bridges](#react-bridges) | foundation | `lq-avatar-link` | 仅 CSS | 1 |
 | [Ability radar 六边形能力雷达](#ability-radar) | component | `lq-radar` | 仅 CSS | 3 |
 | [Business 业务呈现（DeadlineClock / JobStatus / QuestionNavigator）](#business) | component | `lq-clock`, `lq-job`, `lq-nav-grid` | 宏 / JS / Py | 1 |
-| [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 280 |
-| [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 39 |
+| [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 282 |
+| [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 40 |
 | [ChipRow 芯片行](#chip-row) | component | `lq-chip-row` | 宏 / JS / Py | 10 |
-| [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 9 |
+| [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 12 |
 | [Composer 输入区](#composer) | component | `lq-composer` | 宏 / JS / Py | 5 |
-| [Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）](#content) | component | `lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list` … | 宏 / JS / Py / React | 178 |
+| [Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）](#content) | component | `lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list` … | 宏 / JS / Py / React | 180 |
 | [Cultivation emblem 境界标志与道印图案身份](#cultivation-emblem) | component | `lq-cultivation-emblem`, `lq-cultivation-emblem-img`, `lq-cultivation-host`, `cultivation-card__emblem` | 仅 CSS | 8 |
 | [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 38 |
 | [EmojiPicker 表情选择器](#emoji-picker) | component | `.emoji-picker`, `.emoji-picker-item`, `.emoji-picker-grid`, `createEmojiPicker` | JS | 5 |
-| [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 183 |
-| [Indicators 徽标 / 头像 / 进度 / 加载](#indicators) | component | `lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner` | 宏 / JS / Py / React | 20 |
+| [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 185 |
+| [Indicators 徽标 / 头像 / 进度 / 加载](#indicators) | component | `lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner` | 宏 / JS / Py / React | 21 |
 | [Insights 统计（AvatarStack / Ring / Bars / Meter）](#insights) | component | `lq-avatar-stack`, `lq-bars`, `lq-insight`, `lq-meter`, `lq-ring` | 宏 / JS / Py | 4 |
 | [Layer 层栈](#layers) | component | — | JS | 30 |
 | [Lightbox 灯箱](#lightbox) | component | `lq-lightbox` | JS | 1 |
@@ -47,7 +47,7 @@
 | [OverflowLabel 固定宽度长标签](#overflow-label) | component | — | JS | 1 |
 | [Search 搜索包装](#search) | component | `lq-search` | 仅 CSS | 12 |
 | [Selection / Dropdown 选择列表](#selection) | component | `lq-dropdown`, `lq-selection` | 宏 / JS / Py | 9 |
-| [Skeleton 骨架屏](#skeleton) | component | `lq-skeleton` | 宏 / JS / Py | 25 |
+| [Skeleton 骨架屏](#skeleton) | component | `lq-skeleton` | 宏 / JS / Py | 26 |
 | [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 22 |
 | [Table / Pager / BulkBar / ResultCount](#tables) | component | `lq-bulk-bar`, `lq-pager`, `lq-result-count`, `lq-table`, `lq-table-shell` | 宏 / JS / Py / React | 13 |
 | [Toast 通知](#toast) | component | `lq-toast`, `lq-toast-fallback`, `lq-toasts` | JS | 5 |
@@ -616,7 +616,7 @@
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
 - **React 适配器**：`LqButton`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：280 个文件
+- **消费者**：282 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -688,10 +688,10 @@
 - `templates/manage/system/blog_crawler.html` ×36
 - `templates/partials/classroom_members/workspace.html` ×36
 - `templates/partials/exams/modals.html` ×36
+- `templates/manage/system/wanderers.html` ×35
 - `static/js/semester_calendar.js` ×34
 - `templates/manage/system/academic_integrations.html` ×34
 - `templates/manage/system/smart_classroom_integrations.html` ×34
-- `templates/manage/system/wanderers.html` ×33
 - `static/js/academic_final_materials.js` ×32
 - `static/js/classroom_page.js` ×32
 - `templates/lesson_plan_editor.html` ×32
@@ -889,6 +889,7 @@
 - `templates/macros/user_ui_preferences.html` ×2
 - `templates/partials/learning_certificate_reveal.html` ×2
 - `templates/resume/layout.html` ×2
+- `templates/wanderers/home.html` ×2
 - `frontend/src/islands/dashboard-quick-actions.tsx` ×1
 - `static/js/approval_workflow.js` ×1
 - `static/js/course_schedule_styles.js` ×1
@@ -896,6 +897,7 @@
 - `static/js/session_knowledge_tree_manager.js` ×1
 - `static/js/social/friends_discover.js` ×1
 - `static/js/social/social_dom.js` ×1
+- `static/js/wanderer_world_views.js` ×1
 - `static/js/whiteboard/board.js` ×1
 - `static/js/whiteboard/exam_board.js` ×1
 - `templates/dev/lq_shell.html` ×1
@@ -916,12 +918,13 @@
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
 - **React 适配器**：`LqChipGroup`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：39 个文件
+- **消费者**：40 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `static/js/materials_sync_report.js` ×14
 - `static/js/materials_library_cards.js` ×13
+- `templates/wanderers/home.html` ×8
 - `static/js/course_schedule_deck.js` ×6
 - `static/js/cultivation_panel.js` ×6
 - `templates/manage/system/wanderers.html` ×6
@@ -930,7 +933,6 @@
 - `static/js/message_center.js` ×4
 - `templates/dev/lq_presentation.html` ×4
 - `templates/manage/system/password_resets.html` ×4
-- `templates/wanderers/home.html` ×4
 - `static/js/academic_schedule_sync.js` ×3
 - `static/js/social/friends_discover.js` ×3
 - `templates/achievements.html` ×3
@@ -958,6 +960,7 @@
 - `static/js/social/group_files.js` ×1
 - `static/js/social/social_people.js` ×1
 - `static/js/social/user_card.js` ×1
+- `static/js/wanderer_world_views.js` ×1
 - `templates/manage/work_inbox.html` ×1
 
 </details>
@@ -998,19 +1001,22 @@
 - **Jinja 宏** `templates/macros/lq/collapsible.html`：`lq_collapsible`
 - **JS 入口** `static/js/lq/collapsible.js`：`collapsibleMarkup`, `collapsibleProps`, `createCollapsible`, `enhanceCollapsible`, `html`
 - **Python props** `classroom_app/lq_collapsible.py`
-- **消费者**：9 个文件
+- **消费者**：12 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `static/js/cultivation_panel.js` ×10
 - `static/js/login_attendance.js` ×5
+- `templates/manage/system/wanderers.html` ×3
 - `static/js/dashboard.js` ×2
 - `static/js/social/friends_modal.js` ×2
+- `static/js/wanderer_workspace.js` ×2
+- `static/js/wanderer_world_views.js` ×2
 - `templates/dashboard.html` ×2
 - `templates/dashboard_teacher.html` ×2
 - `templates/dev/lq_interactions.html` ×2
+- `templates/wanderers/home.html` ×2
 - `static/js/manage_filter_chips.js` ×1
-- `templates/manage/system/wanderers.html` ×1
 
 </details>
 
@@ -1051,24 +1057,24 @@
 - **JS 入口** `static/js/lq/content.js`：`contentKinds`, `contentMarkup`, `contentProps`, `createContent`, `enhanceRow`, `html`
 - **Python props** `classroom_app/lq_content.py`
 - **React 适配器**：`LqCardFrame`, `LqEmpty`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：178 个文件
+- **消费者**：180 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `templates/classroom_main_v4.html` ×39
 - `static/js/blog_studio.js` ×34
 - `static/js/message_center.js` ×30
+- `templates/wanderers/home.html` ×29
 - `templates/assignment_detail_teacher.html` ×23
 - `templates/manage/system/blog_crawler.html` ×22
 - `templates/dev/lq_content.html` ×20
-- `static/js/manage_wanderers.js` ×18
-- `templates/wanderers/home.html` ×18
 - `templates/assignment_detail_student.html` ×15
 - `templates/dashboard.html` ×15
 - `templates/manage/system/wanderers.html` ×15
 - `static/js/attendance_reports.js` ×13
 - `templates/macros/manage_page.html` ×13
 - `templates/manage/system/password_resets.html` ×13
+- `static/js/manage_wanderers.js` ×12
 - `templates/submission_detail.html` ×12
 - `static/js/collaboration.js` ×11
 - `templates/dashboard_teacher.html` ×11
@@ -1079,6 +1085,7 @@
 - `templates/partials/profile/messages.html` ×10
 - `templates/assignment_wrong_summary.html` ×9
 - `templates/manage/system/smart_classroom_integrations.html` ×9
+- `static/js/wanderer_world_views.js` ×8
 - `templates/manage/courses.html` ×8
 - `templates/manage/system/gongwen_integrations.html` ×8
 - `templates/manage/system/monitor.html` ×8
@@ -1110,6 +1117,7 @@
 - `templates/partials/profile/portfolio.html` ×6
 - `static/js/login_attendance.js` ×5
 - `static/js/profile_signatures.js` ×5
+- `static/js/wanderer_workspace.js` ×5
 - `templates/blog.html` ×5
 - `templates/manage/attendance_reports.html` ×5
 - `templates/partials/semester_calendar_panel.html` ×5
@@ -1349,14 +1357,14 @@
 - **JS 入口** `static/js/lq/forms.js`：`checkbox`, `createForm`, `enhanceForms`, `errorSummary`, `field`, `focusFirstError`, `formActions`, `formKinds`, `formMarkup`, `formProps`, `formSection`, `html`, `input`, `nativeSelect` …
 - **Python props** `classroom_app/lq_forms.py`
 - **React 适配器**：`LqField`, `LqNativeInput`, `LqNativeTextarea`, `LqNativeSelect`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：183 个文件
+- **消费者**：185 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `templates/classroom_main_v4.html` ×113
 - `templates/partials/profile/email.html` ×88
 - `templates/exam_editor.html` ×84
-- `templates/manage/system/wanderers.html` ×72
+- `templates/manage/system/wanderers.html` ×76
 - `templates/assignment_detail_teacher.html` ×68
 - `templates/partials/profile/settings.html` ×62
 - `static/js/collaboration.js` ×60
@@ -1481,12 +1489,14 @@
 - `static/js/social/dm_settings.js` ×4
 - `static/js/social/group_invite.js` ×4
 - `static/js/ui_color_picker.js` ×4
+- `static/js/wanderer_workspace.js` ×4
 - `templates/career_path.html` ×4
 - `templates/partials/ai_workspace_widget.html` ×4
 - `templates/partials/classroom_group_qr.html` ×4
 - `templates/partials/classroom_material_library.html` ×4
 - `templates/partials/classroom_members/settings.html` ×4
 - `templates/resume/builder.html` ×4
+- `templates/wanderers/home.html` ×4
 - `static/js/login_attendance_history.js` ×3
 - `static/js/manage_wanderers.js` ×3
 - `static/js/session_knowledge_tree.js` ×3
@@ -1551,7 +1561,7 @@
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
 - **React 适配器**：`LqAvatar`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：20 个文件
+- **消费者**：21 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1561,12 +1571,14 @@
 - `templates/partials/lq_navbar_topbar.html` ×4
 - `templates/partials/social_entry.html` ×4
 - `static/js/materials_sync_report.js` ×3
+- `templates/wanderers/home.html` ×3
 - `frontend/src/components/action-entry.tsx` ×2
 - `static/js/knowledge_tree/chrome.js` ×2
 - `static/js/manage_blog_review.js` ×2
 - `static/js/message_center.js` ×2
 - `static/js/profile.js` ×2
 - `static/js/social/social_dom.js` ×2
+- `static/js/wanderer_world_views.js` ×2
 - `static/js/attendance_dashboard.js` ×1
 - `static/js/session_knowledge_tree_manager.js` ×1
 - `static/js/social/friends_discover.js` ×1
@@ -1574,7 +1586,6 @@
 - `templates/partials/materials/library_card.html` ×1
 - `templates/partials/profile/hero_lq.html` ×1
 - `templates/partials/profile/messages.html` ×1
-- `templates/wanderers/home.html` ×1
 
 </details>
 
@@ -1723,7 +1734,7 @@
 
 <details><summary>消费者清单（按命中次数）</summary>
 
-- `templates/manage/system/wanderers.html` ×24
+- `templates/manage/system/wanderers.html` ×27
 - `static/js/collaboration.js` ×6
 - `templates/classroom_main_v4.html` ×5
 - `static/js/classroom_interactions.js` ×4
@@ -1824,7 +1835,7 @@
 - **Jinja 宏** `templates/macros/lq/skeleton.html`：`lq_skeleton`
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
-- **消费者**：25 个文件
+- **消费者**：26 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1852,6 +1863,7 @@
 - `static/js/social/social_dom.js` ×2
 - `static/js/social/social_people.js` ×2
 - `static/js/social/user_card.js` ×2
+- `static/js/wanderer_world_views.js` ×2
 - `templates/dev/lq_presentation.html` ×1
 
 </details>
@@ -2049,6 +2061,7 @@
 | `static/css/lq/pages/social.css` | `templates/partials/social_entry.html` | 否 |
 | `static/css/lq/pages/status.css` | `templates/base_centered.html` | 否 |
 | `static/css/lq/pages/wanderer-home.css` | `templates/wanderers/home.html` | 否 |
+| `static/css/lq/pages/wanderer-world.css` | `templates/manage/system/wanderers.html`, `templates/wanderers/home.html` | 否 |
 | `static/css/lq/pages/wanderers.css` | `templates/manage/system/wanderers.html` | 否 |
 
 ## 局限

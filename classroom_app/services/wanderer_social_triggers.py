@@ -260,6 +260,32 @@ def on_message_created(conn: Any, parsed: dict[str, Any], sender: str, *, rng: O
     )]
 
 
+def on_group_membership_changed(conn: Any, group_id: int, actor: str, members: Iterable[str], *,
+                                event_kind: str) -> list[str]:
+    """Wake members for an actual group event, without inventing spoken content."""
+    from .wanderer_runtime_service import enqueue_wake_event, runtime_enabled
+    if not _enabled(conn) or not runtime_enabled(conn):
+        return []
+    members = list(dict.fromkeys(str(item) for item in members))
+    key = f"group:{int(group_id)}"
+    anchor = conn.execute("SELECT MAX(id) AS id FROM social_messages WHERE conversation_key=?", (key,)).fetchone()
+    event_key = f"{key}:{event_kind}:{int(anchor['id'] or 0)}"
+    result = []
+    for identity, wanderer in social_wanderers(conn, members).items():
+        from .wanderer_group_runtime_service import mark_membership
+        mark_membership(conn,int(wanderer["id"]),int(group_id),identity)
+        event = enqueue_wake_event(conn,int(wanderer["id"]),event_kind,event_key,
+                                   {"conversation_key":key,"scope":{"kind":"conversation","key":key},
+                                    "event_kind":event_kind,"actor_identity":actor,
+                                    "member_identities":members,"recipient_identity":identity,
+                                    "source_message_id":int(anchor["id"] or 0)})
+        result.append(event["event_id"])
+    if result:
+        schedule_coalesced(conn,task_kind=TASK_KIND_GROUP_WATCH,dedupe_key=group_watch_dedupe_key(group_id),
+                           run_at=datetime.now(),payload={"group_id":int(group_id)},title="散修入群观察",earlier=True)
+    return result
+
+
 def on_friend_request(conn: Any, request_id: int, requester: str, target: str, *,
                       rng: Optional[random.Random] = None, now: Optional[datetime] = None,
                       recovery: bool = False) -> Optional[int]:

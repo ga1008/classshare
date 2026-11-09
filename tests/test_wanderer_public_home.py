@@ -5,6 +5,7 @@ Isolated SQLite + TestClient with the login dependency overridden; no model call
 from __future__ import annotations
 
 import unittest
+import json
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -78,6 +79,7 @@ class WandererPublicHomeTest(WandererDbTestCase):
         self.assertEqual(home["actions"][0]["href"], f"/blog?post={post['id']}")
         self.assertEqual(home["stats"]["posts"], 1)
         self.assertEqual([review["label"] for review in home["reviews"]], ["天道降阶"])
+        self.assertNotIn('辱骂同学',json.dumps(home['reviews'],ensure_ascii=False))
         self.assertTrue(home["avatar_url"].startswith("/api/profile/avatar?role=student&user_id="))
 
     def test_avatar_endpoint_serves_the_persona_illustration(self):

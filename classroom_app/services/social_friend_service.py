@@ -34,10 +34,12 @@ from .social_common import (
     utc_day_start_iso,
     utc_iso_from_any,
     utc_now,
+    serialize_on,
     user_identity,
 )
 from .social_conversation_service import dm_unread, insert_system_message
 from .social_identity_service import avatar_url, friend_people, homepage_url, load_people, public_users, require_person
+from . import wanderer_social_resource_service as world_resources
 from .social_relations import (
     STATUS_ACCEPTED,
     STATUS_DECLINED,
@@ -112,10 +114,10 @@ def _check_can_request(conn: Any, me: str, target: str, existing: Optional[dict[
             raise SocialError("对方暂未通过你的申请，请 7 天后再试。", 429)
     if _recent_log_id(conn, me, target, LOG_WITHDRAW, WITHDRAW_COOLDOWN_HOURS):
         raise SocialError("刚撤回过对该用户的申请，请 24 小时后再试。", 429)
-    if _requests_today(conn, me) >= DAILY_REQUEST_LIMIT:
+    if not (existing and existing['status']==STATUS_PENDING) and not world_resources.request_room(conn,me,_requests_today(conn,me),DAILY_REQUEST_LIMIT):
         raise SocialError(f"今天的好友申请已达 {DAILY_REQUEST_LIMIT} 个上限，请明天再试。", 429)
     for identity in (me, target):
-        if count_friends(conn, identity) >= FRIEND_LIMIT:
+        if not world_resources.room(conn,identity,'friend_capacity',count_friends(conn,identity),FRIEND_LIMIT):
             raise SocialError(f"好友数量已达 {FRIEND_LIMIT} 人上限。", 409)
 
 
@@ -141,6 +143,8 @@ def _notify(conn: Any, recipient: str, *, title: str, body: str, actor: str, act
 
 
 def _become_friends(conn: Any, row: dict[str, Any], events: Optional[list]) -> None:
+    for identity in (row['identity_a'],row['identity_b']):
+        world_resources.occupy(conn,identity,'friend_capacity',f"friend:{row['id']}")
     timestamp = now_iso()
     conn.execute(
         "UPDATE social_friendships SET status = ?, responded_at = ?, declined_until = '' WHERE id = ?",
@@ -162,7 +166,9 @@ def send_request(conn: Any, user: dict, target_identity: Any, message: Any = "",
                  events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
     target = require_person(conn, target_identity)["identity"]
-    text = str(message or "").strip()[:REQUEST_MESSAGE_MAX]
+    world_resources.lock_people(conn,[me,target])
+    serialize_on(conn,'social-friend-account',[me,target])
+    text = str(message or "").strip()[:world_resources.text_limit(conn,me,'friend_request_chars',REQUEST_MESSAGE_MAX)]
     existing = get_friendship(conn, me, target)
     _check_can_request(conn, me, target, existing)
     answering = bool(existing and existing["status"] == STATUS_PENDING and existing["requester_identity"] == target)
@@ -192,6 +198,7 @@ def send_request(conn: Any, user: dict, target_identity: Any, message: Any = "",
             (first, second, STATUS_PENDING, me, text, timestamp),
         )
     log_id = _log(conn, me, target, LOG_REQUEST)
+    world_resources.charge_request(conn,me,log_id)
     # One notification per pair per 24 h window (anchored at the window's first request): re-requests
     # within the window reuse its ref_id, which the message center de-duplicates instead of stacking.
     anchor = _recent_log_id(conn, me, target, LOG_REQUEST, NOTIFY_AGGREGATE_HOURS) or log_id
@@ -228,11 +235,15 @@ def _pending_for(conn: Any, request_id: int, me: str, *, as_addressee: bool) -> 
 
 def accept_request(conn: Any, user: dict, request_id: int, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
+    candidate=get_friendship_by_id(conn,request_id)
+    if candidate:
+        world_resources.lock_people(conn,[candidate['identity_a'],candidate['identity_b']])
+        serialize_on(conn,'social-friend-account',[candidate['identity_a'],candidate['identity_b']])
     row = _pending_for(conn, request_id, me, as_addressee=True)
     other = other_side(row, me)
     if blocked_either(conn, me, other):
         raise SocialError(UNIFORM_REFUSAL, 403)
-    if count_friends(conn, me) >= FRIEND_LIMIT or count_friends(conn, other) >= FRIEND_LIMIT:
+    if any(not world_resources.room(conn,person,'friend_capacity',count_friends(conn,person),FRIEND_LIMIT) for person in (me,other)):
         raise SocialError(f"好友数量已达 {FRIEND_LIMIT} 人上限。", 409)
     _become_friends(conn, row, events)
     return {"status": STATUS_ACCEPTED, "request_id": int(row["id"]), "conversation_key": dm_key(me, other)}
@@ -240,6 +251,10 @@ def accept_request(conn: Any, user: dict, request_id: int, events: Optional[list
 
 def decline_request(conn: Any, user: dict, request_id: int, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
+    candidate = conn.execute('SELECT identity_a,identity_b FROM social_friendships WHERE id=?',(int(request_id),)).fetchone()
+    if candidate:
+        world_resources.lock_people(conn,[candidate['identity_a'],candidate['identity_b']])
+        serialize_on(conn,'social-friend-account',[candidate['identity_a'],candidate['identity_b']])
     row = _pending_for(conn, request_id, me, as_addressee=True)
     conn.execute(
         "UPDATE social_friendships SET status = ?, responded_at = ?, declined_until = ? WHERE id = ?",
@@ -250,6 +265,10 @@ def decline_request(conn: Any, user: dict, request_id: int, events: Optional[lis
 
 def withdraw_request(conn: Any, user: dict, request_id: int, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
+    candidate = conn.execute('SELECT identity_a,identity_b FROM social_friendships WHERE id=?',(int(request_id),)).fetchone()
+    if candidate:
+        world_resources.lock_people(conn,[candidate['identity_a'],candidate['identity_b']])
+        serialize_on(conn,'social-friend-account',[candidate['identity_a'],candidate['identity_b']])
     row = _pending_for(conn, request_id, me, as_addressee=False)
     conn.execute("DELETE FROM social_friendships WHERE id = ?", (int(row["id"]),))
     _log(conn, me, other_side(row, me), LOG_WITHDRAW)  # starts the 24 h re-request cooldown for this pair
@@ -334,7 +353,11 @@ def _accepted_row(conn: Any, me: str, other: str) -> dict[str, Any]:
 def delete_friend(conn: Any, user: dict, identity: Any, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
     other = normalize_identity(identity)
+    world_resources.lock_people(conn,[me,other])
+    serialize_on(conn,'social-friend-account',[me,other])
     row = _accepted_row(conn, me, other)
+    for person in (me,other):
+        world_resources.release(conn,person,'friend_capacity',f"friend:{row['id']}")
     conn.execute("DELETE FROM social_friendships WHERE id = ?", (int(row["id"]),))
     add_event(events, [me], {"type": "friend_removed", "identity": other, "reason": "deleted"})
     add_event(events, [other], {"type": "friend_removed", "identity": me, "reason": "deleted"})
@@ -388,6 +411,8 @@ def list_blocks(conn: Any, user: dict) -> list[dict[str, Any]]:
 def block_user(conn: Any, user: dict, identity: Any, events: Optional[list] = None) -> dict[str, Any]:
     me = user_identity(user)
     other = normalize_identity(identity)
+    world_resources.lock_people(conn,[me,other])
+    serialize_on(conn,'social-friend-account',[me,other])
     if other == me:
         raise SocialError("不能把自己加入黑名单。", 400)
     person = require_person(conn, other)
@@ -404,6 +429,9 @@ def block_user(conn: Any, user: dict, identity: Any, events: Optional[list] = No
             raise SocialError("该用户不能加入黑名单。", 400) from exc
     row = get_friendship(conn, me, other)
     if row and row["status"] in (STATUS_ACCEPTED, STATUS_PENDING):
+        if row['status']==STATUS_ACCEPTED:
+            for person in (me,other):
+                world_resources.release(conn,person,'friend_capacity',f"friend:{row['id']}")
         conn.execute("DELETE FROM social_friendships WHERE id = ?", (int(row["id"]),))
         add_event(events, [me], {"type": "friend_removed", "identity": other, "reason": "blocked"})
         # The other side sees an ordinary removal; who blocked whom is never revealed.
