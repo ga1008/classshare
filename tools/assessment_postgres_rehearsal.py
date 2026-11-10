@@ -266,6 +266,8 @@ def apply_assessment_migrations(conn) -> None:
         from classroom_app.db.schema_wanderers import ensure_wanderer_schema
         from classroom_app.db.schema_wanderer_world import ensure_wanderer_world_schema
         from classroom_app.db.schema_wanderer_runtime import ensure_wanderer_runtime_schema
+        from classroom_app.db.schema_wanderer_reflection import ensure_wanderer_reflection_schema
+        from classroom_app.db.schema_wanderer_delivery import ensure_wanderer_delivery_schema
         from classroom_app.db.schema_wanderer_social import ensure_wanderer_social_schema, migrate_relationship_affinities
         from classroom_app.db.schema_account_control import ensure_account_control_schema
         from classroom_app.services.wanderer_resource_service import migrate_capacity, migrate_social_capacity
@@ -273,6 +275,8 @@ def apply_assessment_migrations(conn) -> None:
             ensure_wanderer_schema(adapter, engine="postgres", allow_schema_changes=True)
             ensure_wanderer_world_schema(adapter, engine="postgres", allow_schema_changes=True)
             ensure_wanderer_runtime_schema(adapter, engine="postgres", allow_schema_changes=True)
+            ensure_wanderer_reflection_schema(adapter, engine="postgres", allow_schema_changes=True)
+            ensure_wanderer_delivery_schema(adapter, engine="postgres", allow_schema_changes=True)
             ensure_wanderer_social_schema(adapter, engine="postgres", allow_schema_changes=True)
             migrate_relationship_affinities(adapter)
             migrate_capacity(adapter)

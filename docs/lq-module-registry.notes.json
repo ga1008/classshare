@@ -315,10 +315,10 @@
     "wanderers": {
       "title": "散修管理页 static/css/lq/pages/wanderers.css",
       "layer": "composite",
-      "summary": "散修管理工作区：保留工具栏、统计、运行设置、状态/寿元/境界/头像/人格/天赋表单；详情使用共享 Dialog 和七个 Tabs（此刻、记忆、交流、关系、运行轨迹、资源账本、身份与能力）。wanderer_workspace.js 读取管理员专用投影，每页30条替换DOM；完整记录仅展开时生成，群聊原文按30条分页。配置支持统一自主运行器和每个散修独立思考额度。身份分区根据后端白名单动态呈现全部42类保留账本（含本人出资的共享资源操作），分类刷新重建共享下拉并保留当前选择。",
+      "summary": "散修管理工作区：保留工具栏、统计、运行设置、状态/寿元/境界/头像/人格/天赋表单；详情使用共享 Dialog 和七个 Tabs（此刻、记忆、交流、关系、运行轨迹、资源账本、身份与能力）。wanderer_workspace.js 读取管理员专用投影，每页30条替换DOM；完整记录仅展开时生成。身份分区根据后端白名单动态呈现全部保留账本（含本人出资的共享资源操作），分类刷新重建共享下拉并保留当前选择。2026-11-10：标题与标签页固定，原管理操作收进共享Collapsible；会话导航与聊天原文独立有界滚动，小屏切换列表/详情；会话列表分页与消息连续加载分离，before_id向前追加保留阅读位置，回到最新明确刷新。关系提供双向好感排行与具体分值，基础资料显示免费自省余额。",
       "params": "复用：Button(lq_btn / createComponent)、Choice 选择卡(data-lq-shape=surface)、Chip(状态/境界/警告)、Checkbox/Switch(createForm)、Input/Textarea、Collapsible、Tabs(navigation.tabs)、Insights(insight_meter 知识容量/寿元剩余天数、insight_bars columns 七日动作 / rows 动作分布)、Content list/empty/Card stat、cultivation-emblem 图像类。 2026-11-09：wanderer_world_views.js复用Content Card/Bubble/Empty、Progress ring/bar、Chip、Collapsible；余额环图、额度来源、单向好感条、直接道侣图和唤醒/思考/执行/回执四步数据图。",
       "states": "卡片：active/paused/dead（dead 降低不透明度，详情只显示「复活」）；按钮 busy 时 native disabled + aria-busy；分页/详情请求带代次号，旧响应不覆盖新打开的散修；人格保存失败保留输入并在 role=alert 中显示；抹除两步确认；头像改动后卡片/预览的 avatar_url 带 &v= 版本号绕过 1 小时缓存；寿元 ≤14 天显示 danger 芯片，天赋/寿元修改必须填写理由并写 admin_override 裁决，已陨落时隐藏两个新按钮。 七分区、分类、搜索、游标上一页/下一页；请求取消+代次隔离，失败保留筛选可重试；会话查看不标记已读；关闭取消请求并归还焦点。所有数据只使用textContent，私密记录仅管理员接口。 2026-11-10：资源分类为常用环图/其他每日额度/容量/逐次能力；关系含好友、申请、群、黑名单、道侣申请。附件走管理员专用下载；失败事件可重新付费评估；uncertain命令先读原始证据再填写人工核对结论，版本冲突保留输入，不重发指令。撤销警告有内联影响说明与取消，保留历史。",
-      "rules": "页面 CSS 只做网格、间距和尺寸；文字色只读 --lq-material-ink/muted，错误文字用 --ls-tone-danger-fg；不声明背景、边框色、滤镜或动效；不新增私有按钮/面板。改动先跑 npm run inventory:lq-modules。"
+      "rules": "页面 CSS 只做网格、间距和尺寸；文字色只读 --lq-material-ink/muted，错误文字用 --ls-tone-danger-fg；不声明背景、边框色、滤镜或动效；不新增私有按钮/面板。wanderer_conversation_view复用Bubble方向/Choice选中态，分页仅合并相同消息ID，不隐藏相同文本的不同消息；只读不标记已读，失败保留原文，取消与代次阻止旧会话覆盖。wanderer_memory_editor复用Collapsible/Card与原生表单；修订必须版本/hash/原因/request_id，409保留草稿并主动重读，保存中否决关闭，草稿跨分区/详情保留但不写浏览器持久存储。原文与历史仅管理员API提供，不改变可见范围；beforeunload保护未保存草稿。改动运行 npm run inventory:lq-modules，并以正式构建/合成业务浏览器证明验收。"
     },
     "wanderer-home": {
       "title": "散修主页 static/css/lq/pages/wanderer-home.css",

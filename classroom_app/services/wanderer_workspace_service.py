@@ -19,6 +19,12 @@ RECORDS = {
     'reviews': ('wanderer_dao_reviews','wanderer_id','id'),
     'knowledge': ('wanderer_knowledge_entries','wanderer_id','id'),
     'reflections': ('wanderer_daily_reflections','wanderer_id','id'),
+    'reflection_sessions': ('wanderer_reflection_sessions','wanderer_id','reflection_date'),
+    'reflection_dispatches': ('wanderer_reflection_dispatches','wanderer_id','dispatched_at,turn_id'),
+    'affinity_ratings': ('wanderer_affinity_ratings','wanderer_id','reflection_date,peer_identity'),
+    'affinity_rating_operations': ('wanderer_affinity_rating_operations','wanderer_id','created_at,operation_id'),
+    'message_deliveries': ('wanderer_message_deliveries','wanderer_id','created_at,operation_id'),
+    'memory_corrections': ('wanderer_memory_corrections','wanderer_id','created_at,id'),
     'threads': ('wanderer_memory_threads','wanderer_id','id'),
     'chapters': ('wanderer_memory_chapters','wanderer_id','id'),
     'todos': ('wanderer_todos','wanderer_id','id'),
@@ -155,7 +161,10 @@ def _records(conn, wid, kind, offset, limit, query=''):
               'relationship_versions':'peer_identity','commands':'command_json',
               'bonds':'reason','bond_requests':'reason','gain_debt_payments':'gain_key',
               'talent_awards':'result_json','penalty_roots':'reason','penalty_reversals':'reason',
-              'dao_history_blocks':'content_json'}.get(kind)
+              'dao_history_blocks':'content_json','memory_corrections':'reason',
+              'affinity_ratings':'peer_identity','message_deliveries':'conversation_key',
+              'reflection_sessions':'reflection_date','reflection_dispatches':'event_id',
+              'affinity_rating_operations':'peer_identity'}.get(kind)
     if query and not search:
         raise ValueError('当前分类不支持全文检索，请清空查询或切换分类')
     if query and search:
@@ -196,7 +205,7 @@ def workspace_page(conn: Any, wanderer_id: int, *, section='overview', cursor=No
     from .wanderer_resource_service import limits
     result = {'section':section,'items':[],'next_cursor':None,'total':0,'summary':{}}
     if section == 'overview':
-        result['summary'] = {'status':status_snapshot(conn,w),'resources':resource_projection(conn,wid),
+        result['summary'] = {'status':status_snapshot(conn,w,include_relationships=True),'resources':resource_projection(conn,wid),
                              'bonds':bond_projection(conn,wid,admin=True),
                              'counts':_record_counts(conn,wid)}
         result.update(_records(conn,wid,'turns',offset,min(size,10)))
@@ -209,11 +218,23 @@ def workspace_page(conn: Any, wanderer_id: int, *, section='overview', cursor=No
             result.update(timeline(conn,w,viewer='admin',before=offset or None,limit=size,query=query))
             result['total'] = int(conn.execute('SELECT COUNT(*) AS n FROM wanderer_episodic_memories WHERE wanderer_id=?',(wid,)).fetchone()['n'])
         result['summary']={'kinds':['episodes','knowledge','threads','chapters','reflections']}
+        if not kind or kind in {'episodes','knowledge'}:
+            from .wanderer_memory_correction_service import annotate_items
+            annotate_items(conn, wid, 'knowledge' if kind == 'knowledge' else 'episode', result['items'])
     elif section == 'conversations':
-        page = social_conversations(conn,wid,page=offset//size+1,limit=size)
+        page = social_conversations(conn,wid,page=offset//size+1,limit=size,q=query)
         result.update(page)
         result['next_cursor'] = offset+size if offset+size < page['total'] else None
+        result['summary'] = {'viewer_identity':page['viewer_identity']}
     elif section == 'relations':
+        if kind in {'outgoing','incoming'}:
+            from .wanderer_relationship_service import relationship_rankings
+            page = relationship_rankings(conn,wid,direction=kind,offset=offset,limit=size,query=query)
+            result.update(items=page['items'],total=page['total'],next_cursor=page['next_offset'])
+            result['summary'] = {'direction':kind,'rules':page['rules'],'reflection':page['reflection'],
+                                 'bonds':bond_projection(conn,wid,admin=True),
+                                 'kinds':['outgoing','incoming','relationships','relationship_changes','friends','requests','groups','blocked','bond_requests']}
+            return result
         if kind in {'friends','requests','groups','blocked','bond_requests'}:
             result.update(_relations(conn,w,kind,offset,size,query))
         else:

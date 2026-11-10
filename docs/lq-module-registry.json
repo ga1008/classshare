@@ -2342,7 +2342,7 @@
     "rules": "保留浏览器的展开、焦点和键盘行为。 2026-10-27 社交页用 createCollapsible/enhanceCollapsible 组织申请、好友与推荐；只渲染非空分组，好友首次默认展开，更新列表保留展开状态。分组是 data-lq-surface=\"embedded\"，不产生额外材质；summary 保留共享内边距和原生键盘/焦点。"
    },
    "consumers": {
-    "count": 12,
+    "count": 13,
     "files": [
      {
       "path": "static/js/cultivation_panel.js",
@@ -2354,7 +2354,7 @@
      },
      {
       "path": "templates/manage/system/wanderers.html",
-      "hits": 3
+      "hits": 4
      },
      {
       "path": "static/js/dashboard.js",
@@ -2362,6 +2362,10 @@
      },
      {
       "path": "static/js/social/friends_modal.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/wanderer_memory_editor.js",
       "hits": 2
      },
      {
@@ -2509,7 +2513,7 @@
     "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。"
    },
    "consumers": {
-    "count": 180,
+    "count": 182,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -2600,16 +2604,16 @@
       "hits": 10
      },
      {
+      "path": "static/js/wanderer_world_views.js",
+      "hits": 9
+     },
+     {
       "path": "templates/assignment_wrong_summary.html",
       "hits": 9
      },
      {
       "path": "templates/manage/system/smart_classroom_integrations.html",
       "hits": 9
-     },
-     {
-      "path": "static/js/wanderer_world_views.js",
-      "hits": 8
      },
      {
       "path": "templates/manage/courses.html",
@@ -2684,6 +2688,10 @@
       "hits": 6
      },
      {
+      "path": "static/js/wanderer_workspace.js",
+      "hits": 6
+     },
+     {
       "path": "templates/feedback_review.html",
       "hits": 6
      },
@@ -2733,10 +2741,6 @@
      },
      {
       "path": "static/js/profile_signatures.js",
-      "hits": 5
-     },
-     {
-      "path": "static/js/wanderer_workspace.js",
       "hits": 5
      },
      {
@@ -2849,6 +2853,14 @@
      },
      {
       "path": "static/js/teacher_onboarding.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/wanderer_conversation_view.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/wanderer_memory_editor.js",
       "hits": 3
      },
      {
@@ -3378,7 +3390,7 @@
     "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface=\"embedded\"`，否则声明的 `!important` 底色会铺回来，形成\"有底无边距\"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。 `lq-domain-choice[data-lq-shape=\"surface\"]` 退出胶囊后高度即内容高度（2026-10-26），在滚动列里不会被压缩；需要固定格高的网格单元（学期日历）在 domain-controls.css 以更高特异性自设 min-height。 2026-10-27材料资源管理器工具栏/窗格头/状态栏用embedded Surface，不各自采样模糊；树节点/文件选择和卡片主入口为原生button+Choice，菜单按钮为兄弟节点。 2026-11-08材料浏览器窄屏的标题与操作区允许换行，操作区独占一行；领域CSS只调整布局，避免元信息逐字纵排挤掉正文高度；窄屏正文不被flex压缩，由既有内容区滚动，不改共享按钮材质与事件。"
    },
    "consumers": {
-    "count": 155,
+    "count": 156,
     "files": [
      {
       "path": "templates/assignment_detail_teacher.html",
@@ -3954,6 +3966,10 @@
      },
      {
       "path": "static/js/user_ui_preferences.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/wanderer_conversation_view.js",
       "hits": 1
      },
      {
@@ -4567,7 +4583,7 @@
     "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。"
    },
    "consumers": {
-    "count": 185,
+    "count": 186,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -5131,6 +5147,10 @@
      },
      {
       "path": "static/js/social/friends_discover.js",
+      "hits": 3
+     },
+     {
+      "path": "static/js/wanderer_memory_editor.js",
       "hits": 3
      },
      {
@@ -8169,6 +8189,15 @@
   "static/js/user_ui_preferences.js": [
    "button",
    "declarative"
+  ],
+  "static/js/wanderer_conversation_view.js": [
+   "content",
+   "declarative"
+  ],
+  "static/js/wanderer_memory_editor.js": [
+   "collapsible",
+   "content",
+   "forms"
   ],
   "static/js/wanderer_workspace.js": [
    "collapsible",

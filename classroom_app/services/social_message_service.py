@@ -114,6 +114,23 @@ def _existing_by_nonce(conn: Any, me: str, nonce: str) -> Optional[dict[str, Any
     return row_dict(row) if row is not None else None
 
 
+def _serialize_existing_send(conn, user, parsed, payload, existing):
+    """Only verified AI replays add a delivery receipt and recheck permissions."""
+    from .agent_platform_request_context import is_verified_wanderer_request_user
+    from .wanderer_message_delivery_service import prepare_social, delivery_metadata
+    me = user_identity(user)
+    metadata = {}
+    if is_verified_wanderer_request_user(user):
+        serialize_on(conn, 'social-attention', [parsed['key']])
+        parsed = require_access(conn, me, parsed['key'])
+        _require_can_send(conn, me, parsed)
+        delivery = prepare_social(conn, user, parsed, payload)
+        # Old, pre-ledger messages retain their native nonce replay contract.
+        if delivery and delivery['message'] is not None:
+            metadata = delivery_metadata(delivery, existing['id'])
+    return {**serialize_messages(conn, me, [existing])[0], **metadata}
+
+
 def clean_nonce(payload: Any) -> str:
     return str((payload or {}).get("client_nonce") or "").strip()[:NONCE_MAX] if isinstance(payload, dict) else ""
 
@@ -222,7 +239,7 @@ def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], event
     if existing:
         if existing["conversation_key"] != parsed["key"]:
             raise SocialError("该发送标识已用于其他会话，请重新发送。", 409)
-        return serialize_messages(conn, me, [existing])[0]
+        return _serialize_existing_send(conn, user, parsed, payload, existing)
     _require_can_send(conn, me, parsed)
     body, body_format = _validated_body(payload)
     lan_specs = payload.get("lan_media") or []
@@ -238,14 +255,24 @@ def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], event
     if existing:
         if existing["conversation_key"] != parsed["key"]:
             raise SocialError("该发送标识已用于其他会话，请重新发送。", 409)
-        return serialize_messages(conn, me, [existing])[0]
-    _enforce_rate_limit(conn, me)
+        return _serialize_existing_send(conn, user, parsed, payload, existing)
+    from .agent_platform_request_context import is_verified_wanderer_request_user
+    verified_ai = is_verified_wanderer_request_user(user)
+    if not verified_ai:
+        _enforce_rate_limit(conn, me)
     serialize_on(conn, "social-attention", [parsed["key"]])
     # Membership, manager role, friendship or a block may change while this
     # sender waits behind another transaction. Authorise the write under the
     # conversation lock, using fresh rows rather than the earlier snapshot.
     parsed = require_access(conn, me, parsed["key"])
     _require_can_send(conn, me, parsed)
+    from .wanderer_message_delivery_service import prepare_social, record_delivery, delivery_metadata
+    delivery = prepare_social(conn, user, parsed, payload)
+    if delivery and delivery['message'] is not None:
+        original = serialize_messages(conn, me, [delivery['message']])[0]
+        return {**original, **delivery_metadata(delivery, original['id'])}
+    if verified_ai:
+        _enforce_rate_limit(conn, me)
     tokens = media_service.redeem_tokens(conn, me, raw_tokens)
     mentions = _clean_mentions(conn, me, parsed, payload.get("mentions"))
     quota = consume_mention(conn, user) if mentions else mention_quota(conn, user)
@@ -257,6 +284,7 @@ def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], event
     )
     from .wanderer_social_budget_service import charge_message
     charge_message(conn, me, parsed, message_id=message_id, reply_to_id=payload.get("reply_to_id"))
+    record_delivery(conn, delivery, message_id)
     media_service.attach_media(conn, message_id, tokens)
     if lan_specs:
         media_service.attach_lan_media(conn, message_id, me, parsed["peer"], lan_specs)
@@ -264,7 +292,7 @@ def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], event
     notify_message(conn, me, parsed, message)
     _wake_wanderers(conn, parsed, me, mentions)
     push_message(events, conn, parsed, message)
-    return {**message, "mention_quota": quota}
+    return {**message, "mention_quota": quota, **delivery_metadata(delivery, message_id)}
 
 
 # ---------------------------------------------------------------------------

@@ -1,12 +1,12 @@
 {
   "acceptance": "pending",
   "summary": {
-    "files": 600,
+    "files": 602,
     "htmlTemplates": 209,
-    "entries": 5741,
+    "entries": 5746,
     "byKind": {
       "toolbar": 137,
-      "surface": 792,
+      "surface": 797,
       "choice": 219,
       "button": 2271,
       "field": 782,
@@ -23,24 +23,24 @@
       "handle": 1
     },
     "bySyntax": {
-      "jinja-component-call": 567,
+      "jinja-component-call": 568,
       "jinja-html": 2523,
       "dynamic-html-sink": 688,
       "js-html-candidate": 1387,
       "create-element": 189,
-      "component-factory-call": 204,
+      "component-factory-call": 208,
       "react-jsx": 158,
       "python-generated-jinja-html": 25
     },
     "byCanonicalContract": {
-      "not-declared": 1905,
+      "not-declared": 1910,
       "canonical-declared-pending": 3744,
       "declared-missing-canonical": 6,
       "canonical-resolution-pending": 5,
       "adapter-call-pending-runtime": 81
     },
     "byProvenance": {
-      "shared-component-call": 804,
+      "shared-component-call": 809,
       "lq-marked-native": 138,
       "component-declared": 3754,
       "runtime-output-unknown": 688,
@@ -51,7 +51,7 @@
       "external-icon-content-slot": 28
     },
     "byStatus": {
-      "pending": 4908,
+      "pending": 4913,
       "unknown": 833
     },
     "largestFiles": [
@@ -65,7 +65,7 @@
       },
       {
         "file": "templates/manage/system/wanderers.html",
-        "entries": 114
+        "entries": 115
       },
       {
         "file": "templates/exam_editor.html",

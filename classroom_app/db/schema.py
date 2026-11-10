@@ -50,6 +50,8 @@ from .schema_polls import ensure_poll_schema
 from .schema_wanderers import ensure_wanderer_schema
 from .schema_wanderer_world import ensure_wanderer_world_schema
 from .schema_wanderer_runtime import ensure_wanderer_runtime_schema
+from .schema_wanderer_reflection import ensure_wanderer_reflection_schema
+from .schema_wanderer_delivery import ensure_wanderer_delivery_schema
 from .schema_wanderer_social import ensure_wanderer_social_schema, migrate_relationship_affinities
 from .schema_social import ensure_social_schema
 from .schema_blog_closed_loop import backfill_blog_closed_loop_data, ensure_blog_closed_loop_schema
@@ -228,6 +230,8 @@ def _init_database_unlocked():
                 ensure_wanderer_schema(wanderer_conn, allow_schema_changes=True)
                 ensure_wanderer_world_schema(wanderer_conn, allow_schema_changes=True)
                 ensure_wanderer_runtime_schema(wanderer_conn, allow_schema_changes=True)
+                ensure_wanderer_reflection_schema(wanderer_conn, allow_schema_changes=True)
+                ensure_wanderer_delivery_schema(wanderer_conn, allow_schema_changes=True)
                 ensure_wanderer_social_schema(wanderer_conn, allow_schema_changes=True)
                 migrate_relationship_affinities(wanderer_conn)
                 from ..services.wanderer_resource_service import migrate_capacity
@@ -471,6 +475,8 @@ def _init_database_unlocked():
             ensure_wanderer_schema(conn, allow_schema_changes=True)
             ensure_wanderer_world_schema(conn, allow_schema_changes=True)
             ensure_wanderer_runtime_schema(conn, allow_schema_changes=True)
+            ensure_wanderer_reflection_schema(conn, allow_schema_changes=True)
+            ensure_wanderer_delivery_schema(conn, allow_schema_changes=True)
             ensure_wanderer_social_schema(conn, allow_schema_changes=True)
             migrate_relationship_affinities(conn)
             from ..services.wanderer_resource_service import migrate_capacity

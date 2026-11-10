@@ -382,7 +382,7 @@ async def generate_turn(
 
 
 async def generate_decision(conn_factory: ConnFactory, run: dict[str, Any], *, ai_caller: Optional[AiCaller] = None) -> dict[str, Any]:
-    """Exactly one paid thought. Tools and continuation are owned by the runtime."""
+    """Exactly one recorded thought; daily reflection has a separate three-call ledger."""
     from .wanderer_resource_service import reserve, settle
     from .wanderer_runtime_service import assert_turn_authority, build_runtime_prompt, packed, _authority, DECISION_RESPONSE_INSTRUCTION
     from ..time_utils import local_iso
@@ -394,20 +394,26 @@ async def generate_decision(conn_factory: ConnFactory, run: dict[str, Any], *, a
         row = conn.execute("SELECT dispatched_at FROM wanderer_turns WHERE turn_id=?", (run['turn_id'],)).fetchone()
         if row['dispatched_at']:
             return {"status": "failed", "ai_calls": 0, "error": "已有派发记录，不能重复调用模型"}
-        personal = reserve(conn, int(fresh['id']), 'ai_wake', 1, operation_id)
-        cap = daily_cap(conn)
-        if not personal.get('ok'):
-            conn.rollback()
-            return {"status": "capped", "ai_calls": 0, "error": "本人及直接道侣可用思考额度不足"}
-        # The resource lock may have waited behind death/revival or a new
-        # authority version. Recheck while holding it before dispatch/charging.
+        from .wanderer_daily_reflection_service import reserve_free_call
+        free = reserve_free_call(conn, run)
+        if free is not None:
+            if not free['ok']:
+                conn.rollback()
+                return {'status': 'reflection_limit', 'ai_calls': 0, 'error': '本次每日自省的三次免费思考已用完；已接受的指令仍保留执行结果。'}
+        else:
+            personal = reserve(conn, int(fresh['id']), 'ai_wake', 1, operation_id)
+            cap = daily_cap(conn)
+            if not personal.get('ok'):
+                conn.rollback()
+                return {"status": "capped", "ai_calls": 0, "error": "本人及直接道侣可用思考额度不足"}
+            total = increment_daily_ai_calls(conn)
+            if total > cap:
+                conn.rollback()
+                return {"status": "capped", "ai_calls": 0, "error": "平台今日思考预算已用尽"}
+            settle(conn, operation_id)
+        # Both budget ledgers can wait behind authority changes.
         fresh=assert_turn_authority(conn, **_authority(run))
         run['wanderer']=fresh
-        total = increment_daily_ai_calls(conn)
-        if total > cap:
-            conn.rollback()
-            return {"status": "capped", "ai_calls": 0, "error": "平台今日思考预算已用尽"}
-        settle(conn, operation_id)
         # Snapshot is taken after charging this awakening, so the remaining
         # amount is exactly what is available for a requested continuation.
         prompt = build_runtime_prompt(conn, run)

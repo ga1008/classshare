@@ -350,21 +350,45 @@ async def api_wanderer_social(wanderer_id: int, user: dict = Depends(get_current
 
 @router.get(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/conversations", response_class=JSONResponse)
 async def api_wanderer_conversations(wanderer_id: int, page: int = 1, limit: int = 20,
-                                     user: dict = Depends(get_current_teacher)):
+                                     q: str = '', user: dict = Depends(get_current_teacher)):
     return _ok(**_run_admin(user, lambda conn: admin.social_conversations(
-        conn, wanderer_id, page=page, limit=limit)))
+        conn, wanderer_id, page=page, limit=limit, q=q)))
 
 
 @router.get(f"{MANAGE_PREFIX}/{{wanderer_id:int}}/conversations/{{conversation_key}}/messages",
             response_class=JSONResponse)
 async def api_wanderer_conversation_messages(wanderer_id: int, conversation_key: str, page: int = 1, limit: int = 50,
-                                             user: dict = Depends(get_current_teacher)):
+                                             before_id: int | None = None, user: dict = Depends(get_current_teacher)):
     from ..services.wanderer_workspace_service import audit_access
     def read(conn):
-        result=admin.social_messages(conn,wanderer_id,conversation_key,page=page,limit=limit)
+        result=admin.social_messages(conn,wanderer_id,conversation_key,page=page,limit=limit,before_id=before_id)
         audit_access(conn,wanderer_id,user['id'],'conversation',f'{conversation_key}:page:{page}')
         return result
     return _ok(**_run_admin(user, read,commit=True))
+
+
+@router.get(f'{MANAGE_PREFIX}/{{wanderer_id:int}}/memory-corrections', response_class=JSONResponse)
+async def api_wanderer_memory_correction_history(wanderer_id: int, target_kind: str, target_id: int,
+        before: int | None = None, limit: int = 30, user: dict = Depends(get_current_teacher)):
+    from ..services.wanderer_memory_correction_service import history
+    from ..services.wanderer_workspace_service import audit_access
+    def read(conn):
+        result = history(conn, wanderer_id, target_kind, target_id, before=before, limit=limit)
+        audit_access(conn, wanderer_id, user['id'], 'memory_corrections', f'{target_kind}:{target_id}')
+        return result
+    return _ok(**_run_admin(user, read, commit=True))
+
+
+@router.post(f'{MANAGE_PREFIX}/{{wanderer_id:int}}/memory-corrections', response_class=JSONResponse)
+async def api_wanderer_memory_correct(wanderer_id: int, request: Request, user: dict = Depends(get_current_teacher)):
+    from ..services.wanderer_memory_correction_service import correct
+    from ..services.wanderer_workspace_service import audit_access
+    payload = await _json_body(request)
+    def write(conn):
+        result = correct(conn, wanderer_id, payload, actor=user)
+        audit_access(conn, wanderer_id, user['id'], 'memory_correction', str(result['correction']['id']))
+        return result
+    return _ok(**_run_admin(user, write, commit=True))
 
 
 # ---------------------------------------------------------------------------

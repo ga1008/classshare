@@ -302,7 +302,7 @@ class WorldEconomyTest(WandererDbTestCase):
         text=HANDBOOK.read_text(encoding='utf-8')
         self.assertEqual(text,(Path(__file__).resolve().parents[1]/'docs/wanderer-world-handbook-2026-11-10.md').read_text(encoding='utf-8'))
         self.assertEqual(len(documents()),16)
-        self.assertTrue(documents()[0]['version'].startswith('v2.1-'))
+        self.assertTrue(documents()[0]['version'].startswith('v3.0-'))
         examples=re.findall(r'```json\s*(.*?)\s*```',text,re.S)
         self.assertGreaterEqual(len(examples),2)
         self.assertEqual(parse_decision(examples[0])['callback']['requested'],True)

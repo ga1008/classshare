@@ -202,6 +202,7 @@
             <button data-lq-component="button" class="lq-btn lq-btn--ghost lq-btn--sm lq-btn--icon btn-close" type="button" aria-label="关闭散修详情" data-wd-detail-close></button>
         </header>
         <div class="lq-dialog__body wd-detail__body" id="wd-detail-body">
+            {% call lq_collapsible('wd-management-actions', '管理操作', mode='always', open=false) %}
             <div data-lq-component="toolbar" class="lq-domain-toolbar wd-detail__actions" role="toolbar" aria-label="散修操作">
                 {{ lq_btn('暂停', variant='glass', size='sm', attrs={'data-wd-act': 'status'}) }}
                 {{ lq_btn('调整境界', variant='glass', size='sm', attrs={'data-wd-act': 'tier'}) }}
@@ -252,6 +253,7 @@
                 </div>
             </div>
 
+            {% endcall %}
             <div id="wd-tabs" class="lq-tabs lq-tabs--horizontal lq-tabs--line lq-tabs--md wd-tabs" data-lq-tabs data-lq-activation="auto">
                 <div class="lq-tabs__list" role="tablist" aria-label="散修工作区" aria-orientation="horizontal">
                     <button type="button" role="tab" class="lq-tabs__tab" id="wd-tabs--lq-tab-overview" data-lq-tab="overview" aria-controls="wd-tabs--lq-panel-overview" aria-selected="true" tabindex="0"><span class="lq-tabs__label">此刻</span></button>

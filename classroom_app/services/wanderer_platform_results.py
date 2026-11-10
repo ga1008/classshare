@@ -105,6 +105,54 @@ def _job_follow_up(operation, args, data):
             "job_identity": {"kind": "ai_job", "id": identifier, "task_type": job.get("task_type")}}
 
 
+def _verified_message_delivery(conn, source, operation, args, receipt):
+    """A lost HTTP reply can be recovered only from committed native evidence."""
+    if operation.method != 'POST' or operation.path not in {
+            '/api/social/conversations/{key}/messages', '/api/message-center/private/messages'}:
+        return None
+    from .platform_execution_authority import verify_platform_authority
+    from .wanderer_message_delivery_service import verified_social_delivery, verified_private_delivery
+    actor = verify_platform_authority(conn, source, required_scope='platform:read').actor
+    observed = receipt.get('result') or {}
+    data = observed.get('data') or {}
+    if not isinstance(data, dict):
+        data = {}
+    if operation.path == '/api/social/conversations/{key}/messages':
+        delivery = verified_social_delivery(conn, source, actor, receipt['operation_id'],
+            (args.get('path_params') or {}).get('key'), args.get('body') or {}, data.get('id'))
+        if delivery is None:
+            return None
+        from .social_conversation_service import serialize_messages
+        message, metadata = delivery
+        replayed = bool((data.get('delivery') or {}).get('reused'))
+        data = {**data, **serialize_messages(conn, actor.key, [message])[0], **metadata}
+        kind = 'native_message'
+    else:
+        delivery = verified_private_delivery(conn, source, actor, receipt['operation_id'],
+            (args.get('body') or {}).get('contact_identity'), (args.get('body') or {}).get('content'),
+            (data.get('sent_message') or {}).get('id'))
+        if delivery is None:
+            return None
+        from .message_center_service import _serialize_private_message, _load_private_message_attachments
+        message, metadata = delivery
+        replayed = data.get('replayed') is True
+        serialized = _serialize_private_message(message, current_identity=actor.key, blocked_identities=set(),
+            attachments_by_message=_load_private_message_attachments(conn, [int(message['id'])]))
+        data = {**data, 'sent_message': serialized, 'conversation_key': message['conversation_key'], **metadata}
+        kind = 'native_private_message'
+    if replayed:
+        from .wanderer_message_delivery_service import delivery_metadata
+        metadata['delivery'].update(delivery_metadata(
+            {'operation_id': receipt['operation_id'], 'delivery_kind': 'reused'}, message['id'])['delivery'])
+    if receipt.get('status') != 'observed_http_result':
+        metadata['delivery']['recovered_from_committed_message'] = True
+    return {**receipt, 'execution_status': receipt.get('status'), 'status': 'succeeded',
+            'verified_business': True, 'delivery': metadata['delivery'],
+            'result': {**observed, 'data': data},
+            'completion_evidence': {'kind': kind, 'id': int(message['id']),
+                'operation_id': receipt['operation_id'], 'reused': metadata['delivery']['reused']}}
+
+
 def normalize_platform_result(conn, source, operation, args, receipt):
     result = {**receipt, "execution_status": receipt.get("status")}
     observed = receipt.get("result") or {}
@@ -112,6 +160,15 @@ def normalize_platform_result(conn, source, operation, args, receipt):
     http = observed.get("http_status")
     if observed.get("outcome") == "rejected" or (isinstance(http, int) and 400 <= http < 500):
         return {**result, "status": "failed", "error": observed.get("error_detail") or "platform_request_rejected"}
+    delivered = _verified_message_delivery(conn, source, operation, args, receipt)
+    if delivered is not None:
+        return delivered
+    if operation.method == 'POST' and operation.path in {
+            '/api/social/conversations/{key}/messages', '/api/message-center/private/messages'}:
+        known = conn.execute('SELECT operation_id FROM wanderer_message_deliveries WHERE operation_id=?',
+                             (receipt['operation_id'],)).fetchone()
+        if known:
+            return {**result, 'status': 'uncertain', 'error': 'native_delivery_no_longer_readable_or_matching'}
     tracker = _job_follow_up(operation, args, data)
     if tracker:
         return {**interpret_platform_job_result(result, tracker["job_identity"]), **tracker}
@@ -127,7 +184,7 @@ def normalize_platform_result(conn, source, operation, args, receipt):
     if operation.method == "POST" and operation.path == "/api/social/conversations/{key}/messages":
         from .platform_execution_authority import verify_platform_authority
         actor = verify_platform_authority(conn, source, required_scope="platform:read").actor
-        row = conn.execute("SELECT id FROM social_messages WHERE id=? AND sender_identity=? AND conversation_key=? AND client_nonce=?",
+        row = conn.execute("SELECT id FROM social_messages WHERE id=? AND sender_identity=? AND conversation_key=? AND client_nonce=? AND recalled_at IS NULL",
             ((data or {}).get("id"), actor.key, (args.get("path_params") or {}).get("key"), receipt["operation_id"])).fetchone()
         if row:
             return {**result, "status": "succeeded", "verified_business": True,

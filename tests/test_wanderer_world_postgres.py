@@ -14,6 +14,7 @@ from classroom_app.db.schema_wanderers import ensure_wanderer_schema
 from classroom_app.db.schema_wanderer_world import ensure_wanderer_world_schema
 from classroom_app.db.schema_wanderer_runtime import ensure_wanderer_runtime_schema
 from classroom_app.db.schema_wanderer_social import ensure_wanderer_social_schema
+from classroom_app.db.schema_wanderer_reflection import ensure_wanderer_reflection_schema
 from classroom_app.db.schema_account_control import ensure_account_control_schema
 from classroom_app.db.schema_agent_platform_requests import ensure_agent_platform_requests_schema
 from classroom_app.services import wanderer_resource_service as resources
@@ -60,6 +61,7 @@ class WandererWorldPostgresTest(unittest.TestCase):
             ensure_wanderer_world_schema(conn, engine="postgres", allow_schema_changes=True)
             ensure_wanderer_runtime_schema(conn, engine="postgres", allow_schema_changes=True)
             ensure_wanderer_social_schema(conn, engine="postgres", allow_schema_changes=True)
+            ensure_wanderer_reflection_schema(conn, engine="postgres", allow_schema_changes=True)
             ensure_account_control_schema(conn)
             ensure_agent_platform_requests_schema(conn)
             for sid in range(1, 5):
@@ -122,6 +124,68 @@ class WandererWorldPostgresTest(unittest.TestCase):
         self.assertEqual(sum(bool(row["ok"]) for row in result),1)
         with self.connect() as conn:
             self.assertEqual(resources.snapshot(conn,1,"ai_wake")["used"],1)
+
+    def _daily_run(self):
+        from classroom_app.services import wanderer_daily_reflection_service as daily
+        with self.connect() as conn:
+            w=dict(conn.execute('SELECT * FROM wanderer_agents WHERE id=1').fetchone())
+            event=runtime.enqueue_wake_event(conn,1,'reflection',local_iso()[:10],{'scope':{'kind':'private'}})
+            with patch.object(daily,'_friends',return_value=[{'peer_identity':'student:2','name':'Synthetic 2'}]):
+                daily.register_session(conn,w,local_iso()[:10],event)
+            conn.commit()
+        return {**event,'wanderer':w,'scope':{'kind':'private'},'turn_id':'synthetic-rating-turn'}
+
+    def test_three_free_reflection_slots_have_exactly_three_winners(self):
+        from classroom_app.services import wanderer_daily_reflection_service as daily
+        run=self._daily_run()
+        def reserve(index):
+            with self.connect() as conn:
+                result=daily.reserve_free_call(conn,{**run,'turn_id':f'free-race-{index}'})
+                conn.commit()
+                return result
+        results=self.race(8,reserve)
+        self.assertEqual(sum(item['ok'] for item in results),3)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute('SELECT ai_calls FROM wanderer_reflection_sessions').fetchone()[0],3)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_reflection_dispatches').fetchone()[0],3)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_resource_reservations').fetchone()[0],0)
+
+    def test_daily_rating_conflicts_preserve_one_baseline_and_revision(self):
+        from classroom_app.services import wanderer_daily_reflection_service as daily
+        from classroom_app.services.social_common import SocialError
+        run=self._daily_run()
+        def rate(index):
+            with self.connect() as conn:
+                try:
+                    value=daily.rate_friend(conn,run,'student:2','good' if index else 'very_good',
+                        expected_revision=0,operation_id=f'grade-race-{index}')
+                    conn.commit()
+                    return value
+                except SocialError as exc:
+                    conn.rollback()
+                    return {'conflict':exc.status_code}
+        with patch.object(daily,'_friends',return_value=[{'peer_identity':'student:2','name':'Synthetic 2'}]):
+            results=self.race(2,rate)
+        self.assertEqual(sum('affinity' in item for item in results),1,results)
+        with self.connect() as conn:
+            row=conn.execute('SELECT baseline_affinity,revision FROM wanderer_affinity_ratings').fetchone()
+            self.assertEqual((row[0],row[1]),(0,1))
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_affinity_rating_operations').fetchone()[0],1)
+
+    def test_same_rating_operation_replays_across_connections(self):
+        from classroom_app.services import wanderer_daily_reflection_service as daily
+        run=self._daily_run()
+        def rate(_):
+            with self.connect() as conn:
+                result=daily.rate_friend(conn,run,'student:2','good',expected_revision=0,operation_id='same-grade')
+                conn.commit()
+                return result
+        with patch.object(daily,'_friends',return_value=[{'peer_identity':'student:2','name':'Synthetic 2'}]):
+            results=self.race(6,rate)
+        self.assertEqual({item['affinity'] for item in results},{5})
+        self.assertEqual(sum(not item['replayed'] for item in results),1)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_affinity_rating_operations').fetchone()[0],1)
 
     def test_legacy_social_and_daily_capacity_migrate_once_without_removing_objects(self):
         from classroom_app.db.schema_social import ensure_social_schema

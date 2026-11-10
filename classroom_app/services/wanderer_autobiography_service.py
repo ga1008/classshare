@@ -306,7 +306,9 @@ def recall_block(conn: Any, wanderer: dict, *, scope: dict, budget: int = 6500, 
     selected=[]
     used=sum(map(len,lines))
     for item in reversed(rows):
-        line = f"#{item['id']} {item['occurred_at']}｜作者散修{item['origin_author']}｜{item['location']}｜{item['content']}"
+        author = (f"管理员校正，原作者散修{item['origin_author']}" if item.get('author_kind') == 'admin_correction'
+                  else f"作者散修{item['origin_author']}")
+        line = f"#{item['id']} {item['occurred_at']}｜{author}｜{item['location']}｜{item['content']}"
         if used + len(line) > budget:
             continue
         selected.append((item,line))

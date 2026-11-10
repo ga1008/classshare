@@ -718,43 +718,58 @@ def social_admin_view(conn: Any, wanderer_id: int) -> dict[str, Any]:
             "counts": {"friends": len(friends), "pending": len(pending), "blocked": len(blocked), "groups": len(groups)}}
 
 
-def social_conversations(conn: Any, wanderer_id: int, *, page: Any = 1, limit: Any = 20) -> dict[str, Any]:
+def social_conversations(conn: Any, wanderer_id: int, *, page: Any = 1, limit: Any = 20, q: str = '') -> dict[str, Any]:
     wanderer = require_wanderer(conn, wanderer_id)
     identity = f"student:{int(wanderer['student_id'])}"
     page_number, size, offset = _page_bounds(page, limit, 20)
     # Page in SQL so thousands of retained groups/DMs do not load into Python.
     source = """SELECT d.conversation_key AS key,'dm' AS type,'' AS title,
         COALESCE((SELECT MAX(created_at) FROM social_messages m WHERE m.conversation_key=d.conversation_key),'') AS last_at,
-        d.last_message_id,NULL AS joined_at,NULL AS left_at,NULL AS dissolved_at
+        d.last_message_id,NULL AS joined_at,NULL AS left_at,NULL AS dissolved_at,
+        COALESCE((SELECT p.identity FROM social_dm_participants p WHERE p.conversation_key=d.conversation_key AND p.identity<>d.identity LIMIT 1),'') AS peer_identity
         FROM social_dm_participants d WHERE d.identity=?
         UNION ALL SELECT 'group:' || CAST(g.id AS TEXT),'group',g.name,
         COALESCE((SELECT MAX(created_at) FROM social_messages sm WHERE sm.conversation_key='group:' || CAST(g.id AS TEXT)),m.joined_at),
         COALESCE((SELECT MAX(id) FROM social_messages sm WHERE sm.conversation_key='group:' || CAST(g.id AS TEXT)),0),
-        m.joined_at,m.left_at,g.dissolved_at FROM social_group_members m JOIN social_groups g ON g.id=m.group_id WHERE m.member_identity=?
-        UNION ALL SELECT 'legacy:' || conversation_key,'legacy',conversation_key,MAX(created_at),MAX(id),NULL,NULL,NULL
+        m.joined_at,m.left_at,g.dissolved_at,'' FROM social_group_members m JOIN social_groups g ON g.id=m.group_id WHERE m.member_identity=?
+        UNION ALL SELECT 'legacy:' || conversation_key,'legacy',conversation_key,MAX(created_at),MAX(id),NULL,NULL,NULL,
+        MAX(CASE WHEN sender_identity=? THEN recipient_identity ELSE sender_identity END)
         FROM private_messages WHERE sender_identity=? OR recipient_identity=? GROUP BY conversation_key"""
-    args=(identity,identity,identity,identity)
-    total=int(conn.execute(f'SELECT COUNT(*) AS n FROM ({source}) conversations',args).fetchone()['n'])
-    rows=conn.execute(f'SELECT * FROM ({source}) conversations ORDER BY last_at DESC,key LIMIT ? OFFSET ?',(*args,size,offset)).fetchall()
+    args=(identity,identity,identity,identity,identity)
+    named = (f"WITH conversations AS ({source}) SELECT c.*,COALESCE(w.display_name,s.name,t.name,'') AS peer_name "
+             "FROM conversations c LEFT JOIN students s ON c.peer_identity='student:' || CAST(s.id AS TEXT) "
+             "LEFT JOIN teachers t ON c.peer_identity='teacher:' || CAST(t.id AS TEXT) "
+             "LEFT JOIN wanderer_agents w ON w.student_id=s.id")
+    query = str(q or '').strip()[:120].casefold()
+    where = ''
+    if query:
+        term = '%' + query.replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%'
+        where = " WHERE (LOWER(title) LIKE ? ESCAPE '!' OR LOWER(peer_name) LIKE ? ESCAPE '!' OR LOWER(key) LIKE ? ESCAPE '!')"
+        args += (term, term, term)
+    total=int(conn.execute(f'SELECT COUNT(*) AS n FROM ({named}) named_conversations' + where,args).fetchone()['n'])
+    rows=conn.execute(f'SELECT * FROM ({named}) named_conversations' + where +
+                      ' ORDER BY last_at DESC,key LIMIT ? OFFSET ?',(*args,size,offset)).fetchall()
     items=[dict(row) for row in rows]
     for item in items:
-        if item['type']=='dm':
+        if item['type']=='dm' and not item.get('peer_identity'):
             peers=[p for p in item['key'].removeprefix('dm:').split('|') if p and p!=identity]
             item['peer_identity']=peers[0] if peers else ''
     names=_identity_names(conn,[item['peer_identity'] for item in items if item.get('peer_identity')])
     for item in items:
-        if item['type']=='dm':
+        if item['type'] in {'dm','legacy'}:
             item['title']=(names.get(item.get('peer_identity')) or {}).get('name') or item.get('peer_identity') or '好友'
-    return {'items':items,'total':total,'page':page_number,'limit':size}
+    return {'items':items,'total':total,'page':page_number,'limit':size,'viewer_identity':identity}
 
 
 def social_messages(conn: Any, wanderer_id: int, conversation_key: str, *, page: Any = 1,
-                    limit: Any = 50) -> dict[str, Any]:
+                    limit: Any = 50, before_id: int | None = None) -> dict[str, Any]:
     wanderer = require_wanderer(conn, wanderer_id)
     identity = f"student:{int(wanderer['student_id'])}"
     key = str(conversation_key or "").strip()
     if not key:
         raise ValueError("缺少会话标识")
+    if before_id is not None and int(before_id) <= 0:
+        raise ValueError('消息游标须为正整数')
     if key.startswith('legacy:'):
         original = key.removeprefix('legacy:')
         allowed = conn.execute('SELECT 1 FROM private_messages WHERE conversation_key=? '
@@ -762,17 +777,22 @@ def social_messages(conn: Any, wanderer_id: int, conversation_key: str, *, page:
         if not allowed:
             raise PermissionError('该历史会话不属于这位散修')
         number,size,offset=_page_bounds(page,limit,50)
-        rows=conn.execute('SELECT * FROM private_messages WHERE conversation_key=? ORDER BY id DESC LIMIT ? OFFSET ?',
-                          (original,size,offset)).fetchall()
+        clause, params = (' AND id<?', (original,int(before_id))) if before_id is not None else ('', (original,))
+        rows=conn.execute('SELECT * FROM private_messages WHERE conversation_key=?' + clause + ' ORDER BY id DESC LIMIT ? OFFSET ?',
+                          (*params,size+1,0 if before_id is not None else offset)).fetchall()
+        has_more = len(rows)>size
+        rows = rows[:size]
         count=conn.execute('SELECT COUNT(*) AS n FROM private_messages WHERE conversation_key=?',(original,)).fetchone()['n']
         from .message_center_service import _load_private_message_attachments
         attachments=_load_private_message_attachments(conn,[int(row['id']) for row in rows])
         for values in attachments.values():
             for value in values:
                 value['download_url']=f"/api/manage/system/wanderers/{wanderer_id}/attachments/legacy/{value['id']}"
-        return {'items':[{**dict(row),'body':row['content'],'sender_name':row['sender_identity'],
+        names = _identity_names(conn, list(dict.fromkeys(row['sender_identity'] for row in rows)))
+        return {'items':[{**dict(row),'body':row['content'],'sender_name':(names.get(row['sender_identity']) or {}).get('name') or row['sender_identity'],
                           'attachments':attachments.get(int(row['id']),[])} for row in rows][::-1],
-                'total':count,'page':number,'limit':size,'conversation_key':key}
+                'total':count,'page':number,'limit':size,'conversation_key':key,'viewer_identity':identity,
+                'next_before_id':int(rows[-1]['id']) if has_more and rows else None,'has_more':has_more}
     if key.startswith("dm:"):
         allowed = conn.execute(
             "SELECT 1 FROM social_dm_participants WHERE identity = ? AND conversation_key = ? LIMIT 1",
@@ -788,10 +808,13 @@ def social_messages(conn: Any, wanderer_id: int, conversation_key: str, *, page:
         raise PermissionError("该会话不属于这位散修")
     page_number, size, offset = _page_bounds(page, limit, 50)
     count = conn.execute("SELECT COUNT(*) AS n FROM social_messages WHERE conversation_key = ?", (key,)).fetchone()
+    clause, params = (' AND id<?', (key,int(before_id))) if before_id is not None else ('', (key,))
     rows = conn.execute(
         "SELECT id, sender_identity, body, message_type, created_at, recalled_at FROM social_messages "
-        "WHERE conversation_key = ? "
-        "ORDER BY id DESC LIMIT ? OFFSET ?", (key, size, offset)).fetchall()
+        "WHERE conversation_key = ? " + clause +
+        " ORDER BY id DESC LIMIT ? OFFSET ?", (*params, size+1, 0 if before_id is not None else offset)).fetchall()
+    has_more = len(rows)>size
+    rows = rows[:size]
     data = [_row_dict(row) for row in rows][::-1]
     sender_ids = [f"{row.get('sender_identity')}" for row in data]
     names = _identity_names(conn, list(dict.fromkeys(sender_ids)))
@@ -815,7 +838,8 @@ def social_messages(conn: Any, wanderer_id: int, conversation_key: str, *, page:
                       "message_type": row.get("message_type"), "created_at": row.get("created_at"),
                       "recalled": bool(row.get("recalled_at")), "media": (media.get(int(row["id"])) or [None])[0], "attachments":media.get(int(row["id"]),[])})
     return {"items": items, "total": int(_row_dict(count).get("n") or 0), "page": page_number,
-            "limit": size, "conversation_key": key}
+            "limit": size, "conversation_key": key, 'viewer_identity':identity,
+            'next_before_id':int(rows[-1]['id']) if has_more and rows else None,'has_more':has_more}
 
 
 def build_wanderer_detail(conn: Any, wanderer_id: Any) -> dict[str, Any]:

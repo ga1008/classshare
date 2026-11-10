@@ -1,10 +1,7 @@
-"""Daily self-reflection for 散修 (humanity v2).
+"""Daily reflection orchestration through the single autonomous runtime.
 
-One model turn per wanderer per local day, outside the action budget. It reviews
-today's trace, mood, relationships and memories; writes bounded next-day tuning;
-may request promotion; and decides whether old memories should be compressed.
-The reflection row's unique ``(wanderer_id, reflection_date)`` is the idempotency
-anchor.
+Three separately audited free model requests per person/day; legacy payload
+helpers are retained for self.reflect and historical record compatibility.
 """
 from __future__ import annotations
 
@@ -15,10 +12,9 @@ from datetime import timedelta
 from typing import Any, Callable, Optional
 
 from ..time_utils import local_iso, local_now
-from .wanderer_actions_common import ActionContext, record_action, run_turn
+from .wanderer_actions_common import ActionContext
 from .wanderer_identity_service import STATUS_ACTIVE, invalidate_wanderer_cache, list_wanderers
 from .wanderer_life_core import reflection_summary_limit
-from .wanderer_prompt_service import extract_json_object
 from .wanderer_settings_service import (
     is_wanderer_runtime_enabled,
     reflection_batch_size,
@@ -295,126 +291,74 @@ def _apply_payload(conn: Any, wanderer: dict[str, Any], payload: dict[str, Any],
     return applied
 
 
-async def _summarizer(ctx: ActionContext):
-    from .wanderer_ai_service import summarize_text
-
-    async def summarize(text: str) -> str:
-        return await summarize_text(ctx.conn_factory, ctx.wanderer, text, ai_caller=ctx.ai_caller)
-    return summarize
-
-
-async def _maybe_compress(ctx: ActionContext, *, force: bool) -> dict[str, int]:
-    from .wanderer_episodic_memory_service import compress_memories, memory_stats
-    from .wanderer_settings_service import prompt_char_budget
-
-    with ctx.connect() as conn:
-        stats = memory_stats(conn, ctx.wanderer)
-        budget = prompt_char_budget(conn)
-    if not force and stats["active_chars"] <= int(budget * 0.75):
-        return {"compressed": 0, "chapters": 0, "discarded": 0, "active": stats["active"], "active_chars": stats["active_chars"]}
-    summarizer = await _summarizer(ctx)
-    with ctx.connect() as conn:
-        result = await compress_memories(conn, ctx.wanderer, summarizer=summarizer)
-        conn.commit()
-    if result.get("compressed"):
-        ctx.ai_calls += 1
-    return result
-
-
 async def run_reflection(ctx: ActionContext, *, force: bool = False) -> dict[str, Any]:
-    """One wanderer's daily reflection; safe to retry while the row is pending/failed."""
-    now = ctx.current_time()
-    date = reflection_date(now)
+    """Register one trusted free daily session and execute the existing runtime."""
+    from .wanderer_runtime_service import runtime_enabled, wake_wanderer, enqueue_wake_event, retry_failed_event
+    from .wanderer_daily_reflection_service import register_session, sync_session, FREE_CALL_LIMIT
+    date = reflection_date(ctx.current_time())
     ctx.reload()
-    from .wanderer_runtime_service import runtime_enabled, wake_wanderer
+    context = {'scope': {'kind': 'private'}, 'date': date,
+               'reason': '回顾今天的真实经历，整理自己的记忆和计划，并对全部当前好友提交五档感受。'}
     with ctx.connect() as conn:
-        autonomous = runtime_enabled(conn)
-    if autonomous:
-        with ctx.connect() as conn:
-            row=ensure_reflection(conn,ctx.wanderer,date)
-            conn.commit()
-        result = await wake_wanderer(ctx.conn_factory, ctx.wanderer_id, source='reflection', event_key=date,
-            context={'scope':{'kind':'private'},'date':date,'reason':'到了你回顾今日经历的时间，可自行整理记忆与计划。'},
-            ai_caller=ctx.ai_caller, force=force)
-        rounds=result.get('rounds') or [result]
-        considered=any(item.get('status')=='ok' for item in rounds)
-        state='applied' if considered else 'skipped_capped' if result.get('status')=='capped' else result.get('status','failed')
-        memories=[r.get('result',{}).get('memory_id') for r in result.get('receipts',[]) if r.get('status')=='succeeded' and isinstance(r.get('result'),dict) and r['result'].get('memory_id')]
-        with ctx.connect() as conn:
-            summaries=[]
-            if memories:
-                summaries=[r['content'] for r in conn.execute('SELECT content FROM wanderer_episodic_memories '
-                           f"WHERE id IN ({','.join('?' for _ in memories)}) AND wanderer_id=? ORDER BY occurred_at,id",(*memories,ctx.wanderer_id)).fetchall()]
-            if row:
-                _set_status(conn,row['id'],state,ai_calls=result.get('ai_calls',0),error=result.get('error',''),
-                    output_json=json.dumps({'today':{'summary':'\n'.join(summaries)},'runtime_turns':[r.get('turn_id') for r in rounds]},ensure_ascii=False),
-                    applied_json=json.dumps({'new_episodes':memories,'runtime_event':date}),applied_at=local_iso() if considered else None)
-            if considered:
-                conn.execute('UPDATE wanderer_agents SET last_reflection_at=? WHERE id=?',(local_iso(),ctx.wanderer_id))
-            conn.commit()
-        return {'status':state,
-                'ai_calls':result.get('ai_calls',0),'runtime':result}
-    with ctx.connect() as conn:
+        if not runtime_enabled(conn) or not is_wanderer_runtime_enabled(conn):
+            return {'status': 'disabled', 'ai_calls': 0, 'reason': '每日自省使用统一运行链；当前运行开关已关闭。'}
+        if ctx.wanderer.get('status') != STATUS_ACTIVE:
+            return {'status': 'disabled', 'ai_calls': 0, 'reason': '散修已暂停或陨落。'}
         row = ensure_reflection(conn, ctx.wanderer, date)
+        event = enqueue_wake_event(conn, ctx.wanderer_id, 'reflection', date, context)
+        session = register_session(conn, ctx.wanderer, date, event)
+        if session['status'] in {'applied', 'partial'} and not force:
+            conn.commit()
+            return {'status': 'skipped', 'reason': session['status'], 'ai_calls': 0}
+        if int(session['ai_calls']) >= FREE_CALL_LIMIT:
+            state = sync_session(conn, {'wanderer': ctx.wanderer, **event})
+            conn.commit()
+            return {'status': 'skipped', 'reason': 'reflection_limit', 'ai_calls': 0, 'reflection': state}
+        pending = conn.execute("SELECT * FROM wanderer_wake_events WHERE wanderer_id=? AND chain_id=? "
+            "AND state IN ('pending','processing','deferred') ORDER BY depth DESC,created_at DESC LIMIT 1",
+            (ctx.wanderer_id,session['chain_id'])).fetchone()
+        if pending:
+            event = dict(pending)
+        elif force and session['status'] in {'applied', 'partial'}:
+            failed = conn.execute("SELECT * FROM wanderer_wake_events e WHERE e.wanderer_id=? AND e.chain_id=? "
+                "AND e.state IN ('failed','blocked') AND NOT EXISTS(SELECT 1 FROM wanderer_wake_events repair "
+                "WHERE repair.wanderer_id=e.wanderer_id AND repair.chain_id=e.chain_id AND repair.parent_turn_id=e.turn_id "
+                "AND repair.source='protocol_repair' AND repair.state='completed') ORDER BY depth DESC,updated_at DESC LIMIT 1",
+                (ctx.wanderer_id,session['chain_id'])).fetchone()
+            if failed:
+                event = dict(failed)
+                retry_failed_event(conn,ctx.wanderer_id,event['event_id'])
+            else:
+                parent = conn.execute('SELECT turn_id,depth FROM wanderer_turns WHERE wanderer_id=? AND chain_id=? '
+                    'ORDER BY created_at DESC,turn_id DESC LIMIT 1', (ctx.wanderer_id,session['chain_id'])).fetchone()
+                event = enqueue_wake_event(conn,ctx.wanderer_id,'callback',f"reflection-resume:{date}:{session['ai_calls']}",
+                    context,chain_id=session['chain_id'],parent_turn_id=parent['turn_id'],depth=int(parent['depth'])+1)
+        elif event['state'] in {'failed','blocked','deferred'}:
+            retry_failed_event(conn,ctx.wanderer_id,event['event_id'])
         conn.commit()
-    if not row:
-        return {"status": "failed", "error": "reflection row unavailable", "ai_calls": 0}
-    stale_running = False
-    if row["status"] == "running" and row.get("created_at"):
-        try:
-            from ..time_utils import parse_datetime
-            stale_running = (now - parse_datetime(row["created_at"])).total_seconds() > 900
-        except (TypeError, ValueError):
-            stale_running = True
-    if (row["status"] == "applied" or (row["status"] == "running" and not stale_running)) and not force:
-        return {"status": "skipped", "reason": row["status"], "ai_calls": 0}
+    result = await wake_wanderer(ctx.conn_factory,ctx.wanderer_id,source=event['source'],event_key=event['event_key'],
+                                context=json.loads(event['context_json']),ai_caller=ctx.ai_caller,force=force)
+    rounds = result.get('rounds') or [result]
+    memories = [receipt['result']['memory_id'] for receipt in result.get('receipts',[])
+                if receipt.get('status') == 'succeeded' and isinstance(receipt.get('result'),dict)
+                and receipt['result'].get('memory_id')]
     with ctx.connect() as conn:
-        _set_status(conn, row["id"], "running")
+        summaries = []
+        if memories:
+            summaries = [item['content'] for item in conn.execute('SELECT content FROM wanderer_episodic_memories '
+                f"WHERE id IN ({','.join('?' for _ in memories)}) AND wanderer_id=? ORDER BY occurred_at,id",
+                (*memories,ctx.wanderer_id)).fetchall()]
+        prior = conn.execute('SELECT applied_json FROM wanderer_daily_reflections WHERE id=?',(row['id'],)).fetchone()
+        applied = _loads(prior['applied_json'],dict)
+        applied['new_episodes'] = list(dict.fromkeys([*(applied.get('new_episodes') or []),*memories]))
+        _set_status(conn,row['id'],'running',error=result.get('error',''),
+            output_json=json.dumps({'today':{'summary':'\n'.join(summaries)},
+                                    'runtime_turns':[item.get('turn_id') for item in rounds]},ensure_ascii=False),
+            applied_json=json.dumps(applied,ensure_ascii=False))
+        state = sync_session(conn, {'wanderer':ctx.wanderer,**event})
         conn.commit()
-    try:
-        with ctx.connect() as conn:
-            body = _input_text(conn, ctx.wanderer, now)
-        scene = {
-            "kind": "夜深了，你一个人坐着回想今天", "title": "每日自省",
-            "meta": f"{date} · 不看别人，只看自己的一天", "body": body,
-            "tags": ["自省", "今天"], "task": "回顾今天做过的事、说过的话和后果；诚实地看自己，然后决定明天怎么过。"
-                                                    "用朴素的话，不写文学化自我描述。",
-            "output_contract": reflection_contract(ctx.wanderer.get("tier")),
-        }
-        result = await run_turn(ctx, scene=scene, thread_key="reflection", suffix="daily_reflection")
-        calls = int(result.get("ai_calls") or 0)
-        if result.get("status") == "capped":
-            with ctx.connect() as conn:
-                _set_status(conn, row["id"], "skipped_capped", error="今日 AI 额度不足", ai_calls=calls,
-                            context_chars=len(body))
-                conn.commit()
-            return {"status": "skipped_capped", "ai_calls": calls}
-        payload = extract_json_object(result.get("raw_text")) if result.get("status") == "ok" else None
-        if not isinstance(payload, dict):
-            with ctx.connect() as conn:
-                _set_status(conn, row["id"], "failed", error="无法解析反省 JSON", ai_calls=calls,
-                            context_chars=len(body))
-                conn.commit()
-            return {"status": "failed", "error": "unparseable", "ai_calls": calls}
-        with ctx.connect() as conn:
-            applied = _apply_payload(conn, ctx.wanderer, payload, now)
-            _set_status(conn, row["id"], "applied", ai_calls=calls, context_chars=len(body),
-                        output_json=json.dumps(payload, ensure_ascii=False),
-                        applied_json=json.dumps(applied, ensure_ascii=False), applied_at=local_iso())
-            conn.commit()
-        mood_payload = payload.get("mood") if isinstance(payload.get("mood"), dict) else {}
-        record_action(ctx, "daily_reflection", mood=str(mood_payload.get("label") or ""),
-                      ai_calls=calls, detail={"summary": applied.get("summary", "")[:200],
-                                              "intentions": applied.get("self_tuning", {}).get("intentions", [])})
-        compressed = await _maybe_compress(ctx, force=bool(applied.get("compress")))
-        invalidate_wanderer_cache()
-        return {"status": "applied", "ai_calls": calls + (1 if compressed.get("compressed") else 0),
-                "applied": applied, "compressed": compressed}
-    except Exception as exc:  # noqa: BLE001 - one failed reflection must not stop the batch
-        with ctx.connect() as conn:
-            _set_status(conn, row["id"], "failed", error=f"{type(exc).__name__}: {exc}")
-            conn.commit()
-        return {"status": "failed", "error": str(exc)[:300], "ai_calls": 0}
+    invalidate_wanderer_cache()
+    return {'status':state['status'],'ai_calls':result.get('ai_calls',0),'runtime':result,'reflection':state}
 
 
 async def run_daily_reflections(
@@ -427,23 +371,28 @@ async def run_daily_reflections(
     max_seconds: Optional[int] = None,
 ) -> dict[str, Any]:
     from ..database import get_db_connection
+    from .wanderer_runtime_service import runtime_enabled
+    from ..db.schema_wanderer_reflection import ensure_wanderer_reflection_schema
 
     factory = conn_factory or get_db_connection
     current = now or local_now()
     date = reflection_date(current)
     with factory() as conn:
-        if not is_wanderer_runtime_enabled(conn) or not reflection_enabled(conn):
+        if not is_wanderer_runtime_enabled(conn) or not reflection_enabled(conn) or not runtime_enabled(conn):
             return {"status": "disabled", "processed": 0, "applied": 0, "skipped": 0, "failed": 0, "ai_calls": 0}
         wanderers = list_wanderers(conn, statuses=[STATUS_ACTIVE])
         reflected = {str(row[0]) for row in conn.execute(
-            "SELECT wanderer_id FROM wanderer_daily_reflections WHERE reflection_date = ? AND status IN ('applied','running')",
+            "SELECT wanderer_id FROM wanderer_daily_reflections WHERE reflection_date = ? AND status IN ('applied','partial','running')",
             (date,)).fetchall()}
+        ensure_wanderer_reflection_schema(conn)
+        reflected.update(str(row[0]) for row in conn.execute('SELECT wanderer_id FROM wanderer_reflection_sessions '
+            'WHERE reflection_date=? AND ai_calls>=3',(date,)).fetchall())
         limit = int(batch_size or reflection_batch_size(conn))
         seconds = int(max_seconds or tick_max_seconds(conn))
     pending = [item for item in wanderers if str(item["id"]) not in reflected][:limit]
     started = time.monotonic()
-    counts = {"applied": 0, "skipped": 0, "failed": 0, "skipped_capped": 0}
-    total_calls = 0
+    counts = {"applied": 0, "partial": 0, "running": 0, "skipped": 0, "failed": 0, "skipped_capped": 0}
+    total_calls = processed = 0
     for index, wanderer in enumerate(pending):
         if time.monotonic() - started > seconds:
             break
@@ -452,6 +401,7 @@ async def run_daily_reflections(
         ctx = ActionContext(factory, wanderer, ai_caller=ai_caller, sleep=sleep or asyncio.sleep,
                             now=current, special=False)
         result = await run_reflection(ctx)
+        processed += 1
         total_calls += int(result.get("ai_calls") or 0)
         status = str(result.get("status") or "failed")
         if status in counts:
@@ -462,7 +412,7 @@ async def run_daily_reflections(
             counts["failed"] += 1
         if ctx.capped:
             break
-    return {"status": "ok", "date": date, "processed": len(pending), "ai_calls": total_calls, **counts}
+    return {"status": "ok", "date": date, "processed": processed, "ai_calls": total_calls, **counts}
 
 
 async def run_reflection_now(wanderer_id: int, *, conn_factory: Optional[Callable[[], Any]] = None,

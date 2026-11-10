@@ -287,10 +287,13 @@ def startup_contract(conn):
     """Supplement the central PG inventory without changing its legacy scope."""
     from classroom_app.db.schema_wanderers import _table_statements
     from classroom_app.db.schema_wanderer_runtime import TABLES as runtime
+    from classroom_app.db.schema_wanderer_reflection import TABLES as reflection
     from classroom_app.db.schema_wanderer_world import TABLES as world, AGENT_COLUMNS, VERSION
     statements = [*_table_statements("id BIGINT PRIMARY KEY"), *world]
     tables = {match.group(1) for sql in statements if (match := re.search(r"CREATE TABLE IF NOT EXISTS (\w+)", sql))}
     tables.update(runtime)
+    tables.update(reflection)
+    tables.add('wanderer_message_deliveries')
     tables.update({"account_control_migrations", "wanderer_platform_ai_jobs", "wanderer_platform_private_ai_jobs",
                    "wanderer_relationship_versions", "wanderer_relationship_changes", "wanderer_group_observations", "wanderer_private_message_operations"})
     columns = {"students": {"control_mode"}, "wanderer_agents": set(AGENT_COLUMNS),

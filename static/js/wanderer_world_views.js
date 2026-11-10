@@ -29,7 +29,7 @@ export function rawRecord(item, title = '查看完整记录') {
     details.addEventListener('toggle', () => { if (details.open && !body.textContent) body.textContent = JSON.stringify(item, null, 2); });
     return details;
 }
-export function memoryItem(item) {
+export function memoryItem(item, { foot = [] } = {}) {
     const tags = node('div', { class: 'ww-meta' }, [
         badge(item.visibility === 'public' ? '公开经历' : '受保护的记忆', item.visibility === 'public' ? 'success' : 'neutral'),
         badge(item.author_kind === 'self' ? '本人自述' : '历史记录'),
@@ -38,7 +38,7 @@ export function memoryItem(item) {
     return node('li', { class: 'ww-timeline__item' }, [
         node('time', { datetime: item.occurred_at || '', text: dateText(item.occurred_at) }),
         createContent('card', { title: item.title || '一段经历', meta: item.location || '地点未记录', variant: 'flat' }, {
-            body: [tags, node('p', { class: 'ww-fulltext', text: item.content || '' })],
+            body: [tags, node('p', { class: 'ww-fulltext', text: item.content || '' })], foot,
         }),
     ]);
 }
@@ -95,10 +95,21 @@ export function flowView(item) {
         node('div', {}, [node('strong', { text: title }), node('small', { text: detail })]),
     ])));
 }
-export function relationshipItem(item) {
+export function relationshipItem(item, { direction = 'outgoing' } = {}) {
     const value = Math.min(100, Math.max(0, Number(item.new_affinity ?? item.affinity ?? 0)));
-    return createContent('card', { title: item.name || item.peer_identity || '联系人', variant: 'flat', meta: item.reason || item.last_reason || '尚无感受说明' }, {
-        body: [node('div', { class: 'ww-affinity' }, [createComponent('progress', { label: '本人对对方的好感', value, max: 100 }), node('strong', { text: `${value}%` })]),
-            node('p', { class: 'ww-muted', text: `单向感受 · 版本 ${item.revision ?? '未记录'} · ${dateText(item.updated_at || item.created_at)}` }), rawRecord(item)],
+    const label = direction === 'incoming' ? '对方对本人的好感' : '本人对对方的好感';
+    return createContent('card', { title: `${item.rank ? `${item.rank}. ` : ''}${item.name || item.peer_identity || '联系人'}`, variant: 'flat', meta: item.reason || item.last_reason || '尚无感受说明' }, {
+        body: [node('div', { class: 'ww-affinity' }, [createComponent('progress', { label, value, max: 100 }), node('strong', { text: `${value} / 100` })]),
+            node('div', { class: 'ww-meta' }, [badge(label), ...(item.last_rating_label ? [badge(item.last_rating_label, 'info')] : []), ...(item.is_friend === true ? [badge('好友')] : [])]),
+            node('p', { class: 'ww-muted', text: `版本 ${item.revision ?? '未记录'} · ${dateText(item.rated_at || item.updated_at || item.created_at)}` }), rawRecord(item)],
+    });
+}
+export function reflectionView(value = {}) {
+    const statuses = { not_started: '尚未开始', pending: '待自省', running: '自省中', completed: '已完成', applied: '已完成评分', partial: '部分好友待评分', failed: '待重试', exhausted: '今日次数已用完' };
+    const limit = Number(value.free_limit ?? 3), used = Number(value.ai_calls ?? 0), remaining = Number(value.free_remaining ?? Math.max(0, limit - used));
+    return createContent('card', { title: '今日自省', variant: 'flat', meta: value.reflection_date || '' }, {
+        body: [node('div', { class: 'ww-meta' }, [badge(statuses[value.status] || value.status || '尚未开始', 'info'), badge(`免费请求剩余 ${remaining} / ${limit}`, 'success')]),
+            node('p', { text: `已评分 ${value.rated_count ?? 0} / ${value.friend_count ?? 0} 位好友${Number(value.missing_count) ? ` · 还有 ${value.missing_count} 位待评分` : ''}` }),
+            node('p', { class: 'ww-muted', text: '首次自省与两次可选回调均不占日常思考额度。五档感受由系统换算好感，一般不增不减。' })],
     });
 }

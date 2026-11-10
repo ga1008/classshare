@@ -878,6 +878,7 @@ function resetDetailPanels() {
 function ensureModal() {
     modal ??= createDomainModal(els.detailRoot, {
         type: 'modal', surface: detailEls.surface, initialFocus: detailEls.close,
+        beforeClose: () => workspace?.canClose() !== false,
         onClose: () => { els.detailRoot.hidden = true; state.serial += 1; workspace?.cancel(); },
     });
     workspace ??= createWandererWorkspace(els.detailRoot, { getId: () => state.detailId });
