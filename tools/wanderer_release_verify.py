@@ -34,6 +34,8 @@ TESTS = (
     "tests.test_auth_form_fallback.AuthFormFallbackTests.test_student_html_and_json_share_one_authentication_and_one_login_write",
     "tests.test_auth_form_fallback.AuthFormFallbackTests.test_teacher_success_retains_native_redirect_and_role_scoped_student_session",
     "tests.test_wanderer_platform_execution.WandererPlatformExecutionTest",
+    "tests.test_wanderer_capability_catalog",
+    "tests.test_agent_capability_catalog_search",
     "tests.test_wanderer_social_v2",
     "tests.test_wanderer_legacy_delivery.WandererLegacyDeliveryTest",
     "tests.test_wanderer_runtime_v2.RuntimeV2Tests.test_real_callback_reads_then_self_writes_memory",

@@ -106,6 +106,21 @@ def _multipart_capability(app, row, *, with_source=True):
 
 
 def _native_transport_metadata(operation):
+    if operation.method == "POST" and operation.path == "/api/social/conversations/{key}/messages":
+        # This ordinary endpoint deliberately accepts a free-form dict. Describe
+        # its service contract here; validation and delivery remain in that service.
+        from .social_message_service import BODY_MAX, BODY_FORMATS
+        from .social_media_service import MAX_ATTACHMENTS
+        props = {
+            "body": {"type": "string", "maxLength": BODY_MAX, "description": "消息正文；无附件时必填"},
+            "body_format": {"type": "string", "enum": list(BODY_FORMATS), "default": "md"},
+            "reply_to_id": {"type": ["integer", "null"], "description": "同会话内实际消息编号"},
+            "mentions": {"type": "array", "items": {"type": "string"}, "description": "会话内成员identity"},
+            "media_tokens": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_ATTACHMENTS,
+                             "description": "原上传接口返回的授权附件token"},
+        }
+        return replace(operation, body_schema={"type": "object", "properties": props, "additionalProperties": True},
+                       body_fields=tuple(props), body_required=True)
     if operation.method == "POST" and operation.path == "/api/message-center/private/messages":
         return replace(operation, body_schema={"type":"object", "properties": {
             "contact_identity":{"type":"string"}, "class_offering_id":{"type":["integer","null"]},
@@ -113,6 +128,27 @@ def _native_transport_metadata(operation):
             body_fields=("contact_identity","class_offering_id","content"), body_required=True,
             allows_files=True, file_field_name="attachments", max_files=8)
     return operation
+
+
+def _discovery_metadata(operation):
+    """Describe shared route semantics without changing authorization or dispatch."""
+    path = operation.path
+    metadata = {}
+    if path.startswith("/api/social/"):
+        terms = ["social 社交"]
+        if "/conversations" in path:
+            # A single ordinary conversation route serves both DM and groups.
+            terms.append("conversation group dm chat 私信 私聊 群聊 聊天")
+        if "/groups" in path:
+            terms.append("group 群聊 群组 聊天")
+        if operation.method == "GET" and path == "/api/social/groups/{group_id}":
+            terms.append("member 成员")
+        metadata["search_terms"] = " ".join(terms)
+    if path == "/api/social/conversations/{key}/messages":
+        metadata["description"] = "key取已有会话列表或建群回执的key；同一入口支持私信与群聊，仍校验好友/成员与拉黑权限。"
+        if operation.method == "POST":
+            metadata["args_example"] = {"path_params": {"key": "<已读取的会话key>"}, "body": {"body": "<你决定发送的正文>"}}
+    return metadata
 
 
 def resolve_wanderer_capability(app, key: str):
@@ -212,7 +248,8 @@ def _catalog(app, signature):
             "transport": operation.transport, "allows_files": operation.allows_files,
             "requires_self_confirmation": assess_route(operation.method,operation.path,getattr(operation,"handler","")).destructive,
             "authorization": "normal_platform_resource_policy",
-            "confirmation_source": "wanderer_service", "executable": True})
+            "confirmation_source": "wanderer_service", "executable": True,
+            **_discovery_metadata(operation)})
     return tuple(sorted(result, key=lambda item: (item["path"], item["method"])))
 
 

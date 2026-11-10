@@ -394,7 +394,7 @@ CORE_CAPABILITIES = [
     {"key": "self.reflect", "description": "自主更新mood(label/valence/energy/reason)、tomorrow(planned_actions/focus_topics/tone/proactive_multiplier)，不自动写记忆或申请破境", "mutates": True},
     {"key": "runtime.receipt", "description": "operation_id/offset/limit；分页查看自己完整的执行回执", "mutates": False},
     {"key": "runtime.context", "description": "event_id(可省略)/offset/limit；按原权限分页读取自己的完整唤醒上下文", "mutates": False},
-    {"key": "platform.capabilities", "description": "按query和offset分页查平台能力及参数", "mutates": False},
+    {"key": "platform.capabilities", "description": "query支持中英文多关键词，按next分页查能力与参数；capability为准确key/alias时读取详情，超长详情按next拼接detail_json", "mutates": False},
     {"key": "memory.read", "description": "按query、before、limit、order读当前场景可见记忆", "mutates": False},
     {"key": "memory.write", "description": "content/title/occurred_at/location/kind/visibility/evidence_refs；修订带supersedes_id与expected_revision", "mutates": True},
     {"key": "memory.archive", "description": "memory_id/expected_revision；停止自动回忆并释放容量，保留原文历史", "mutates": True},
@@ -412,7 +412,8 @@ CORE_CAPABILITIES = [
 ]
 
 
-def catalog(conn: Any, wanderer: dict, *, query: str = "", offset: int = 0) -> dict:
+def catalog(conn: Any, wanderer: dict, *, query: str = "", offset: int = 0, capability: str = "") -> dict:
+    from .wanderer_capability_catalog import page
     from .wanderer_platform_service import list_wanderer_capabilities
     items = CORE_CAPABILITIES + list_wanderer_capabilities(conn, wanderer)
     try:
@@ -420,11 +421,7 @@ def catalog(conn: Any, wanderer: dict, *, query: str = "", offset: int = 0) -> d
         items += bond_capabilities()
     except ImportError:
         pass
-    if query:
-        items = [item for item in items if query.casefold() in packed(item).casefold()]
-    offset = max(0, int(offset))
-    return {"items": items[offset:offset+40], "next_offset": offset+40 if offset+40 < len(items) else None,
-            "total": len(items)}
+    return page(items, query=query, offset=offset, capability=capability)
 
 
 def status_snapshot(conn: Any, wanderer: dict) -> dict:
@@ -601,7 +598,8 @@ def _local_command(conn: Any, run: dict, command: dict, operation_id: str) -> tu
         return True, {'text':text[offset:offset+limit],'next_offset':offset+limit if len(text)>offset+limit else None,
                       'scope':scope,'evidence':_receipt_evidence(safe)}
     if key == "platform.capabilities":
-        return True, catalog(conn, w, query=str(args.get("query") or ""), offset=int(args.get("offset") or 0))
+        return True, catalog(conn, w, query=str(args.get("query") or ""), offset=int(args.get("offset") or 0),
+                             capability=str(args.get("capability") or ""))
     if key == "memory.read":
         return True, timeline(conn, w, viewer="self", scope=run["scope"], before=args.get("before"),
                               limit=args.get("limit", 30), query=str(args.get("query") or ""), order=args.get("order", "desc"))

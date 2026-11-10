@@ -1,5 +1,6 @@
 """Discover all reviewed abilities, then fetch only the schemas a task needs."""
 import re
+import unicodedata
 
 from fastapi import HTTPException
 
@@ -28,54 +29,77 @@ QUERY_SYNONYMS = {
     "助手": ("ai", "assistant"), "助教": ("ai", "assistant"), "智能": ("ai",), "白板": ("whiteboard",),
     "日历": ("calendar",), "课表": ("schedule", "timetable"), "反馈": ("feedback",), "申请": ("request", "apply", "application"),
     "审批": ("approval", "approve", "review"), "管理": ("manage", "admin"),
+    "群聊": ("group",), "群组": ("group",), "好友": ("friend",), "朋友": ("friend",),
+    "私信": ("dm", "private", "message"), "私聊": ("dm", "private"), "会话": ("conversation",),
+    "聊天": ("chat", "conversation", "group"), "社交": ("social",), "成员": ("member",),
+    "发送": ("send",), "发言": ("send",), "邀请": ("invite",),
+    "list": ("get", "read"), "members": ("member",), "messages": ("message",),
+    "groups": ("group",), "friends": ("friend",), "conversations": ("conversation",),
 }
 _TOKEN = re.compile(r"[a-z0-9_./-]+|[一-鿿]+")
 MAX_QUERY_HITS = 40
 
 
 def _query_terms(query):
-    """Tokens plus their expansions; a Chinese run is also split into 2-char chunks."""
+    """Use the same bilingual intent words for all account capability catalogs."""
     terms = []
-    for token in _TOKEN.findall(query.casefold()):
-        expansions = [token]
+    normalized = unicodedata.normalize("NFKC", query).casefold()
+    for token in _TOKEN.findall(normalized):
         if re.fullmatch(r"[一-鿿]+", token):
-            pieces = [token] + [token[i:i + 2] for i in range(len(token) - 1)] if len(token) > 2 else [token]
-            for piece in pieces:
-                expansions.extend(QUERY_SYNONYMS.get(piece, ()))
-        else:
-            expansions.extend(QUERY_SYNONYMS.get(token, ()))
-            expansions.append(token.replace("_", "-"))
-            expansions.append(token.replace("-", "_"))
+            # A compound such as 发送消息 expresses two requirements, not one
+            # OR-list where a read-message operation is as good as a send.
+            pieces = []
+            remainder = token
+            for word in sorted((word for word in QUERY_SYNONYMS if not word.isascii()), key=len, reverse=True):
+                if word in remainder:
+                    pieces.append(word)
+                    remainder = remainder.replace(word, " ")
+            for piece in pieces or [token]:
+                terms.append((piece, *QUERY_SYNONYMS.get(piece, ())))
+            continue
+        expansions = [token, *QUERY_SYNONYMS.get(token, ())]
+        expansions.append(token.replace("_", "-"))
+        expansions.append(token.replace("-", "_"))
         terms.append(tuple(dict.fromkeys(expansions)))
-    return terms
+    return list(dict.fromkeys(terms))
 
 
 def _item_text(item):
     return " ".join(str(item.get(name) or "") for name in ("key", "action", "label", "title", "description", "domain",
-                                                            "method", "path", "usage")).casefold()
+        "method", "path", "usage", "aliases", "search_terms", "body_fields", "body_hints")).casefold()
 
 
-def rank_catalog_items(items, query):
-    """Items matching at least one query term, best first; label/path hits rank above descriptions."""
+def search_catalog_items(items, query, *, limit=MAX_QUERY_HITS, prefer_complete=False):
+    """Rank a supplied, already-authorized inventory; optionally keep all matches for paging."""
     terms = _query_terms(query)
     if not terms:
-        return []
+        return [], "empty"
     ranked = []
     for index, item in enumerate(items):
         text = _item_text(item)
-        primary = " ".join(str(item.get(name) or "") for name in ("label", "title", "path", "action", "key")).casefold()
-        score = 0
+        primary = " ".join(str(item.get(name) or "") for name in (
+            "label", "title", "path", "action", "key", "method", "aliases", "search_terms")).casefold()
+        score = hits = 0
         for expansions in terms:
-            hit = next((expansion for expansion in expansions if expansion and expansion in text), None)
-            if hit is None:
+            found = [expansion for expansion in expansions if expansion and expansion in text]
+            if not found:
                 continue
-            score += 3 if hit in primary else 1
-            if hit == expansions[0]:
-                score += 1  # the literal token beats a synonym
+            hits += 1
+            score += 3 if any(hit in primary for hit in found) else 1
+            if expansions[0] in primary:
+                score += 1  # literal operation names beat incidental prose
         if score:
-            ranked.append((-score, index, item))
+            ranked.append((-score, index, item, hits == len(terms)))
     ranked.sort(key=lambda entry: entry[:2])
-    return [item for _score, _index, item in ranked[:MAX_QUERY_HITS]]
+    complete = [entry for entry in ranked if entry[3]]
+    if prefer_complete and complete:
+        ranked = complete
+    return [entry[2] for entry in ranked[:limit]], "all_terms" if complete else "partial" if ranked else "empty"
+
+
+def rank_catalog_items(items, query, *, limit=MAX_QUERY_HITS):
+    """Existing Agent callers retain the bounded, ranked partial-match contract."""
+    return search_catalog_items(items, query, limit=limit)[0]
 
 
 def capability_catalog(app, *, actor_role, is_super_admin, keys=None, query=None):

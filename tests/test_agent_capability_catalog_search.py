@@ -51,6 +51,10 @@ class CatalogSearchTests(unittest.TestCase):
         many = [_route(f"Api Thing {index}", "GET", f"/api/things/{index}") for index in range(MAX_QUERY_HITS + 20)]
         self.assertEqual(MAX_QUERY_HITS, len(rank_catalog_items(many, "thing")))
 
+    def test_paginated_consumer_can_request_all_ranked_matches(self):
+        many = [_route(f"Api Thing {index}", "GET", f"/api/things/{index}") for index in range(MAX_QUERY_HITS + 20)]
+        self.assertEqual(many, rank_catalog_items(many, "thing", limit=None))
+
 
 if __name__ == "__main__":
     unittest.main()
