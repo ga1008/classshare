@@ -29,6 +29,14 @@ from tools.isolated_environment import (
 )
 
 TESTS = (
+    "tests.test_behavior_inbox",
+    "tests.test_runtime_health_snapshots",
+    "tests.test_scheduled_task_service",
+    "tests.test_scheduled_task_cancellation",
+    "tests.test_wanderer_reflection_schedule",
+    "tests.test_wanderer_reflection_snapshot",
+    "tests.test_wanderer_communication_recovery",
+    "tests.test_wanderer_communication_snapshot",
     "tests.test_wanderer_release_snapshot.ReadOnlySnapshotTest",
     "tests.test_wanderer_account_control.WandererAccountControlTest",
     "tests.test_auth_form_fallback.AuthFormFallbackTests.test_student_html_and_json_share_one_authentication_and_one_login_write",

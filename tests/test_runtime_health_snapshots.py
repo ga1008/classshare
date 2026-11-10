@@ -54,6 +54,25 @@ class RuntimeHealthSnapshotTests(unittest.TestCase):
 
 
 class RuntimeProbeRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_recovered_worker_keeps_failure_history_without_reporting_current_failure(self):
+        import importlib
+        module = importlib.import_module("classroom_app.app")
+        health = RuntimeHealthSnapshots({"database_probe": lambda: {"ok": True}})
+        health.refresh()
+        stats = {"alive": True, "last_error": "", "quarantined_count": 0,
+                 "queue_depth": 0, "queue_capacity": 20, "retry_count": 3,
+                 "last_failure_code": "LockNotAvailable:55P03", "last_failure_phase": "cleanup",
+                 "last_failure_at": "2026-11-10T12:06:00", "last_recovered_at": "2026-11-10T12:06:02"}
+        with patch.object(module, "_health_snapshots", health), patch.object(
+                module, "get_behavior_write_pipeline_stats", return_value=stats), patch.object(
+                module.presence_service, "runtime_snapshot", return_value={"degraded": False}):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=module.app), base_url="http://testserver") as client:
+                payload = (await client.get("/api/internal/health")).json()
+                self.assertEqual("ok", payload["status"])
+                self.assertEqual(stats, payload["behavior_write_pipeline"])
+                stats["last_error"] = "LockNotAvailable:55P03"
+                self.assertEqual("degraded", (await client.get("/api/internal/health")).json()["status"])
+
     async def test_quarantine_stays_visible_after_success_clears_the_last_worker_error(self):
         import importlib
         module = importlib.import_module("classroom_app.app")

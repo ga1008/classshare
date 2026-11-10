@@ -128,7 +128,8 @@ async def run_member_group(wanderer: dict, group_id: int, *, conn_factory=None, 
                            "LEFT JOIN wanderer_turns t ON t.turn_id=e.turn_id "
                            "WHERE e.wanderer_id=? AND e.source='group_message' AND e.event_key=?",
                            (wanderer["id"],event_key)).fetchone()
-        if row and (row["state"] == "completed" or row['repaired']):
+        considered = any(item.get('status')=='ok' for item in result.get('rounds',[]))
+        if row and (row["state"] == "completed" or row['repaired'] or considered):
             conn.execute("UPDATE wanderer_group_observations SET handled_message_id=?,updated_at=? "
                          "WHERE wanderer_id=? AND group_id=? AND membership_stamp=? AND handled_message_id<?",
                          (context["snapshot_message_id"],local_iso(),wanderer["id"],group_id,

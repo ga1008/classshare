@@ -177,7 +177,7 @@ def ensure_wanderer_scheduled_tasks(conn: Any) -> dict[str, int]:
     The daily review is re-armed when ``dao_review_hour`` differs from the hour
     it was armed with (``dao_review_hour_armed``).
     """
-    now = datetime.now()
+    now = local_now()
     hour, minute = dao_review_hour(conn)
     wanted_hour = f"{hour:02d}:{minute:02d}"
     hour_changed = wanderer_runtime_setting_get(conn, SETTING_DAO_REVIEW_HOUR_ARMED) != wanted_hour
@@ -210,11 +210,23 @@ def ensure_wanderer_scheduled_tasks(conn: Any) -> dict[str, int]:
     reflection_hour_value, reflection_minute = reflection_hour(conn)
     reflection_wanted = f"{reflection_hour_value:02d}:{reflection_minute:02d}"
     reflection_changed = wanderer_runtime_setting_get(conn, SETTING_REFLECTION_HOUR_ARMED) != reflection_wanted
+    # Earlier interval completion added 24 h after a slow model batch, drifting
+    # the daily clock. Repair future pending schedules on upgrade; retain due,
+    # retrying and running work so startup cannot silently postpone an attempt.
+    from .scheduled_task_service import get_owner_task_by_dedupe
+    reflection_task = get_owner_task_by_dedupe(conn, REFLECTION_DEDUPE_KEY)
+    reflection_drifted = False
+    if reflection_task and reflection_task.get('status') == 'pending' and not reflection_task.get('attempt_count'):
+        try:
+            scheduled = datetime.fromisoformat(reflection_task['run_at'])
+            reflection_drifted = scheduled > now and scheduled != next_review_run_at(now, reflection_hour_value, reflection_minute)
+        except (ValueError, TypeError):
+            pass
     ids["reflection"] = _arm(
         conn, task_kind=TASK_KIND_WANDERER_REFLECTION, dedupe_key=REFLECTION_DEDUPE_KEY,
         run_at=next_review_run_at(now, reflection_hour_value, reflection_minute),
         recurrence=REFLECTION_INTERVAL_SECONDS, title="散修每日自省", max_attempts=REFLECTION_MAX_ATTEMPTS,
-        force=reflection_changed,
+        force=reflection_changed or reflection_drifted,
     )
     if reflection_changed:
         wanderer_runtime_setting_set(conn, SETTING_REFLECTION_HOUR_ARMED, reflection_wanted)

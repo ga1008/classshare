@@ -19,7 +19,7 @@ from ..db.schema_wanderer_runtime import ensure_wanderer_runtime_schema
 from ..time_utils import local_iso, local_now
 from .wanderer_autobiography_service import decode, recall_block, scope_for_context, timeline, write_memory
 
-PROMPT_VERSION = "autonomous-world-v3.0"
+PROMPT_VERSION = "autonomous-world-v3.1"
 LEASE_SECONDS = 180
 MAX_COMMANDS = 12
 MAX_CHAIN_DEPTH = 16
@@ -455,6 +455,48 @@ def status_snapshot(conn: Any, wanderer: dict, *, include_relationships=False) -
                             "remaining": max(0, daily_cap(conn)-daily_ai_calls(conn))}}
 
 
+def chain_receipts(conn: Any, run: dict, *, budget_chars=14000) -> dict:
+    """Bounded real action history, rechecking the same ACL as runtime.receipt.
+
+    A read/inspect callback must not erase the previous read or completed write.
+    This is working context, never an automatically authored long-term memory.
+    """
+    from .wanderer_autobiography_service import can_read_scope
+    rows = conn.execute('SELECT c.operation_id,c.capability,c.command_json,c.receipt_json,c.created_at,t.scope_json '
+        'FROM wanderer_turns t JOIN wanderer_commands c ON c.turn_id=t.turn_id '
+        'WHERE t.wanderer_id=? AND t.chain_id=? AND t.life_epoch=? AND t.authority_version=? '
+        "AND t.turn_id<>? AND c.state IN ('succeeded','failed','uncertain','resolved','waiting') "
+        'ORDER BY c.created_at DESC,c.operation_id DESC LIMIT 32',
+        (int(run['wanderer']['id']),run['chain_id'],run['life_epoch'],run['authority_version'],run['turn_id'])).fetchall()
+    items, used, evidence = [], 0, []
+    for row in rows:
+        receipt = decode(row['receipt_json'], {})
+        source = _join_scopes(decode(row['scope_json'], {'kind':'private'}),receipt.get('scope',{'kind':'private'}))
+        if not can_read_scope(conn,run['wanderer'],source,run['scope'],own=True):
+            continue
+        safe = sanitize_context(conn,run['wanderer'],receipt,run['scope'])
+        # Arguments can themselves contain private source text. Sanitize them
+        # together with the receipt evidence rather than presenting them naked.
+        command = decode(row['command_json'], {})
+        safe_args = sanitize_context(conn,run['wanderer'],
+            {'args':command.get('args',{}),'evidence':_receipt_evidence(receipt)},run['scope'])
+        item = {'operation_id':row['operation_id'],'capability':row['capability'],
+            'created_at':row['created_at'],'args_preview':packed(safe_args.get('args',{}))[:600],
+            'status':safe.get('status','source_unavailable'),
+            'receipt':_callback_receipt(safe),
+            'read_full':{'capability':'runtime.receipt','args':{'operation_id':row['operation_id'],'limit':6000}}}
+        size = len(packed(item))
+        if used+size > budget_chars:
+            continue
+        items.append(item)
+        used += size
+        evidence += _receipt_evidence(safe)
+    return {'items':items[::-1],'evidence':list({packed(item):item for item in evidence}.values()),
+        'notice':'这是本链真实执行的有界历史，包含读取和失败回执；没有列出不代表未发生。'
+                 '本轮资源已实时注入，不必仅为查看额度反复self.status。已取得的资料可直接使用；'
+                 '若需重读、翻页或刷新仍可主动读取。保存知识请原样引用实际阅读回执的evidence.ref，勿猜章节名作引用。'}
+
+
 def build_runtime_prompt(conn: Any, run: dict) -> str:
     from .wanderer_voice_service import persona_text
     w, context, scope = run["wanderer"], run["context"], run["scope"]
@@ -481,6 +523,9 @@ def build_runtime_prompt(conn: Any, run: dict) -> str:
     context=sanitize_context(conn,w,context,scope)
     from .wanderer_message_delivery_service import recent_deliveries
     delivered = recent_deliveries(conn, w, scope, limit=6, budget_chars=6000)
+    history = chain_receipts(conn, run)
+    context['evidence'] = list({packed(item):item for item in
+        context.get('evidence',[])+history['evidence']}.values())
     run['context']=context
     resources = status_snapshot(conn, w, include_relationships=scope.get('kind')=='private')
     from .wanderer_resource_service import ability_limit
@@ -529,6 +574,7 @@ def build_runtime_prompt(conn: Any, run: dict) -> str:
         "【基础操作入口】" + packed(CORE_CAPABILITIES),
         "【本次自省尚未评价的好友：有界实时名单】" + packed(reflection_roster),
         "【本会话当前可确认的本人已发消息】这些消息已送达，不要再次发送相同内容；空列表不表示此前从未发送。\n" + packed(delivered),
+        "【本链此前已执行的操作与阅读回执】\n" + packed(history),
         "其他平台功能通过platform.capabilities按名称检索真实能力及参数，不猜接口。"
         "读取资料只是取得内容，保存知识/经历还需自己编写。"
         "改变公开或其他会话中的内容前须在对应场景重新思考，不能把私密上下文转发出去。",
@@ -632,7 +678,7 @@ def _local_command(conn: Any, run: dict, command: dict, operation_id: str) -> tu
         if not row:
             raise PermissionError('回执不存在或不属于本人')
         receipt=decode(row['receipt_json'],{})
-        scope=_join_scopes(decode(row['scope_json'],{'kind':'private'}),receipt.get('scope',{'kind':'public'}))
+        scope=_join_scopes(decode(row['scope_json'],{'kind':'private'}),receipt.get('scope',{'kind':'private'}))
         if not can_read_scope(conn,w,scope,run['scope'],own=True):
             raise PermissionError('当前场景不能访问这份回执')
         offset,limit=max(0,int(args.get('offset',0))),max(1,min(12000,int(args.get('limit',6000))))
@@ -800,7 +846,7 @@ async def execute_command(factory, run: dict, command: dict, *, read_only: bool 
                 return receipt
         except Exception as exc:
             conn.rollback()
-            receipt = {"command_id": command["id"], "operation_id": op, "status": "denied", "error": str(exc)}
+            receipt = {"command_id": command["id"], "operation_id": op, "status": "denied", "error": str(exc), 'scope':run['scope']}
             conn.execute("INSERT INTO wanderer_commands(operation_id,turn_id,command_id,capability,args_hash,"
                          "command_json,state,receipt_json,created_at,updated_at) VALUES(?,?,?,?,?,?,'failed',?,?,?) "
                          "ON CONFLICT(operation_id) DO NOTHING", (op,run['turn_id'],command['id'],command['capability'],
@@ -837,15 +883,15 @@ async def execute_command(factory, run: dict, command: dict, *, read_only: bool 
             receipt['result']['evidence']={'kind':'blog_post','id':post_id,'source_ref':str(post_id),
                 'ref':f'blog:{post_id}:{hashlib.sha256(packed(result).encode()).hexdigest()}', 'title':'已阅读的博客'}
     except (ValueError, PermissionError) as exc:
-        receipt = {"command_id": command["id"], "operation_id": op, "status": "denied", "error": str(exc)}
+        receipt = {"command_id": command["id"], "operation_id": op, "status": "denied", "error": str(exc), 'scope':run['scope']}
     except Exception as exc:
         from fastapi import HTTPException
         if isinstance(exc, HTTPException):
             uncertain=isinstance(exc.detail,dict) and exc.detail.get('requires_reconciliation') is True
             receipt = {'command_id':command['id'],'operation_id':op,'status':'uncertain' if uncertain else 'denied',
-                       'http_status':exc.status_code,'error':str(exc.detail)[:300]}
+                       'http_status':exc.status_code,'error':str(exc.detail)[:300],'scope':run['scope']}
         else:
-            receipt = {"command_id": command["id"], "operation_id": op, "status": "uncertain", "error": str(exc)[:300]}
+            receipt = {"command_id": command["id"], "operation_id": op, "status": "uncertain", "error": str(exc)[:300], 'scope':run['scope']}
     with connection(factory) as conn:
         conn.execute("UPDATE wanderer_commands SET state=?,receipt_json=?,updated_at=? WHERE operation_id=?",
                      ("succeeded" if receipt["status"] == "succeeded" else "waiting" if receipt['status']=='submitted'
@@ -921,6 +967,37 @@ def _finish(factory, run: dict, state: str, *, error: str = "") -> None:
         from .wanderer_daily_reflection_service import sync_session
         sync_session(conn, run)
         conn.commit()
+
+
+def _model_failure(factory, run: dict, result: dict) -> dict:
+    """One delayed, newly metered retry of an unaccepted model decision.
+
+    Preserve the failed dispatch and its spent credit. Never replay a decision
+    with accepted commands, and never create an unbounded outage retry loop.
+    """
+    next_event = None
+    with connection(factory) as conn:
+        if not _finish_in_connection(conn,run,'failed',error=result.get('error','')):
+            conn.rollback()
+            return {**result,'receipts':[]}
+        accepted = conn.execute('SELECT 1 FROM wanderer_commands WHERE turn_id=? LIMIT 1',(run['turn_id'],)).fetchone()
+        retried = conn.execute("SELECT 1 FROM wanderer_wake_events WHERE wanderer_id=? AND chain_id=? AND source='model_retry'",
+                               (int(run['wanderer']['id']),run['chain_id'])).fetchone()
+        from .wanderer_daily_reflection_service import session_for_run, sync_session
+        session = session_for_run(conn,run)
+        if int(result.get('ai_calls') or 0)==1 and not accepted and not retried and (not session or int(session['ai_calls'])<3):
+            context = {**run['context'],'scope':run['scope'],'model_retry':{
+                'notice':'上次模型请求失败，未接受任何指令；这是本链唯一一次延时重试，重新计入可用思考次数。'}}
+            if len(packed(context))>120_000:
+                context={'scope':run['scope'],'evidence':_evidence(run),'model_retry':context['model_retry'],
+                    'original_event':{'capability':'runtime.context','args':{'event_id':run['event_id']}}}
+            next_event = enqueue_wake_event(conn,int(run['wanderer']['id']),'model_retry',run['chain_id'],context,
+                chain_id=run['chain_id'],parent_turn_id=run['turn_id'],depth=0,
+                run_at=(local_now()+timedelta(seconds=60)).isoformat(timespec='seconds'))
+        sync_session(conn,run)
+        conn.commit()
+    return {**result,'receipts':[],'callback_event_id':next_event['event_id'] if next_event else None,
+            'callback_deferred':bool(next_event)}
 
 
 def _enqueue_protocol_repair(conn, run: dict, reason: str, diagnostic: dict, *, yielding=False) -> dict | None:
@@ -1054,12 +1131,12 @@ async def _process(factory, event_id: str, *, ai_caller=None) -> dict:
                 sync_event_session(conn,event)
                 conn.commit()
                 if event['state']=='failed':
-                    repair = conn.execute("SELECT event_id FROM wanderer_wake_events WHERE source='protocol_repair' "
+                    repair = conn.execute("SELECT event_id,run_at FROM wanderer_wake_events WHERE source IN ('protocol_repair','model_retry') "
                         "AND wanderer_id=? AND chain_id=? AND parent_turn_id=? AND event_key=?",
                         (event['wanderer_id'],event['chain_id'],event['turn_id'],event['chain_id'])).fetchone()
                     if repair:
                         return {'status':'repair_pending','ai_calls':0,'receipts':[],
-                                'callback_event_id':repair['event_id']}
+                                'callback_event_id':repair['event_id'],'callback_deferred':repair['run_at']>local_iso()}
                 return {'status':'capped' if event['state']=='deferred' else event['state'],'ai_calls':0,'receipts':[]}
         return {"status": "queued", "ai_calls": 0, "receipts": []}
     heartbeat = asyncio.create_task(_heartbeat(factory, run))
@@ -1072,6 +1149,8 @@ async def _process(factory, event_id: str, *, ai_caller=None) -> dict:
             result = await generate_decision(factory, run, ai_caller=ai_caller)
             calls = int(result.get("ai_calls") or 0)
             if result["status"] != "ok":
+                if result['status']=='failed':
+                    return _model_failure(factory,run,result)
                 _finish(factory, run, result["status"], error=result.get("error", ""))
                 return {**result, "receipts": []}
             try:

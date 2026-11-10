@@ -294,7 +294,7 @@ def _apply_payload(conn: Any, wanderer: dict[str, Any], payload: dict[str, Any],
 async def run_reflection(ctx: ActionContext, *, force: bool = False) -> dict[str, Any]:
     """Register one trusted free daily session and execute the existing runtime."""
     from .wanderer_runtime_service import runtime_enabled, wake_wanderer, enqueue_wake_event, retry_failed_event
-    from .wanderer_daily_reflection_service import register_session, sync_session, FREE_CALL_LIMIT
+    from .wanderer_daily_reflection_service import register_session, sync_session, unresolved_failures, FREE_CALL_LIMIT
     date = reflection_date(ctx.current_time())
     ctx.reload()
     context = {'scope': {'kind': 'private'}, 'date': date,
@@ -319,12 +319,18 @@ async def run_reflection(ctx: ActionContext, *, force: bool = False) -> dict[str
             (ctx.wanderer_id,session['chain_id'])).fetchone()
         if pending:
             event = dict(pending)
+            if force and event['state'] == 'pending' and event['source'] == 'model_retry':
+                # Explicit administrator "reflect now" may advance the existing
+                # retry, but never creates a new entitlement or bypasses dispatch
+                # authority/free-call validation. Automatic workers keep backoff.
+                stamp = local_iso()
+                conn.execute("UPDATE wanderer_wake_events SET run_at=?,updated_at=? WHERE event_id=? "
+                             "AND chain_id=? AND state='pending' AND source='model_retry' AND run_at>?",
+                             (stamp, stamp, event['event_id'], session['chain_id'], stamp))
+                event['run_at'] = min(event['run_at'], stamp)
         elif force and session['status'] in {'applied', 'partial'}:
-            failed = conn.execute("SELECT * FROM wanderer_wake_events e WHERE e.wanderer_id=? AND e.chain_id=? "
-                "AND e.state IN ('failed','blocked') AND NOT EXISTS(SELECT 1 FROM wanderer_wake_events repair "
-                "WHERE repair.wanderer_id=e.wanderer_id AND repair.chain_id=e.chain_id AND repair.parent_turn_id=e.turn_id "
-                "AND repair.source='protocol_repair' AND repair.state='completed') ORDER BY depth DESC,updated_at DESC LIMIT 1",
-                (ctx.wanderer_id,session['chain_id'])).fetchone()
+            failures = unresolved_failures(conn, ctx.wanderer_id, session['chain_id'])
+            failed = failures[0] if failures else None
             if failed:
                 event = dict(failed)
                 retry_failed_event(conn,ctx.wanderer_id,event['event_id'])
@@ -430,7 +436,69 @@ async def run_reflection_now(wanderer_id: int, *, conn_factory: Optional[Callabl
     return await run_reflection(ctx, force=force)
 
 
-async def handle_wanderer_daily_reflection(task: dict[str, Any]) -> str:
-    summary = await run_daily_reflections()
-    return (f"wanderer reflection: status={summary.get('status')} processed={summary.get('processed')} "
-            f"applied={summary.get('applied')} failed={summary.get('failed')} ai_calls={summary.get('ai_calls')}")
+def enqueue_daily_reflections(conn_factory=None, *, now=None) -> dict[str, Any]:
+    """Durably admit the whole daily roster; the ordinary wake worker owns execution.
+
+    The former daily handler executed only one size/time-limited batch, leaving
+    everyone after it until the next day. Enqueuing the roster is inexpensive,
+    atomic and retry-safe. Existing event leases and free-dispatch accounting
+    still bound actual model work, including after a worker restart.
+    """
+    from ..database import get_db_connection
+    from ..db.schema_wanderer_reflection import ensure_wanderer_reflection_schema
+    from .wanderer_runtime_service import runtime_enabled, enqueue_wake_event
+    from .wanderer_daily_reflection_service import register_session
+
+    current = now or local_now()
+    date = reflection_date(current)
+    with (conn_factory or get_db_connection)() as conn:
+        if not is_wanderer_runtime_enabled(conn) or not reflection_enabled(conn) or not runtime_enabled(conn):
+            return {'status': 'disabled', 'date': date, 'queued': 0, 'existing': 0, 'ai_calls': 0}
+        wanderers = list_wanderers(conn, statuses=[STATUS_ACTIVE])
+        batch = reflection_batch_size(conn)
+        queued = existing = 0
+        ensure_wanderer_reflection_schema(conn)
+        for wanderer in wanderers:
+            old_life = conn.execute('SELECT life_epoch FROM wanderer_reflection_sessions '
+                'WHERE wanderer_id=? AND reflection_date=?', (wanderer['id'], date)).fetchone()
+            if old_life and int(old_life['life_epoch']) != int(wanderer.get('life_epoch') or 1):
+                # A revival does not grant another day's free allowance, and a
+                # stale personal session must not roll back everyone else's day.
+                existing += 1
+                continue
+            # Preserve already-completed legacy reflections too. A new version
+            # must not silently grant a second daily reflection after an upgrade.
+            prior = conn.execute('SELECT status FROM wanderer_daily_reflections '
+                                 'WHERE wanderer_id=? AND reflection_date=?', (wanderer['id'], date)).fetchone()
+            if prior and prior['status'] in {'applied', 'partial'}:
+                existing += 1
+                continue
+            context = {'scope': {'kind': 'private'}, 'date': date,
+                       'reason': '回顾今天的真实经历，整理自己的记忆和计划，并对全部当前好友提交五档感受。'}
+            ensure_reflection(conn, wanderer, date)
+            found = conn.execute("SELECT 1 FROM wanderer_wake_events WHERE wanderer_id=? "
+                                 "AND source='reflection' AND event_key=?", (wanderer['id'], date)).fetchone()
+            event = enqueue_wake_event(conn, int(wanderer['id']), 'reflection', date, context,
+                run_at=(current + timedelta(seconds=(queued // batch) * 30)).isoformat(timespec='seconds'))
+            register_session(conn, wanderer, date, event)
+            if found:
+                existing += 1
+            else:
+                queued += 1
+        conn.commit()
+    return {'status': 'ok', 'date': date, 'queued': queued, 'existing': existing, 'ai_calls': 0}
+
+
+async def handle_wanderer_daily_reflection(task: dict[str, Any]):
+    from ..database import get_db_connection
+    from .scheduled_task_service import ScheduledTaskResult
+    from .wanderer_behavior_service import next_review_run_at
+    from .wanderer_settings_service import reflection_hour
+
+    summary = await asyncio.to_thread(enqueue_daily_reflections)
+    with get_db_connection() as conn:
+        hour, minute = reflection_hour(conn)
+    return ScheduledTaskResult(
+        f"wanderer reflection: status={summary['status']} date={summary['date']} "
+        f"queued={summary['queued']} existing={summary['existing']} ai_calls=0",
+        next_review_run_at(local_now(), hour, minute))

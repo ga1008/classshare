@@ -260,6 +260,8 @@ class BehaviorWritePipeline:
         self._wake = threading.Event()
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
+        self._failure_generation = 0
+        self._depth_sample_generation = -1
         self._stats: dict[str, Any] = {
             "queue_depth": 0, "queue_capacity": int(BEHAVIOR_WRITE_QUEUE_SIZE),
             "queue_depth_known": False, "retrying_count": 0, "committed_batch_count": 0,
@@ -267,6 +269,8 @@ class BehaviorWritePipeline:
             "last_heartbeat_at": None, "last_success_at": None, "oldest_queued_at": None,
             "quarantined_count": 0, "oldest_quarantined_at": None,
             "snapshot_at": None, "last_error": "", "worker_restarts": 0,
+            "last_failure_code": "", "last_failure_at": None, "last_failure_phase": "",
+            "last_recovered_at": None,
             "committed_counts_scope": "worker_confirmed_since_start",
             "drain_transactions": 0, "last_drain_batch_count": 0, "max_drain_batch_count": 0,
             "last_drain_duration_ms": 0.0,
@@ -305,6 +309,36 @@ class BehaviorWritePipeline:
     def _increment(self, name: str, amount: int = 1) -> None:
         with self._lock:
             self._stats[name] += amount
+
+    def _record_failure_locked(self, code: str, *, phase: str) -> None:
+        self._failure_generation += 1
+        self._stats.update(last_error=code, last_failure_code=code,
+                           last_failure_at=datetime.now().isoformat(), last_failure_phase=phase,
+                           last_recovered_at=None)
+
+    def _recover_if_idle(self) -> None:
+        # A transient startup/connection failure can recover without a new user
+        # event. Require a fresh DB sample after that failure and a completed
+        # worker cycle; stale emptiness, delayed retries and quarantine cannot
+        # turn the health probe green. Keep the historical code/count intact.
+        with self._lock:
+            candidate = (self._stats["last_error"] and self._stats["queue_depth_known"]
+                         and self._depth_sample_generation == self._failure_generation
+                         and not any(self._stats[key] for key in
+                                     ("queue_depth", "retrying_count", "quarantined_count")))
+        if not candidate:
+            return
+        # Another process can accept a delayed retry after the cycle's first
+        # sample but before the drain finds no eligible head. Recheck after the
+        # drain, only on recovery (zero extra queries during normal operation).
+        # As with every health snapshot, arrivals after snapshot_at are future
+        # work and are not evidence that this observed recovery was false.
+        self._refresh_depth()
+        with self._lock:
+            if (self._stats["last_error"] and self._depth_sample_generation == self._failure_generation
+                    and not any(self._stats[key] for key in
+                                ("queue_depth", "retrying_count", "quarantined_count"))):
+                self._stats.update(last_error="", last_recovered_at=datetime.now().isoformat())
 
     def submit(self, request: BehaviorWriteRequest, *, wait: bool = False, conn=None,
                received_at: str | None = None) -> dict[str, Any]:
@@ -574,7 +608,8 @@ class BehaviorWritePipeline:
             self._stats["last_drain_batch_count"] = len(outcomes)
             self._stats["max_drain_batch_count"] = max(self._stats["max_drain_batch_count"], len(outcomes))
             self._stats["last_drain_duration_ms"] = duration_ms
-            self._stats["last_error"] = errors[-1] if errors else ""
+            if errors:
+                self._record_failure_locked(errors[-1], phase="receipt_apply")
             if successes:
                 self._stats["last_success_at"] = datetime.now().isoformat()
         return len(outcomes)
@@ -591,6 +626,8 @@ class BehaviorWritePipeline:
             raise
 
     def _refresh_depth(self) -> None:
+        with self._lock:
+            generation = self._failure_generation
         with get_db_connection() as conn:
             row = conn.execute("""SELECT
                 COALESCE(SUM(CASE WHEN state='pending' THEN 1 ELSE 0 END),0) AS depth,
@@ -599,10 +636,12 @@ class BehaviorWritePipeline:
                 COALESCE(SUM(CASE WHEN state='quarantined' THEN 1 ELSE 0 END),0) AS quarantined,
                 MIN(CASE WHEN state='quarantined' THEN received_at END) AS oldest_quarantined
                 FROM behavior_write_inbox WHERE state IN ('pending','quarantined')""").fetchone()
-        self._update_stats(queue_depth=int(row["depth"]), oldest_queued_at=row["oldest"],
-                           quarantined_count=int(row["quarantined"]), oldest_quarantined_at=row["oldest_quarantined"],
-                           retrying_count=int(row["retrying"]), queue_depth_known=True,
-                           snapshot_at=datetime.now().isoformat())
+        with self._lock:
+            self._stats.update(queue_depth=int(row["depth"]), oldest_queued_at=row["oldest"],
+                               quarantined_count=int(row["quarantined"]), oldest_quarantined_at=row["oldest_quarantined"],
+                               retrying_count=int(row["retrying"]), queue_depth_known=True,
+                               snapshot_at=datetime.now().isoformat())
+            self._depth_sample_generation = generation
 
     def _cleanup_receipts(self) -> None:
         # IDs without a creation time remain as compact compatibility tombstones.
@@ -627,19 +666,25 @@ class BehaviorWritePipeline:
         while not self._stop_event.is_set():
             self._update_stats(last_heartbeat_at=datetime.now().isoformat())
             try:
+                phase = "cleanup"
                 if time.monotonic() >= next_cleanup:
                     self._cleanup_receipts()
                     next_cleanup = time.monotonic() + 60.0
+                phase = "queue_sample"
                 if time.monotonic() >= next_depth_sample:
                     self._refresh_depth()
                     next_depth_sample = time.monotonic() + 2.0
+                phase = "drain"
                 if self._drain_batch():
                     continue
+                phase = "recovery_sample"
+                self._recover_if_idle()
             except Exception as exc:
                 # A bad connection, savepoint failure or unknown commit cannot kill supervision.
                 # The transaction either committed its receipt or remains pending for replay.
-                self._update_stats(last_error=_error_code(exc))
-                self._increment("retry_count")
+                with self._lock:
+                    self._record_failure_locked(_error_code(exc), phase=phase)
+                    self._stats["retry_count"] += 1
             self._wake.wait(BEHAVIOR_WRITE_FLUSH_INTERVAL_MS / 1000.0)
             self._wake.clear()
 

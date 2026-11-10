@@ -236,15 +236,36 @@ class DailyReflectionV3Tests(WandererDbTestCase):
         self.assertEqual(result['status'],'applied',result)
         self.assertEqual(result['reflection']['ai_calls'],2)
 
-    def test_failed_callback_keeps_whole_session_partial_until_retry_succeeds(self):
+    def test_failed_callback_keeps_whole_session_running_until_delayed_retry_succeeds(self):
         def fail(_):
             raise RuntimeError('synthetic provider unavailable')
         result=self.reflect(Caller(decision([self.rating()],True),fail))
-        self.assertEqual(result['status'],'partial',result)
+        self.assertEqual(result['status'],'running',result)
         self.assertEqual(result['reflection']['missing_count'],0)
+        premature=Caller()
+        self.assertEqual(asyncio.run(runtime.drain_wake_events(self.connect,ai_caller=premature))['ai_calls'],0)
+        self.assertFalse(premature.calls)
+        with self.connect() as conn:
+            conn.execute("UPDATE wanderer_wake_events SET run_at=? WHERE source='model_retry'",(local_iso(),))
+            conn.commit()
+        resumed=asyncio.run(runtime.drain_wake_events(self.connect,ai_caller=Caller(decision())))
+        self.assertEqual(resumed['ai_calls'],1)
+        with self.connect() as conn:
+            state=daily.snapshot(conn,self.w)
+            self.assertEqual(state['status'],'applied')
+            self.assertEqual(state['ai_calls'],3)
+
+    def test_explicit_manual_reflection_advances_existing_model_retry_without_extra_entitlement(self):
+        def fail(_):
+            raise RuntimeError('synthetic provider unavailable')
+        result=self.reflect(Caller(decision([self.rating()],True),fail))
+        self.assertEqual(result['status'],'running',result)
         resumed=self.reflect(Caller(decision()),force=True)
         self.assertEqual(resumed['status'],'applied',resumed)
         self.assertEqual(resumed['reflection']['ai_calls'],3)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_wake_events WHERE source='model_retry'").fetchone()[0],1)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_reflection_sessions').fetchone()[0],1)
 
     def test_old_day_callback_cannot_overwrite_newer_day_rating(self):
         previous=local_now()-timedelta(days=1)

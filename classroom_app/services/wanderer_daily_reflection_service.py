@@ -94,7 +94,7 @@ def session_for_run(conn, run):
             if event['source'] == 'reflection' and event['event_key'] == session['reflection_date'] and not event['parent_turn_id']:
                 return session
             break
-        if event['source'] not in {'callback', 'protocol_repair', 'context'} or not event['parent_turn_id']:
+        if event['source'] not in {'callback', 'protocol_repair', 'model_retry', 'context'} or not event['parent_turn_id']:
             break
         parent = conn.execute('SELECT event_id FROM wanderer_turns WHERE turn_id=? AND wanderer_id=? AND chain_id=?',
                               (event['parent_turn_id'], wid, session['chain_id'])).fetchone()
@@ -214,6 +214,28 @@ def rate_friend(conn, run, peer_identity, grade, *, expected_revision, operation
     return result
 
 
+def unresolved_failures(conn, wanderer_id, chain_id):
+    """A successful correction also recovers failed correction ancestors.
+
+    A model retry may itself need protocol repair (or the reverse). Only these
+    explicit correction edges count; an unrelated completed callback cannot
+    erase an earlier failure. All failed turns remain in their original ledger.
+    """
+    events = [dict(item) for item in conn.execute('SELECT * FROM wanderer_wake_events '
+        'WHERE wanderer_id=? AND chain_id=? ORDER BY depth DESC,updated_at DESC,event_id',
+        (int(wanderer_id), chain_id)).fetchall()]
+    recovered = set()
+    for _ in range(len(events)):
+        previous = len(recovered)
+        for event in events:
+            if (event['source'] in {'protocol_repair', 'model_retry'} and event['parent_turn_id']
+                    and (event['state'] == 'completed' or event['turn_id'] in recovered)):
+                recovered.add(event['parent_turn_id'])
+        if len(recovered) == previous:
+            break
+    return [event for event in events if event['state'] in {'failed', 'blocked'} and event['turn_id'] not in recovered]
+
+
 def sync_session(conn, run):
     """Observe the whole chain, including deferred callbacks, instead of its first turn."""
     session = session_for_run(conn, run)
@@ -225,21 +247,43 @@ def sync_session(conn, run):
     coverage = friend_ratings(conn, run['wanderer'], date=date, limit=1)
     pending = conn.execute("SELECT 1 FROM wanderer_wake_events WHERE wanderer_id=? AND chain_id=? AND state IN ('pending','processing','deferred') LIMIT 1", (wid, session['chain_id'])).fetchone()
     completed = conn.execute("SELECT 1 FROM wanderer_turns WHERE wanderer_id=? AND chain_id=? AND state='completed' LIMIT 1", (wid, session['chain_id'])).fetchone()
-    unresolved = int(conn.execute("SELECT COUNT(*) FROM wanderer_wake_events e WHERE e.wanderer_id=? AND e.chain_id=? "
-        "AND e.state IN ('failed','blocked') AND NOT EXISTS(SELECT 1 FROM wanderer_wake_events repair "
-        "WHERE repair.wanderer_id=e.wanderer_id AND repair.chain_id=e.chain_id AND repair.parent_turn_id=e.turn_id "
-        "AND repair.source='protocol_repair' AND repair.state='completed')",(wid,session['chain_id'])).fetchone()[0])
+    unresolved = len(unresolved_failures(conn, wid, session['chain_id']))
     status = 'running' if pending else ('partial' if coverage['missing_count'] or unresolved else 'applied') if completed else 'failed'
     now = local_iso()
     conn.execute('UPDATE wanderer_reflection_sessions SET status=?,updated_at=?,closed_at=? WHERE wanderer_id=? AND reflection_date=?',
                  (status, now, None if pending else now, wid, date))
-    prior = conn.execute('SELECT applied_json FROM wanderer_daily_reflections WHERE wanderer_id=? AND reflection_date=?', (wid,date)).fetchone()
+    prior = conn.execute('SELECT applied_json,output_json FROM wanderer_daily_reflections WHERE wanderer_id=? AND reflection_date=?', (wid,date)).fetchone()
     applied = json.loads(prior['applied_json'] or '{}') if prior else {}
+    output = json.loads(prior['output_json'] or '{}') if prior else {}
+    turns = conn.execute('SELECT turn_id,state,error FROM wanderer_turns WHERE wanderer_id=? AND chain_id=? '
+                         'ORDER BY created_at,turn_id', (wid, session['chain_id'])).fetchall()
+    output['runtime_turns'] = [item['turn_id'] for item in turns]
+    # Project only successful real receipts. This also runs for queued roots and
+    # late callbacks, which do not return through run_reflection's manual wrapper.
+    memories = []
+    for item in conn.execute("SELECT c.capability,c.command_json,c.receipt_json FROM wanderer_commands c "
+            "JOIN wanderer_turns t ON t.turn_id=c.turn_id WHERE t.wanderer_id=? AND t.chain_id=? "
+            "AND c.state='succeeded' AND c.capability IN ('memory.write','self.reflect') "
+            'ORDER BY c.created_at,c.command_id', (wid, session['chain_id'])).fetchall():
+        receipt = json.loads(item['receipt_json'] or '{}')
+        value = receipt.get('result') or {}
+        if item['capability'] == 'memory.write' and isinstance(value, dict) and value.get('memory_id'):
+            memories.append(value['memory_id'])
+        elif item['capability'] == 'self.reflect':
+            args = json.loads(item['command_json'] or '{}').get('args') or {}
+            output.update({key: args[key] for key in ('mood', 'self_review', 'tomorrow') if key in args})
+    if memories:
+        summaries = [item['content'] for item in conn.execute('SELECT content FROM wanderer_episodic_memories '
+            f"WHERE wanderer_id=? AND id IN ({','.join('?' for _ in memories)}) ORDER BY occurred_at,id", (wid, *memories)).fetchall()]
+        output['today'] = {'summary': '\n'.join(summaries)}
+        applied['new_episodes'] = list(dict.fromkeys([*(applied.get('new_episodes') or []), *memories]))
     applied.update({'runtime_event':session['root_event_id'], 'friend_count':coverage['friend_count'],
                     'rated_count':coverage['rated_count'], 'missing_count':coverage['missing_count'],
                     'unresolved_events':unresolved})
-    conn.execute('UPDATE wanderer_daily_reflections SET status=?,ai_calls=?,applied_json=?,applied_at=? WHERE wanderer_id=? AND reflection_date=?',
-                 (status, int(row['ai_calls']), _json(applied), None if pending else now, wid, date))
+    error = next((str(item['error'])[:500] for item in reversed(turns) if item['error']), '') if unresolved else ''
+    conn.execute('UPDATE wanderer_daily_reflections SET status=?,ai_calls=?,applied_json=?,output_json=?,error=?,applied_at=? '
+                 'WHERE wanderer_id=? AND reflection_date=?',
+                 (status, int(row['ai_calls']), _json(applied), _json(output), error, None if pending else now, wid, date))
     if completed:
         conn.execute('UPDATE wanderer_agents SET last_reflection_at=? WHERE id=?', (now, wid))
     return {**snapshot(conn, run['wanderer'], date=date), 'status':status}
