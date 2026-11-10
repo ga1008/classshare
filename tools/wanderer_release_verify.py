@@ -40,6 +40,7 @@ TESTS = (
     "tests.test_wanderer_legacy_delivery.WandererLegacyDeliveryTest",
     "tests.test_wanderer_delivery_guard",
     "tests.test_wanderer_daily_reflection_v3",
+    "tests.test_wanderer_bond_daily_affinity",
     "tests.test_wanderer_memory_corrections",
     "tests.test_wanderer_admin_api.WandererAdminApiTest.test_message_cursor_is_stable_when_new_messages_arrive",
     "tests.test_wanderer_admin_api.WandererAdminApiTest.test_memory_corrections_require_super_admin_and_preserve_audit",

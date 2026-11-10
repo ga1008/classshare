@@ -96,7 +96,9 @@ def _mutual_full_affinity(conn, first, second):
     from .wanderer_relationship_service import affinity_state
     for owner, peer in ((first, second), (second, first)):
         state = affinity_state(conn, owner['id'], f"student:{peer['student_id']}")
-        if state['origin'] != 'self' or state['revision'] <= 0 or state['affinity'] != 100:
+        # Both the retained v2 choice and a server-calculated daily assessment
+        # are deliberate expressions; migration/unrated defaults are not.
+        if state['origin'] not in {'self', 'daily_reflection'} or state['revision'] <= 0 or state['affinity'] != 100:
             return False
     return True
 
