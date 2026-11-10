@@ -389,6 +389,8 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "schema_account_control.py",
             "schema_wanderer_world.py",
             "schema_wanderer_runtime.py",
+            "schema_wanderer_reflection.py",
+            "schema_wanderer_delivery.py",
             "schema_wanderer_social.py",
             # Both database startup paths call ensure_signature_workflow_schema,
             # which ensures these additive batch/snapshot/export tables.

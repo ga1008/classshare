@@ -33,3 +33,9 @@
 本机证据目录：`.codex-temp/wanderer-admin-v3-20261110-g/browser-result.json`（原业务）及 `.codex-temp/wanderer-admin-v3-20261110-h/browser-admin-v3-result.json`、`screenshots-v3/`（最终新工作区）。运行结束后合成服务已停止。复现入口为 `prepare_wanderer_world_runtime.py` → `serve_ui_v3.py` → 上述两个浏览器脚本，需新建 `.codex-temp` 下自有运行目录；脚本会检查数据库位置与正式资源哈希。
 
 全平台源码审计更新为 602 个作者源码文件、209 个模板、5746 个候选入口。审计仍保留 `pending/unknown`，它是源码清单，不能代替未运行的其他平台页面验收。本记录证明本轮相关界面与合成业务状态；生产部署及上线核验由发布流程另行记录。
+
+## 发布回归中的换行合同修正
+
+全后端回归发现旧 LQ 审阅记录以原始字节检查 LF 文件，而 Windows 检出为 CRLF。已逐文件比较工作树、`git show HEAD:<path>` 与原登记 SHA：`macros/manage_page.html`、`manage/lesson_plans.html`、`base_centered.html`、`teacher_register_v4.html`、`session_expired.html`、`permission_denied.html`、`status.html`、`error.html` 共 8 个模板，除 CRLF/LF 表示外逐字节相同。15 条消费者记录仅增加既有显式 `hashMode: text-lf`，原 SHA 全部保持不变，产品模板未改动。完整证据为 `.codex-temp/wanderer-v3/lq-reviewed-eol-evidence.json`。
+
+隔离运行 `test_lq_partial_scope.py` 15 项、`test_manage_lq_pilot_templates.py` 11 项、`test_lq_report_card_pilot.py` 5 项全部通过，覆盖 9 个试点 SSR 合同；既有测试确认实际文本、空白、末尾换行或 BOM 变化仍使审阅失效。
