@@ -3382,7 +3382,7 @@
     },
     {
       "file": "static/js/wanderer_workspace.js",
-      "sha256": "21e88fd4ae6c72f275ec9a414f058dfeeb719838fa719851f49938369f9c9205",
+      "sha256": "41f285d6fde6b11daf41e8bcef875b763ab4153e430aaa6481c9e079a8cff88e",
       "entryCount": 4
     },
     {
@@ -166439,9 +166439,9 @@
     },
     {
       "file": "static/js/wanderer_workspace.js",
-      "line": 151,
+      "line": 152,
       "column": 16,
-      "offset": 11267,
+      "offset": 11421,
       "kind": "surface",
       "syntax": "component-factory-call",
       "tagOrFactory": "createContent",
@@ -166465,9 +166465,9 @@
     },
     {
       "file": "static/js/wanderer_workspace.js",
-      "line": 172,
+      "line": 173,
       "column": 65,
-      "offset": 12853,
+      "offset": 13007,
       "kind": "surface",
       "syntax": "component-factory-call",
       "tagOrFactory": "createContent",
@@ -166491,9 +166491,9 @@
     },
     {
       "file": "static/js/wanderer_workspace.js",
-      "line": 220,
+      "line": 221,
       "column": 34,
-      "offset": 16802,
+      "offset": 16956,
       "kind": "surface",
       "syntax": "component-factory-call",
       "tagOrFactory": "createContent",

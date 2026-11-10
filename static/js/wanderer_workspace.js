@@ -131,7 +131,8 @@ export function createWandererWorkspace(root, { getId }) {
         const extras = [];
         if (Array.isArray(item.commands)) {
             extras.push(flowView(item));
-            extras.push(...item.commands.filter(command => command.state === 'uncertain').map(reconciliation));
+            const ended = ['completed', 'failed', 'interrupted', 'cancelled', 'canceled'].includes(item.state);
+            extras.push(...item.commands.filter(command => command.state === 'uncertain' || (ended && command.state === 'running')).map(reconciliation));
         }
         if (body) extras.push(node('p', { class: 'ww-fulltext', text: body }));
         if (current === 'activity' && filter.value === 'events' && ['failed', 'blocked', 'deferred'].includes(item.state)) {

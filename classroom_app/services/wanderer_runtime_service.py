@@ -819,7 +819,17 @@ async def execute_command(factory, run: dict, command: dict, *, read_only: bool 
             if previous["state"] in {"succeeded", "failed", "uncertain", "resolved"}:
                 return decode(previous["receipt_json"], {})
             if previous["state"] == "running":
-                return {"command_id": command["id"], "status": "uncertain", "error": "先核对已有执行，禁止盲重发"}
+                from .wanderer_reconciliation import uncertain_running_receipt
+                receipt = uncertain_running_receipt(dict(previous), scope=run['scope'])
+                changed = conn.execute("UPDATE wanderer_commands SET state='uncertain',receipt_json=?,updated_at=? "
+                    "WHERE operation_id=? AND state='running'", (packed(receipt),local_iso(),op))
+                if changed.rowcount != 1:
+                    current = conn.execute('SELECT receipt_json FROM wanderer_commands WHERE operation_id=?',(op,)).fetchone()
+                    if current is None:
+                        raise RuntimeError('指令账本记录已丢失，不能覆盖或重发')
+                    receipt = decode(current['receipt_json'], {})
+                conn.commit()
+                return receipt
         from .wanderer_bond_service import capabilities as bond_capabilities
         mutates = next((x["mutates"] for x in CORE_CAPABILITIES + bond_capabilities() if x["key"] == command["capability"]), None)
         if read_only and mutates is not False:
@@ -893,10 +903,17 @@ async def execute_command(factory, run: dict, command: dict, *, read_only: bool 
         else:
             receipt = {"command_id": command["id"], "operation_id": op, "status": "uncertain", "error": str(exc)[:300], 'scope':run['scope']}
     with connection(factory) as conn:
-        conn.execute("UPDATE wanderer_commands SET state=?,receipt_json=?,updated_at=? WHERE operation_id=?",
+        changed = conn.execute("UPDATE wanderer_commands SET state=?,receipt_json=?,updated_at=? WHERE operation_id=? AND state='running'",
                      ("succeeded" if receipt["status"] == "succeeded" else "waiting" if receipt['status']=='submitted'
                       else "uncertain" if receipt["status"] == "uncertain" else "failed",
                       packed(receipt), local_iso(), op))
+        if changed.rowcount != 1:
+            # Recovery or an audited declaration may have settled this command
+            # while its original executor was finishing. Never overwrite it.
+            current = conn.execute('SELECT receipt_json FROM wanderer_commands WHERE operation_id=?',(op,)).fetchone()
+            if current is None:
+                raise RuntimeError('指令账本记录已丢失，不能覆盖或重发')
+            receipt = decode(current['receipt_json'], {})
         conn.commit()
     return receipt
 

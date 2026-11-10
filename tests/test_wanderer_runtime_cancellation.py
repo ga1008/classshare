@@ -1,5 +1,8 @@
 """Cancellation acceptance with isolated storage and synthetic model responses."""
 import asyncio
+import hashlib
+import json
+import uuid
 from unittest.mock import patch
 
 from classroom_app.services import wanderer_behavior_service as behavior
@@ -232,3 +235,109 @@ class RuntimeCancellationTests(WandererDbTestCase):
                     await asyncio.wait_for(self.wake(Caller()), 0.5)
 
         asyncio.run(scenario())
+
+    def stale_running_command(self):
+        pending = command('memory.write', {'content': '不得重放的旧指令', 'location': '个人空间'})
+        with self.connect() as conn:
+            event = runtime.enqueue_wake_event(conn, self.w['id'], 'test', 'resume-command', {})
+            run = runtime._claim(conn, event['event_id'])
+            op = str(uuid.uuid5(uuid.NAMESPACE_URL, f"wanderer:{run['turn_id']}:{pending['id']}"))
+            conn.execute("UPDATE wanderer_turns SET state='executing',output_json=?,dispatched_at=? WHERE turn_id=?",
+                         (runtime.packed(decision([pending])), local_iso(), run['turn_id']))
+            conn.execute("INSERT INTO wanderer_commands(operation_id,turn_id,command_id,capability,args_hash,command_json,state,created_at,updated_at) "
+                         "VALUES(?,?,?,?,?,?,'running',?,?)", (op, run['turn_id'], pending['id'], pending['capability'],
+                         hashlib.sha256(runtime.packed(pending).encode()).hexdigest(), runtime.packed(pending), local_iso(), local_iso()))
+            conn.execute("UPDATE wanderer_runtime_leases SET lease_until='2000-01-01' WHERE wanderer_id=?", (self.w['id'],))
+            conn.commit()
+        return op
+
+    def test_recovered_running_command_persists_uncertainty_without_reexecution(self):
+        op = self.stale_running_command()
+        caller = Caller()
+        result = asyncio.run(self.wake(caller, key='resume-command'))
+        self.assertEqual(result['status'], 'ok')
+        receipt = result['receipts'][0]
+        self.assertEqual(receipt['operation_id'], op)
+        self.assertEqual(receipt['status'], 'uncertain')
+        self.assertEqual(receipt['scope'], {'kind': 'public'})
+        self.assertFalse(receipt['verified_business'])
+        with self.connect() as conn:
+            row = conn.execute('SELECT state,receipt_json FROM wanderer_commands WHERE operation_id=?', (op,)).fetchone()
+            self.assertEqual(row['state'], 'uncertain')
+            self.assertEqual(json.loads(row['receipt_json']), receipt)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_memory_sources').fetchone()[0], 0)
+        asyncio.run(self.wake(caller, key='resume-command'))
+        self.assertFalse(caller.calls)
+
+    def test_recovery_cas_observes_preexisting_resolution(self):
+        op = self.stale_running_command()
+        declared = {'command_id': 'one', 'operation_id': op, 'status': 'resolved',
+                    'verified_business': False, 'reconciliation': {'outcome': 'occurred'}}
+        connect = self.connect
+        raced = []
+
+        class RacingConnection:
+            def __init__(self): self.conn = connect()
+            def __enter__(self): self.conn.__enter__(); return self
+            def __exit__(self, *args): return self.conn.__exit__(*args)
+            def __getattr__(self, name): return getattr(self.conn, name)
+            def execute(self, sql, parameters=()):
+                if not raced and sql.startswith("UPDATE wanderer_commands SET state='uncertain'"):
+                    self.conn.execute("UPDATE wanderer_commands SET state='resolved',receipt_json=? WHERE operation_id=?",
+                                      (runtime.packed(declared), op))
+                    raced.append(True)
+                return self.conn.execute(sql, parameters)
+
+        result = asyncio.run(runtime.wake_wanderer(RacingConnection, self.w['id'], source='test',
+                             event_key='resume-command', context={}, ai_caller=Caller(), force=True))
+        self.assertEqual(result['receipts'][0], declared)
+        self.assertEqual(raced, [True])
+        with self.connect() as conn:
+            self.assertEqual(conn.execute('SELECT state FROM wanderer_commands WHERE operation_id=?', (op,)).fetchone()[0], 'resolved')
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_memory_sources').fetchone()[0], 0)
+
+    def test_late_execution_receipt_cannot_overwrite_resolved_command(self):
+        with self.connect() as conn:
+            event = runtime.enqueue_wake_event(conn, self.w['id'], 'test', 'late-receipt', {})
+            run = runtime._claim(conn, event['event_id'])
+            conn.commit()
+        pending = command('platform.file.read', {'file_id': 1})
+        op = str(uuid.uuid5(uuid.NAMESPACE_URL, f"wanderer:{run['turn_id']}:{pending['id']}"))
+        declared = {'command_id': pending['id'], 'operation_id': op, 'status': 'resolved',
+                    'verified_business': False, 'reconciliation': {'outcome': 'occurred'}}
+        executed = []
+
+        async def late_result(**kwargs):
+            executed.append(kwargs['operation_id'])
+            # The original executor is outside its transaction. Another owner
+            # has already settled this row before its response returns.
+            with self.connect() as conn:
+                conn.execute("UPDATE wanderer_commands SET state='resolved',receipt_json=? WHERE operation_id=?",
+                             (runtime.packed(declared), op))
+                conn.commit()
+            return {'status': 'succeeded', 'result': {'data': 'late synthetic result'}}
+
+        with patch('classroom_app.services.wanderer_platform_service.execute_platform_command', late_result):
+            result = asyncio.run(runtime.execute_command(self.connect, run, pending))
+        self.assertEqual(result, declared)
+        self.assertEqual(executed, [op])
+        with self.connect() as conn:
+            row = conn.execute('SELECT state,receipt_json FROM wanderer_commands WHERE operation_id=?', (op,)).fetchone()
+            self.assertEqual(row['state'], 'resolved')
+            self.assertEqual(json.loads(row['receipt_json']), declared)
+
+    def test_missing_command_during_late_write_is_explicit_failure(self):
+        with self.connect() as conn:
+            event = runtime.enqueue_wake_event(conn, self.w['id'], 'test', 'missing-receipt', {})
+            run = runtime._claim(conn, event['event_id'])
+            conn.commit()
+
+        async def removed(**kwargs):
+            with self.connect() as conn:
+                conn.execute('DELETE FROM wanderer_commands WHERE operation_id=?', (kwargs['operation_id'],))
+                conn.commit()
+            return {'status': 'succeeded'}
+
+        with patch('classroom_app.services.wanderer_platform_service.execute_platform_command', removed):
+            with self.assertRaisesRegex(RuntimeError, '指令账本记录已丢失'):
+                asyncio.run(runtime.execute_command(self.connect, run, command('platform.file.read', {'file_id': 1})))
