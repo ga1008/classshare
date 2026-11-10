@@ -34,6 +34,7 @@ TESTS = (
     "tests.test_scheduled_task_service",
     "tests.test_scheduled_task_cancellation",
     "tests.test_wanderer_reflection_schedule",
+    "tests.test_wanderer_runtime_cancellation",
     "tests.test_wanderer_reflection_snapshot",
     "tests.test_wanderer_communication_recovery",
     "tests.test_wanderer_communication_snapshot",

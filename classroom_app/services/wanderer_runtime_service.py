@@ -1255,6 +1255,34 @@ async def _process(factory, event_id: str, *, ai_caller=None) -> dict:
             pass
 
 
+async def _await_owned_turn(work: asyncio.Task) -> dict:
+    """Settle the current decision before propagating caller cancellation.
+
+    A timer/HTTP deadline must not abandon an already charged model request or
+    an accepted command. Keep this turn's lease heartbeat alive until its bounded
+    model call and command receipts settle. Only this turn is owned: after a
+    cancellation, any persisted continuation stays queued for the wake worker.
+    """
+    cancelled = False
+    while not work.done():
+        try:
+            # Cancelling wait() does not cancel its task. Repeated cancellation
+            # must not release the concurrency slot or leave work unobserved.
+            await asyncio.wait((work,))
+        except asyncio.CancelledError:
+            cancelled = True
+    try:
+        result = work.result()
+    except Exception as exc:
+        if cancelled:
+            print(f"[WANDERER] cancelled turn ended with {type(exc).__name__}")
+            raise asyncio.CancelledError from exc
+        raise
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
+
+
 async def wake_wanderer(conn_factory, wanderer_id: int, *, source: str, event_key: str,
                         context: dict | None = None, ai_caller=None, force: bool = False) -> dict:
     global _SLOTS, _SLOT_LOOP
@@ -1271,7 +1299,8 @@ async def wake_wanderer(conn_factory, wanderer_id: int, *, source: str, event_ke
     async with _SLOTS:
         eid = event["event_id"]
         for _ in range(MAX_CHAIN_DEPTH+1):
-            last = await _process(conn_factory, eid, ai_caller=ai_caller)
+            work = asyncio.create_task(_process(conn_factory, eid, ai_caller=ai_caller))
+            last = await _await_owned_turn(work)
             total += int(last.get("ai_calls") or 0)
             rounds.append(last)
             eid = last.get("callback_event_id")

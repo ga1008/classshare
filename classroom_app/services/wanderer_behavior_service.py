@@ -642,8 +642,9 @@ async def run_wanderer_tick_once(
     ``wanderer_ids`` are given. ``reply_only`` runs just the pending blog
     replies of the selected wanderers (used by the immediate reply trigger).
 
-    Bounded by ``tick_max_seconds``; on timeout returns status ``timeout`` with
-    the wanderers completed so far.
+    ``tick_max_seconds`` stops further work; an autonomous decision already in
+    progress settles before timeout is returned, retaining its metered request
+    and accepted commands. Its continuation remains queued for the wake worker.
     """
     rng = rng or random.Random()
     moment = now or local_now()
@@ -703,11 +704,9 @@ async def _tick_body(
     reply_only: bool = False,
 ) -> None:
     """Select and run the batch, appending each finished wanderer to ``summaries``."""
-    from .wanderer_runtime_service import runtime_enabled, drain_wake_events
-    with _connection(conn_factory) as conn:
-        autonomous = runtime_enabled(conn)
-    if autonomous:
-        await drain_wake_events(conn_factory, ai_caller=ai_caller, limit=limit or 20)
+    # The independent wake worker owns queued inbox/group/reflection events.
+    # Consuming that global queue here would both ignore an explicit selection
+    # and expose unrelated decisions to this ordinary tick's time budget.
     with _connection(conn_factory) as conn:
         batch = select_tick_wanderers(
             conn, now=moment, rng=rng, limit=limit or tick_batch_size(conn),
