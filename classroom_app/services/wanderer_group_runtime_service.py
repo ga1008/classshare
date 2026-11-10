@@ -105,7 +105,71 @@ def _snapshot(conn: Any, wanderer: dict, group_id: int) -> dict | None:
                         for r in pending]}
 
 
-async def run_member_group(wanderer: dict, group_id: int, *, conn_factory=None, ai_caller=None) -> dict:
+def _pending_rows(context: dict) -> list[dict]:
+    ids = {int(item["id"]) for item in context.get("evidence") or []
+           if item.get("kind") == "social_message"}
+    return [row for row in context.get("messages") or [] if int(row["id"]) in ids]
+
+
+def group_gate(conn: Any, wanderer: dict, context: dict, group_id: int, *,
+               wanderer_identities: set[str] | None = None) -> tuple[bool, str]:
+    """Decide without a model call whether this member is worth waking."""
+    from .social_relations import group_member_identities
+    from .wanderer_actions_social import group_reply_probability, is_mentioned
+    from .wanderer_social_triggers import social_wanderers
+
+    identity = f"student:{wanderer['student_id']}"
+    pending = _pending_rows(context)
+    if not pending:
+        return False, "no_pending"
+    if wanderer_identities is None:
+        wanderer_identities = set(social_wanderers(conn, group_member_identities(conn, group_id)))
+    ids = [int(row["id"]) for row in pending]
+    marks = ",".join("?" for _ in ids)
+    mentioned = False
+    for row in conn.execute(f"SELECT mentions_json, message_type FROM social_messages WHERE id IN ({marks})",
+                            tuple(ids)).fetchall():
+        if is_mentioned({"mentions_json": row["mentions_json"], "message_type": row["message_type"]}, identity):
+            mentioned = True
+            break
+    peers = wanderer_identities - {identity}
+    last_is_wanderer = str(pending[-1].get("sender_identity") or "") in peers
+    streak = 0
+    for row in reversed(pending):
+        if str(row.get("sender_identity") or "") in wanderer_identities:
+            streak += 1
+        else:
+            break
+    rounds = 0
+    for row in conn.execute(
+            "SELECT sender_identity FROM social_messages WHERE conversation_key=? "
+            "AND message_type IN ('text','media','nudge') AND recalled_at IS NULL "
+            "ORDER BY id DESC LIMIT 40", (f"group:{int(group_id)}",)).fetchall():
+        if str(row["sender_identity"]) in wanderer_identities:
+            rounds += 1
+        else:
+            break
+    probability = group_reply_probability(
+        wanderer, interest=0.0, mentioned=mentioned, streak=streak,
+        last_is_wanderer=last_is_wanderer, sent_today=0, rounds_since_human=rounds)
+    if probability >= 1.0:
+        return True, "mentioned" if mentioned else "in_budget"
+    return False, "conversation_budget"
+
+
+def _advance_watermark(conn: Any, wanderer: dict, context: dict, group_id: int) -> None:
+    conn.execute("UPDATE wanderer_group_observations SET handled_message_id=?,updated_at=? "
+                 "WHERE wanderer_id=? AND group_id=? AND membership_stamp=? AND handled_message_id<?",
+                 (context["snapshot_message_id"], local_iso(), wanderer["id"], group_id,
+                  context["membership_stamp"], context["snapshot_message_id"]))
+    conn.execute("UPDATE social_group_members SET last_read_message_id=? WHERE group_id=? AND member_identity=? "
+                 "AND joined_at=? AND left_at IS NULL AND last_read_message_id<?",
+                 (context["snapshot_message_id"], group_id, f"student:{wanderer['student_id']}",
+                  context["membership_stamp"], context["snapshot_message_id"]))
+
+
+async def run_member_group(wanderer: dict, group_id: int, *, conn_factory=None, ai_caller=None,
+                           wanderer_identities: set[str] | None = None) -> dict:
     from .social_common import SocialError
     with connection(conn_factory) as conn:
         try:
@@ -115,6 +179,16 @@ async def run_member_group(wanderer: dict, group_id: int, *, conn_factory=None, 
         conn.commit()
     if context is None:
         return {"status":"nothing_new","ai_calls":0}
+    with connection(conn_factory) as conn:
+        wake, reason = group_gate(conn, wanderer, context, group_id, wanderer_identities=wanderer_identities)
+        if not wake:
+            # A passed batch still advances the watermark, so the same text does
+            # not come back as "new" on the next tick.
+            _advance_watermark(conn, wanderer, context, group_id)
+            conn.commit()
+            return {"status": "passed", "ai_calls": 0, "reason": reason,
+                    "snapshot_message_id": context["snapshot_message_id"]}
+        conn.commit()
     event_key = f"{context['conversation_key']}:{context['snapshot_message_id']}:{context['membership_stamp']}"
     result = await wake_wanderer(conn_factory,int(wanderer["id"]),source="group_message",event_key=event_key,
                                  context=context,ai_caller=ai_caller)
@@ -130,14 +204,7 @@ async def run_member_group(wanderer: dict, group_id: int, *, conn_factory=None, 
                            (wanderer["id"],event_key)).fetchone()
         considered = any(item.get('status')=='ok' for item in result.get('rounds',[]))
         if row and (row["state"] == "completed" or row['repaired'] or considered):
-            conn.execute("UPDATE wanderer_group_observations SET handled_message_id=?,updated_at=? "
-                         "WHERE wanderer_id=? AND group_id=? AND membership_stamp=? AND handled_message_id<?",
-                         (context["snapshot_message_id"],local_iso(),wanderer["id"],group_id,
-                          context["membership_stamp"],context["snapshot_message_id"]))
-            conn.execute("UPDATE social_group_members SET last_read_message_id=? WHERE group_id=? AND member_identity=? "
-                         "AND joined_at=? AND left_at IS NULL AND last_read_message_id<?",
-                         (context["snapshot_message_id"],group_id,f"student:{wanderer['student_id']}",
-                          context["membership_stamp"],context["snapshot_message_id"]))
+            _advance_watermark(conn, wanderer, context, group_id)
         conn.commit()
     return result
 
@@ -160,7 +227,9 @@ async def run_group_runtime(group_id: int, *, conn_factory=None, ai_caller=None)
         if int(event["wanderer_id"]) in {int(w["id"]) for w in wanderers.values()}:
             outcomes.append(await wake_wanderer(conn_factory,event["wanderer_id"],source=event["source"],
                             event_key=event["event_key"],context=json.loads(event["context_json"]),ai_caller=ai_caller))
+    identities = set(wanderers)
     for identity, wanderer in wanderers.items():
-        result = await run_member_group(wanderer,group_id,conn_factory=conn_factory,ai_caller=ai_caller)
+        result = await run_member_group(wanderer,group_id,conn_factory=conn_factory,ai_caller=ai_caller,
+                                        wanderer_identities=identities)
         outcomes.append({"identity":identity,**result})
     return {"status":"ok","scheduled":outcomes,"passed":[],"ai_calls":sum(r.get("ai_calls",0) for r in outcomes)}

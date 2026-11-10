@@ -521,9 +521,22 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
 # Group watch
 # ---------------------------------------------------------------------------
 
+GROUP_CONVERSATION_LIMIT = 6
+
+
 def group_reply_probability(wanderer: dict[str, Any], *, interest: float, mentioned: bool, streak: int,
-                            last_is_wanderer: bool, sent_today: int) -> float:
-    """Compatibility helper: every new conversation may reach the decision runtime."""
+                            last_is_wanderer: bool, sent_today: int,
+                            rounds_since_human: int = 0) -> float:
+    """Whether a group batch is worth a paid decision: 1.0 wakes, 0.0 passes.
+
+    A mention always wakes. Wanderers may keep a conversation going for a
+    bounded number of rounds after the last human message; past that the batch
+    is skipped without a model call, so a group cannot ping-pong forever.
+    """
+    if mentioned:
+        return 1.0
+    if last_is_wanderer and int(rounds_since_human or 0) >= GROUP_CONVERSATION_LIMIT:
+        return 0.0
     return 1.0
 
 

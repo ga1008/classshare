@@ -341,3 +341,38 @@ class SocialV2Test(WandererWorldTestCase):
                                               (f"social-message:{item['id']}",)).fetchone()[0],1)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_action_log WHERE wanderer_id=? AND action_kind='social_message'",
                                           (self.atai["id"],)).fetchone()[0],3)
+
+    def test_long_wanderer_thread_passes_without_a_model_call(self):
+        from classroom_app.services.wanderer_actions_social import GROUP_CONVERSATION_LIMIT
+        from classroom_app.services.wanderer_group_runtime_service import run_member_group
+        gid, key = self.make_group(self.atai, self.lele)
+        for index in range(GROUP_CONVERSATION_LIMIT):
+            self.send(self.ident(self.atai), key, f"散修轮次{index}")
+        caller = StubCaller()
+        result = asyncio.run(run_member_group(self.lele, gid, conn_factory=self.connect, ai_caller=caller))
+        self.assertEqual(result["status"], "passed", result)
+        self.assertEqual(result["ai_calls"], 0)
+        self.assertEqual(caller.calls, [])
+        with self.connect() as conn:
+            row = conn.execute("SELECT handled_message_id FROM wanderer_group_observations "
+                               "WHERE wanderer_id=? AND group_id=?", (self.lele["id"], gid)).fetchone()
+            self.assertGreater(int(row["handled_message_id"]), 0)
+
+
+class GroupConversationBudgetTest(unittest.TestCase):
+    def test_mention_always_wakes_and_long_wanderer_threads_pass(self):
+        from classroom_app.services.wanderer_actions_social import (
+            GROUP_CONVERSATION_LIMIT, group_reply_probability)
+        wanderer = {"activity_level": 3, "reply_policy": {}, "archetype": ""}
+        self.assertEqual(group_reply_probability(wanderer, interest=0, mentioned=True, streak=9,
+                                                 last_is_wanderer=True, sent_today=99,
+                                                 rounds_since_human=99), 1.0)
+        self.assertEqual(group_reply_probability(wanderer, interest=0, mentioned=False, streak=1,
+                                                 last_is_wanderer=True, sent_today=0,
+                                                 rounds_since_human=GROUP_CONVERSATION_LIMIT - 1), 1.0)
+        self.assertEqual(group_reply_probability(wanderer, interest=0, mentioned=False, streak=1,
+                                                 last_is_wanderer=True, sent_today=0,
+                                                 rounds_since_human=GROUP_CONVERSATION_LIMIT), 0.0)
+        self.assertEqual(group_reply_probability(wanderer, interest=0, mentioned=False, streak=0,
+                                                 last_is_wanderer=False, sent_today=0,
+                                                 rounds_since_human=99), 1.0)
