@@ -25,7 +25,7 @@ def documents() -> tuple[dict, ...]:
     headings = list(re.finditer(r"^## 第[^\n]+", text, re.M))
     if len(headings) != 16:
         raise RuntimeError("世界手册必须包含完整16章")
-    version = "v2.1-" + hashlib.sha256(text.encode()).hexdigest()[:12]
+    version = "v3.0-" + hashlib.sha256(text.encode()).hexdigest()[:12]
     rows = []
     for i, heading in enumerate(headings):
         body = text[heading.start():headings[i+1].start() if i+1 < len(headings) else len(text)].strip()

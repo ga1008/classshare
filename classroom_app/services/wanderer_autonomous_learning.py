@@ -127,7 +127,9 @@ def read_knowledge(conn, reader, *, scope, before=None, limit=20, query='', incl
         term='%'+str(query)[:120].replace('!','!!').replace('%','!%').replace('_','!_')+'%'
         params.extend([term,term])
     cap = max(1,min(100,int(limit)))
-    rows = conn.execute('SELECT k.*,s.scope_json,s.evidence_json,a.display_name AS origin_name FROM wanderer_knowledge_entries k '
+    rows = conn.execute("SELECT k.*,s.scope_json,s.evidence_json,a.display_name AS origin_name,"
+        "(SELECT MAX(created_at) FROM wanderer_memory_corrections c WHERE c.wanderer_id=k.wanderer_id "
+        "AND c.target_kind='knowledge' AND c.target_id=k.id) AS corrected_at FROM wanderer_knowledge_entries k "
         'LEFT JOIN wanderer_knowledge_sources s ON s.entry_id=k.id JOIN wanderer_agents a ON a.id=k.wanderer_id WHERE '
         +' AND '.join(clauses)+' ORDER BY k.id DESC LIMIT ?',(*params,cap+1)).fetchall()
     items=[]
@@ -158,7 +160,8 @@ def read_knowledge(conn, reader, *, scope, before=None, limit=20, query='', incl
             evidence=evidence+[{'kind':'knowledge_record','id':int(item['id']),'owner_id':int(item['wanderer_id']),
                                'ref':f"knowledge_record:{item['id']}"}]
         items.append({k:item[k] for k in ('id','source_kind','source_ref','title','digest','chars','origin_name')} |
-                     {'origin_author':int(item['wanderer_id']),'shared':not own,'evidence':evidence})
+                     {'origin_author':int(item['wanderer_id']),'shared':not own,'evidence':evidence,
+                      'corrected_at':item.get('corrected_at')})
     return {'items':items,'next_cursor':int(rows[cap-1]['id']) if len(rows)>cap else None}
 
 
@@ -182,7 +185,8 @@ def recall_knowledge(conn, reader, *, scope, budget=4000, evidence_sink=None):
     selected=[]
     used=sum(map(len,lines))
     for item in page['items']:
-        line=f"#{item['id']} 作者{item['origin_name']}｜{item['title']}：{item['digest']}"
+        correction=f"（管理员校正于{item['corrected_at']}）" if item.get('corrected_at') else ''
+        line=f"#{item['id']} 作者{item['origin_name']}{correction}｜{item['title']}：{item['digest']}"
         if used+len(line)>budget:
             continue
         selected.append((item,line))

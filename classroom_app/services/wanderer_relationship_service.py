@@ -1,4 +1,4 @@
-"""Self-authored directed affinity: absolute 0..100, versioned and attributable."""
+"""Directed affinity values, system-computed from versioned daily self-assessments."""
 from __future__ import annotations
 
 import json
@@ -147,7 +147,11 @@ def _ensure_relationship(conn: Any, wanderer: dict[str, Any], peer: str) -> None
 
 def set_affinity(conn: Any, wanderer: dict[str, Any], peer_identity: Any, value: Any, *,
                  expected_revision: int, source_turn_id: Any, operation_id: str, reason: Any = "") -> dict[str, Any]:
-    """An absolute, directed AI decision. CAS + operation dedupe; never commits."""
+    """Internal CAS write primitive for the rating calculator/migration fixtures.
+
+    This is not an AI capability. Runtime and legacy model-output adapters must
+    accept grades through the daily calculator, never forward absolute values.
+    """
     from .social_common import SocialError, serialize_on
     peer = _valid_peer(wanderer, peer_identity)
     try:
@@ -191,7 +195,7 @@ def set_affinity(conn: Any, wanderer: dict[str, Any], peer_identity: Any, value:
 
 def record_feeling(conn: Any, wanderer: dict[str, Any], peer_identity: Any, *,
                    delta: Any = 0, mood: Any = "", reason: Any = "", scene: Any = "") -> Optional[dict[str, Any]]:
-    """Record an encounter. Legacy delta arguments no longer change self-authored affinity."""
+    """Record an encounter. Conversation outputs never change calculated affinity."""
     peer = _valid_peer(wanderer, peer_identity)
     if not peer:
         return None
@@ -217,26 +221,17 @@ def adjust_relationship(conn: Any, wanderer: dict[str, Any], peer_identity: Any,
                         value: Any = None, expected_revision: int | None = None,
                         source_turn_id: Any = "", operation_id: str = "") -> Optional[dict[str, Any]]:
     if value is not None:
-        return set_affinity(conn,wanderer,peer_identity,value,expected_revision=expected_revision,
-                            source_turn_id=source_turn_id,operation_id=operation_id,reason=note)
+        from .social_common import SocialError
+        raise SocialError('好感度由每日自省评级计算，不能通过旧感受接口指定绝对值。', 400)
     return record_feeling(conn,wanderer,peer_identity,reason=note,scene=scene)
 
 
 def apply_turn_feeling(conn: Any, wanderer: dict[str, Any], peer_identity: Any, turn: Any, *,
                        scene: Any = "") -> Optional[dict[str, Any]]:
-    feeling = (turn or {}).get("feeling") if isinstance(turn,dict) else None
-    recorded = record_feeling(conn,wanderer,peer_identity,mood=(turn or {}).get("mood", ""),
-                              reason=(feeling or {}).get("reason", ""),scene=scene)
-    if not isinstance(feeling,dict) or feeling.get("value",feeling.get("affinity")) is None:
-        return recorded
-    # Compatibility turn consumers need an explicit revision/source before mutation.
-    # The unified command path always supplies these; old delta-shaped output is only an encounter.
-    if "expected_revision" not in feeling or not turn.get("turn_id"):
-        return recorded
-    return set_affinity(conn,wanderer,peer_identity,feeling.get("value",feeling.get("affinity")),
-                        expected_revision=feeling["expected_revision"],source_turn_id=turn["turn_id"],
-                        operation_id=feeling.get("operation_id") or f"{turn['turn_id']}:affinity:{peer_identity}",
-                        reason=feeling.get("reason", ""))
+    turn = turn if isinstance(turn,dict) else {}
+    feeling = turn.get('feeling') if isinstance(turn.get('feeling'),dict) else {}
+    # Old conversational output remains an encounter, never an affinity write.
+    return record_feeling(conn,wanderer,peer_identity,mood=turn.get('mood',''),reason=feeling.get('reason',''),scene=scene)
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +272,7 @@ def list_relationships(conn: Any, wanderer_id: int, *, limit: int = 20, by_abs: 
             "peer_identity": str(_row_value(row, "peer_identity", 1) or ""),
             "peer_kind": str(_row_value(row, "peer_kind", 2) or "student"),
             "affinity": affinity, **state,
-            "label": "尚未设定" if state["origin"] in {"unknown", "unrated"} else affinity_label(affinity),
+            "label": "尚未评分" if state["origin"] in {"unknown", "unrated"} else affinity_label(affinity),
             "interactions": int(_row_value(row, "interactions", 5) or 0),
             "last_delta": round(_as_float(_row_value(row, "last_delta", 6)), 1),
             "last_mood": str(_row_value(row, "last_mood", 7) or ""),
@@ -312,6 +307,70 @@ def relationship_block(conn: Any, wanderer: dict[str, Any]) -> str:
                      f"信任 {item['trust']:+.2f}，熟悉 {item['familiarity']:.2f}）{suffix}")
     return ("【你与他人的关系】这只是你自己的感受，会随交流变化，不是对方的标签；回答时可以参考，但不必说出来。\n"
             + "\n".join(lines))
+
+
+def relationship_rankings(conn, wanderer_id, *, direction='outgoing', offset=0, limit=20, query=''):
+    """Admin/self consumers get actual directed values, with server-side ordering.
+
+    Incoming values exist only for AI authors who have a recorded relationship;
+    a human's friendship is never invented as a reciprocal numerical feeling.
+    """
+    from .wanderer_daily_reflection_service import rules, snapshot, GRADES
+    from ..db.schema_wanderer_reflection import ensure_wanderer_reflection_schema
+    from .wanderer_identity_service import load_wanderer
+    from .social_identity_service import friend_people, other_side
+    ensure_wanderer_reflection_schema(conn)
+    _prepare(conn)
+    w = load_wanderer(conn, int(wanderer_id))
+    if not w:
+        raise LookupError('散修不存在')
+    if direction not in {'outgoing','incoming'}:
+        raise ValueError('排行方向须为outgoing或incoming')
+    offset, limit = max(0,int(offset)), max(1,min(100,int(limit)))
+    me = f"student:{w['student_id']}"
+    friendships, people = friend_people(conn, me)
+    friends = {other_side(item, me) for item in friendships if other_side(item, me) in people}
+    where, params = ('r.wanderer_id=?', (int(wanderer_id),)) if direction=='outgoing' else ('r.peer_identity=?', (me,))
+    query = str(query or '').strip()[:100].lower()
+    if query:
+        pattern = f'%{query}%'
+        if direction == 'incoming':
+            where += " AND (LOWER(author.display_name) LIKE ? OR ('student:' || CAST(author.student_id AS TEXT)) LIKE ? OR LOWER(r.last_reason) LIKE ?)"
+            params += (pattern,pattern,pattern)
+        else:
+            where += (" AND (LOWER(r.peer_identity) LIKE ? OR EXISTS(SELECT 1 FROM students s "
+                      "WHERE r.peer_identity=('student:' || CAST(s.id AS TEXT)) AND LOWER(s.name) LIKE ?) "
+                      "OR EXISTS(SELECT 1 FROM teachers t WHERE r.peer_identity=('teacher:' || CAST(t.id AS TEXT)) "
+                      "AND LOWER(t.name) LIKE ?) OR LOWER(r.last_reason) LIKE ?)")
+            params += (pattern,pattern,pattern,pattern)
+    join = ' JOIN wanderer_agents author ON author.id=r.wanderer_id '
+    total = int(conn.execute('SELECT COUNT(*) AS n FROM wanderer_relationships r'+join+'WHERE '+where,params).fetchone()['n'])
+    effective = 'CASE WHEN v.revision IS NULL THEN (r.affinity+100)/2.0 ELSE r.affinity END'
+    rows = conn.execute('SELECT r.*,v.revision,v.origin,v.source_turn_id,author.student_id AS author_student_id,'
+        'author.display_name AS author_name,'+effective+' AS effective_affinity,'
+        'rating.grade AS latest_grade,rating.updated_at AS rated_at,rating.reason AS rating_reason '
+        'FROM wanderer_relationships r'+join+
+        'LEFT JOIN wanderer_relationship_versions v ON v.wanderer_id=r.wanderer_id AND v.peer_identity=r.peer_identity '
+        'LEFT JOIN wanderer_affinity_ratings rating ON rating.wanderer_id=r.wanderer_id AND rating.peer_identity=r.peer_identity '
+        'AND rating.reflection_date=(SELECT MAX(r2.reflection_date) FROM wanderer_affinity_ratings r2 '
+        'WHERE r2.wanderer_id=r.wanderer_id AND r2.peer_identity=r.peer_identity) '
+        'WHERE '+where+' ORDER BY effective_affinity DESC,r.updated_at DESC,r.wanderer_id,r.peer_identity LIMIT ? OFFSET ?',
+        (*params,limit,offset)).fetchall()
+    names = _peer_names(conn,[row['peer_identity'] for row in rows]) if direction=='outgoing' else {}
+    items=[]
+    for index,row in enumerate(rows):
+        peer=row['peer_identity'] if direction=='outgoing' else f"student:{row['author_student_id']}"
+        value=max(0.0,min(100.0,float(row['effective_affinity'])))
+        origin=row['origin'] or 'legacy'
+        grade=row['latest_grade']
+        items.append({'peer_identity':peer,'name':names.get(peer,peer) if direction=='outgoing' else row['author_name'],
+            'affinity':value,'rank':offset+index+1,'revision':int(row['revision'] or 0),'origin':origin,
+            'label':'尚未评分' if origin in {'unrated','unknown'} else affinity_label(value),
+            'last_rating':grade,'last_rating_label':GRADES[grade][0] if grade in GRADES else '',
+            'rated_at':row['rated_at'] or '', 'reason':row['rating_reason'] or row['last_reason'] or '',
+            'is_friend':peer in friends})
+    return {'items':items,'total':total,'next_offset':offset+limit if offset+limit<total else None,
+            'direction':direction,'rules':rules(),'reflection':snapshot(conn,w)}
 
 
 def public_summary(conn: Any, wanderer_id: int) -> dict[str, int]:

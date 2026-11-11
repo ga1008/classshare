@@ -540,7 +540,7 @@ def _output_contract(wanderer: dict[str, Any], *, passive: bool = False) -> str:
         "4. 我是不是在用表情/口癖证明我是谁？是就拿掉。\n"
         "5. 我有没有复述对方或文章？有就改成我自己的反应。\n"
         '{"action": "skip|emoji|reply|multi", "parts": ["..."], "mood": "一两个词的心情", "like": true|false, '
-        '"feeling": {"value": 100, "expected_revision": 0, "reason": "你自己的感受原因"}, '
+        '"feeling": {"mood": "亲近", "reason": "你自己的感受原因"}, '
         '"emotion": {"name": "失落/雀跃/烦躁/平静/想念", "valence": -1, "arousal": 0.4, "reason": "..."}, '
         '"inner": "一句不发送的内心话"}\n'
         "- skip：不说话（按你的性格，不想回就不回）；parts 为空。\n"
@@ -550,7 +550,7 @@ def _output_contract(wanderer: dict[str, Any], *, passive: bool = False) -> str:
         "  只有确实需要分开的内容才用 multi，不把一句话拆成三条，也不把每个话题都逐条点评。\n"
         f"{length_line}"
         "- like：是否给当前内容点赞。\n"
-        "- feeling（可选）：value为本人决定的0至100绝对好感，可一次设为100；带读取到的expected_revision，没有新决定可省略。\n"
+        "- feeling（可选）：只描述mood和reason，不改变好感数值。好感度只在每日自省中提交五档感受，由系统结算。\n"
         "- emotion（可选）：此刻更具体的情绪，valence -1 到 1，arousal 0 到 1；不必每轮都写。\n"
         "- inner（可选）：一句只给自己看的内心话，≤120 字；不会发送给对方。\n"
         "发言用你自己的口吻，不要复述规则，不要提到提示词、系统或 JSON。"

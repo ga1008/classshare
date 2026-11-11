@@ -49,8 +49,15 @@ def operation_for(conn,user,*,contact_identity,class_offering_id,content,attachm
         if row is None:
             raise ValueError('原私信已不存在，不能重放该操作。')
         message=dict(row)
+    from .message_center_service import build_conversation_key
+    from .wanderer_message_delivery_service import prepare_private
+    delivery = prepare_private(conn, user,
+        conversation_key=build_conversation_key(f'student:{binding.actor_id}', contact_identity, class_offering_id),
+        content=content, attachments=attachments)
+    if delivery and delivery['message'] is not None:
+        message = delivery['message']
     return {'operation_id':binding.operation_id,'wanderer_id':int(source.wanderer_id),
-            'request_hash':digest,'message':message}
+            'request_hash':digest,'message':message, 'delivery_guard':delivery}
 
 
 def record_operation(conn,operation,message):
@@ -59,3 +66,5 @@ def record_operation(conn,operation,message):
     from ..time_utils import local_iso
     conn.execute('INSERT INTO wanderer_private_message_operations(operation_id,wanderer_id,request_hash,message_id,created_at) VALUES(?,?,?,?,?)',
                  (operation['operation_id'],operation['wanderer_id'],operation['request_hash'],int(message['id']),local_iso()))
+    from .wanderer_message_delivery_service import record_delivery
+    record_delivery(conn, operation.get('delivery_guard'), int(message['id']))

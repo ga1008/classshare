@@ -35,7 +35,7 @@ def _load(conn, wanderer_id, operation_id, *, lock=False):
     row = conn.execute("SELECT * FROM agent_platform_requests WHERE principal_kind='wanderer_service' "
                        "AND wanderer_id=? AND operation_id=?", (int(wanderer_id), operation_id)).fetchone()
     if row is None:
-        raise HTTPException(404, "没有该散修的平台请求。")
+        raise HTTPException(404, "没有与此指令对应的平台执行凭据；请核对原始记录，不能直接登记结论或重发。")
     if lock:
         # Admission and resource settlement both lock resource owners first.
         from .wanderer_resource_service import lock_agents
@@ -53,7 +53,15 @@ def _load(conn, wanderer_id, operation_id, *, lock=False):
                         (row["turn_id"], int(wanderer_id))).fetchone()
     if command is None or turn is None:
         raise HTTPException(409, "原指令或轮次账本不完整，无法核对。")
-    return dict(row), dict(command), dict(turn)
+    # Read the lease after locking the terminal turn on writes. Do not add a
+    # lease lock here: completion already locks turn before releasing its lease.
+    # Terminal authority and the command CAS also fence any late executor.
+    lease = conn.execute("SELECT turn_id,fencing_token,lease_until FROM wanderer_runtime_leases WHERE wanderer_id=?",
+                         (int(wanderer_id),)).fetchone()
+    turn = dict(turn)
+    turn['has_current_valid_lease'] = bool(lease and lease['turn_id'] == turn['turn_id']
+        and int(lease['fencing_token']) == int(turn['fencing_token']) and lease['lease_until'] > local_iso())
+    return dict(row), dict(command), turn
 
 
 def _resources(conn, wanderer_id, operation_id):
@@ -62,8 +70,22 @@ def _resources(conn, wanderer_id, operation_id):
 
 
 def _revision(row, command, turn):
-    return hashlib.sha256(json.dumps([row, command, turn["state"]], sort_keys=True,
+    return hashlib.sha256(json.dumps([row, command, turn["state"], turn['fencing_token'], turn['has_current_valid_lease']], sort_keys=True,
                                     ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+
+
+def uncertain_running_receipt(command, *, scope):
+    """Record missing execution evidence without declaring its business outcome."""
+    raw = command.get('receipt_json') or '{}'
+    try:
+        receipt = json.loads(raw)
+    except (ValueError, TypeError):
+        receipt = {'original_receipt_text': raw}
+    if not isinstance(receipt, dict):
+        receipt = {'original_receipt': receipt}
+    return {**receipt, 'command_id': command['command_id'], 'operation_id': command['operation_id'],
+            'status': 'uncertain', 'scope': scope, 'verified_business': False, 'automatic_retry_allowed': False,
+            'recovered_from_state': 'running', 'error': '已有执行未留下最终回执；请先核对实际结果，禁止盲重发'}
 
 
 def _block_reason(row, command, turn):
@@ -71,12 +93,16 @@ def _block_reason(row, command, turn):
         return "核对声明已保存，不能改写。"
     if not row["mutates"]:
         return "读取操作无需人工核对。"
-    if command["state"] != "uncertain":
+    if command["state"] not in {"uncertain", "running"}:
         return "仅可核对结果不确定的指令。"
     if turn["state"] not in TERMINAL_TURNS:
         return "原轮次尚未结束。"
+    if turn['has_current_valid_lease']:
+        return "原轮次仍持有有效执行租约，不能登记核对结论。"
     if row["host_execution_finished_at"] is None:
         return "尚无执行进程已结束的证明，请先进行执行恢复核查。"
+    if command['state'] == 'running' and row['status'] != 'uncertain':
+        return "历史指令的原请求尚未确认为结果不确定，请先核对原始执行状态。"
     return ""
 
 
@@ -136,7 +162,8 @@ def reconcile_command(conn, *, user, wanderer_id, operation_id, expected_revisio
     for resource in _resources(conn, wanderer_id, operation_id):
         if resource["state"] == "reserved":
             settle(conn, resource["operation_id"], release=outcome == "not_occurred")
-    receipt = json.loads(command["receipt_json"])
+    receipt = (uncertain_running_receipt(command, scope=json.loads(turn['scope_json']))
+               if command['state'] == 'running' else json.loads(command["receipt_json"]))
     receipt.update(status="resolved", verified_business=False, automatic_retry_allowed=False,
                    reconciliation={"outcome": outcome, "reason": reason, "actor_id": int(user["id"]),
                                    "at": now, "verified_business": False})

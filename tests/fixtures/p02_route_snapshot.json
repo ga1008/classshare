@@ -5561,6 +5561,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/memory-corrections",
+    "methods": [
+      "GET"
+    ],
+    "name": "api_wanderer_memory_correction_history",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/manage/system/wanderers/{wanderer_id:int}/memory-corrections",
+    "methods": [
+      "POST"
+    ],
+    "name": "api_wanderer_memory_correct",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/manage/system/wanderers/{wanderer_id:int}/persona-upgrade",
     "methods": [
       "POST"

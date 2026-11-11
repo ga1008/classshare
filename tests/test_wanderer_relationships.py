@@ -1,4 +1,4 @@
-"""Isolated CAS, migration and self-authored affinity tests."""
+"""Isolated internal CAS, retained migration and disabled AI absolute writes."""
 from classroom_app.db.schema_wanderer_social import ensure_wanderer_social_schema, migrate_relationship_affinities
 from classroom_app.services.social_common import SocialError
 from classroom_app.services.wanderer_relationship_service import (
@@ -58,12 +58,15 @@ class RelationshipTest(WandererDbTestCase):
             self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["affinity"],100)
             self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["revision"],1)
 
-    def test_unversioned_legacy_feeling_only_records_encounter(self):
+    def test_all_legacy_feeling_outputs_only_record_encounters(self):
         with self.connect() as conn:
             apply_turn_feeling(conn,self.a,self.peer,{"feeling":{"affinity":3}})
             self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["affinity"],0)
             apply_turn_feeling(conn,self.a,self.peer,{"turn_id":"turn-7","feeling":{"value":100,"expected_revision":0}})
-            self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["affinity"],100)
+            self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["affinity"],0)
+            self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["revision"],0)
+            self.assertEqual(list_relationships(conn,self.a['id'])[0]['label'],'尚未评分')
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_relationship_changes').fetchone()[0],0)
 
     def test_migration_keeps_original_and_runs_once(self):
         with self.connect() as conn:

@@ -1226,7 +1226,8 @@
               "tests/test_auth_form_fallback.py",
               "tests/e2e/components/lq-centered.spec.ts",
               "tests/e2e/specs/lq-s4-auth.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           },
           {
             "path": "templates/student_login_v4.html",
@@ -1264,7 +1265,8 @@
               "tests/e2e/components/lq-centered.spec.ts",
               "tests/e2e/specs/lq-s4-auth.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           },
           {
             "path": "templates/session_expired.html",
@@ -1276,7 +1278,8 @@
               "tests/e2e/components/lq-centered.spec.ts",
               "tests/e2e/specs/lq-s4-auth.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           },
           {
             "path": "templates/permission_denied.html",
@@ -1288,7 +1291,8 @@
               "tests/e2e/components/lq-centered.spec.ts",
               "tests/e2e/specs/lq-s4-auth.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           },
           {
             "path": "templates/status.html",
@@ -1300,7 +1304,8 @@
               "tests/e2e/components/lq-centered.spec.ts",
               "tests/e2e/specs/lq-s4-auth.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           },
           {
             "path": "templates/error.html",
@@ -1312,7 +1317,8 @@
               "tests/e2e/components/lq-centered.spec.ts",
               "tests/e2e/specs/lq-s4-auth.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           },
           {
             "path": "static/js/login_scene.js",
@@ -7973,7 +7979,8 @@
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
               "tests/e2e/specs/manage-pilot.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           }
         ]
       },
@@ -8556,7 +8563,8 @@
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
               "tests/e2e/specs/manage-pilot.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           }
         ]
       },
@@ -9267,7 +9275,8 @@
               "tests/e2e/specs/manage-pilot.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts",
               "tests/e2e/specs/lq-selection-app.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           },
           {
             "path": "templates/manage/layout.html",
@@ -9296,7 +9305,8 @@
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
               "tests/e2e/specs/manage-pilot.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           }
         ]
       },
@@ -10132,7 +10142,8 @@
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
               "tests/e2e/specs/manage-pilot.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           },
           {
             "path": "static/js/process_material_modal.js",
@@ -11385,7 +11396,8 @@
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
               "tests/e2e/specs/manage-pilot.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           }
         ]
       },
@@ -12251,7 +12263,8 @@
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
               "tests/e2e/specs/manage-pilot.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           }
         ]
       },
@@ -14118,7 +14131,8 @@
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
               "tests/e2e/specs/manage-pilot.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           }
         ]
       },
@@ -14822,7 +14836,8 @@
               "tests/e2e/components/manage-pilot-adapter.spec.ts",
               "tests/e2e/specs/manage-pilot.spec.ts",
               "tests/e2e/components/lq-declarative-contracts.spec.ts"
-            ]
+            ],
+            "hashMode": "text-lf"
           }
         ]
       },

@@ -3759,6 +3759,9 @@ async def send_private_message_and_maybe_reply(
         "assistant_reply": None,
         "ai_reply_job": ai_reply_job,
     }
+    from .agent_platform_request_context import is_verified_wanderer_request_user
+    if is_verified_wanderer_request_user(user):
+        payload["replayed"] = bool(result.get("replayed"))
     return payload
 
 

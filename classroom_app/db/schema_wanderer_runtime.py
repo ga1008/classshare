@@ -59,6 +59,12 @@ TABLES = {
         created_at TEXT NOT NULL, PRIMARY KEY(entry_id,revision)""",
     "wanderer_evidence_snapshots": """id TEXT PRIMARY KEY, wanderer_id INTEGER NOT NULL,
         evidence_json TEXT NOT NULL, created_at TEXT NOT NULL""",
+    "wanderer_memory_corrections": """id TEXT PRIMARY KEY, wanderer_id INTEGER NOT NULL,
+        target_kind TEXT NOT NULL CHECK(target_kind IN ('episode','knowledge')),
+        target_id INTEGER NOT NULL, revision INTEGER NOT NULL, actor_id INTEGER NOT NULL,
+        actor_kind TEXT NOT NULL, reason TEXT NOT NULL, request_hash TEXT NOT NULL,
+        before_json TEXT NOT NULL, after_json TEXT NOT NULL, created_at TEXT NOT NULL,
+        UNIQUE(wanderer_id,target_kind,target_id,revision)""",
 }
 INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_wanderer_wake_ready ON wanderer_wake_events(state,run_at,wanderer_id)",

@@ -160,6 +160,59 @@ class WandererAdminApiTest(WandererDbTestCase):
         self.assertEqual(len(client.get(f"{API}/{card['id']}/knowledge").json()["items"]), 0)
         self.assertEqual(client.get(f"{API}/999999").status_code, 404)
 
+    def test_message_cursor_is_stable_when_new_messages_arrive(self):
+        wid = self.wanderer_ids[1]
+        with self.connect() as conn:
+            sid = conn.execute('SELECT student_id FROM wanderer_agents WHERE id=?', (wid,)).fetchone()[0]
+            me, peer = f'student:{sid}', f'student:{self.real_student_id}'
+            key = f'dm:{me}|{peer}'
+            for identity in (me, peer):
+                conn.execute('INSERT INTO social_dm_participants(identity,conversation_key) VALUES(?,?)', (identity,key))
+            for number in range(5):
+                conn.execute("INSERT INTO social_messages(conversation_type,conversation_key,sender_identity,body,body_format,message_type,mentions_json,client_nonce,created_at) VALUES('dm',?,?,?,'text','text','[]',?,'2026-11-10T10:00:00')",
+                             (key,me,f'保留原消息{number}',f'cursor-{number}'))
+            conn.commit()
+        client = self.super_client()
+        first = client.get(f'{API}/{wid}/conversations/{key}/messages?limit=2').json()
+        self.assertEqual(len(first['items']), 2)
+        self.assertTrue(first['has_more'])
+        with self.connect() as conn:
+            conn.execute("INSERT INTO social_messages(conversation_type,conversation_key,sender_identity,body,body_format,message_type,mentions_json,client_nonce,created_at) VALUES('dm',?,?,'并发新消息','text','text','[]','cursor-new','2026-11-10T10:01:00')", (key,peer))
+            conn.commit()
+        second = client.get(f"{API}/{wid}/conversations/{key}/messages?limit=2&before_id={first['next_before_id']}").json()
+        self.assertFalse({i['id'] for i in first['items']} & {i['id'] for i in second['items']})
+        self.assertEqual([i['body'] for i in second['items']], ['保留原消息1','保留原消息2'])
+        listing = client.get(f'{API}/{wid}/conversations', params={'q':'真实学生','limit':1}).json()
+        self.assertEqual(listing['items'][0]['key'], key)
+        self.assertEqual(listing['viewer_identity'], me)
+        denied = client.get(f'{API}/{self.wanderer_ids[2]}/conversations/{key}/messages')
+        self.assertIn(denied.status_code, {401,403})
+
+    def test_memory_corrections_require_super_admin_and_preserve_audit(self):
+        import uuid
+        from classroom_app.services.wanderer_episodic_memory_service import record_memory
+        from classroom_app.services.wanderer_memory_correction_service import content_hash
+        wid = self.wanderer_ids[3]
+        with self.connect() as conn:
+            w = wanderer_identity_service.load_wanderer(conn,wid)
+            ident = record_memory(conn,w,kind='reflection',content='旧版自省消耗日额度。',mirror=False)
+            row = dict(conn.execute('SELECT * FROM wanderer_episodic_memories WHERE id=?',(ident,)).fetchone())
+            conn.commit()
+        body = {'target_kind':'episode','target_id':ident,'expected_revision':1,
+                'expected_content_hash':content_hash(row,'episode'),'request_id':str(uuid.uuid4()),
+                'title':'规则修订','content':'每日自省免费，至多三次实际模型请求。','reason':'修订过时规则',
+                'actor':{'id':99999,'kind':'forged'}}
+        endpoint = f'{API}/{wid}/memory-corrections'
+        self.assertIn(self.plain_client().post(endpoint,json=body).status_code,{401,403})
+        client = self.super_client()
+        result = client.post(endpoint,json=body)
+        self.assertEqual(result.status_code,200,result.text)
+        self.assertEqual(result.json()['correction']['actor_id'],self.super_id)
+        history = client.get(endpoint,params={'target_kind':'episode','target_id':ident})
+        self.assertEqual(history.status_code,200,history.text)
+        self.assertEqual(history.json()['items'][0]['before']['content'],row['content'])
+        self.assertEqual(client.post(endpoint,json={**body,'request_id':str(uuid.uuid4())}).status_code,409)
+
     def test_permissions(self):
         # app.py rewrites API 403 to 401 when no session cookie is present (TestClient has none).
         plain = self.plain_client()

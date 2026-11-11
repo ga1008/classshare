@@ -13,10 +13,11 @@ from classroom_app.services.wanderer_reflection_service import (
 from classroom_app.services.wanderer_settings_service import SETTING_DAILY_AI_CALL_CAP, wanderer_runtime_setting_set
 from tests.wanderer_behavior_support import StubCaller, ZeroSleep
 from tests.wanderer_test_support import WandererDbTestCase
+from tests.test_wanderer_runtime_v2 import command, decision
 
 
 def _payload():
-    return json.dumps({
+    state = {
         "mood": {"label": "松了一点", "valence": 0.4, "energy": 0.6, "reason": "把话说开了"},
         "today": {"summary": "今天和同学聊了跑步，也读了一点材料。", "notable_actions": ["跑步"], "consequences": []},
         "relationships": [{"identity": "student:2", "affinity_delta": 1, "trust_delta": 0.05, "note": "更熟了一点"}],
@@ -25,7 +26,11 @@ def _payload():
         "tomorrow": {"proactive_multiplier": 1.2, "tone": {"warmth": 0.2, "directness": 0.1},
                      "focus_topics": ["跑步"], "planned_actions": ["主动和一个人说话"]},
         "promotion_intent": False,
-    }, ensure_ascii=False)
+    }
+    return json.dumps(decision([
+        command('self.reflect',{key:state[key] for key in ('mood','tomorrow','self_review')},'self'),
+        command('memory.write',{'content':state['today']['summary'],'location':'每日自省'},'memory'),
+    ]),ensure_ascii=False)
 
 
 class ReflectionTest(WandererDbTestCase):
@@ -33,11 +38,19 @@ class ReflectionTest(WandererDbTestCase):
 
     def setUp(self):
         super().setUp()
+        from unittest.mock import patch
+        self.enterContext(patch.dict('os.environ',{'WANDERER_ENABLED':'true'}))
         with self.connect() as conn:
-            conn.execute("DELETE FROM wanderer_daily_reflections")
+            for table in ('wanderer_reflection_sessions','wanderer_reflection_dispatches','wanderer_affinity_ratings',
+                          'wanderer_affinity_rating_operations','wanderer_commands','wanderer_turns','wanderer_wake_events',
+                          'wanderer_runtime_leases','wanderer_daily_reflections','wanderer_memory_sources',
+                          'wanderer_episodic_memories'):
+                conn.execute(f'DELETE FROM {table}')
             conn.execute("DELETE FROM wanderer_action_log")
             conn.execute("DELETE FROM wanderer_todos")
             conn.execute("UPDATE wanderer_agents SET mood_json = '{}', self_tuning_json = '{}'")
+            wanderer_runtime_setting_set(conn,'autonomous_v2_enabled','1')
+            wanderer_runtime_setting_set(conn,'enabled','1')
             conn.commit()
 
     def _ctx(self, slug, caller):
@@ -65,14 +78,15 @@ class ReflectionTest(WandererDbTestCase):
         self.assertEqual(fresh["self_tuning"]["next_day"]["proactive_multiplier"], 1.2)
         self.assertEqual(next(iter(fresh["self_tuning"]["next_day"]["intentions"]), ""), "主动和一个人说话")
         self.assertEqual(before, after)
-        self.assertEqual(kinds, ["daily_reflection"])
+        self.assertEqual(kinds, [])  # The unified turn/dispatch ledgers are authoritative.
+        self.assertEqual(result['reflection']['ai_calls'],1)
 
         again = asyncio.run(run_reflection(self._ctx("atai", StubCaller(_payload()))))
         self.assertEqual(again["status"], "skipped")
 
     def test_reflection_can_manage_the_todo_list(self):
         payload = json.loads(_payload())
-        payload["todos"] = [{"op": "create", "title": "明天问问他膝盖"}]
+        payload['commands'].append(command('todo.apply',{'ops':[{'op':'create','title':'明天问问他膝盖'}]},'todo'))
         ctx = self._ctx("atai", StubCaller(json.dumps(payload, ensure_ascii=False)))
         result = asyncio.run(run_reflection(ctx))
         self.assertEqual(result["status"], "applied", result)
@@ -82,8 +96,8 @@ class ReflectionTest(WandererDbTestCase):
             ).fetchall()]
             prompt = str(ctx.ai_caller.calls[0][1])
         self.assertEqual(rows, [{"title": "明天问问他膝盖", "status": "pending"}])
-        self.assertIn("【你的待办】", prompt)
-        self.assertIn("todos", prompt)
+        self.assertIn('todo.list',prompt)
+        self.assertIn('todo.apply',prompt)
 
     def test_unparseable_reflection_is_failed_without_mutation(self):
         ctx = self._ctx("momo", StubCaller("这不是 JSON"))
@@ -114,19 +128,20 @@ class ReflectionTest(WandererDbTestCase):
                                  (reflection_date(self.NOW),)).fetchone()[0]
         self.assertEqual(int(count), 2)
 
-    def test_capped_reflection_is_marked_and_retryable(self):
+    def test_zero_ordinary_budget_does_not_cap_free_reflection(self):
         with self.connect() as conn:
             wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "0")
             conn.commit()
         ctx = self._ctx("lele", StubCaller(_payload()))
         result = asyncio.run(run_reflection(ctx))
-        self.assertEqual(result["status"], "skipped_capped", result)
+        self.assertEqual(result["status"], "applied", result)
         with self.connect() as conn:
             row = conn.execute("SELECT status FROM wanderer_daily_reflections WHERE wanderer_id = ?",
                                (ctx.wanderer_id,)).fetchone()
             wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "4096")
             conn.commit()
-        self.assertEqual(row["status"], "skipped_capped")
+        self.assertEqual(row["status"], "applied")
+        self.assertEqual(result['reflection']['ai_calls'],1)
 
 
 class ReflectionContractTest(unittest.TestCase):

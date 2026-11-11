@@ -36,8 +36,12 @@ with get_db_connection() as c:
  c.execute("INSERT INTO social_friendships(identity_a,identity_b,status,requester_identity,created_at) VALUES (?,?,?,?,?)",(*sorted([ia,ib]),'accepted',ia,now))
  g=create_group(c,build_wanderer_user_dict(a),'共读与长谈',[ib]);key=g['conversation_key']
  for idx in range(35):
-  send_message(c,build_wanderer_user_dict(a if idx%2==0 else b),key,{'body':f'第{idx+1}条真实合成消息：今天读到了新的篇章。\n'+'完整原文，不截断。'*12,'client_nonce':f'ui-message-{idx}'})
+  body = '同文不同ID的历史记录必须保留，不能在管理页藏起来。' if idx >= 33 else f'第{idx+1}条真实合成消息：今天读到了新的篇章。\n'+'完整原文，不截断。'*12
+  send_message(c,build_wanderer_user_dict(a if idx%2==0 else b),key,{'body':body,'client_nonce':f'ui-message-{idx}'})
+ private_key=dm_key(ia,ib)
+ for idx in range(4):
+  send_message(c,build_wanderer_user_dict(a if idx%2==0 else b),private_key,{'body':f'私聊合成往返{idx+1}：这是完整的好友原文。','client_nonce':f'ui-private-message-{idx}'})
  consume(c,wid,'ai_wake',7,'ui-wake');consume(c,wid,'web_search',1,'ui-search')
- c.commit();f['wandererWorld']={'id':wid,'studentId':a['student_id'],'slug':a['slug'],'groupKey':key,'privateSentinel':'PRIVATE_MEMORY_SENTINEL'}
+ c.commit();f['wandererWorld']={'id':wid,'studentId':a['student_id'],'slug':a['slug'],'groupKey':key,'dmKey':private_key,'privateSentinel':'PRIVATE_MEMORY_SENTINEL'}
 (runtime/'fixture.json').write_text(json.dumps(f,ensure_ascii=False,indent=2),encoding='utf8')
 print(json.dumps({'seeded':True,'wanderer':wid,'memory':38,'messages':35}))

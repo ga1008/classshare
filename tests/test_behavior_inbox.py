@@ -220,3 +220,103 @@ class BehaviorInboxTests(unittest.TestCase):
         with self.assertRaises(DatabaseBusyError):
             self.pipeline.submit(replace(self.request, batch_id=inbox.new_batch_id()))
         self.assertEqual(1, self.count("effects"))
+
+    def run_worker_cycles(self, count):
+        waits = 0
+
+        def wait(_timeout):
+            nonlocal waits
+            waits += 1
+            if waits >= count:
+                self.pipeline._stop_event.set()
+
+        with patch.object(self.pipeline._wake, "wait", side_effect=wait):
+            self.pipeline._run()
+
+    def test_empty_worker_recovers_startup_lock_failure_without_new_business_data(self):
+        class LockNotAvailable(Exception):
+            sqlstate = "55P03"
+
+        cleanup = self.pipeline._cleanup_receipts
+        attempts = 0
+
+        def transient_cleanup():
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise LockNotAvailable("private database details")
+            cleanup()
+
+        with patch.object(self.pipeline, "_cleanup_receipts", side_effect=transient_cleanup):
+            self.run_worker_cycles(2)
+        stats = self.pipeline.stats()
+        self.assertEqual("", stats["last_error"])
+        self.assertEqual("LockNotAvailable:55P03", stats["last_failure_code"])
+        self.assertEqual("cleanup", stats["last_failure_phase"])
+        self.assertIsNotNone(stats["last_failure_at"])
+        self.assertIsNotNone(stats["last_recovered_at"])
+        self.assertEqual(1, stats["retry_count"])
+        self.assertEqual(0, stats["committed_batch_count"])
+        self.assertEqual(0, self.count("effects"))
+        self.assertEqual(0, self.count("behavior_write_inbox"))
+        self.assertNotIn("private database details", str(stats))
+
+    def test_failed_sample_cannot_recover_from_pre_failure_empty_snapshot(self):
+        self.pipeline._refresh_depth()
+        with patch.object(self.pipeline, "_refresh_depth", side_effect=DatabaseBusyError("still blocked")):
+            self.run_worker_cycles(2)
+        self.pipeline._recover_if_idle()
+        stats = self.pipeline.stats()
+        self.assertEqual("DatabaseBusyError:", stats["last_error"])
+        self.assertEqual("queue_sample", stats["last_failure_phase"])
+        self.assertIsNone(stats["last_recovered_at"])
+        self.assertEqual(2, stats["retry_count"])
+
+    def test_delayed_retry_and_quarantine_do_not_clear_current_error(self):
+        self.pipeline.submit(self.request)
+        self.pipeline._apply_batch = lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("retry"))
+        self.pipeline._drain_once()
+        for state in ("pending", "quarantined"):
+            with self.subTest(state=state):
+                with self.connect() as conn:
+                    conn.execute("UPDATE behavior_write_inbox SET state = ?", (state,))
+                self.pipeline._refresh_depth()
+                self.pipeline._recover_if_idle()
+                self.assertEqual("ValueError:", self.pipeline.stats()["last_error"])
+                self.assertIsNone(self.pipeline.stats()["last_recovered_at"])
+        self.assertEqual(0, self.count("effects"))
+
+    def test_unknown_apply_commit_reconciles_and_recovers_when_queue_is_empty(self):
+        self.pipeline.submit(self.request)
+        self.fail_commit = True
+        with patch.object(self.pipeline, "_cleanup_receipts"):
+            self.run_worker_cycles(2)
+        # The first commit succeeded remotely despite its lost acknowledgement.
+        # Refresh after the failure, just as the bounded worker sample does.
+        self.pipeline._refresh_depth()
+        self.pipeline._recover_if_idle()
+        stats = self.pipeline.stats()
+        self.assertEqual("", stats["last_error"])
+        self.assertEqual("ConnectionError:", stats["last_failure_code"])
+        self.assertEqual("drain", stats["last_failure_phase"])
+        self.assertEqual(1, stats["unknown_commit_count"])
+        self.assertEqual(1, self.count("effects"))
+        with self.connect() as conn:
+            self.assertEqual("applied", conn.execute("SELECT state FROM behavior_write_inbox").fetchone()[0])
+
+    def test_recovery_rechecks_arrival_after_empty_sample_without_normal_poll_overhead(self):
+        with self.pipeline._lock:
+            self.pipeline._record_failure_locked("LockNotAvailable:55P03", phase="drain")
+        self.pipeline._refresh_depth()
+        self.pipeline.submit(self.request)
+        with self.connect() as conn:
+            conn.execute("UPDATE behavior_write_inbox SET attempts=1,retry_at='9999-01-01T00:00:00'")
+        self.assertFalse(self.pipeline._drain_once())
+        self.pipeline._recover_if_idle()
+        self.assertEqual("LockNotAvailable:55P03", self.pipeline.stats()["last_error"])
+        self.assertEqual(1, self.pipeline.stats()["retrying_count"])
+        with patch.object(self.pipeline, "_refresh_depth") as sample:
+            self.pipeline._recover_if_idle()  # Known retry needs no recovery query.
+            self.pipeline._update_stats(last_error="", queue_depth=0, retrying_count=0)
+            self.pipeline._recover_if_idle()  # Normal healthy poll needs none either.
+        sample.assert_not_called()

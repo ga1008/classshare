@@ -21,6 +21,7 @@ import json
 import os
 import socket
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
 
@@ -29,6 +30,14 @@ from ..db.connection import get_configured_db_engine
 from ..db.schema_scheduler import ensure_scheduler_schema
 
 TaskHandler = Callable[[dict[str, Any]], "Any | Awaitable[Any]"]
+
+
+@dataclass(frozen=True)
+class ScheduledTaskResult:
+    """Opt-in wall-clock recurrence; ordinary interval handlers remain unchanged."""
+
+    summary: str
+    next_run_at: datetime
 
 _HANDLERS: dict[str, TaskHandler] = {}
 
@@ -396,11 +405,13 @@ async def _claim_and_run_due_task(*, lane: str | None) -> str | None:
 
 def _mark_success(task: dict[str, Any], result: Any) -> None:
     now = _now_iso()
-    result_text = (result if isinstance(result, str) else _json_dumps(result))[:480]
+    result_text = (result.summary if isinstance(result, ScheduledTaskResult) else
+                   result if isinstance(result, str) else _json_dumps(result))[:480]
     recurrence = task.get("recurrence_seconds")
     with get_db_connection() as conn:
         if recurrence:
-            next_run = _to_iso(_now() + timedelta(seconds=int(recurrence)))
+            next_run = _to_iso(result.next_run_at if isinstance(result, ScheduledTaskResult)
+                               else _now() + timedelta(seconds=int(recurrence)))
             conn.execute(
                 """
                 UPDATE scheduled_tasks
