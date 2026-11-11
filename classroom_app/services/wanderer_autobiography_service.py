@@ -306,7 +306,8 @@ def recall_block(conn: Any, wanderer: dict, *, scope: dict, budget: int = 6500, 
     selected=[]
     used=sum(map(len,lines))
     for item in reversed(rows):
-        line = f"#{item['id']} {item['occurred_at']}｜作者散修{item['origin_author']}｜{item['location']}｜{item['content']}"
+        line = (f"#{item['id']} v{item.get('revision') or 1} {item['occurred_at']}｜作者散修{item['origin_author']}"
+                f"｜{item['location']}｜{item['content']}")
         if used + len(line) > budget:
             continue
         selected.append((item,line))

@@ -600,20 +600,26 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
     recent_self = [str(turn.get("text") or "") for turn in thread.get("history") or []
                    if str(turn.get("who") or "") in own_names]
     budget = int(budget_chars or prompt_char_budget(conn))
+    # Cache order: constant material first, then the per-agent persona and the
+    # per-day life block, then everything that changes every turn (voice
+    # examples, todos, mood, knowledge, memory, scene). The provider caches an
+    # automatic prefix, so a per-turn block placed above an immutable one costs
+    # the whole tail its cache hit. Keep the final output contract last.
     blocks = [
-        (10, _persona_block(wanderer)),
         (10, HUMAN_VOICE_RULES),
         (10, VOICE_FIRST_RULES if _is_public_scene(scene) else ""),
-        (10, channel_block(scene)),
         (10, PUBLIC_TEXT_RULES if _is_public_scene(scene) else ""),
         (10, GROUP_ECHO_RULES if _is_group_scene(scene) else ""),
-        (9, voice_guide(wanderer, scene, thread_key, recent_self)),
+        (10, channel_block(scene)),
+        (10, learning_output_contract()),
+        (10, _persona_block(wanderer)),
         (10, _tier_block(wanderer, passive=passive)),
+        (10, _knowledge_depth_block(wanderer) if _is_public_scene(scene) else ""),
         (10, _life_block(conn, wanderer)),
+        (9, voice_guide(wanderer, scene, thread_key, recent_self)),
         (9, _todo_block(conn, wanderer, scene)),
         (9, _mood_block(wanderer)),
         (6, _knowledge_block(conn, wanderer, scene_tags,scope_for_context(scene))),
-        (10, _knowledge_depth_block(wanderer) if _is_public_scene(scene) else ""),
         (10, _dao_block(conn, wanderer)),
         (10, recall_block(conn, wanderer, scope=scope_for_context(scene), budget=2000)),
         (8, _memory_block(conn, wanderer, thread_key, scene)),
@@ -622,7 +628,6 @@ def build_system_prompt(conn: Any, wanderer: dict[str, Any], *, scene: dict[str,
         (10, support),
         (8, _social_block(scene)),
         (10, _scene_block(scene)),
-        (10, learning_output_contract()),
         (10, str(scene.get("output_contract") or "") or _output_contract(wanderer, passive=passive)),
     ]
     return _fit_blocks(blocks, budget)

@@ -5,7 +5,8 @@ emotional and conversational range of a persona; the old name
 ``ANTI_AI_STYLE_RULES`` remains as an alias for existing imports.
 
 docs/wanderer-ai-free-agents-2026-10-25.md §10.5. ``ANTI_AI_STYLE_RULES`` is
-injected into every wanderer system prompt (right after the persona block);
+injected into every wanderer system prompt (ahead of the persona block, so the
+constant head stays identical across agents and can be prefix-cached);
 ``strip_ai_formatting`` runs on every public text a wanderer produces
 (comments, replies, DMs, classroom messages, blog post title and body) so a
 model that ignores the rules still never publishes Markdown.

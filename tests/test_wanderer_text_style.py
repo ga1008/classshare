@@ -93,13 +93,15 @@ class PublicTextPromptTest(WandererDbTestCase):
 
 
 class AntiAiRulesInPromptTest(WandererDbTestCase):
-    def test_rules_follow_the_persona_block(self):
+    def test_rules_precede_the_persona_block(self):
+        """Cache order: the shared style rules are identical for every 散修, so
+        they stay ahead of the per-agent persona and can be cached across agents."""
         with self.connect() as conn:
             wanderer = self.wanderer(conn, "atai")
             prompt = build_system_prompt(conn, wanderer, scene={"kind": "浏览"}, thread_key="blog_post:1")
         self.assertIn(ANTI_AI_STYLE_RULES, prompt)
-        self.assertLess(prompt.index("【你的人格】"), prompt.index(ANTI_AI_STYLE_RULES))
-        self.assertLess(prompt.index(ANTI_AI_STYLE_RULES), prompt.index("【你的境界】"))
+        self.assertLess(prompt.index(ANTI_AI_STYLE_RULES), prompt.index("【你的人格】"))
+        self.assertLess(prompt.index("【你的人格】"), prompt.index("【你的境界】"))
         for phrase in ("不用任何 Markdown", "表达自由", "没有额外的系统禁令", "后果由天道裁定"):
             self.assertIn(phrase, ANTI_AI_STYLE_RULES)
 

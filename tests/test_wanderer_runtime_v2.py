@@ -78,6 +78,76 @@ class RuntimeV2Tests(WandererDbTestCase):
         self.wake(next_call, key='next')
         self.assertIn('我读到了世界的介绍', next_call.calls[0]['system_prompt'])
 
+    def test_prompt_keeps_stable_blocks_ahead_of_per_turn_values(self):
+        """Five small parts in cache order; the manual is shared by every 散修."""
+        caller = Caller(decision())
+        self.wake(caller)
+        prompt = caller.calls[0]['system_prompt']
+        order = ["【必须遵守的响应结构】", "【平台手册 · 简版】", "【你是谁】",
+                 "【我的记忆】", "【我已记住的知识", "【你的现状】",
+                 "【为何此刻醒来】", "【输出合同】"]
+        positions = [prompt.index(marker) for marker in order]
+        self.assertEqual(positions, sorted(positions), positions)
+
+    def test_prompt_carries_only_the_five_small_parts(self):
+        caller = Caller(decision())
+        self.wake(caller)
+        prompt = caller.calls[0]['system_prompt']
+        for marker in ("【平台手册 · 简版】", "【你是谁】", "【我的记忆】",
+                       "【你的现状】", "【为何此刻醒来】"):
+            self.assertIn(marker, prompt)
+        # The old per-turn resource catalog and capability JSON are gone.
+        self.assertNotIn("per-owner floor at resource precision", prompt)
+        self.assertNotIn("technical_limit", prompt)
+        self.assertLess(len(prompt), 12_000)
+
+    def test_memory_pressure_schedules_one_maintenance_wake(self):
+        with self.connect() as conn:
+            conn.execute("DELETE FROM wanderer_wake_events WHERE source='memory_maintenance'")
+            conn.execute("DELETE FROM wanderer_runtime_settings WHERE key LIKE 'memory_maintenance_at:%'")
+            wanderer_runtime_setting_set(conn, "autonomous_v2_enabled", "1")
+            conn.commit()
+        pressure = {"used": 9000, "limit": 10000, "ratio": 0.9}
+        with patch.object(runtime, "memory_pressure", return_value=pressure):
+            with self.connect() as conn:
+                self.assertTrue(runtime.schedule_memory_maintenance(conn, self.w))
+                conn.commit()
+            with self.connect() as conn:
+                self.assertFalse(runtime.schedule_memory_maintenance(conn, self.w))
+                rows = conn.execute("SELECT context_json FROM wanderer_wake_events "
+                                    "WHERE wanderer_id=? AND source='memory_maintenance'",
+                                    (self.w['id'],)).fetchall()
+                conn.commit()
+        self.assertEqual(len(rows), 1)
+        self.assertIn("pressure", json.loads(rows[0]["context_json"]))
+
+    def test_manual_read_capability_returns_the_topic(self):
+        caller = Caller(decision([command('manual.read', {'topic': '好友申请'})]), decision())
+        result = self.wake(caller)
+        self.assertEqual(result['status'], 'ok', result)
+        receipt = json.dumps(result['receipts'][0], ensure_ascii=False)
+        self.assertIn('好友申请', receipt)
+
+    def test_long_event_keeps_the_newest_messages(self):
+        context = {"messages": [{"id": i, "body": "x" * 400} for i in range(30)]}
+        trimmed, overflow = runtime._trim_event_context(context, limit=4000)
+        self.assertLess(len(trimmed["messages"]), 30)
+        self.assertEqual(trimmed["messages"][-1]["id"], 29)
+        self.assertEqual(len(context["messages"]), 30)  # caller's copy is untouched
+        self.assertLessEqual(len(runtime.packed(trimmed)), 4000 + 500)
+        self.assertFalse(overflow)
+
+    def test_maintenance_turn_carries_the_tidy_instruction(self):
+        caller = Caller(decision())
+        with patch.object(runtime, "memory_pressure", return_value={"used": 9000, "limit": 10000, "ratio": 0.9}):
+            asyncio.run(runtime.wake_wanderer(
+                self.connect, self.w['id'], source="memory_maintenance", event_key="memory:test",
+                context={"reason": "记忆快满了", "pressure": {"used": 9000, "limit": 10000, "ratio": 0.9}},
+                ai_caller=caller, force=True))
+        prompt = caller.calls[0]['system_prompt']
+        self.assertIn("【整理记忆】", prompt)
+        self.assertIn("9000/10000", prompt)
+
     def test_last_credit_executes_commands_but_retains_unpaid_callback(self):
         with self.connect() as conn:
             conn.execute('UPDATE wanderer_agents SET daily_wake_limit=1 WHERE id=?', (self.w['id'],))
