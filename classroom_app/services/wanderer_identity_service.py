@@ -22,6 +22,7 @@ from ..db.schema_wanderers import ensure_wanderer_schema
 from ..db.schema_wanderer_world import ensure_wanderer_world_schema
 from ..time_utils import local_iso, local_now, parse_datetime
 from .wanderer_life_core import (
+    AI_WAKE_BASE,
     active_speech_limit,
     clamp_tier,
     default_talents,
@@ -297,8 +298,8 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
             persona_source_hash, persona_source_json, speech_style_json,
             interests_json, schedule_json, activity_level, daily_action_budget, reply_policy_json,
             tier, cultivation_score, status, behaviors_json, stats_json, origin, created_at, updated_at,
-            born_at, lifespan_weeks, talents_json, legacy_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            born_at, lifespan_weeks, talents_json, legacy_id, daily_wake_limit
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(slug) DO NOTHING
         """,
         (
@@ -311,6 +312,7 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
             _dumps({**DEFAULT_BEHAVIORS, **(seed.get("behaviors") or {})}), "{}",
             seed.get("origin") if seed.get("origin") in WANDERER_ORIGINS else ORIGIN_SEED, now, now,
             now, lifespan, _dumps(talents), _as_int(seed.get("legacy_id")) or None,
+            max(0, _as_int(seed.get("daily_wake_limit")) or AI_WAKE_BASE),
         ),
     )
     return True

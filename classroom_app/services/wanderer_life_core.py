@@ -58,6 +58,12 @@ INTERACTION_POINTS: dict[str, float] = {
     "comment": 0.8, "reply": 0.8, "dm_reply": 0.8, "classroom_message": 0.5,
     "social_message": 0.3, "write_post": 1.2,
 }
+# 高质量互动多给修为：说得清楚（长度 150 字）与接得住话（回应他人）各占一半，
+# 合计最多把一次互动的修为翻倍；仍受每日互动修为上限约束。
+QUALITY_LENGTH_CHARS = 150.0
+QUALITY_LENGTH_WEIGHT = 0.5
+QUALITY_ANSWER_WEIGHT = 0.5
+QUALITY_BONUS_MAX = 1.0
 # A real user's reply is worth at least 2× and at most 5× the same action aimed
 # at a wanderer; their tier and the reply length move it inside that band.
 REAL_USER_INTERACTION_MULTIPLIER = 2.0
@@ -70,6 +76,10 @@ ACTIVE_INTERACTION_TIER_BONUS = 0.20
 # Base daily web-search allowance and per-tier growth.
 WANDERER_SEARCH_BASE = 12
 WANDERER_SEARCH_TIER_BONUS = 0.20
+# Daily independent-wake quota: 20 at tier 0, +90% of that base per tier, so
+# tier 10 gets exactly 200 (20 / 38 / 56 / 74 / 92 / 110 / 128 / 146 / 164 / 182 / 200).
+AI_WAKE_BASE = 20
+AI_WAKE_TIER_BONUS = 0.90
 # Each successful web search adds cultivation; higher tiers learn more from it.
 SEARCH_CULTIVATION_BASE = 0.5
 SEARCH_CULTIVATION_TIER_BONUS = 0.25
@@ -386,6 +396,56 @@ def interaction_requirement(tier: Any, eloquence: Any = 1.0) -> int:
     return max(3, int(round(PROMOTION_MIN_INTERACTIONS / factor)))
 
 
+def promotion_plan(tier: Any = 0, *, insight: float = 1.0, eloquence: float = 1.0,
+                   memory: float = 1.0, vitality: float = 1.0,
+                   wake_base: Any = AI_WAKE_BASE) -> dict[str, Any]:
+    """Whether this tier's daily wake quota covers promotion before the lifespan ends.
+
+    Pessimistic reading of a turn: one wake yields at most one productive act
+    (a study note, one interaction, or one web search). Cultivation first comes
+    from the knowledge and interactions promotion already requires; any
+    shortfall is covered by extra searches, the cheapest repeatable act.
+    """
+    level = clamp_tier(tier)
+    if level >= MAX_TIER:
+        return {"tier": level, "max_tier": True, "fits": True, "acts_needed": 0,
+                "wakes_available": 0, "days_available": 0.0, "quota": 0, "margin": 0,
+                "days_needed": 0.0, "search_days": 0, "extra_searches": 0}
+    capacity = knowledge_capacity_for(level, memory)
+    knowledge_needed = int(round(promotion_ratio(level) * capacity))
+    studies_needed = int(math.ceil(knowledge_needed / 800.0))
+    cultivation_needed = cultivation_target(level)
+    interactions_needed = interaction_requirement(level, eloquence)
+    knowledge_cultivation = round(
+        knowledge_needed / SCORE_CHARS_PER_POINT * max(0.2, insight) * tier_income_multiplier(level), 2)
+    quality_social = interaction_gain("social_message", eloquence, source_tier=level,
+                                      chars=QUALITY_LENGTH_CHARS, answered=True)
+    interaction_cultivation = round(interactions_needed * quality_social, 2)
+    shortfall = max(0.0, cultivation_needed - knowledge_cultivation - interaction_cultivation)
+    extra_searches = int(math.ceil(shortfall / max(0.01, search_cultivation_gain(level))))
+    acts_needed = studies_needed + interactions_needed + extra_searches
+    quota = ai_wake_limit(level, wake_base)
+    days_available = round(lifespan_weeks_for(level, vitality) * 7, 1)
+    wakes_available = int(quota * days_available)
+    # Extra searches also spend the daily search allowance, so they can need
+    # more days than the wake count alone suggests.
+    search_days = int(math.ceil(extra_searches / max(1, wanderer_search_limit(level))))
+    days_needed = max(acts_needed / max(1, quota), search_days)
+    return {
+        "tier": level, "max_tier": False,
+        "knowledge_needed": knowledge_needed, "studies_needed": studies_needed,
+        "cultivation_needed": cultivation_needed,
+        "cultivation_from_required": round(knowledge_cultivation + interaction_cultivation, 2),
+        "interactions_needed": interactions_needed, "extra_searches": extra_searches,
+        "search_days": search_days,
+        "acts_needed": acts_needed, "quota": quota,
+        "days_available": days_available, "wakes_available": wakes_available,
+        "days_needed": round(days_needed, 2),
+        "fits": acts_needed <= wakes_available,
+        "margin": wakes_available - acts_needed,
+    }
+
+
 def knowledge_gain(chars: Any, insight: Any, luck: Any, rng: Optional[Callable[[], float]] = None,
                    *, tier: Any = 0) -> tuple[float, bool]:
     """(cultivation points, 顿悟 whether doubled); higher tiers learn faster."""
@@ -401,13 +461,32 @@ def knowledge_gain(chars: Any, insight: Any, luck: Any, rng: Optional[Callable[[
     return round(points, 2), crit
 
 
+def interaction_quality(chars: Any = 0, answered: bool = False) -> float:
+    """How far above a bare ping this interaction is, in [0, 1].
+
+    Half the weight for saying something substantial (150+ chars), half for
+    actually answering someone; together they can double the award.
+    """
+    try:
+        length = max(0.0, float(chars or 0))
+    except (TypeError, ValueError):
+        length = 0.0
+    bonus = QUALITY_LENGTH_WEIGHT * min(1.0, length / QUALITY_LENGTH_CHARS)
+    if answered:
+        bonus += QUALITY_ANSWER_WEIGHT
+    return round(min(QUALITY_BONUS_MAX, bonus), 2)
+
+
 def interaction_gain(action_kind: Any, eloquence: Any = 1.0, *, real_user: bool = False,
-                     target_tier: Any = 0, chars: Any = 0, source_tier: Any = 0) -> float:
+                     target_tier: Any = 0, chars: Any = 0, source_tier: Any = 0,
+                     answered: bool = False) -> float:
     """Cultivation for one interaction; a real user's reply is the richest channel.
 
     ``real_user`` applies the tier bonus (each real-user tier +20%) and a length
     bonus (longer replies are worth more), capped at 5× the normal base.
     ``source_tier`` is the acting wanderer's own tier: higher realms earn more.
+    ``chars``/``answered`` add the quality bonus on top (see
+    :func:`interaction_quality`).
     """
     base = INTERACTION_POINTS.get(str(action_kind or ""), 0.0)
     if base <= 0:
@@ -425,6 +504,7 @@ def interaction_gain(action_kind: Any, eloquence: Any = 1.0, *, real_user: bool 
         length_factor = 1.0 + min(1.0, length / REAL_USER_LENGTH_CHARS)
         factor *= min(REAL_USER_INTERACTION_MAX,
                       REAL_USER_INTERACTION_MULTIPLIER * tier_factor * length_factor)
+    factor *= 1.0 + interaction_quality(chars, answered)
     return round(base * factor, 2)
 
 
@@ -444,6 +524,27 @@ def active_interaction_limit(tier: Any, configured: Any = 0) -> int:
     return max(base, configured_value)
 
 
+def ai_wake_limit(tier: Any, configured: Any = AI_WAKE_BASE) -> int:
+    """Daily independent wake credits: the configured tier-0 base, +90% per tier.
+
+    ``daily_wake_limit`` is the tier-0 quota (default 20), so tier 10 reaches
+    200; 0 still disables waking. A higher 境界 therefore gets more thoughts
+    per day instead of the same flat cap.
+    """
+    try:
+        base = max(0, int(configured or 0))
+    except (TypeError, ValueError):
+        base = 0
+    if base <= 0:
+        return 0
+    return int(round(base * (1.0 + AI_WAKE_TIER_BONUS * clamp_tier(tier))))
+
+
+def wake_quota_table(base: Any = AI_WAKE_BASE) -> tuple[int, ...]:
+    """The daily wake allowance for tiers 0–10 (20 … 200 at the default base)."""
+    return tuple(ai_wake_limit(tier, base) for tier in range(TIER_COUNT))
+
+
 def wanderer_search_limit(tier: Any) -> int:
     """Base 12 web searches per day, +20% per tier."""
     return int(round(WANDERER_SEARCH_BASE * (1.0 + WANDERER_SEARCH_TIER_BONUS * clamp_tier(tier))))
@@ -454,7 +555,7 @@ def search_cultivation_gain(tier: Any) -> float:
     return round(SEARCH_CULTIVATION_BASE + SEARCH_CULTIVATION_TIER_BONUS * clamp_tier(tier), 2)
 
 
-def tier_perks(tier: Any, daily_action_budget: Any = 10) -> dict[str, Any]:
+def tier_perks(tier: Any, daily_action_budget: Any = 10, daily_wake_limit: Any = AI_WAKE_BASE) -> dict[str, Any]:
     level = clamp_tier(tier)
     try:
         budget = max(0, int(daily_action_budget or 0))
@@ -467,6 +568,7 @@ def tier_perks(tier: Any, daily_action_budget: Any = 10) -> dict[str, Any]:
         "daily_budget": effective_budget,
         "active_interaction_limit": effective_budget,
         "web_search_limit": wanderer_search_limit(level),
+        "ai_wake_limit": ai_wake_limit(level, daily_wake_limit),
         "reply_char_limit": active_speech_limit(level),
         "active_speech_limit": active_speech_limit(level),
         "passive_speech_unlimited": True,

@@ -100,10 +100,12 @@ def _award_delivery(conn: Any, sender: str, parsed: dict, message_id: int, *, re
         if row:
             peer = row["sender_identity"]
     return _award_interaction(conn,actor,sender,peer,f"social-message:{message_id}",str(message["body"] or ""),
-                              message_id,parsed["key"],"social_message","social_group" if parsed["type"]=="group" else "social_dm")
+                              message_id,parsed["key"],"social_message","social_group" if parsed["type"]=="group" else "social_dm",
+                              answered=bool(reply_to_id))
 
 
-def _award_interaction(conn, actor, sender, peer, event_key, body, message_id, target_key, action_kind, target_type):
+def _award_interaction(conn, actor, sender, peer, event_key, body, message_id, target_key, action_kind, target_type,
+                       *, answered=False):
     from .wanderer_identity_service import load_wanderer, log_wanderer_action
     from .wanderer_interaction_service import counterpart_context
     from .wanderer_life_core import interaction_gain, talent_value, INTERACTION_DAILY_CULTIVATION_CAP
@@ -116,7 +118,7 @@ def _award_interaction(conn, actor, sender, peer, event_key, body, message_id, t
     facts = counterpart_context(conn,peer) if peer else {"real_user":False,"tier":0}
     gain = interaction_gain("social_message",talent_value(w.get("talents"),"eloquence"),
                             real_user=facts["real_user"],target_tier=facts["tier"],
-                            chars=len(body),source_tier=w.get("tier",0))
+                            chars=len(body),source_tier=w.get("tier",0),answered=bool(answered))
     granted = award_cultivation(conn,int(actor["id"]),gain,"interaction",event_key,
                                 daily_cap=INTERACTION_DAILY_CULTIVATION_CAP)
     log_wanderer_action(conn,int(actor["id"]),action_kind,target_type=target_type,

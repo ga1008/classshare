@@ -252,7 +252,7 @@ class SocialV2Test(WandererWorldTestCase):
         gid,key=self.make_group(self.atai,self.lele)
         with self.connect() as conn:
             wanderer_runtime_setting_set(conn,'autonomous_v2_enabled','1')
-            conn.execute("UPDATE wanderer_agents SET born_at=?,lifespan_weeks=10,life_penalty_weeks=0,daily_wake_limit=1",(local_iso(),))
+            conn.execute("UPDATE wanderer_agents SET born_at=?,lifespan_weeks=10,life_penalty_weeks=0,daily_wake_limit=1,tier=0",(local_iso(),))
             conn.execute("UPDATE wanderer_wake_events SET run_at='2100-01-01' WHERE source IN ('group_created','group_joined')")
             conn.commit()
         self.send(self.real,key,'合成群聊中的新问题')

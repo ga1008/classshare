@@ -45,6 +45,31 @@ class LifeCoreTest(unittest.TestCase):
         self.assertTrue(perks["passive_speech_unlimited"])
         self.assertEqual(core.tier_perks(3, 10)["active_speech_limit"], 400)
 
+    def test_ai_wake_limit_scales_with_tier_and_keeps_zero_disabled(self):
+        self.assertEqual(core.ai_wake_limit(0), 20)
+        self.assertEqual(core.ai_wake_limit(10), 200)
+        self.assertEqual(core.wake_quota_table(),
+                         (20, 38, 56, 74, 92, 110, 128, 146, 164, 182, 200))
+        self.assertEqual(core.ai_wake_limit(0, 100), 100)
+        self.assertEqual(core.ai_wake_limit(3, 100), 370)
+        self.assertEqual(core.ai_wake_limit(10, 100), 1000)
+        self.assertEqual(core.ai_wake_limit(0, 0), 0)
+        self.assertEqual(core.ai_wake_limit(5, None), 0)
+        self.assertEqual(core.ai_wake_limit(2, 50), 140)
+        self.assertEqual(core.tier_perks(3, 10, 100)["ai_wake_limit"], 370)
+        self.assertEqual(core.tier_perks(0, 10, 0)["ai_wake_limit"], 0)
+
+    def test_high_quality_interactions_are_worth_more(self):
+        bare = core.interaction_gain("social_message")
+        long_reply = core.interaction_gain("social_message", chars=150, answered=True)
+        self.assertEqual(core.interaction_quality(0, False), 0.0)
+        self.assertEqual(core.interaction_quality(150, False), 0.5)
+        self.assertEqual(core.interaction_quality(150, True), 1.0)
+        self.assertEqual(core.interaction_quality(5000, True), 1.0)
+        self.assertAlmostEqual(long_reply, bare * 2, places=2)
+        self.assertLess(core.interaction_gain("social_message", chars=50),
+                        core.interaction_gain("social_message", chars=150))
+
     def test_vitality_scales_lifespan(self):
         self.assertEqual(core.lifespan_weeks_for(0, 1.0), 2.0)
         self.assertEqual(core.lifespan_weeks_for(0, 1.4), 2.8)

@@ -8,13 +8,18 @@ from __future__ import annotations
 from typing import Any
 from .connection import get_configured_db_engine
 
-VERSION = "5"
+VERSION = "6"
 AGENT_COLUMNS = {
     "life_epoch": "INTEGER NOT NULL DEFAULT 1",
     "authority_version": "INTEGER NOT NULL DEFAULT 1",
-    "daily_wake_limit": "INTEGER NOT NULL DEFAULT 100",
+    "daily_wake_limit": "INTEGER NOT NULL DEFAULT 20",
     "life_bonus_seconds": "BIGINT NOT NULL DEFAULT 0",
 }
+# v5→v6: ``daily_wake_limit`` became the tier-0 base of a 20→200 curve, so rows
+# still sitting on the old flat default of 100 would otherwise explode to 1000
+# at tier 10. Only the untouched default is rewritten; custom values stay.
+WAKE_LIMIT_LEGACY_DEFAULT = 100
+WAKE_LIMIT_TIER0_BASE = 20
 
 TABLES = (
     """CREATE TABLE IF NOT EXISTS wanderer_knowledge_growth (
@@ -136,4 +141,10 @@ def ensure_wanderer_world_schema(conn: Any, *, allow_schema_changes: bool = Fals
         award_columns={r['name'] for r in conn.execute('PRAGMA table_info(wanderer_cultivation_awards)').fetchall()}
     if 'debt_paid_units' not in award_columns:
         conn.execute('ALTER TABLE wanderer_cultivation_awards ADD COLUMN debt_paid_units BIGINT NOT NULL DEFAULT 0')
+    conn.execute("UPDATE wanderer_agents SET daily_wake_limit=? WHERE daily_wake_limit=?",
+                 (WAKE_LIMIT_TIER0_BASE, WAKE_LIMIT_LEGACY_DEFAULT))
+    if engine == "postgres":
+        # SQLite has no ALTER COLUMN; there the seeding insert writes the base
+        # explicitly instead.
+        conn.execute(f"ALTER TABLE wanderer_agents ALTER COLUMN daily_wake_limit SET DEFAULT {WAKE_LIMIT_TIER0_BASE}")
     conn.execute("INSERT INTO wanderer_world_schema(key,value) VALUES('version',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (VERSION,))

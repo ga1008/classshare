@@ -71,6 +71,23 @@ class LifeBalanceTest(unittest.TestCase):
         self.assertLess(core.tier_income_multiplier(0, knowledge=False),
                         core.tier_income_multiplier(9, knowledge=False))
 
+    def test_tier_zero_quota_reaches_promotion_before_death(self):
+        plan = core.promotion_plan(0)
+        self.assertTrue(plan["fits"], plan)
+        self.assertEqual(plan["quota"], 20)
+        self.assertEqual(plan["days_available"], 14.0)
+        # 悲观口径：一次醒来最多做一件事，也只需约一天额度。
+        self.assertLessEqual(plan["days_needed"], 2.0)
+        self.assertGreater(plan["margin"], 200)
+        weak = core.promotion_plan(0, insight=0.6, eloquence=0.6, memory=0.6, vitality=0.7)
+        self.assertTrue(weak["fits"], weak)
+
+    def test_every_tier_fits_its_wake_quota(self):
+        for tier in range(core.MAX_TIER):
+            plan = core.promotion_plan(tier)
+            self.assertTrue(plan["fits"], plan)
+            self.assertLessEqual(plan["days_needed"], plan["days_available"], plan)
+
     def test_no_effort_dies_at_tier_zero(self):
         died, days, tier, _promotions = simulate(10, share=0.0)
         self.assertTrue(died)

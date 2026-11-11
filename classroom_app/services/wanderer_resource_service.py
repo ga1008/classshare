@@ -24,7 +24,7 @@ RESOURCE_CATALOG = {
     "reflection_chars": {"unit":"字/自省","period":"ability","base":"min(3200,1200+200*tier)","share_mode":"ability"},
     "todo_title_chars": {"unit":"字/标题","period":"ability","base":"80","share_mode":"ability"},
     "todo_detail_chars": {"unit":"字/详情","period":"ability","base":"400","share_mode":"ability"},
-    "ai_wake": {"unit":"次","period":"day","base":"daily_wake_limit(default 100)","share_mode":"consume"},
+    "ai_wake": {"unit":"次","period":"day","base":"daily_wake_limit(default 20)*(1+0.9*tier)","share_mode":"consume"},
     "social_message": {"unit":"整数通信积分；3,000,000=普通零好感一条","period":"day","base":"social_message_base(default20)*3,000,000","share_mode":"consume"},
     "web_search": {"unit":"次","period":"day","base":"12*(1+0.2*tier)","share_mode":"consume"},
     "active_interactions": {"unit":"次","period":"day","base":"max(daily_action_budget,20*(1+0.2*tier))","share_mode":"consume"},
@@ -72,7 +72,8 @@ def _base(conn, row, resource, base_limits=None):
         from .wanderer_life_core import reflection_summary_limit
         return reflection_summary_limit(tier)
     if resource == "ai_wake":
-        return int(row.get("daily_wake_limit") or 0)
+        from .wanderer_life_core import ai_wake_limit
+        return ai_wake_limit(tier, row.get("daily_wake_limit"))
     if resource == "blog_posts":
         from .wanderer_settings_service import wanderer_runtime_setting_get
         return max(0,int(wanderer_runtime_setting_get(conn,"personal_blog_posts_base","1") or 1))

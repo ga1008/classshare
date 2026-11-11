@@ -16,6 +16,10 @@ import sys
 from zoneinfo import ZoneInfo
 
 
+# Keep in step with classroom_app.db.schema_wanderer_world.VERSION; this tool
+# deliberately imports nothing from the application.
+REQUIRED_WORLD_SCHEMA_VERSION = 6
+
 REQUIRED_TABLES = frozenset({
     "students", "wanderer_agents", "account_control_migrations", "user_sessions",
     "social_groups", "social_group_members", "social_messages", "private_messages",
@@ -96,7 +100,8 @@ def collect_snapshot(conn, *, since_local: str, since_utc: str, present_tables: 
         settings[key] = value if value in ("0", "1", "true", "false") else "other"
     schema_rows = conn.execute("SELECT value FROM wanderer_world_schema WHERE key='version'").fetchall()
     versions = [str(row[0]) if str(row[0]).isdigit() else "other" for row in schema_rows]
-    checks["world_schema_not_v5"] = int(versions != ["5"])
+    checks["world_schema_stale"] = int(
+        not versions or not versions[0].isdigit() or int(versions[0]) < REQUIRED_WORLD_SCHEMA_VERSION)
     return {
         "ok": not any(checks.values()), "invariants": checks, "totals": totals,
         "since_local": since_local, "since_utc": since_utc, "natural_activity_since": recent,

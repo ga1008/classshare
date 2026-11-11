@@ -65,12 +65,14 @@ class RealUserRulesTest(WandererWorldTestCase):
         self.assertIn("好友搜索", action["location"])
 
     def test_real_user_reply_is_richer_and_scales_with_tier_and_length(self):
-        normal = interaction_gain("social_message")
+        bare = interaction_gain("social_message")
+        normal = interaction_gain("social_message", chars=400)
         low = interaction_gain("social_message", real_user=True, target_tier=0, chars=0)
         high = interaction_gain("social_message", real_user=True, target_tier=5, chars=400)
-        self.assertEqual(normal, 0.3)
-        self.assertGreater(low, normal)
+        self.assertEqual(bare, 0.3)
+        self.assertGreater(low, bare)
         self.assertGreater(high, low)
+        # 真人加成封顶 5×：与同等质量（同长度）的散修互动相比。
         self.assertLessEqual(high, normal * 5 + 0.001)
 
     def test_active_and_search_limits_grow_twenty_percent_per_tier(self):

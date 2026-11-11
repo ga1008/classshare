@@ -165,7 +165,8 @@ def award_interaction_cultivation(conn: Any, wanderer: dict[str, Any], kinds: It
             points += interaction_gain(item.get("kind"), eloquence,
                                        real_user=bool(item.get("real_user")),
                                        target_tier=item.get("target_tier"),
-                                       chars=item.get("chars"), source_tier=source_tier)
+                                       chars=item.get("chars"), source_tier=source_tier,
+                                       answered=bool(item.get("answered")))
         else:
             points += interaction_gain(item, eloquence, source_tier=source_tier)
     if points <= 0:
@@ -434,7 +435,8 @@ def life_payload(wanderer: dict[str, Any], *, now: Any = None) -> dict[str, Any]
 
     life = current_life(wanderer, now)
     score = _as_float(wanderer.get("cultivation_score"))
-    perks = tier_perks(wanderer.get("tier"), wanderer.get("daily_action_budget"))
+    perks = tier_perks(wanderer.get("tier"), wanderer.get("daily_action_budget"),
+                       wanderer.get("daily_wake_limit"))
     penalty = max(0, int(wanderer.get("interaction_limit_penalty") or 0))
     until = str(wanderer.get("interaction_penalty_until") or "")
     active_penalty = 0

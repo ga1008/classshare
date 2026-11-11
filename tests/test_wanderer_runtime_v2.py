@@ -58,7 +58,7 @@ class RuntimeV2Tests(WandererDbTestCase):
     def test_real_callback_reads_then_self_writes_memory(self):
         def remember(payload):
             self.assertIn("我的记忆", payload['system_prompt'])
-            self.assertIn('"remaining":98', payload['system_prompt'])
+            self.assertRegex(payload['system_prompt'], r'"ai_wake":\{"remaining":\d+\}')
             context = payload['system_prompt'].split('<<<data>>>\n')[1].split('\n<<<end>>>')[0]
             data = json.loads(context)
             evidence = data['evidence'][0]
@@ -150,7 +150,7 @@ class RuntimeV2Tests(WandererDbTestCase):
 
     def test_last_credit_executes_commands_but_retains_unpaid_callback(self):
         with self.connect() as conn:
-            conn.execute('UPDATE wanderer_agents SET daily_wake_limit=1 WHERE id=?', (self.w['id'],))
+            conn.execute('UPDATE wanderer_agents SET tier=0,daily_wake_limit=1 WHERE id=?', (self.w['id'],))
             conn.commit()
         caller = Caller(decision([command('memory.write', {'content':'我今天选择休息。','location':'个人空间'})], True))
         result = self.wake(caller)
@@ -330,7 +330,7 @@ class RuntimeV2Tests(WandererDbTestCase):
         bad={'action':'reply','parts':[secret]}
         def corrected(payload):
             self.assertIn('protocol_repair',payload['system_prompt'])
-            self.assertIn('"remaining":98',payload['system_prompt'])
+            self.assertRegex(payload['system_prompt'], r'"ai_wake":\{"remaining":\d+\}')
             self.assertNotIn(secret,payload['system_prompt'])
             self.assertIn('"protocol":"wanderer.v1"',payload['new_message'])
             return decision([command('memory.write',{'content':'这次回答已确认。','location':'书房'})])
@@ -368,7 +368,7 @@ class RuntimeV2Tests(WandererDbTestCase):
         from datetime import datetime,timedelta
         from classroom_app.services.wanderer_settings_service import daily_ai_calls
         with self.connect() as conn:
-            conn.execute('UPDATE wanderer_agents SET daily_wake_limit=1 WHERE id=?',(self.w['id'],))
+            conn.execute('UPDATE wanderer_agents SET tier=0,daily_wake_limit=1 WHERE id=?',(self.w['id'],))
             conn.commit()
         caller=Caller({'parts':['invalid']})
         result=self.wake(caller)

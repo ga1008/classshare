@@ -37,7 +37,7 @@ def award_reply_cultivation(conn: Any, wanderer: dict[str, Any], identity: Any, 
     """Award one reply and return ``{gained, real_user, tier, name}`` for the trace."""
     facts = counterpart_context(conn, identity)
     item = {"kind": kind, "real_user": bool(facts["real_user"]),
-            "target_tier": int(facts.get("tier") or 0), "chars": chars}
+            "target_tier": int(facts.get("tier") or 0), "chars": chars, "answered": True}
     gained = award_interaction_cultivation(conn, wanderer, [item])
     return {"gained": round(float(gained or 0), 2), **facts}
 

@@ -71,6 +71,7 @@ class WorldEconomyTest(WandererDbTestCase):
         a,b,c = self.ids
         with self.connect() as conn:
             self.edge(conn,a,b); self.edge(conn,b,c)
+            conn.execute("UPDATE wanderer_agents SET tier=0")
             state = resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")
             self.assertEqual(state["limit"],260)
             result = resources.consume(conn,a,"ai_wake",150,"calls",budget_date="2026-11-09")
@@ -81,6 +82,16 @@ class WorldEconomyTest(WandererDbTestCase):
             self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")["remaining"],0)
             self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-10")["remaining"],100)
             self.assertFalse(resources.settle(conn,"calls",release=True)["ok"])
+
+    def test_daily_wake_quota_grows_with_tier(self):
+        a = self.ids[0]
+        with self.connect() as conn:
+            conn.execute("UPDATE wanderer_agents SET tier=0,daily_wake_limit=20 WHERE id=?", (a,))
+            self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")["limit"],20)
+            conn.execute("UPDATE wanderer_agents SET tier=4 WHERE id=?", (a,))
+            self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")["limit"],92)
+            conn.execute("UPDATE wanderer_agents SET daily_wake_limit=0 WHERE id=?", (a,))
+            self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")["limit"],0)
 
     def test_capacity_uses_original_owners_and_grandfathers_overage(self):
         a,b,_ = self.ids
@@ -231,6 +242,7 @@ class WorldEconomyTest(WandererDbTestCase):
         a,b,c=self.ids
         with self.connect() as conn:
             self.edge(conn,a,b);self.edge(conn,b,c)
+            conn.execute("UPDATE wanderer_agents SET tier=0")
             sql=[]
             conn.set_trace_callback(sql.append)
             all_limits=resources.limits(conn,a)

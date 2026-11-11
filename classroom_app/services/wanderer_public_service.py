@@ -218,7 +218,7 @@ def build_wanderer_home(conn: Any, viewer: dict[str, Any], slug: str) -> Optiona
         "is_dead": status == STATUS_DEAD,
         "status_label": {"dead": "已陨落", "paused": "闭关中"}.get(status, "修行中"),
         "life": life,
-        "perks": tier_perks(tier, wanderer.get("daily_action_budget")),
+        "perks": tier_perks(tier, wanderer.get("daily_action_budget"), wanderer.get("daily_wake_limit")),
         "talents": talent_effects(wanderer.get("talents")),
         "requirements": promotion_requirements(conn, wanderer),
         "relationships": public_summary(conn, int(wanderer["id"])),

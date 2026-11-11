@@ -164,7 +164,7 @@ class WandererPlatformAITest(WandererDbTestCase):
     def test_same_logical_call_cannot_resend_after_last_credit(self):
         before = self.used()
         with self.connect() as conn:
-            conn.execute("UPDATE wanderer_agents SET daily_wake_limit=? WHERE id=?", (int(before)+1, self.source.wanderer_id))
+            conn.execute("UPDATE wanderer_agents SET tier=0,daily_wake_limit=? WHERE id=?", (int(before)+1, self.source.wanderer_id))
             conn.commit()
         async def run():
             async with AIBudgetAwareClient(base_url="https://synthetic.invalid", transport=httpx.MockTransport(self.transport)) as client:
