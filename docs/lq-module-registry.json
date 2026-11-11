@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-10",
+ "generatedAt": "2026-11-11",
  "generator": "python tools/ui/lq_module_registry.py",
  "modules": {
   "materials": {

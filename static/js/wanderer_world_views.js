@@ -96,7 +96,8 @@ export function flowView(item) {
     ])));
 }
 export function relationshipItem(item, { direction = 'outgoing' } = {}) {
-    const value = Math.min(100, Math.max(0, Number(item.new_affinity ?? item.affinity ?? 0)));
+    const raw = Math.min(100, Math.max(0, Number(item.new_affinity ?? item.affinity ?? 0)));
+    const value = Number.isFinite(raw) ? Math.round(raw * 10) / 10 : 0;
     const label = direction === 'incoming' ? '对方对本人的好感' : '本人对对方的好感';
     return createContent('card', { title: `${item.rank ? `${item.rank}. ` : ''}${item.name || item.peer_identity || '联系人'}`, variant: 'flat', meta: item.reason || item.last_reason || '尚无感受说明' }, {
         body: [node('div', { class: 'ww-affinity' }, [createComponent('progress', { label, value, max: 100 }), node('strong', { text: `${value} / 100` })]),

@@ -111,7 +111,7 @@ def affinity_states(conn: Any, wanderer_id: int, peer_identities: Iterable[str])
     for row in rows:
         legacy = row["revision"] is None
         result[row["peer_identity"]] = {
-            "affinity":max(0.0,min(100.0,(float(row["affinity"]) + 100) / 2 if legacy else float(row["affinity"]))),
+            "affinity":round(max(0.0,min(100.0,(float(row["affinity"]) + 100) / 2 if legacy else float(row["affinity"]))),1),
             "revision":int(row["revision"] or 0),"origin":"legacy" if legacy else row["origin"],
             "legacy_affinity":row["affinity"] if legacy else row["legacy_affinity"],
             "source_turn_id":row["source_turn_id"] or ""}
@@ -360,7 +360,7 @@ def relationship_rankings(conn, wanderer_id, *, direction='outgoing', offset=0, 
     items=[]
     for index,row in enumerate(rows):
         peer=row['peer_identity'] if direction=='outgoing' else f"student:{row['author_student_id']}"
-        value=max(0.0,min(100.0,float(row['effective_affinity'])))
+        value=round(max(0.0,min(100.0,float(row['effective_affinity']))),1)
         origin=row['origin'] or 'legacy'
         grade=row['latest_grade']
         items.append({'peer_identity':peer,'name':names.get(peer,peer) if direction=='outgoing' else row['author_name'],

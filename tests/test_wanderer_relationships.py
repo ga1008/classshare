@@ -31,6 +31,15 @@ class RelationshipTest(WandererDbTestCase):
             self.assertEqual(self.decide(conn,0,1,"decide-2")["affinity"],0)
             self.assertEqual(affinity_state(conn,self.a["id"],self.peer)["revision"],2)
 
+    def test_affinity_display_value_is_rounded_to_one_decimal(self):
+        from classroom_app.services.wanderer_relationship_service import relationship_rankings
+        with self.connect() as conn:
+            self.decide(conn, 60.400001525878906)
+            state = affinity_state(conn, self.a["id"], self.peer)
+            ranked = relationship_rankings(conn, self.a["id"])["items"]
+        self.assertEqual(state["affinity"], 60.4)
+        self.assertEqual(ranked[0]["affinity"], 60.4)
+
     def test_operation_replay_and_revision_conflict(self):
         with self.connect() as conn:
             self.decide(conn,100)
