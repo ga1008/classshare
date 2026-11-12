@@ -83,7 +83,7 @@ def alignment_view(conn, user, offering_id, session_id, context=None):
         return {'state': 'stale' if stale else row['state'] if row else 'unmatched', 'revision': row['revision'] if row else 0,
                 'local': local_info, 'selected_id': data.get('selected_id'), 'candidates': data.get('candidates', []),
                 'message': ('本地信息已变化，请重新对齐。' if stale else row['message'] if row else '尚未对齐，可先记录本地点名。'),
-                'expires_at_ms': data.get('expires_at_ms'), 'error_code': data.get('error_code')}
+                'expires_at_ms': data.get('expires_at_ms'), 'error_code': data.get('error_code'), 'ai':data.get('ai')}
     cview = view(course, context['course'], context['course_fingerprint'])
     ctx = context['contexts'].get(session_id)
     sview = view(session, _local_session(context, session_id), flow._identity(ctx) if ctx else '')
@@ -215,8 +215,17 @@ async def _read_candidates(context, session_id=None, selected_session=None):
     if not deterministic:
         allowed = [c for c in candidates if c['evidence']['roster']['accepted']]
         if allowed:
-            ai = await flow._ai_assist('同学期课程身份比对：结合名称别名、代码、完整排课次数、学时学分及名单双向差。仅证据充分时选唯一同课；缺少关键证据或存在冲突选uncertain。',
-                {'local_course': info, 'candidates': [_public(c) for c in allowed], 'allowed_decisions': ['uncertain', *[c['id'] for c in allowed]]})
+            ai = await flow._ai_assist(
+                '系统已逐项验证以下硬前置条件：同一学年学期，名单双向未对齐总数小于5，交集分别超过双方人数的一半。'
+                '少于5人的名单双向差异（1至4人）是已允许的正常退学/转入情况，不是反对同课的证据，不得单独作为uncertain理由。'
+                '你负责结合课程语义判断是否为同一门课。课程编号一致、课程名称或常见后缀别名一致、课程课次数/学时/学分等证据一致，'
+                '任一路充分证据均可支持同课，不要求所有字段同时齐全或一致。null、缺失、空白表示未知，属于中性信息，'
+                '不得仅因另一字段缺失（尤其学校学时或学分缺失）判uncertain。'
+                '例如编号及名称均相同、完整排课次数同为30次、名单相差2人且学校学时学分为null，可据已有证据选该候选。'
+                '已有明确相互矛盾的课程身份、多个同样可能候选或确实没有充分同课证据时才选uncertain；'
+                '不得因只有一个候选而忽略真实冲突。只选择allowed_decisions中的候选id或uncertain，并简短说明证据。',
+                {'local_course': info, 'candidates': [{'id':c['id'],'target':c['target'],'roster':c['evidence']['roster']} for c in allowed],
+                 'allowed_decisions': ['uncertain', *[c['id'] for c in allowed]]})
             for c in allowed:
                 if ai.get('decision') == c['id']:
                     c['evidence']['method'] = 'ai'
@@ -247,7 +256,7 @@ def _session_candidates(context, local_session, course_candidate):
     return candidates
 
 
-def _save_course(conn, user, offering_id, context, candidates, chosen, message, error_code=None):
+def _save_course(conn, user, offering_id, context, candidates, chosen, message, error_code=None, ai=None):
     previous = _course_link(conn, user, offering_id)
     revision = (previous['revision'] if previous else 0) + 1
     source = dict(chosen['_source']) if chosen else {}
@@ -258,7 +267,8 @@ def _save_course(conn, user, offering_id, context, candidates, chosen, message, 
                       course_alignment_method=chosen['evidence']['method'], roster_evidence=chosen['evidence']['roster'],
                       remote_roster_fingerprint=chosen['_roster_fingerprint'])
     data = {'candidates': [_public(c) for c in candidates], 'selected_id': chosen['id'] if chosen else None,
-            'expires_at_ms': int(time.time() * 1000) + TTL_SECONDS * 1000, 'error_code': error_code, 'input_fingerprint': context['fingerprint']}
+            'expires_at_ms': int(time.time() * 1000) + TTL_SECONDS * 1000, 'error_code': error_code, 'input_fingerprint': context['fingerprint'],
+            'ai':{k:ai.get(k) for k in ('status','decision','code','reason')} if ai else None}
     conn.execute("""INSERT INTO smart_attendance_course_links(class_offering_id,owner_teacher_id,revision,state,context_fingerprint,source_json,alignment_json,message,updated_at)
         VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(class_offering_id) DO UPDATE SET owner_teacher_id=excluded.owner_teacher_id,revision=excluded.revision,
         state=excluded.state,context_fingerprint=excluded.context_fingerprint,source_json=excluded.source_json,alignment_json=excluded.alignment_json,message=excluded.message,updated_at=excluded.updated_at""",
@@ -388,6 +398,8 @@ async def align_offering(user, offering_id, *, background=False, session_id=None
             if not inserted:
                 raise HTTPException(409, '该确认操作标识已使用，请刷新后重试。')
         message = '课程已对齐；学校名单为准。' if chosen else '课程存疑，请比较课程卡片后确认。' if candidates else str((initial.get('account_error') or {}).get('message') or ai.get('reason') or '未找到同学期学校课程，请核对课表；本地记录继续保留。')
+        if candidates and not chosen and ai.get('reason'):
+            message += ' AI核对：' + str(ai['reason'])[:160]
         # A lesson-only refresh preserves the already verified course revision and
         # does not stale other lessons merely because this lesson was inspected.
         reuse = bool(old and old['state'] == 'matched' and old['context_fingerprint'] == initial['course_fingerprint'] and chosen and
@@ -395,7 +407,7 @@ async def align_offering(user, offering_id, *, background=False, session_id=None
         if reuse:
             revision, source = old['revision'], _load(old['source_json'])
         else:
-            revision, source = _save_course(conn, user, offering_id, initial, candidates, chosen, message, (initial.get('account_error') or {}).get('code'))
+            revision, source = _save_course(conn, user, offering_id, initial, candidates, chosen, message, (initial.get('account_error') or {}).get('code'), ai)
         if background_missing is not None and not reuse:
             # Do not replace a teacher's existing course decision during bootstrap.
             raise HTTPException(409, '原课程目标的学校证据已变化，请教师重新核对。')
