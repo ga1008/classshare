@@ -84,6 +84,8 @@ async def save_assignment_draft(
             student_id=int(user["id"]),
         )
 
+        answers_json = _normalize_exam_numbered_answer_json(conn, assignment, answers_json)
+
         replace_ids = {
             str(item or "").strip()
             for item in _parse_json_list(replace_question_ids or "[]", field_name="replace_question_ids")

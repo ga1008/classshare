@@ -6,9 +6,10 @@ import re
 from typing import Any
 
 from .grading_prompt_safety import neutralize_untrusted_text
+from .assessment_question_contract import SINGLE_CHOICE_TYPES
 
 
-OBJECTIVE_TYPES = {"radio", "checkbox", "text"}
+OBJECTIVE_TYPES = {"radio", "boolean", "checkbox", "text"}
 
 
 def _load_json(value: Any) -> Any:
@@ -106,6 +107,13 @@ def _has_answer_content(item: dict[str, Any]) -> bool:
     return answer_present or bool(attachments)
 
 
+def _exact_blank_match(expected: Any, actual: Any) -> bool:
+    expected_number, actual_number = _number(expected), _number(actual)
+    if expected_number is not None and actual_number is not None:
+        return math.isclose(expected_number, actual_number, rel_tol=1e-9, abs_tol=1e-9)
+    return bool(_normalized_text(expected)) and _normalized_text(expected) == _normalized_text(actual)
+
+
 def build_deterministic_grading_evidence(
     exam_scoring_json: Any,
     answers_json: Any,
@@ -156,7 +164,7 @@ def build_deterministic_grading_evidence(
         if not _has_answer_content(answer_item):
             fixed_score = 0.0
             reason = "blank_without_attachment"
-        elif question_type == "radio":
+        elif question_type in SINGLE_CHOICE_TYPES:
             fixed_score = points if _choice_token(actual, options) == _choice_token(expected, options) else 0.0
             reason = "exact_radio_match" if fixed_score == points else "wrong_radio_choice"
         elif question_type == "checkbox":
@@ -168,9 +176,19 @@ def build_deterministic_grading_evidence(
             else:
                 reason = "partial_or_wrong_checkbox_requires_rubric"
         elif question_type == "text":
-            expected_number = _number(expected)
-            actual_number = _number(actual)
-            if expected_number is not None and actual_number is not None:
+            blanks = question.get("blanks")
+            if isinstance(blanks, list) and blanks:
+                expected = [blank.get("answer", "") for blank in blanks if isinstance(blank, dict)]
+                expected_ids = [str(blank.get("id")) for blank in blanks if isinstance(blank, dict)]
+                actual_ids = answer_item.get("blank_ids")
+                ids_match = actual_ids is None or (isinstance(actual_ids, list) and [str(value) for value in actual_ids] == expected_ids)
+                if (ids_match and isinstance(actual, list) and len(actual) == len(expected)
+                        and all(_exact_blank_match(reference, value) for reference, value in zip(expected, actual))):
+                    fixed_score = points
+                    reason = "exact_numbered_blanks_match"
+                else:
+                    reason = "numbered_blanks_require_rubric"
+            elif (expected_number := _number(expected)) is not None and (actual_number := _number(actual)) is not None:
                 if math.isclose(expected_number, actual_number, rel_tol=1e-9, abs_tol=1e-9):
                     fixed_score = points
                     reason = "exact_numeric_match"

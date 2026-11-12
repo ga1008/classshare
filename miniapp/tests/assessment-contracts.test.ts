@@ -3,9 +3,24 @@ import {
   ASSESSMENT_FILTER_OPTIONS, assessmentLabel, canEnterAnswerMode, classroomGradeKey,
   hasAnswerSubmission, isFormalAssessment, matchesAssessmentKind, visibleTaskScore,
   assessmentNotificationTarget,
+  normalizeAssessmentAnswer, assessmentAnswerComplete, assessmentAnswerHasContent,
+  formatAssessmentAnswer, QUESTION_TYPE_LABELS,
 } from "../src/utils/assessment";
 
 describe("miniapp assessment and submission contracts", () => {
+  it("supports eight types and keeps numbered blank positions across draft reorder", () => {
+    expect(Object.keys(QUESTION_TYPE_LABELS)).toEqual(["radio", "checkbox", "boolean", "text", "textarea", "analysis", "code", "comprehensive"]);
+    const question = { type: "text", blanks: [{ id: "1" }, { id: "3" }] };
+    expect(normalizeAssessmentAnswer(question, ["return", ""], ["3", "1"])).toEqual(["", "return"]);
+    expect(normalizeAssessmentAnswer(question, "")).toEqual(["", ""]);
+    expect(assessmentAnswerComplete(question, ["", "return"])).toBe(false);
+    expect(assessmentAnswerHasContent(["", "return"])).toBe(true);
+    expect(assessmentAnswerHasContent(["", ""])).toBe(false);
+    expect(formatAssessmentAnswer(["", "return"], ["1", "3"])).toBe("（1）未作答\n（3）return");
+    expect(normalizeAssessmentAnswer({ type: "text" }, "one;two")).toBe("one;two");
+    expect(normalizeAssessmentAnswer({ type: "checkbox" }, ["A", "C"])).toBe("A|||C");
+  });
+
   it("keeps exactly three formal choices and does not infer purpose from paper format", () => {
     expect(ASSESSMENT_FILTER_OPTIONS.slice(1).map((item) => item.value)).toEqual(["homework", "midterm", "final"]);
     const paperHomework = { assessment_kind: "homework" as const, assessment_kind_label: "平时作业", has_exam_paper: true };

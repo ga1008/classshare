@@ -1,0 +1,13 @@
+/* Shared authored assessment content, including read-only paper/answer views. */
+.assessment-align-left { text-align: left; }
+.assessment-align-center { text-align: center; }
+.assessment-align-right { text-align: right; }
+/* Syntax colors identify source tokens; controls retain their shared LQ skin. */
+.assessment-code-keyword { color: hsl(var(--ls-primary)); font-weight: 600; }
+.assessment-code-string { color: hsl(var(--ls-tone-success-fg)); }
+.assessment-code-number { color: hsl(var(--ls-tone-warning-fg)); }
+.assessment-code-comment { color: hsl(var(--ls-ink-2)); font-style: italic; }
+.assessment-code-match { color: inherit; background: hsl(var(--ls-primary-soft)); text-decoration: underline; font-weight: 700; }
+@media (forced-colors: active) {
+    .assessment-code-match { outline: 1px solid Highlight; }
+}

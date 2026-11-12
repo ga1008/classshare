@@ -1478,3 +1478,6 @@ body.exam-page {
         min-width: min(84vw, 210px);
     }
 }
+.assessment-blank-fields { display: grid; gap: 1rem; }
+.assessment-blank-field { display: grid; gap: .5rem; min-width: 0; }
+.assessment-blank-field > textarea { width: 100%; }

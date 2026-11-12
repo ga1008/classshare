@@ -27,6 +27,9 @@
 .la-workflow-heading>.la-actions { margin-inline-start:auto; }
 .la-binding-target,.la-guidance,.la-school-workflow p { margin:0; overflow-wrap:anywhere; }
 .la-school-workflow .lq-progress { width:100%; }
+.la-settlement,.la-settlement-progress { display:grid; gap:.5rem; min-width:0; }
+.la-settlement p { margin:0; overflow-wrap:anywhere; }
+.la-settlement .lq-progress { width:100%; }
 .la-alignment { display:grid; gap:1rem; min-width:0; }
 .la-alignment p,.la-alignment h3 { margin:0; overflow-wrap:anywhere; }
 .la-alignment-comparison { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1rem; align-items:start; }

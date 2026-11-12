@@ -69,3 +69,47 @@ export function assessmentNotificationTarget(link: string, metadata: Record<stri
   if (teacher && submission) return `/pages/teacher-grade/index?id=${assignmentId}&sid=${submission[1]}`;
   return `/pages/${teacher ? "teacher-task" : "task-detail"}/index?id=${assignmentId}`;
 }
+
+export type AssessmentAnswer = string | string[];
+export interface AssessmentQuestionShape {
+  type: string;
+  blanks?: Array<{ id: string; placeholder?: string }>;
+}
+
+export const QUESTION_TYPE_LABELS: Record<string, string> = {
+  radio: "单选题", checkbox: "多选题", boolean: "判断题", text: "填空题",
+  textarea: "简答题", analysis: "分析题", code: "程序题", comprehensive: "综合题",
+};
+
+export function hasNumberedBlanks(question: AssessmentQuestionShape): boolean {
+  return question.type === "text" && Array.isArray(question.blanks) && question.blanks.length > 0;
+}
+
+export function normalizeAssessmentAnswer(question: AssessmentQuestionShape, value: unknown, blankIds?: string[]): AssessmentAnswer {
+  if (hasNumberedBlanks(question)) {
+    const values = Array.isArray(value) ? value.map((part) => typeof part === "string" ? part : "") : [typeof value === "string" ? value : ""];
+    const positions = Array.isArray(blankIds) ? new Map(blankIds.map((id, index) => [String(id), index])) : null;
+    return question.blanks!.map((blank, index) => {
+      const position = positions ? positions.get(String(blank.id)) ?? -1 : index;
+      return position < 0 ? "" : values[position] || "";
+    });
+  }
+  if (Array.isArray(value)) return value.map(String).join(question.type === "checkbox" ? "|||" : "\n");
+  return value === null || value === undefined ? "" : String(value);
+}
+
+export function assessmentAnswerHasContent(value: AssessmentAnswer | undefined): boolean {
+  return Array.isArray(value) ? value.some((part) => part.trim()) : Boolean(value?.trim());
+}
+
+export function assessmentAnswerComplete(question: AssessmentQuestionShape, value: AssessmentAnswer | undefined): boolean {
+  const normalized = normalizeAssessmentAnswer(question, value);
+  return Array.isArray(normalized) ? normalized.every((part) => Boolean(part.trim())) : Boolean(normalized.trim());
+}
+
+export function formatAssessmentAnswer(value: AssessmentAnswer | undefined, blankIds?: string[]): string {
+  if (Array.isArray(value)) {
+    return value.map((part, index) => `（${blankIds?.[index] || index + 1}）${part || "未作答"}`).join("\n");
+  }
+  return value || "（未作答）";
+}

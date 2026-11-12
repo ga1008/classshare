@@ -359,7 +359,9 @@ async def update_exam_paper(paper_id: str, request: Request, user: dict = Depend
         except (ValueError, TypeError) as exc:
             raise HTTPException(400, str(exc)) from exc
         description = str(data.get('description', paper.get('description')) or '')
-        grading_inputs_changed = questions_payload != previous_questions or description != str(paper.get('description') or '')
+        from ...services.assessment_ai_access import without_question_ai_permissions
+        grading_inputs_changed = (without_question_ai_permissions(questions_payload) != without_question_ai_permissions(previous_questions)
+                                  or description != str(paper.get('description') or ''))
         if grading_inputs_changed:
             if _count_exam_submissions(conn, paper_id) > 0 or _count_exam_drafts(conn, paper_id) > 0:
                 raise HTTPException(409, "试卷已有学生提交或草稿，不能原地修改题目、分值和评分标准；请创建新版本后再编辑。")

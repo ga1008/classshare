@@ -3,8 +3,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .assessment_question_contract import (
+    CHOICE_QUESTION_TYPES, LONG_ANSWER_TYPES, QUESTION_TYPE_LABELS,
+    TEXT_QUESTION_TYPES, VALID_QUESTION_TYPES, normalize_numbered_blanks,
+    normalize_question_type, numbered_blank_answer_text,
+)
 
-VALID_QUESTION_TYPES = {"radio", "checkbox", "text", "textarea"}
 EXAM_JSON_MAX_BYTES = 2 * 1024 * 1024
 
 GRADING_STYLE_LABELS = {
@@ -23,15 +27,14 @@ GRADING_STYLE_NOTES = {
 
 
 EXAM_JSON_TEMPLATE: dict[str, Any] = {
-    "title": "试卷标题",
-    "description": "试卷说明，可留空",
+    "title": "八题型示例试卷（请按课程目标改编）",
+    "description": "8题，共100分，建议45分钟，在lanshare平台提交。仅第8题可请AI解释思路，代码与验证由本人完成；附件可选。",
     "exam_config": {
         "allow_student_ai": False,
-        "ai_policy_note": "开放性实验、项目题或综合论述题可设为 true；客观闭卷题建议保持 false",
     },
     "grading": {
         "total_score": 100,
-        "description": "整卷按各题标准答案、关键步骤和附件要求综合评分；总分为每题 points 之和。",
+        "description": "逐题按得分点评分，题分合计100分。同一错误不重复扣分；等价正确方法可得对应分，未要求的附件不影响得分。",
         "style": "medium",
         "style_options": {
             "strict": "严格",
@@ -41,68 +44,128 @@ EXAM_JSON_TEMPLATE: dict[str, Any] = {
         },
     },
     "json_authoring_notes": [
-        "题干、选项、解析均支持简易 Markdown，例如 **重点**、`命令`、列表和 ```代码块```。",
+        "2026-11-12版；示例用于说明八题型合同，不要求每份课程作业凑齐八型。请替换题目、答案、分值与评分点后再使用。",
+        "题干、选项、答案、解析使用 Markdown；代码用带语言名的围栏，如 ```python。不要嵌入脚本、HTML表单或编辑器内部标记。",
         "Markdown 中的反斜杠、双引号和换行必须保持合法 JSON 转义；推荐先让第三方 AI 输出 JSON，再用 JSON 校验器检查。",
-        "如果某题允许学生答题时使用课堂 AI，可在题目上写 allow_ai: true；也可以只在 exam_config.allow_student_ai 开启整卷允许。",
-        "附件要求只应写在 textarea 问答题里；min_count 大于 0 会被视为必传附件并在学生端显示必传标记。",
+        "整卷 exam_config.allow_student_ai 默认为 false，仅确需协助的开放题设置 allow_ai: true；整卷 true 将允许全部题，题级 false 不会收回整卷授权。AI仍须通过服务端的发布状态、作答时间、学生权限与提交状态校验。",
+        "题型：radio 单选、checkbox 多选、boolean 判断、text 填空、textarea 简答、analysis 分析、code 程序、comprehensive 综合。",
+        "新填空题使用 {{1}}、{{2}} 等编号与 blanks 数组一一对应；每个正整数id只出现一次，可不连续。answer是按blanks顺序排列的答案数组，不是同义答案列表。删除空位不重排其他id，数量按题目需要动态确定。",
+        "附件要求适用于 textarea、analysis、code、comprehensive；min_count 大于 0 会被视为必传附件并在学生端显示必传标记。",
         "导入 JSON 必须包含 grading.total_score、grading.description、grading.style，以及每题 answer、points、grading_guidance、deduction_points；points 合计必须等于 total_score。",
     ],
     "pages": [
         {
-            "name": "第一部分",
+            "name": "基础理解（30分）",
             "questions": [
                 {
                     "id": "p1_q1",
                     "type": "radio",
-                    "text": "单选题题干",
-                    "options": ["A. 选项一", "B. 选项二", "C. 选项三", "D. 选项四"],
-                    "answer": "A",
-                    "explanation": "解析说明，可留空",
-                    "points": 10,
-                    "grading_guidance": "选 A 得满分；答案等价表达可视为正确。",
-                    "deduction_points": "选错不得分；多写无关内容不加分。",
+                    "text": "（5分）表达式 `len([10, 20, 30])` 的值是多少？",
+                    "options": ["A. 1", "B. 2", "C. 3", "D. 30"],
+                    "answer": "C",
+                    "explanation": "len返回列表元素个数，该列表含3个元素。",
+                    "points": 5,
+                    "grading_guidance": "选C得5分。",
+                    "deduction_points": "错选或未答得0分。",
                 },
                 {
                     "id": "p1_q2",
                     "type": "checkbox",
-                    "text": "多选题题干",
-                    "options": ["A. 选项一", "B. 选项二", "C. 选项三", "D. 选项四"],
+                    "text": "（10分，多选）哪些表达式的值是 `True`？全选且无错选得10分；无错选时，每选对一项得5分；有错选得0分。",
+                    "options": ["A. `2 < 3`", "B. `3 == 4`", "C. `5 >= 5`", "D. `1 > 2`"],
                     "answer": ["A", "C"],
-                    "explanation": "解析说明，可留空",
-                    "points": 20,
-                    "grading_guidance": "A、C 全选且无错选得满分；漏选或错选按扣分点处理。",
-                    "deduction_points": "漏选一个正确项扣 50%；错选无关项最多得一半；关键项全错不得分。",
+                    "explanation": "2小于3，5等于5，因此A、C为True。",
+                    "points": 10,
+                    "grading_guidance": "A、C全选且无错选得10分；无错选时每个正确项5分；有错选得0分。",
+                    "deduction_points": "无错选时每漏一项扣5分；有错选得0分。",
                 },
                 {
                     "id": "p1_q3",
-                    "type": "text",
-                    "text": "填空题题干",
-                    "placeholder": "请输入简短答案",
-                    "answer": "参考答案",
-                    "explanation": "解析说明，可留空",
-                    "points": 20,
-                    "grading_guidance": "答案与参考答案含义一致得满分；大小写、同义词等按学科规则酌情接受。",
-                    "deduction_points": "核心概念错误不得分；仅格式瑕疵可少量扣分。",
+                    "type": "boolean",
+                    "text": "（5分）判断：Python列表中的元素可以被修改。",
+                    "options": ["A. 正确", "B. 错误"],
+                    "answer": "A",
+                    "explanation": "列表是可变对象，可通过索引赋值修改元素。",
+                    "points": 5,
+                    "grading_guidance": "选A得5分。",
+                    "deduction_points": "错选或未答得0分。",
                 },
                 {
                     "id": "p1_q4",
+                    "type": "text",
+                    "text": "（10分）Python定义函数使用关键字 {{1}}，从函数返回结果使用关键字 {{2}}。",
+                    "blanks": [
+                        {"id": "1", "answer": "def", "placeholder": "填写定义关键字"},
+                        {"id": "2", "answer": "return", "placeholder": "填写返回关键字"},
+                    ],
+                    "answer": ["def", "return"],
+                    "explanation": "def定义函数，return结束函数并返回结果。",
+                    "points": 10,
+                    "grading_guidance": "编号1答def得5分，编号2答return得5分；按编号分别计分。",
+                    "deduction_points": "每空错答或空缺扣该空5分，不影响另一空。",
+                },
+            ],
+        },
+        {
+            "name": "解释与分析（25分）",
+            "questions": [
+                {
+                    "id": "p2_q1",
                     "type": "textarea",
-                    "text": "### 问答题题干\n请结合实验现象说明：\n\n- 关键步骤\n- 结果截图或代码片段\n- 你对异常情况的分析",
-                    "placeholder": "请写出完整作答过程",
-                    "answer": "参考答案",
-                    "explanation": "解析说明，可留空",
-                    "points": 50,
-                    "grading_guidance": "围绕参考答案中的关键步骤、结论和证据评分；能用附件支撑过程可计入得分点。",
-                    "deduction_points": "缺少关键步骤、结论错误、证据与题目无关或未满足附件要求时按比例扣分。",
-                    "allow_ai": False,
+                    "text": "（10分）以计算两数之和为例，分别说明程序的输入、处理和输出是什么。请分点回答。",
+                    "placeholder": "按输入、处理、输出说明",
+                    "answer": "1. 输入：两个待相加的数。\n2. 处理：执行加法，得到两数之和。\n3. 输出：显示计算结果，例如输入2和3，输出5。",
+                    "explanation": "输入提供数据，处理完成计算，输出呈现结果。",
+                    "points": 10,
+                    "grading_guidance": "说明输入3分；说明加法处理3分；说明输出并举正确结果4分。",
+                    "deduction_points": "缺失或错误仅扣对应得分点，同项不重复扣分。",
+                },
+                {
+                    "id": "p2_q2",
+                    "type": "analysis",
+                    "text": "（15分）阅读代码，写出输出结果，并解释变量之间的关系和列表发生变化的原因。\n\n```python\nnumbers = [2, 4]\nalias = numbers\nalias.append(6)\nprint(numbers)\n```",
+                    "placeholder": "先写结果，再说明原因",
+                    "answer": "输出为 `[2, 4, 6]`。`alias`与`numbers`引用同一个列表，赋值没有复制列表。`append(6)`原地修改该列表，因此通过numbers也能看到新元素。",
+                    "explanation": "变量别名共享同一个可变列表。",
+                    "points": 15,
+                    "grading_guidance": "输出正确5分；解释共享同一列表5分；解释append原地修改5分。",
+                    "deduction_points": "各得分点独立计分；只写结果最多5分。",
+                },
+            ],
+        },
+        {
+            "name": "编程与综合（45分）",
+            "questions": [
+                {
+                    "id": "p3_q1",
+                    "type": "code",
+                    "text": "（20分）编写函数 `total_even(values)`，接收整数列表，返回其中所有偶数之和；空列表返回0。提交完整Python代码，并记录 `[1, 2, 3, 4]`、`[]`、`[-2, 3, 4]` 三组测试结果。可使用代码块，不要求附件。",
+                    "placeholder": "插入代码块并写出测试结果",
+                    "answer": "```python\ndef total_even(values):\n    total = 0\n    for value in values:\n        if value % 2 == 0:\n            total += value\n    return total\n```\n\n三组测试依次返回 `6`、`0`、`2`。",
+                    "explanation": "从0开始累加偶数，空列表不会进入循环，结果仍为0。",
+                    "points": 20,
+                    "grading_guidance": "函数参数与返回4分；遍历4分；偶数判断4分；累加与空列表4分；三组测试均正确4分（前两组各1分，负数组2分）。",
+                    "deduction_points": "只扣对应错误点；等价正确实现同分，不按代码长度扣分。",
+                },
+                {
+                    "id": "p3_q2",
+                    "type": "comprehensive",
+                    "text": "（25分）某活动四场报名人数为 `[12, 8, 15, 5]`。请完成以下任务：\n\n1. 计算原总人数和单场最多人数。\n2. 新增一场20人，写代码更新列表并重新统计。\n3. 记录更新后的场次数、总人数和最多人数，说明怎样核对结果。\n4. 解释append对原列表的影响。\n\n可附运行图；若环境无法运行，写出手工追踪过程和遇到的问题。",
+                    "placeholder": "按四项任务组织文字与代码",
+                    "answer": "1. 原总人数40，最多15人。\n2. 示例代码：\n\n```python\ncounts = [12, 8, 15, 5]\ncounts.append(20)\nprint(len(counts), sum(counts), max(counts))\n```\n\n3. 输出 `5 60 20`；场次增加1，总人数增加20，最多人数变为20，可分别手算核对。\n4. append原地追加元素，原列表变为 `[12, 8, 15, 5, 20]`。",
+                    "explanation": "综合核对列表更新、统计结果和操作影响，手工追踪也应与代码一致。",
+                    "points": 25,
+                    "grading_guidance": "原总数与最大值各2.5分；追加与重新统计代码8分；三个新结果各2分、核对方法2分；解释原地修改4分。无运行环境时以正确手工追踪替代运行证据，不重复加分。",
+                    "deduction_points": "缺失或错误扣对应分；附件可选，未上传不扣分。",
+                    "allow_ai": True,
                     "attachment_requirements": {
                         "enabled": True,
                         "required": False,
                         "min_count": 0,
-                        "max_count": 3,
-                        "allowed_file_types": [".png", ".jpg", ".pdf", ".py", ".txt"],
+                        "max_count": 1,
+                        "allowed_file_types": [".png", ".jpg", ".txt"],
                         "allow_drawing": True,
-                        "description": "可选：如实验截图、代码文件或报告；不需要时可省略该字段",
+                        "description": "可选：1张运行图或1份文字记录；不上传不扣分。",
                     },
                 },
             ],
@@ -237,7 +300,9 @@ def _normalize_question(raw_question: Any, page_index: int, question_index: int,
 
     question_type = _normalize_question_type(raw_question.get("type") or raw_question.get("question_type") or raw_question.get("题型"))
     options = _coerce_options(raw_question.get("options") or raw_question.get("choices") or raw_question.get("选项"))
-    if question_type in {"radio", "checkbox"} and len(options) < 2:
+    if question_type == "boolean" and not options:
+        options = ["正确", "错误"]
+    if question_type in CHOICE_QUESTION_TYPES and len(options) < 2:
         raise ValueError(f"第 {total_index} 题是选择题，至少需要 2 个选项。")
 
     text = _first_text(raw_question, ("text", "question", "question_text", "title", "stem", "content", "题目", "题干"))
@@ -256,7 +321,7 @@ def _normalize_question(raw_question: Any, page_index: int, question_index: int,
     question["answer"] = answer
     question["explanation"] = _first_text(question, ("explanation", "analysis", "解析"))
 
-    if question_type in {"text", "textarea"}:
+    if question_type in TEXT_QUESTION_TYPES:
         placeholder = _first_text(question, ("placeholder", "hint", "提示"))
         if placeholder:
             question["placeholder"] = placeholder
@@ -280,21 +345,11 @@ def _normalize_question(raw_question: Any, page_index: int, question_index: int,
         question.pop("allow_ai", None)
         question.pop("allow_student_ai", None)
         question.pop("ai_allowed", None)
-    return question
+    return normalize_numbered_blanks(question)
 
 
 def _normalize_question_type(raw_type: Any) -> str:
-    normalized = str(raw_type or "").strip().lower().replace("-", "_").replace(" ", "_")
-    aliases = {
-        "radio": {"radio", "single", "single_choice", "choice", "单选", "单选题", "选择题"},
-        "checkbox": {"checkbox", "multiple", "multi", "multiple_choice", "multi_choice", "多选", "多选题"},
-        "text": {"text", "fill", "fill_blank", "blank", "completion", "填空", "填空题"},
-        "textarea": {"textarea", "essay", "short_answer", "qa", "question_answer", "问答", "问答题", "简答", "简答题", "主观题", "论述题"},
-    }
-    for canonical, values in aliases.items():
-        if normalized in values:
-            return canonical
-    raise ValueError(f"不支持的题型：{raw_type!s}。题型必须是 radio、checkbox、text 或 textarea。")
+    return normalize_question_type(raw_type)
 
 
 def _coerce_options(raw_options: Any) -> list[str]:
@@ -360,7 +415,7 @@ def _coerce_allowed_file_types(raw_value: Any) -> list[str]:
 
 
 def _normalize_attachment_requirements(raw_question: dict[str, Any], question_type: str) -> dict[str, Any] | None:
-    if question_type != "textarea":
+    if question_type not in LONG_ANSWER_TYPES:
         return None
 
     raw = (
@@ -422,6 +477,10 @@ def _normalize_answer(raw_question: dict[str, Any], question_type: str) -> Any:
     else:
         raw_answer = raw_question.get("correct_answer", raw_question.get("correctAnswer", raw_question.get("答案", "")))
 
+    if question_type == "text" and "blanks" in raw_question and isinstance(raw_answer, list):
+        return ["" if item is None else str(item).strip() for item in raw_answer]
+    if question_type == "boolean" and isinstance(raw_answer, bool):
+        return "正确" if raw_answer else "错误"
     if question_type == "checkbox":
         if isinstance(raw_answer, list):
             return [str(item).strip() for item in raw_answer if str(item).strip()]
@@ -500,6 +559,19 @@ def normalize_exam_scoring_payload(
             question = dict(raw_question)
             question_id = str(question.get("id") or f"p{page_index}_q{question_index}").strip()
             question_type = str(question.get("type") or "").strip().lower()
+            if question_type:
+                try:
+                    question_type = normalize_question_type(question_type)
+                    question["type"] = question_type
+                except ValueError as exc:
+                    if require_complete:
+                        errors.append(str(exc))
+            try:
+                question = normalize_numbered_blanks(question, require_complete=require_complete)
+            except ValueError as exc:
+                if not require_complete:
+                    raise
+                errors.append(f"第 {question_count} 题（{question_id}）：{exc}")
             raw_q_grading = question.get("grading") if isinstance(question.get("grading"), dict) else {}
 
             points = _coerce_score(
@@ -644,7 +716,7 @@ def build_exam_rubric_md(
                 continue
             question_type = str(question.get("type") or "").strip().lower()
             points = _coerce_score(_first_existing(question.get("grading") if isinstance(question.get("grading"), dict) else {}, question, keys=("points", "score", "max_score")))
-            answer_text = _answer_to_text(question.get("answer"))
+            answer_text = numbered_blank_answer_text(question, question.get("answer")) or _answer_to_text(question.get("answer"))
             guidance = _first_text_multi(
                 question.get("grading") if isinstance(question.get("grading"), dict) else {},
                 question,
@@ -715,19 +787,17 @@ def strip_exam_scoring_for_student(exam_data: dict[str, Any]) -> dict[str, Any]:
                 "score_points",
             ):
                 question.pop(key, None)
+            if isinstance(raw_question.get("blanks"), list):
+                # Nested answer metadata must never cross the student boundary.
+                question["blanks"] = [
+                    {key: blank[key] for key in ("id", "placeholder") if key in blank}
+                    for blank in raw_question["blanks"] if isinstance(blank, dict)
+                ]
             questions.append(question)
         page["questions"] = questions
         pages.append(page)
     safe["pages"] = pages
     return safe
-
-
-QUESTION_TYPE_LABELS = {
-    "radio": "单选题",
-    "checkbox": "多选题",
-    "text": "填空题",
-    "textarea": "问答题",
-}
 
 
 def _first_existing(*sources: dict[str, Any], keys: tuple[str, ...]) -> Any:

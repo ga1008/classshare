@@ -122,6 +122,13 @@ def begin_request(conn, session_uuid, user, request_id, message, attachments, fi
             for image in image_uploads
         ]}
     fingerprint = hashlib.sha256(json.dumps(fingerprint_payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    assessment_scope = fingerprint_payload.get('assessment_scope')
+    if assessment_scope:
+        # Keep the existing TEXT field and ordinary fingerprints unchanged.
+        # The server supplies this scope; clients never select the history filter.
+        if not isinstance(assessment_scope, str) or len(assessment_scope) != 64 or any(char not in '0123456789abcdef' for char in assessment_scope):
+            raise HTTPException(400, '考试协助范围无效')
+        fingerprint = f'assessment:{assessment_scope}:{fingerprint}'
     previous = conn.execute('''SELECT status,request_fingerprint FROM ai_workspace_messages
                                WHERE session_id=? AND request_id=? AND role='user' ''',
                             (session['id'], request_id)).fetchone()
@@ -187,10 +194,17 @@ def finish_request(conn, session_id, request_id, user, answer, thinking='', *, s
     return True
 
 
-def ai_history(conn, session_id, request_id):
-    rows = conn.execute('''SELECT role,message,final_answer FROM ai_workspace_messages
-        WHERE session_id=? AND request_id<>? AND status='completed' ORDER BY id DESC LIMIT 40''',
-                        (session_id, request_id)).fetchall()
+def ai_history(conn, session_id, request_id, *, assessment_scope=None):
+    params = [session_id, request_id]
+    scope_filter = ''
+    if assessment_scope:
+        scope_filter = '''AND EXISTS (SELECT 1 FROM ai_workspace_messages source
+            WHERE source.session_id=m.session_id AND source.request_id=m.request_id AND source.role='user'
+              AND source.request_fingerprint LIKE ?)'''
+        params.append(f'assessment:{assessment_scope}:%')
+    rows = conn.execute(f'''SELECT m.role,m.message,m.final_answer FROM ai_workspace_messages m
+        WHERE m.session_id=? AND m.request_id<>? AND m.status='completed' {scope_filter}
+        ORDER BY m.id DESC LIMIT 40''', params).fetchall()
     # Explicit budget keeps long-lived user conversations cheap and bounded.
     messages, size = [], 0
     for row in rows:

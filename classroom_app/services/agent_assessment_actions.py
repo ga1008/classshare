@@ -12,7 +12,7 @@ ACTION_DEFINITIONS = {
                    "questions": {"type": "json_object", "required": True, "max_bytes": 180000},
                    "config": {"type": "json_object", "max_bytes": 12000},
                    "scope_level": {"type": "str", "max_chars": 20}},
-        "description": "创建本人试卷草稿或新的试卷版本；questions 为原生对象：pages 数组中的 questions 包含 id/type/text/answer/points/grading_guidance/deduction_points，type 为 radio/checkbox/text/textarea，选择题另含 options 数组；根 grading 包含 total_score/description/style，style 为 strict/medium/loose/rescue。保留正常导入格式，布置前必须通过完整评分标准校验。scope_level 为 private/department/school，默认 private；仅创建草稿，不等于布置。",
+        "description": "创建本人试卷草稿或新的试卷版本；questions 为原生对象：pages 数组中的 questions 包含 id/type/text/answer/points/grading_guidance/deduction_points，type 为 radio/checkbox/boolean/text/textarea/analysis/code/comprehensive，选择题另含 options 数组；新填空题 text 用 {{1}} 等编号，blanks 数组每项含 id/answer，顶层 answer 为对应顺序数组；根 grading 包含 total_score/description/style，style 为 strict/medium/loose/rescue。保留正常导入格式，布置前必须通过完整评分标准校验。scope_level 为 private/department/school，默认 private；仅创建草稿，不等于布置。",
     },
     "update_unassigned_exam_paper": {
         "label": "修改未布置试卷", "done_label": "已修改试卷草稿", "risk": "medium", "execution_mode": "execute", "roles": ["teacher"],

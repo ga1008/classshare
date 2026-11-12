@@ -28,6 +28,7 @@ from .assessment_plan_generation_service import find_teacher_own_signature_id
 from . import signature_service, signature_workflow_service
 from .academic_class_mapping_service import resolve_teaching_class_display_name_from_candidates
 from .exam_json_service import normalize_exam_scoring_payload
+from .assessment_question_contract import LONG_ANSWER_TYPES, QUESTION_TYPE_LABELS, numbered_blank_answer_text
 from .file_service import global_file_write_path
 from .material_identity_service import build_final_material_package_name
 from .material_ai_import_service import (
@@ -531,7 +532,7 @@ def _extract_exam_questions(exam_data: dict[str, Any]) -> list[dict[str, Any]]:
             )
             if raw_points <= 0:
                 raw_points = 1.0
-            answer_text = _answer_to_text(question.get("answer"))
+            answer_text = numbered_blank_answer_text(question, question.get("answer")) or _answer_to_text(question.get("answer"))
             attachment = _as_dict(question.get("attachment_requirements"))
             result.append(
                 {
@@ -775,7 +776,7 @@ def _infer_assessment_method(paper: dict[str, Any], questions: list[dict[str, An
     )
     if re.search(r"机试|实验|实训|配置|命令|部署|截图|拓扑|网络|附件|提交|报告|项目|操作", source, re.IGNORECASE):
         return "机试"
-    if any(str(item.get("type") or "") == "textarea" for item in questions):
+    if any(str(item.get("type") or "") in LONG_ANSWER_TYPES for item in questions):
         return "机试"
     return "闭卷笔试"
 
@@ -1594,12 +1595,7 @@ def _score_text(value: Any) -> str:
 
 
 def _question_type_label(value: Any) -> str:
-    return {
-        "radio": "单选题",
-        "checkbox": "多选题",
-        "text": "填空题",
-        "textarea": "问答/实操题",
-    }.get(_text(value), _text(value) or "题目")
+    return QUESTION_TYPE_LABELS.get(_text(value), _text(value) or "题目")
 
 
 def _answer_to_text(value: Any) -> str:

@@ -4,6 +4,8 @@ from ...services.score_projection_service import load_submission_score_facts
 from ...services.submission_write_guard import submission_write_version
 from ...services.ordinary_grade_record_service import ordinary_grade_assignment_kind_info
 from ...services.exam_paper_management_service import exam_paper_revision
+from ...services.assessment_question_contract import CHOICE_QUESTION_TYPES, TEXT_QUESTION_TYPES
+from ...services.ai_workspace_policy import ensure_ai_workspace_access
 
 
 router = APIRouter()
@@ -44,8 +46,8 @@ async def manage_exams_page(request: Request, user: dict = Depends(get_current_t
                     pass
 
         question_types = set(type_counts)
-        objective_types = {"radio", "checkbox"}
-        subjective_types = {"text", "textarea"}
+        objective_types = CHOICE_QUESTION_TYPES
+        subjective_types = TEXT_QUESTION_TYPES
         if question_count == 0:
             profile = "empty"
         elif question_types and question_types <= objective_types:
@@ -265,13 +267,14 @@ def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(ge
             raise HTTPException(404, "试卷不存在")
         paper_dict = dict(paper)
         paper_data = _load_json_object(paper_dict.get("questions_json"))
-        exam_config = _load_json_object(paper_dict.get("exam_config_json"))
-        exam_ai_allowed = (
-            user["role"] == "student"
-            and bool(assignment.get("class_offering_id"))
-            and _exam_allows_student_ai(paper_data, exam_config)
-        )
-        exam_ai_context = _build_exam_ai_context(assignment, paper_dict, paper_data) if exam_ai_allowed else ""
+        exam_ai_access = None
+        if user['role'] == 'student':
+            try:
+                exam_ai_access = ensure_ai_workspace_access(conn, user, request)
+            except HTTPException as exc:
+                if exc.status_code != 403:
+                    raise
+            request.state.exam_ai_access = exam_ai_access
         if user["role"] == "student":
             paper_dict["questions_json"] = json.dumps(strip_exam_scoring_for_student(paper_data), ensure_ascii=False)
 
@@ -373,8 +376,7 @@ def exam_take_page(request: Request, assignment_id: str, user: dict = Depends(ge
         "absence_grade": absence_grade,
         "submission_version": submission_write_version(submission or absence_grade),
         "submission_files": submission_files,
-        "exam_ai_allowed": exam_ai_allowed,
-        "exam_ai_context": exam_ai_context,
+        "exam_ai_access": exam_ai_access,
         "can_withdraw_submission": can_withdraw_submission,
         "can_resubmit_submission": can_resubmit_submission,
         "submission_returned": submission_returned,

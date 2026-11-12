@@ -5,6 +5,7 @@
 {% block css %}
 <link rel="stylesheet" href="{{ asset_url('css/submission_detail.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/assessment-appeal.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/assessment-editor.css') }}">
 {% endblock %}
 
 {% block body_class %}page-wrapper submission-detail-page{% endblock %}
@@ -366,6 +367,8 @@
     import '{{ asset_url("js/ls_image_lightbox.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
     import { setupSubmissionGrading } from '{{ asset_url("js/submission_grading.js") }}';
+    import { renderAssessmentMarkdown, attachAutosize } from '{{ asset_url("js/assessment_editor.js") }}';
+    import { answerDisplayText, answerHasText, questionBlanks, questionTextForDisplay, QUESTION_TYPE_LABELS, normalizeQuestionType } from '{{ asset_url("js/assessment_questions.js") }}';
     import {
         findQuestionFeedback,
         parseGradingFeedback,
@@ -438,7 +441,7 @@
         return `
             <div class="q-title">
                 <span class="q-title-number">${index}</span>
-                <div class="q-title-copy md-content">${renderMarkdownHtml(questionText)}</div>
+                <div class="q-title-copy md-content">${renderAssessmentMarkdown(questionText)}</div>
             </div>
         `;
     }
@@ -449,6 +452,8 @@
     }
 
     function isOptionSelected(answerText, option) {
+        if (Array.isArray(answerText)) return answerText.some(value => isOptionSelected(value, option));
+        if (answerText && typeof answerText === 'object') return isOptionSelected(answerText.answer ?? answerText.text ?? answerText.content ?? '', option);
         const answer = String(answerText || '').trim();
         const target = String(option || '').trim();
         if (!answer || !target) return false;
@@ -684,10 +689,11 @@
     /** Extract a scalar answer value from any storage format */
     function extractAnswerText(value) {
         if (value == null || value === '') return null;
+        if (Array.isArray(value)) return answerHasText(value) ? value.join('\n\n') : '';
         if (typeof value !== 'object') return String(value);
         // Array-format items: {question_id, question, answer}
         const scalar = value.answer ?? value.content ?? value.text;
-        if (scalar != null) return String(scalar);
+        if (scalar != null) return extractAnswerText(scalar);
         if (Array.isArray(value.attachments) && value.attachments.length) return '';
         return String(JSON.stringify(value));
     }
@@ -787,13 +793,14 @@
     function renderQuestionCard(q, studentAnswer, index) {
         const answerText = extractAnswerText(studentAnswer);
         let html = `<div data-lq-component="surface" class="lq-surface question-card" id="submission-q-${index}" data-question-index="${index}" data-question-id="${escapeHtml(String(q.id || ''))}">`;
-        html += renderQuestionTitle(q.text, index);
+        html += `<span class="text-sm text-muted">${escapeHtml(QUESTION_TYPE_LABELS[normalizeQuestionType(q.type)] || '题目')}</span>`;
+        html += renderQuestionTitle(questionTextForDisplay(q), index);
 
         // Render options for radio/checkbox questions
         if (q.options && Array.isArray(q.options)) {
             html += `<ul class="q-options">`;
             q.options.forEach(opt => {
-                const isSelected = isOptionSelected(answerText, opt);
+                const isSelected = isOptionSelected(studentAnswer, opt);
                 html += `<li class="${isSelected ? 'selected' : ''}">`;
                 html += `<span class="md-content">${renderMarkdownHtml(opt)}</span></li>`;
             });
@@ -803,7 +810,9 @@
         html += `<div class="q-answer-label">学生答案</div>`;
 
         if (answerText != null && answerText !== '') {
-            html += `<div class="q-content">${formatAnswer(studentAnswer)}</div>`;
+            const value = studentAnswer && !Array.isArray(studentAnswer) && typeof studentAnswer === 'object'
+                ? studentAnswer.answer ?? studentAnswer.content ?? studentAnswer.text ?? '' : studentAnswer;
+            html += `<div class="q-content">${questionBlanks(q).length ? renderAssessmentMarkdown(answerDisplayText(q, value, studentAnswer?.blank_ids)) : formatAnswer(studentAnswer)}</div>`;
         } else {
             html += `<div class="q-content"><span class="empty-answer">(未作答)</span></div>`;
         }
@@ -838,10 +847,10 @@
     function formatAnswer(value) {
         const text = extractAnswerText(value);
         if (!text) return '<span class="empty-answer">(未作答)</span>';
-        const isCode = text.includes('\n') && (text.includes('def ') || text.includes('import ') ||
-            text.includes('function ') || text.includes('class ') || text.includes('```'));
+        const isCode = !text.includes('```') && text.includes('\n') && (text.includes('def ') || text.includes('import ') ||
+            text.includes('function ') || text.includes('class '));
         if (isCode) return `<pre><code>${escapeHtml(text)}</code></pre>`;
-        return `<div class="md-content">${renderMarkdownHtml(text)}</div>`;
+        return `<div class="md-content">${renderAssessmentMarkdown(text)}</div>`;
     }
 
     const previewCache = new Map();
@@ -1113,6 +1122,7 @@
         setupInitialQuestionFocus();
         initSubmissionPreview();
         initTeacherAttachmentManager();
+        document.querySelectorAll('textarea').forEach(textarea => attachAutosize(textarea));
     });
 </script>
 {% if user_info.role == 'teacher' %}

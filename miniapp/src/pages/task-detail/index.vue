@@ -21,7 +21,10 @@ import { ensurePageSession, redirectToLogin } from "../../utils/session";
 import { taskDraftKey, remainingAt, TaskWriteQueue } from "../../utils/task-submission";
 import { previewProtectedFile } from "../../utils/preview";
 import { requestSubscribe } from "../../utils/subscribe";
-import { assessmentLabel, isFormalAssessment, hasAnswerSubmission, canEnterAnswerMode, visibleTaskScore, type AssessmentClassification, type SubmissionPresence } from "../../utils/assessment";
+import { assessmentLabel, isFormalAssessment, hasAnswerSubmission, canEnterAnswerMode, visibleTaskScore,
+  QUESTION_TYPE_LABELS, hasNumberedBlanks, normalizeAssessmentAnswer, assessmentAnswerHasContent,
+  assessmentAnswerComplete, formatAssessmentAnswer,
+  type AssessmentAnswer, type AssessmentClassification, type SubmissionPresence } from "../../utils/assessment";
 
 interface Question {
   id: string;
@@ -29,7 +32,11 @@ interface Question {
   text: string;
   options?: string[];
   placeholder?: string;
+  blanks?: Array<{ id: string; placeholder?: string }>;
+  attachment_requirements?: { enabled?: boolean; required?: boolean; min_count?: number; description?: string };
 }
+
+interface AnswerEntry { question_id?: string; question?: string; answer?: AssessmentAnswer; blank_ids?: string[] }
 
 interface DraftFile {
   id: number;
@@ -76,7 +83,7 @@ interface DetailData {
     returned_at?: string;
     returned_reason?: string;
     resubmission_due_at?: string;
-    answers: Array<{ question_id?: string; question?: string; answer?: string }>;
+    answers: AnswerEntry[];
     files: Array<{
       id: number;
       file_name: string;
@@ -108,7 +115,7 @@ const detail = ref<DetailData | null>(null);
 const loading = ref(true);
 const failed = ref(false);
 const errorMessage = ref("");
-const answers = reactive<Record<string, string>>({});
+const answers = reactive<Record<string, AssessmentAnswer>>({});
 const questionFiles = reactive<Record<string, DraftFile[]>>({});
 /** 本会话刚上传文件的本地临时路径（服务器下载需鉴权头，image 组件带不了） */
 const localPreview = reactive<Record<string, string>>({});
@@ -159,7 +166,7 @@ const isAnswerMode = computed(
 );
 
 const answeredCount = computed(
-  () => allQuestions.value.filter((q) => (answers[q.id] || "").trim() || questionFiles[q.id]?.length).length,
+  () => allQuestions.value.filter((q) => assessmentAnswerComplete(q, answers[q.id]) || questionFiles[q.id]?.length).length,
 );
 
 /** 组员互评（20 分制）本地评分表 */
@@ -251,32 +258,33 @@ const countdownLabel = computed(() => {
 });
 
 function isChoice(q: Question): boolean {
-  return q.type === "radio" || q.type === "checkbox";
+  return q.type === "radio" || q.type === "boolean" || q.type === "checkbox";
 }
 
 /** 本端能作答的题型；其余（含未来新增）显式提示去网页端，不再静默退化成文本框。 */
-const SUPPORTED_QUESTION_TYPES = new Set(["radio", "checkbox", "text", "textarea", "attachment"]);
+const SUPPORTED_QUESTION_TYPES = new Set([...Object.keys(QUESTION_TYPE_LABELS), "attachment"]);
 
 function isSupportedQuestion(q: Question): boolean {
   return SUPPORTED_QUESTION_TYPES.has(q.type);
 }
 
 function isAttachmentQuestion(q: Question): boolean {
-  return q.type === "attachment";
+  return q.type === "attachment" || Boolean(q.attachment_requirements &&
+    (q.attachment_requirements.enabled !== false || q.attachment_requirements.required));
 }
 
 const unsupportedQuestions = computed<Question[]>(() => allQuestions.value.filter((q) => !isSupportedQuestion(q)));
 
 function checkboxSelected(q: Question, option: string): boolean {
-  return (answers[q.id] || "").split(CHECKBOX_SEP).includes(option);
+  return String(answers[q.id] || "").split(CHECKBOX_SEP).includes(option);
 }
 
 function tapOption(q: Question, option: string): void {
   if (!isAnswerMode.value || controlsLocked.value) return;
-  if (q.type === "radio") {
+  if (q.type === "radio" || q.type === "boolean") {
     answers[q.id] = answers[q.id] === option ? "" : option;
   } else {
-    const current = (answers[q.id] || "").split(CHECKBOX_SEP).filter(Boolean);
+    const current = String(answers[q.id] || "").split(CHECKBOX_SEP).filter(Boolean);
     const next = current.includes(option)
       ? current.filter((item) => item !== option)
       : [...current, option];
@@ -293,7 +301,8 @@ function buildAnswersJson(): string {
         question_id: q.id,
         question: q.text,
         type: q.type || "",
-        answer: answers[q.id] || "",
+        answer: normalizeAssessmentAnswer(q, answers[q.id]),
+        ...(hasNumberedBlanks(q) ? { blank_ids: q.blanks!.map((blank) => String(blank.id)) } : {}),
         attachments: (questionFiles[q.id] || []).map((file) => ({
           kind: file.kind || (file.is_image ? "image" : "file"),
           file_name: file.file_name,
@@ -316,7 +325,8 @@ function saveLocalDraft(): void {
   if (!ownsPage() || !localDraftKey.value || !isAnswerMode.value || submitConfirmed.value) return;
   try {
     uni.setStorageSync(localDraftKey.value, {
-      answers: { ...answers },
+      answers: Object.fromEntries(Object.entries(answers).map(([id, value]) => [id, Array.isArray(value) ? [...value] : value])),
+      blank_ids: Object.fromEntries(allQuestions.value.filter(hasNumberedBlanks).map((q) => [q.id, q.blanks!.map((blank) => String(blank.id))])),
       plain: plainAnswer.value,
       saved_at: new Date(Date.now() + serverClockOffset).toISOString(),
       pending_submission_version: pendingSubmissionVersion.value,
@@ -333,12 +343,14 @@ function saveLocalDraft(): void {
 }
 
 function restoreFromAnswersList(
-  list: Array<{ question_id?: string; question?: string; answer?: string }>,
+  list: AnswerEntry[],
 ): void {
+  const byId = new Map(allQuestions.value.map((q) => [String(q.id), q]));
   for (const item of list) {
     const qid = String(item.question_id || "");
     if (qid) {
-      answers[qid] = String(item.answer || "");
+      const question = byId.get(qid);
+      answers[qid] = question ? normalizeAssessmentAnswer(question, item.answer, item.blank_ids) : item.answer || "";
     } else if (item.question === PLAIN_QUESTION_LABEL || list.length === 1) {
       plainAnswer.value = String(item.answer || "");
     }
@@ -349,7 +361,8 @@ async function restoreDrafts(): Promise<void> {
   let localSavedAt = "";
   try {
     const local = uni.getStorageSync(localDraftKey.value) as {
-      answers?: Record<string, string>;
+      answers?: Record<string, AssessmentAnswer>;
+      blank_ids?: Record<string, string[]>;
       plain?: string;
       saved_at?: string;
       pending_submission_version?: string | null;
@@ -360,7 +373,7 @@ async function restoreDrafts(): Promise<void> {
       plain_edited?: boolean;
     };
     if (local && typeof local === "object") {
-      Object.assign(answers, local.answers || {});
+      restoreFromAnswersList(Object.entries(local.answers || {}).map(([question_id, answer]) => ({ question_id, answer, blank_ids: local.blank_ids?.[question_id] })));
       plainAnswer.value = local.plain || "";
       localSavedAt = local.saved_at || "";
       pendingSubmissionVersion.value = local.pending_submission_version ?? null;
@@ -400,7 +413,7 @@ async function restoreDrafts(): Promise<void> {
 
 function restoreRecoveredAnswers(draft: DraftResponse): void {
   if (draft.answers_json) {
-    const parsed = JSON.parse(draft.answers_json) as { answers?: Array<{ question_id?: string; question?: string; answer?: string }> };
+    const parsed = JSON.parse(draft.answers_json) as { answers?: AnswerEntry[] };
     const recovered = (parsed.answers || []).filter((item) => item.question_id ? !editedQuestions.has(String(item.question_id)) : !plainEdited);
     restoreFromAnswersList(recovered);
   }
@@ -750,7 +763,7 @@ async function reconcileSubmission(): Promise<boolean> {
 function hasVisibleContent(): boolean {
   if (!detail.value) return false;
   const hasAnyFiles = Object.values(questionFiles).some((files) => files.length > 0);
-  return detail.value.paper ? answeredCount.value > 0 || hasAnyFiles : Boolean(plainAnswer.value.trim()) || hasAnyFiles;
+  return detail.value.paper ? Object.values(answers).some(assessmentAnswerHasContent) || hasAnyFiles : Boolean(plainAnswer.value.trim()) || hasAnyFiles;
 }
 
 async function submit(): Promise<void> {
@@ -829,6 +842,21 @@ function onTextInput(qid: string, event: { detail: { value: string } }): void {
   if (!ownsPage() || controlsLocked.value) return;
   answers[qid] = event.detail.value;
   editedQuestions.add(String(qid));
+  saveLocalDraft();
+}
+
+function blankAnswer(q: Question, index: number): string {
+  const value = answers[q.id];
+  return Array.isArray(value) ? value[index] || "" : (index === 0 ? value || "" : "");
+}
+
+function onBlankInput(q: Question, index: number, event: { detail: { value: string } }): void {
+  if (!ownsPage() || controlsLocked.value) return;
+  const value = normalizeAssessmentAnswer(q, answers[q.id]);
+  if (!Array.isArray(value)) return;
+  value[index] = event.detail.value;
+  answers[q.id] = value;
+  editedQuestions.add(String(q.id));
   saveLocalDraft();
 }
 
@@ -965,7 +993,7 @@ onUnload(() => {
           <text class="section-title">{{ detail.submission.is_returned ? "上次提交的作答" : "我的作答" }}</text>
           <view v-for="(item, index) in detail.submission.answers" :key="index" class="review-item">
             <text class="review-item__q">{{ index + 1 }}. {{ item.question }}</text>
-            <text class="review-item__a">{{ item.answer || "（未作答）" }}</text>
+            <text class="review-item__a">{{ formatAssessmentAnswer(item.answer, item.blank_ids) }}</text>
           </view>
         </view>
       </template>
@@ -975,6 +1003,7 @@ onUnload(() => {
         <view v-for="(page, pageIndex) in detail.paper.pages" :key="pageIndex" class="page-block">
           <text v-if="page.name" class="section-title">{{ page.name }}</text>
           <view v-for="(q, qIndex) in page.questions" :key="q.id" class="question-card glass-card">
+            <text class="question-card__type">{{ QUESTION_TYPE_LABELS[q.type] || '题目' }}</text>
             <view class="question-card__head">
               <text class="question-card__no">{{ qIndex + 1 }}</text>
               <text class="question-card__text">{{ q.text }}</text>
@@ -987,7 +1016,7 @@ onUnload(() => {
                 class="option"
                 :class="{
                   'option--selected':
-                    q.type === 'radio' ? answers[q.id] === option : checkboxSelected(q, option),
+                    q.type !== 'checkbox' ? answers[q.id] === option : checkboxSelected(q, option),
                 }"
                 @tap="tapOption(q, option)"
               >
@@ -1000,27 +1029,47 @@ onUnload(() => {
               <text class="unsupported-card__hint">请到网页端完成本题；本端提交不会包含本题作答。</text>
             </view>
 
-            <input
+            <view v-else-if="hasNumberedBlanks(q)" class="numbered-blanks">
+              <view v-for="(blank, blankIndex) in q.blanks" :key="blank.id" class="numbered-blank">
+                <label :for="`blank-${q.id}-${blank.id}`">第 {{ blank.id }} 空</label>
+                <textarea
+                  :id="`blank-${q.id}-${blank.id}`"
+                  class="textarea-input"
+                  :value="blankAnswer(q, blankIndex)"
+                  :disabled="controlsLocked"
+                  :placeholder="blank.placeholder || `填写第 ${blank.id} 空`"
+                  :maxlength="-1"
+                  auto-height
+                  @input="onBlankInput(q, blankIndex, $event as never)"
+                />
+              </view>
+            </view>
+
+            <textarea
               v-else-if="q.type === 'text'"
-              class="text-input"
-              :value="answers[q.id] || ''"
+              class="textarea-input"
+              :value="String(answers[q.id] || '')"
               :disabled="controlsLocked"
               :placeholder="q.placeholder || '请输入答案'"
+              :maxlength="-1"
+              auto-height
               @input="onTextInput(q.id, $event as never)"
             />
 
             <view v-else>
               <textarea
                 class="textarea-input"
-                :value="answers[q.id] || ''"
+                :value="String(answers[q.id] || '')"
                 :disabled="controlsLocked"
                 :placeholder="q.placeholder || '请输入答案'"
                 :maxlength="-1"
                 auto-height
                 @input="onTextInput(q.id, $event as never)"
               />
+              <text v-if="q.type === 'code' || q.type === 'comprehensive'" class="attach-hint">可输入 Markdown 和代码块（用三个反引号包围代码）。网页端提供代码高亮与块编辑。</text>
 
               <view v-if="isAttachmentQuestion(q)" class="uploads">
+                <text v-if="q.attachment_requirements?.description" class="attach-hint">{{ q.attachment_requirements.description }}</text>
                 <view v-if="(questionFiles[q.id] || []).length" class="files-row">
                   <template v-for="file in questionFiles[q.id]" :key="file.id">
                     <image
@@ -1329,11 +1378,17 @@ onUnload(() => {
   padding: 24rpx 26rpx;
   font-size: 28rpx;
   line-height: 1.7;
-  min-height: 160rpx;
+  min-height: 144rpx;
+  max-height: 810rpx;
+  overflow-y: auto;
 }
 
+.numbered-blanks { display: flex; flex-direction: column; gap: 20rpx; }
+.numbered-blank { display: flex; flex-direction: column; gap: 10rpx; }
+.question-card__type { display: block; font-size: 24rpx; margin-bottom: 12rpx; }
+
 .textarea-input--large {
-  min-height: 400rpx;
+  min-height: 144rpx;
 }
 
 .attach-hint {

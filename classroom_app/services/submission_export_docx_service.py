@@ -19,6 +19,7 @@ from docx.shared import Cm, Inches, Pt, RGBColor
 
 from .submission_file_alignment import resolve_submission_file_path
 from .score_projection_service import load_submission_score_facts
+from .assessment_question_contract import numbered_blank_answer_text
 
 
 DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -54,6 +55,7 @@ class ExportQuestion:
     explanation: str = ""
     grading_guidance: str = ""
     deduction_points: str = ""
+    blanks: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -284,6 +286,7 @@ def _export_question_from_exam_item(raw: dict[str, Any], *, section_name: str, n
         options=[_clean_export_text(option) for option in (raw.get("options") or raw.get("choices") or []) if _clean_export_text(option)],
         points=raw.get("points"),
         correct_answer=correct,
+        blanks=raw.get("blanks") if isinstance(raw.get("blanks"), list) else [],
         explanation=_clean_export_text(raw.get("explanation") or raw.get("analysis") or ""),
         grading_guidance=_clean_export_text(raw.get("grading_guidance") or raw.get("guidance") or raw.get("score_points") or ""),
         deduction_points=_clean_export_text(raw.get("deduction_points") or raw.get("deductions") or ""),
@@ -453,7 +456,8 @@ def _write_question(
     feedback_by_question: dict[str, str],
 ) -> None:
     answer_item = _find_answer_for_question(question, answer_items)
-    student_answer = _answer_text(answer_item)
+    student_answer = (numbered_blank_answer_text({"blanks": question.blanks}, answer_item.get("answer"))
+                      if question.blanks and answer_item else "") or _answer_text(answer_item)
     attachments = _attachments_for_answer(answer_item, submission_files)
     correct_answer = _correct_answer_text(question)
 
@@ -628,7 +632,7 @@ def _match_submission_file(raw_attachment: dict[str, Any], submission_files: lis
 
 
 def _correct_answer_text(question: ExportQuestion) -> str:
-    answer = _value_to_markdown(question.correct_answer)
+    answer = numbered_blank_answer_text({"blanks": question.blanks}, question.correct_answer) or _value_to_markdown(question.correct_answer)
     if answer:
         return answer
     if question.grading_guidance:

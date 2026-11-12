@@ -13,14 +13,14 @@ function setup(fetch, { examId = 'paper' } = {}) {
         'exam-scope-level': { value: 'private' }, 'exam-allow-student-ai': { checked: false },
         'exam-save-button': button, 'exam-save-conflict': { hidden: true, textContent: '' },
     };
-    const toasts = [], timers = [];
-    const context = vm.createContext({ window: { location: { href: '' } }, document: { getElementById: id => elements[id] }, fetch,
+    const toasts = [], timers = [], history = [];
+    const context = vm.createContext({ window: { location: { href: '' }, history: { state: null, replaceState: (...args) => history.push(args) } }, document: { getElementById: id => elements[id] }, fetch,
         showToast: (...args) => toasts.push(args), setTimeout: callback => timers.push(callback),
         getAllEditorQuestions: () => [], scoringIsComplete: () => true });
-    vm.runInContext(`const EXAM_ID=${JSON.stringify(examId)}; let examRevision='${'a'.repeat(64)}'; let examSaveBusy=false;
+    vm.runInContext(`let examPaperId=${JSON.stringify(examId)}; let examRevision='${'a'.repeat(64)}'; let examSaveBusy=false;
         let examData={pages:[]}; let examConfig={}; let redirectAfterSaveToList=false;
         ${saveSource}`, context);
-    return { window: context.window, elements, button, toasts, timers };
+    return { window: context.window, elements, button, toasts, timers, history, evaluate: code => vm.runInContext(code, context) };
 }
 
 it('K9 editor sends SSR revision once while busy and adopts the successful response revision', async () => {
@@ -64,14 +64,53 @@ it('K9 failed response or network error releases busy and leaves the old token f
     expect(f.elements['exam-save-conflict'].hidden).toBe(true); expect(f.timers).toEqual([]);
 });
 
-it('K9 creation keeps the original POST contract and prevents duplicate creation during the redirect delay', async () => {
-    const requests = [];
+it('K9 creation adopts its identity immediately and later saves update that paper without a second POST', async () => {
+    const requests = []; let resolve;
+    const pending = new Promise(done => { resolve = done; });
     const f = setup(async (url, options) => { requests.push({ url, method: options.method, body: JSON.parse(options.body) });
-        return { ok: true, json: async () => ({ status: 'success', paper_id: 'new-paper' }) };
+        if (requests.length === 1) await pending;
+        return { ok: true, json: async () => ({ status: 'success', paper_id: 'new-paper', revision: 'b'.repeat(64) }) };
     }, { examId: '' });
-    await f.window.saveExam(); await f.window.saveExam();
+    const first = f.window.saveExam(); await f.window.saveExam();
     expect(requests).toHaveLength(1); expect(requests[0].url).toBe('/api/exam-papers');
     expect(requests[0].method).toBe('POST'); expect(requests[0].body).not.toHaveProperty('expected_revision');
-    expect(f.button.disabled).toBe(true); expect(f.timers).toHaveLength(1);
-    f.timers[0](); expect(f.window.location.href).toBe('/exam/new-paper/edit');
+    resolve(); await first;
+    expect(f.button.disabled).toBe(false); expect(f.timers).toHaveLength(0);
+    expect(f.history).toEqual([[null, '', '/exam/new-paper/edit']]);
+    await f.window.saveExam();
+    expect(requests[1]).toMatchObject({ method: 'PUT', url: '/api/exam-papers/new-paper', body: { expected_revision: 'b'.repeat(64) } });
+});
+
+it('K9 edits typed during creation remain unsaved and editable, then persist through PUT using the created revision', async () => {
+    const requests = []; let resolve;
+    const pending = new Promise(done => { resolve = done; });
+    const f = setup(async (url, options) => { requests.push({ url, method: options.method, body: JSON.parse(options.body) });
+        if (requests.length === 1) await pending;
+        return { ok: true, json: async () => ({ status: 'success', paper_id: 'created-once', revision: 'b'.repeat(64) }) };
+    }, { examId: '' });
+    const first = f.window.saveExam();
+    f.elements['exam-title'].value = 'Typed while POST was pending';
+    f.elements['exam-desc'].value = 'Additional edits remain local';
+    resolve(); await first;
+    expect(f.elements['exam-title'].value).toBe('Typed while POST was pending');
+    expect(f.button.disabled).toBe(false); expect(f.button.attributes['aria-busy']).toBe('false');
+    expect(f.evaluate('editorSnapshot() === savedEditorSnapshot')).toBe(false);
+    expect(f.timers).toEqual([]); expect(f.window.location.href).toBe('');
+    await f.window.saveExam();
+    expect(requests.map(request => request.method)).toEqual(['POST', 'PUT']);
+    expect(requests[1]).toMatchObject({ url: '/api/exam-papers/created-once', body: {
+        title: 'Typed while POST was pending', description: 'Additional edits remain local', expected_revision: 'b'.repeat(64),
+    } });
+    expect(f.evaluate('editorSnapshot() === savedEditorSnapshot')).toBe(true);
+});
+
+it('K9 a delayed list redirect never discards edits made after the save response and leaves save available', async () => {
+    const f = setup(async () => ({ ok: true, json: async () => ({ status: 'success', revision: 'b'.repeat(64) }) }));
+    f.evaluate('redirectAfterSaveToList = true');
+    await f.window.saveExam();
+    expect(f.timers).toHaveLength(1); expect(f.button.disabled).toBe(false);
+    f.elements['exam-desc'].value = 'Keep me on the editor';
+    f.timers[0]();
+    expect(f.window.location.href).toBe(''); expect(f.button.disabled).toBe(false);
+    expect(f.evaluate('editorSnapshot() === savedEditorSnapshot')).toBe(false);
 });

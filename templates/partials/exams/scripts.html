@@ -36,7 +36,11 @@
         'radio': '单选题',
         'checkbox': '多选题',
         'text': '填空题',
-        'textarea': '简答题'
+        'textarea': '简答题',
+        'boolean': '判断题',
+        'analysis': '分析题',
+        'code': '程序题',
+        'comprehensive': '综合题'
     };
     const STATUS_LABELS = {
         draft: '草稿',
@@ -197,7 +201,7 @@
             未分配
         </button>`;
 
-        const typeOrder = ['radio', 'checkbox', 'text', 'textarea'];
+        const typeOrder = ['radio', 'checkbox', 'boolean', 'text', 'textarea', 'analysis', 'code', 'comprehensive'];
         for (const qt of typeOrder) {
             if (availableTypes.has(qt)) {
                 html += `<button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass filter-chip" data-filter="${qt}" onclick="toggleFilter('${qt}', this)">${QT_LABELS[qt] || qt}</button>`;

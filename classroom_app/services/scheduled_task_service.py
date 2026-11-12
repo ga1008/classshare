@@ -61,7 +61,7 @@ DEADLINE_TASK_KINDS = (
     "signature_request_reminder", "approval_request_reminder", "late_window_expiry",
     "late_window_reminder", "assignment_close_sweep", "resubmission_window_expiry",
     "mp_deadline_reminder_scan", "mp_subscribe_dispatch",
-    "login_attendance_scan",
+    "login_attendance_scan", "login_attendance_settle",
 )
 ELASTIC_TASK_KINDS = (
     "stage_exam_generation", "session_material_generate", "personal_greeting_generate",
@@ -226,7 +226,7 @@ def _claim_due_tasks(limit: int, *, lane: str | None = None) -> list[dict[str, A
     attendance_cutoff = _to_iso(_now() - timedelta(
         seconds=min(ATTENDANCE_SCAN_STALE_SECONDS, SCHEDULER_STALE_MINUTES * 60)))
     stale_predicate = ("locked_at IS NULL OR COALESCE(NULLIF(updated_at, ''), locked_at) <= "
-                       "CASE WHEN task_kind = 'login_attendance_scan' THEN ? ELSE ? END")
+                       "CASE WHEN task_kind IN ('login_attendance_scan','login_attendance_settle') THEN ? ELSE ? END")
     worker_tag = (os.getenv("SCHEDULER_WORKER_ID") or socket.gethostname()) + ":" + uuid.uuid4().hex
     engine = get_configured_db_engine()
     safe_limit = max(1, min(int(limit), 100))

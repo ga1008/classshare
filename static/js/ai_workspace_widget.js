@@ -8,7 +8,7 @@ import { collectPageContext, collectPageText, contextLabel, formatContextForProm
 import { createAgentWorkbench } from './agent_workbench.js';
 
 const CONFIG = window.AI_WORKSPACE_WIDGET_CONFIG || {};
-const workspaceState = createWorkspaceState(CONFIG.userKey);
+const workspaceState = createWorkspaceState(CONFIG.userKey, CONFIG.assessmentAi?.scope_key || '');
 const $ = (selector, root = document) => root.querySelector(selector);
 const $all = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
@@ -222,6 +222,14 @@ function bindModes() {
     });
 }
 
+function syncAssessmentAvailability() {
+    if (!CONFIG.assessmentAi?.allowed) return;
+    const editable = window.LANSHARE_EXAM_AI_EDITABLE !== false;
+    const launcher = $('#ai-chat-fab');
+    if (launcher) { launcher.hidden = !editable; launcher.disabled = !editable; }
+    if (!editable) windowManager?.close({ persist: false });
+}
+
 let initialized = false;
 
 async function initAIWorkspaceWidget() {
@@ -239,12 +247,19 @@ async function initAIWorkspaceWidget() {
         workbench = createAgentWorkbench({ root: agentRoot, config: CONFIG, notify, apiJson, capture: captureForAgent, fab: $('#ai-chat-fab') });
     }
     await initWindow();
+    if (CONFIG.assessmentAi?.allowed) {
+        // Whole-page capture could include questions outside this permission.
+        const capture = $('#ai-chat-btn-capture');
+        if (capture) { capture.hidden = true; capture.disabled = true; }
+        window.addEventListener('lanshare:assessment-ai-state', syncAssessmentAvailability);
+    }
     const deferredLauncher = $('#ai-chat-fab[data-ai-deferred]');
     if (deferredLauncher) {
         deferredLauncher.disabled = false;
         deferredLauncher.removeAttribute('aria-busy');
         deferredLauncher.removeAttribute('data-ai-deferred');
     }
+    syncAssessmentAvailability();
     bindModes();
     let preferAgent = false;
     try { preferAgent = workspaceState.value.agentMode === true; } catch { /* storage may be blocked */ }

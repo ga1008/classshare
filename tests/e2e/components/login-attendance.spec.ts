@@ -13,11 +13,13 @@ function record(id: number, measured: number | null = null) {
 function round(count = 200) { return { id: 9, session_id: 12, class_offering_id: 2, state: 'running', revision: 1, is_current: true, ends_at_ms: 1794187800000,
   context: { year: '2026-2027', term: 1 }, records: Array.from({ length: count }, (_, i) => record(i + 1, i === 0 ? 0 : null)), summary: { expected: count, exempt: 0, counts: { PENDING: count } }, policy: { revision: 0, networks: ['192.0.2.0/24'] } }; }
 type APIHandler = (route: Route, pathname: string, body: any) => Promise<any>;
-async function fixture(page: Page, handler: APIHandler, role = 'teacher', extra = '', markup?: string, workflowAPI = false) {
+async function fixture(page: Page, handler: APIHandler, role = 'teacher', extra = '', markup?: string, workflowAPI = false, studentPushAPI = false, settlementAPI = false) {
   const errors: string[] = []; page.on('pageerror', error => { errors.push(error.message); console.error(error.stack); });
   await page.route(`${origin}/**`, async route => {
     const pathname = new URL(route.request().url()).pathname;
     if (!workflowAPI && pathname.endsWith('/external/workflow')) return route.fulfill({json:{binding:{state:'unmatched',revision:0,message:'课次待对应'},plan:null,can_sync:false}});
+    if (!studentPushAPI && /\/external\/students\/\d+\/push(?:\/check)?$/.test(pathname)) return route.fulfill({json:{gate:{allowed:false,code:'alignment_required',message:'请先对齐课程和课次'},push:null,local_saved:false}});
+    if (!settlementAPI && /\/rounds\/\d+\/settlement$/.test(pathname)) return route.fulfill({json:{gate:{can_start:true,can_restart:false,code:'ready',message:'可按当前证据结算'},task:null,round_revision:1}});
     if (pathname.startsWith('/api/')) return handler(route, pathname, route.request().postData() ? route.request().postDataJSON() : null);
     if (pathname.startsWith('/static/')) {
       const target = path.resolve('.' + pathname);
@@ -34,6 +36,206 @@ async function fixture(page: Page, handler: APIHandler, role = 'teacher', extra 
 async function open(page: Page, role = 'teacher', expanded = true) { await page.getByRole('button', { name: '进入课次', exact: true }).click(); await page.getByRole('button', { name: role === 'teacher' ? '自动点名' : '我的签到', exact: true }).click(); if(role==='teacher'&&expanded){await page.getByText('记录与更多操作',{exact:true}).click();await page.getByText('批量修改出勤状态',{exact:true}).click();} }
 const json = (route: Route, value: any, status = 200) => route.fulfill({ status, json: value });
 async function choose(page:Page,dialog:any,label:string,option:string){const control=dialog.getByRole('combobox',{name:label,exact:true});if(await control.evaluate((n:Element)=>n.tagName==='SELECT'))await control.selectOption({label:option});else{await control.click();await page.getByRole('option',{name:option,exact:true}).click();await expect(page.getByRole('option',{name:option,exact:true})).not.toBeVisible();}}
+
+const settlementTask=(generation=1,state='queued')=>({id:`settlement-${generation}`,generation,revision:1,state,stage:state==='running'?'collecting':state,completed:state==='completed'?4:0,total:4,percent:state==='completed'?100:null,message:'按本轮已采集证据核算',updated_at_ms:1794187800000});
+async function settlementFixture(page:Page,options:any={}){
+  const s:any={current:options.beforeStart?null:options.current||{...round(3),revision:2},task:options.task||null,calls:[],posts:0};
+  s.dto=()=>{const restart=s.current?.state==='settling'||['queued','running','failed'].includes(s.task?.state);return {gate:options.gate||{can_start:!restart,can_restart:restart,code:restart?'restart_available':'ready',message:restart?'可确认中断当前等待或结算并重算':'可按当前证据立即结算'},task:s.task,round_revision:s.current?.revision||1};};
+  s.accept=(body:any)=>{s.posts++;s.current={...s.current,state:'settling',revision:s.current.revision+1};s.task=settlementTask((s.task?.generation||0)+1);return {...s.dto(),round:s.current};};
+  s.finish=()=>{s.current={...s.current,state:'published',revision:s.current.revision+1,records:s.current.records.map((r:any)=>({...r,status:'PRESENT',status_label:'出勤',revision:r.revision+1})),summary:{expected:3,exempt:0,counts:{PRESENT:3}}};s.task={...s.task,state:'completed',stage:'completed',completed:4,percent:100};};
+  s.errors=await fixture(page,async(route,url,body)=>{
+    s.calls.push({method:route.request().method(),url,body});
+    if(url.endsWith('/sessions/12'))return json(route,{session,policy:{revision:0,networks:['192.0.2.0/24']},window:{starts_at_ms:1794182400000,ends_at_ms:1794187800000},round:s.current});
+    if(url.endsWith('/sessions/12/rounds')){s.current={...round(3),revision:2};return json(route,s.current);}
+    if(url.endsWith('/rounds/9'))return options.roundRead?options.roundRead(route,s):json(route,s.current);
+    if(url.endsWith('/settlement'))return body?(options.post?options.post(route,body,s):json(route,s.accept(body),202)):(options.get?options.get(route,s):json(route,s.dto()));
+    if(/\/students\/\d+$/.test(url))return json(route,{record:s.current.records[Number(url.split('/').at(-1))-1],history:[]});
+    return json(route,{detail:'unexpected '+url},500);
+  },'teacher','',undefined,false,false,true);
+  if(options.dark)await page.evaluate(()=>{document.documentElement.dataset.appearance='dark';});await open(page,'teacher',false);s.dialog=page.getByRole('dialog',{name:'自动点名',exact:true});return s;
+}
+
+test('LQ settlement is visible but disabled before recording and unlocks only after the server gate',async({page})=>{
+  const s=await settlementFixture(page,{beforeStart:true}),d=s.dialog;await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeDisabled();expect(s.calls.some((c:any)=>c.url.endsWith('/settlement'))).toBe(false);await d.getByRole('button',{name:'开始记录',exact:true}).click();await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeEnabled();await expect(d.getByRole('button',{name:'结束本地点名',exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'重新核算',exact:true})).toHaveCount(0);expect(s.errors).toEqual([]);
+});
+
+for(const kind of ['scheduled','expired','historical','void'])test(`LQ settlement ${kind} gate never enables a forbidden calculation`,async({page})=>{
+  const current={...round(3),state:kind==='expired'?'published':kind==='historical'?'published':kind,is_current:kind!=='historical'};
+  const s=await settlementFixture(page,{current,gate:{can_start:false,can_restart:false,code:kind,message:'当前轮次不能立即结算'}}),d=s.dialog;await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeDisabled();expect(s.calls.some((c:any)=>c.method==='POST')).toBe(false);expect(s.errors).toEqual([]);
+});
+
+test('LQ settlement reports actual unknown and counted phases and refreshes final cards once',async({page})=>{
+  const s=await settlementFixture(page),d=s.dialog;await d.getByRole('button',{name:'立即结算',exact:true}).click();await expect(d.getByRole('progressbar',{name:'本地点名结算进度'})).not.toHaveAttribute('value');await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeEnabled();expect(s.calls.find((c:any)=>c.method==='POST').body).toMatchObject({expected_round_revision:2,restart:false,expected_task_id:null,expected_task_generation:null});
+  s.task={...s.task,state:'running',stage:'calculating',completed:2,total:4,percent:50};await expect(d.getByRole('progressbar',{name:'本地点名结算进度'})).toHaveAttribute('value','50',{timeout:8000});await expect(d.locator('.la-settlement')).toContainText('阶段 2/4');await expect(d.locator('.la-heading')).toContainText('正在结算');await expect(d.locator('.la-settlement')).not.toContainText('人');s.finish();await expect(d.getByRole('progressbar',{name:'本地点名结算进度'})).toHaveAttribute('value','100',{timeout:8000});await expect(d.locator('.la-student-open').first()).toContainText('出勤');expect(s.calls.filter((c:any)=>c.url.endsWith('/rounds/9'))).toHaveLength(1);expect(s.errors).toEqual([]);
+});
+
+for(const withTask of [false,true])test(`LQ settlement confirms interrupting ${withTask?'the active generation':'automatic receipt waiting'} and cancellation keeps it intact`,async({page})=>{
+  const s=await settlementFixture(page,{current:{...round(3),revision:2,state:'settling'},task:withTask?settlementTask(4,'running'):null}),d=s.dialog;
+  await d.getByRole('button',{name:'立即结算',exact:true}).click();let c=page.getByRole('dialog',{name:'中断当前结算并重新开始？',exact:true});await expect(c).toBeVisible();await c.getByRole('button',{name:'取消',exact:true}).click();expect(s.posts).toBe(0);await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeFocused();await d.getByRole('button',{name:'立即结算',exact:true}).click();c=page.getByRole('dialog',{name:'中断当前结算并重新开始？',exact:true});await c.getByRole('button',{name:'中断并重新结算',exact:true}).click();await expect.poll(()=>s.posts).toBe(1);expect(s.calls.find((x:any)=>x.method==='POST').body).toMatchObject({restart:true,expected_task_id:withTask?'settlement-4':null,expected_task_generation:withTask?4:null});await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeEnabled();expect(s.errors).toEqual([]);
+});
+
+test('LQ settlement lost response replays exactly the same intent instead of restarting a received task',async({page})=>{
+  let attempts=0,accepted:any;const s=await settlementFixture(page,{post:(route:Route,body:any,s:any)=>{attempts++;if(attempts===1){accepted=s.accept(body);return route.abort('failed');}return json(route,accepted,202);}}),d=s.dialog;
+  await d.getByRole('button',{name:'立即结算',exact:true}).click();await expect(d.locator('.la-settlement').getByRole('alert')).toContainText('结果尚未确认');await d.getByRole('button',{name:'确认结算请求',exact:true}).click();await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeEnabled();const posts=s.calls.filter((c:any)=>c.method==='POST');expect(posts).toHaveLength(2);expect(posts[1].body).toEqual(posts[0].body);expect(s.posts).toBe(1);await expect(page.getByRole('dialog',{name:'中断当前结算并重新开始？',exact:true})).toHaveCount(0);expect(s.errors).toEqual([]);
+});
+
+test('LQ settlement a concurrent task conflict refreshes identity and preserves batch drafts',async({page})=>{
+  let attempts=0;const s=await settlementFixture(page,{post:(route:Route,body:any,s:any)=>{if(++attempts===1){s.current={...s.current,state:'settling',revision:5};s.task=settlementTask(5);return json(route,{detail:{code:'task_changed',message:'另一位老师已启动结算'}},409);}return json(route,s.accept(body),202);}}),d=s.dialog;
+  await d.getByText('记录与更多操作',{exact:true}).click();await d.getByText('批量修改出勤状态',{exact:true}).click();await d.getByRole('button',{name:'全班',exact:true}).click();await d.getByLabel('修改理由').fill('批量草稿必须保留');await d.getByRole('button',{name:'立即结算',exact:true}).click();await expect(d.locator('.la-settlement').getByRole('alert')).toContainText('本次结算请求未执行');await expect(d.getByLabel('修改理由')).toHaveValue('批量草稿必须保留');await d.getByRole('button',{name:'立即结算',exact:true}).click();await page.getByRole('dialog',{name:'中断当前结算并重新开始？',exact:true}).getByRole('button',{name:'中断并重新结算',exact:true}).click();await expect.poll(()=>attempts).toBe(2);const posts=s.calls.filter((c:any)=>c.method==='POST');expect(posts[1].body).toMatchObject({restart:true,expected_round_revision:5,expected_task_id:'settlement-5',expected_task_generation:5});expect(posts[1].body.idempotency_key).not.toBe(posts[0].body.idempotency_key);expect(s.errors).toEqual([]);
+});
+
+test('LQ settlement completion behind student details preserves the form node and both drafts',async({page})=>{
+  let release!:()=>void,readStarted=false;const wait=new Promise<void>(resolve=>release=resolve);
+  const s=await settlementFixture(page,{roundRead:async(route:Route,s:any)=>{readStarted=true;await wait;return json(route,s.current);}}),d=s.dialog;
+  try{await d.getByText('记录与更多操作',{exact:true}).click();await d.getByText('批量修改出勤状态',{exact:true}).click();await d.getByRole('button',{name:'全班',exact:true}).click();await d.getByLabel('修改理由').fill('未提交批量理由');await d.getByRole('button',{name:'立即结算',exact:true}).click();s.finish();await expect.poll(()=>readStarted,{timeout:8000}).toBe(true);await d.locator('.la-student-open').first().click();const child=page.getByRole('dialog',{name:'学生签到详情',exact:true});await child.getByLabel('改签理由').fill('新改签草稿');await child.getByLabel('改签理由').evaluate((n:Element)=>(window as any).settlementDraftNode=n);release();await expect(child.getByLabel('改签理由')).toHaveValue('新改签草稿');expect(await child.getByLabel('改签理由').evaluate((n:Element)=>n===(window as any).settlementDraftNode)).toBe(true);await expect(page.locator('.la-bulk-fields textarea')).toHaveValue('未提交批量理由');expect(s.errors).toEqual([]);}finally{release();}
+});
+
+test('LQ settlement only submission blocks closing and accepted work resumes after reopening',async({page})=>{
+  let release!:()=>void;const wait=new Promise<void>(resolve=>release=resolve);const s=await settlementFixture(page,{post:async(route:Route,body:any,s:any)=>{await wait;return json(route,s.accept(body),202);}}),d=s.dialog;
+  try{await d.getByRole('button',{name:'立即结算',exact:true}).click();await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeDisabled();await page.keyboard.press('Escape');await expect(d).toBeVisible();release();await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeEnabled();await page.keyboard.press('Escape');await expect(d).not.toBeVisible();await page.getByRole('button',{name:'自动点名',exact:true}).click();await expect(d.getByRole('progressbar',{name:'本地点名结算进度'})).toBeVisible();expect(s.posts).toBe(1);expect(s.errors).toEqual([]);}finally{release();}
+});
+
+test('LQ settlement an already finished worker publishes immediately without an artificial progress delay',async({page})=>{
+  const s=await settlementFixture(page,{post:(route:Route,body:any,s:any)=>{s.accept(body);s.finish();return json(route,{...s.dto(),round:s.current},202);}}),d=s.dialog;await d.getByRole('button',{name:'立即结算',exact:true}).click();await expect(d.getByRole('progressbar',{name:'本地点名结算进度'})).toHaveAttribute('value','100');await expect(d.locator('.la-student-open').first()).toContainText('出勤');await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeEnabled();expect(s.calls.filter((c:any)=>c.url.endsWith('/rounds/9'))).toHaveLength(1);expect(s.errors).toEqual([]);
+});
+
+test('LQ settlement a failed task stops fast polling and requires explicit confirmation to restart',async({page})=>{
+  const s=await settlementFixture(page,{current:{...round(3),state:'settling'},task:{...settlementTask(3,'failed'),stage:'failed',completed:2,percent:50}}),d=s.dialog;await expect(d.locator('.la-settlement')).toContainText('结算未完成');const before=s.calls.filter((c:any)=>c.url.endsWith('/settlement')).length;await page.waitForTimeout(3200);expect(s.calls.filter((c:any)=>c.url.endsWith('/settlement'))).toHaveLength(before);await d.getByRole('button',{name:'立即结算',exact:true}).click();await page.getByRole('dialog',{name:'中断当前结算并重新开始？',exact:true}).getByRole('button',{name:'中断并重新结算',exact:true}).click();await expect.poll(()=>s.posts).toBe(1);expect(s.calls.find((c:any)=>c.method==='POST').body).toMatchObject({restart:true,expected_task_id:'settlement-3',expected_task_generation:3});expect(s.errors).toEqual([]);
+});
+
+test('LQ settlement a delayed earlier generation cannot overwrite a confirmed restart',async({page})=>{
+  let release!:()=>void,reads=0,waiting=false;const wait=new Promise<void>(resolve=>release=resolve);
+  const s=await settlementFixture(page,{current:{...round(3),state:'settling'},task:settlementTask(1,'running'),get:async(route:Route,s:any)=>{if(++reads===2){waiting=true;const old={...s.dto(),task:settlementTask(1,'completed')};await wait;return json(route,old);}return json(route,s.dto());}}),d=s.dialog;
+  try{await expect.poll(()=>waiting,{timeout:8000}).toBe(true);await d.getByRole('button',{name:'立即结算',exact:true}).click();await page.getByRole('dialog',{name:'中断当前结算并重新开始？',exact:true}).getByRole('button',{name:'中断并重新结算',exact:true}).click();await expect.poll(()=>s.posts).toBe(1);release();await expect(d.locator('.la-settlement')).toContainText('等待后台结算');await expect(d.getByRole('progressbar',{name:'本地点名结算进度'})).not.toHaveAttribute('value');expect(s.calls.filter((c:any)=>c.url.endsWith('/rounds/9'))).toHaveLength(0);expect(s.task.generation).toBe(2);expect(s.errors).toEqual([]);}finally{release();}
+});
+
+test('LQ settlement a school-independent status read failure can be retried without losing recording',async({page})=>{
+  let reads=0;const s=await settlementFixture(page,{get:(route:Route,s:any)=>++reads===1?json(route,{detail:'暂时不可读取'},503):json(route,s.dto())}),d=s.dialog;await expect(d.locator('.la-settlement').getByRole('alert')).toContainText('已有记录与任务会保留');await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeDisabled();await d.getByRole('button',{name:'刷新结算状态',exact:true}).click();await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeEnabled();await expect(d.getByRole('button',{name:'结束本地点名',exact:true})).toBeVisible();expect(s.posts).toBe(0);expect(s.errors).toEqual([]);
+});
+
+test('LQ settlement automatic receipt waiting finishes through a lightweight status read',async({page})=>{
+  const s=await settlementFixture(page,{current:{...round(3),state:'settling'}}),d=s.dialog;await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeEnabled();s.current={...s.current,state:'published',revision:3};await expect.poll(()=>s.calls.filter((c:any)=>c.url.endsWith('/rounds/9')).length,{timeout:8000}).toBe(1);await expect(d.locator('.la-heading')).toContainText('已结束');expect(s.posts).toBe(0);expect(s.errors).toEqual([]);
+});
+
+for(const dark of [false,true])for(const width of [390,1440])test(`LQ settlement ${dark?'dark':'light'} ${width}px retains the real progress and clickable restart action`,async({page})=>{
+  await page.setViewportSize({width,height:980});const s=await settlementFixture(page,{dark,current:{...round(3),state:'settling'},task:{...settlementTask(2,'running'),stage:'calculating',completed:2,percent:50}}),d=s.dialog;await expect(d.getByRole('button',{name:'立即结算',exact:true})).toBeEnabled();await expect(d.getByRole('progressbar',{name:'本地点名结算进度'})).toHaveAttribute('value','50');await expect(d.locator('.la-heading')).toContainText('正在结算');expect(await d.evaluate(n=>n.scrollWidth<=n.clientWidth+1)).toBe(true);await expect.poll(()=>d.evaluate(n=>n.closest('[data-lq-layer-state]')?.getAttribute('data-lq-layer-state'))).toBe('open');await page.screenshot({path:`.codex-temp/evidence/attendance-immediate-settlement-20261112/settlement-${dark?'dark':'light'}-${width}.png`});expect(s.errors).toEqual([]);
+});
+
+const readyStudentGate=()=>({allowed:true,code:'ready',message:'学校本次点名已开始过；已结束的点名仍可更新。',binding_revision:5,remote_checkin_id:'school-started-9'});
+async function correctionFixture(page:Page,options:any={}){
+  const s:any={current:options.current||{...round(2),state:'published',records:round(2).records.map(r=>({...r,revision:1}))},gate:options.gate||readyStudentGate(),push:options.push||null,calls:[],saves:0};
+  s.dto=()=>({gate:s.gate,push:s.push,record:s.current.records[0],local_saved:s.saves>0||Boolean(s.push)});
+  s.accept=(body:any)=>{s.saves++;s.current.records[0]={...s.current.records[0],revision:s.current.records[0].revision+1,status:body.status,status_label:body.status==='PRESENT'?'出勤':body.status==='SICK_LEAVE'?'病假':body.status,reason:body.reason};s.current.revision++;
+    s.push=body.mode==='push'?{id:'student-intent-1',state:options.pushState||'confirmed',code:null,message:options.pushMessage||'',local_revision:s.current.records[0].revision,target_status:body.status,idempotency_key:body.idempotency_key,can_retry:['failed','blocked','outcome_unknown'].includes(options.pushState),readback_only:options.pushState==='outcome_unknown'}:null;return {...s.dto(),round:s.current};};
+  s.errors=await fixture(page,async(route,url,body)=>{
+    s.calls.push({method:route.request().method(),url,body});
+    if(url.endsWith('/external/workflow')){const matched=options.gate?.code!=='alignment_required';return json(route,{binding:{state:matched?'matched':'unmatched',revision:5,target:matched?{course_name:'合成课堂',course_code:'TEST001',remote_checkin_id:'school-started-9'}:null,diagnostics:[]},plan:null,can_sync:matched&&s.current.state==='published'});}
+    if(url.endsWith('/sessions/12'))return json(route,{session,policy:s.current.policy,round:s.current});
+    if(/\/rounds\/9\/students\/\d+$/.test(url))return json(route,{record:s.current.records[Number(url.split('/').at(-1))-1],history:[],pending_appeal:options.pendingAppeal});
+    if(url.endsWith('/api/approvals/70')&&options.appeal)return options.appeal(route,s);
+    if(url.endsWith('/push/check')){if(options.check)return options.check(route,body,s,url);s.gate=options.checkedGate||readyStudentGate();return json(route,s.dto());}
+    if(url.endsWith('/push'))return options.read?options.read(route,body,s,url):json(route,s.dto());
+    if(url.endsWith('/corrections'))return options.correct?options.correct(route,body,s,url):json(route,s.accept(body));
+    if(url.endsWith('/retry')){if(options.retry)return options.retry(route,body,s,url);s.push={...s.push,state:'confirmed',can_retry:false,readback_only:false};return json(route,s.dto());}
+    return json(route,{detail:'unexpected '+url},500);
+  },'teacher','',undefined,true,true);
+  if(options.dark)await page.evaluate(()=>{document.documentElement.dataset.appearance='dark';});await open(page,'teacher',false);s.parent=page.getByRole('dialog',{name:'自动点名',exact:true});s.card=s.parent.locator('.la-student-open').first();await s.card.click();s.dialog=page.getByRole('dialog',{name:'学生签到详情',exact:true});return s;
+}
+
+test('LQ single student local save is idempotent and does not dispatch a school or class command',async({page})=>{
+  const s=await correctionFixture(page,{gate:{allowed:false,code:'alignment_required',message:'请先对齐课程与课次'}}),d=s.dialog;
+  await expect(d.getByRole('button',{name:'保存并推送',exact:true})).toBeDisabled();await expect(d.getByRole('button',{name:'保存',exact:true})).toBeEnabled();await d.getByLabel('改签理由').fill('教师现场复核，只保存本地');await d.getByRole('button',{name:'保存',exact:true}).click();await expect(d.getByText('本地已保存。',{exact:true})).toBeVisible();
+  const writes=s.calls.filter((c:any)=>c.method==='POST');expect(writes).toHaveLength(1);expect(writes[0].url).toBe('/api/classrooms/2/login-attendance/rounds/9/external/students/1/corrections');expect(writes[0].body).toMatchObject({mode:'local',status:'PRESENT',revision:1,reason:'教师现场复核，只保存本地'});expect(writes[0].body.expected_binding_revision).toBeUndefined();expect(writes[0].body.expected_remote_checkin_id).toBeUndefined();expect(s.current.records[1].revision).toBe(1);
+  await page.keyboard.press('Escape');await expect(d).not.toBeVisible();await expect(s.card).toBeFocused();await expect(s.card).toContainText('出勤');expect(s.errors).toEqual([]);
+});
+
+test('LQ single student delayed eligibility does not redraw drafts and permits ended school rollcall push',async({page})=>{
+  let release!:()=>void;const wait=new Promise<void>(resolve=>release=resolve);
+  const s=await correctionFixture(page,{gate:{allowed:false,code:'checking',message:'正在核对'},check:async(route:Route,_body:any,s:any)=>{await wait;s.gate=readyStudentGate();return json(route,s.dto());}}),d=s.dialog;
+  try{await expect(d.getByRole('button',{name:'保存并推送',exact:true})).toBeDisabled();await expect(d.getByRole('button',{name:'保存',exact:true})).toBeEnabled();await choose(page,d,'出勤状态','病假');await d.getByLabel('改签理由').fill('老师核准病假，学校点名已经结束');release();await expect(d.getByRole('button',{name:'保存并推送',exact:true})).toBeEnabled();await expect(d.getByLabel('改签理由')).toHaveValue('老师核准病假，学校点名已经结束');
+    await d.getByRole('button',{name:'保存并推送',exact:true}).click();await expect(d.getByText('本地已保存，智慧课堂已确认该学生为病假。',{exact:true})).toBeVisible();const saved=s.calls.find((c:any)=>c.url.endsWith('/corrections'));expect(saved.body).toMatchObject({mode:'push',status:'SICK_LEAVE',expected_binding_revision:5,expected_remote_checkin_id:'school-started-9'});expect(s.current.records[1].revision).toBe(1);expect(s.calls.some((c:any)=>c.url.endsWith('/external/sync'))).toBe(false);expect(s.errors).toEqual([]);
+  }finally{release();}
+});
+
+test('LQ single student local success and school failure resumes the same intent without saving again',async({page})=>{
+  const s=await correctionFixture(page,{pushState:'failed',pushMessage:'学校响应暂时超时',correct:(route:Route,body:any,s:any)=>{s.accept(body);s.gate={allowed:false,code:'checking'};return json(route,{...s.dto(),round:s.current});}}),d=s.dialog;await d.getByLabel('改签理由').fill('教师确认该生到课');await d.getByRole('button',{name:'保存并推送',exact:true}).click();await expect(d.getByRole('alert')).toContainText('本地已保存');await expect(d.getByRole('alert')).toContainText('学校响应暂时超时');await expect(d.getByLabel('改签理由')).toHaveValue('');await d.getByRole('button',{name:'重试推送',exact:true}).click();await expect(d.getByText('本地已保存，智慧课堂已确认该学生为出勤。',{exact:true})).toBeVisible();expect(s.saves).toBe(1);expect(s.calls.filter((c:any)=>c.url.endsWith('/push/check'))).toHaveLength(1);expect(s.calls.filter((c:any)=>c.url.endsWith('/corrections'))).toHaveLength(1);expect(s.calls.find((c:any)=>c.url.endsWith('/retry')).url).toBe('/api/classrooms/2/login-attendance/rounds/9/external/students/1/push/student-intent-1/retry');expect(s.errors).toEqual([]);
+});
+
+test('LQ single student queued task polls local status to confirmation while preserving a new draft',async({page})=>{
+  const s=await correctionFixture(page,{pushState:'queued',correct:(route:Route,body:any,s:any)=>{s.accept(body);s.gate={allowed:false,code:'student_push_busy',message:'正在推送'};return json(route,{...s.dto(),round:s.current});},read:(route:Route,_body:any,s:any)=>{if(s.push?.state==='queued'){s.push={...s.push,state:'confirmed',is_current_decision:true};s.gate={allowed:false,code:'checking'};}return json(route,s.dto());}}),d=s.dialog;
+  await d.getByLabel('改签理由').fill('后台确认此学生出勤');await d.getByRole('button',{name:'保存并推送',exact:true}).click();await expect(d.getByRole('button',{name:'正在推送',exact:true})).toBeDisabled();await expect(d.getByText(/正在后台推送当前学生/)).toBeVisible();await expect(d.getByRole('button',{name:'保存',exact:true})).toBeEnabled();await d.getByLabel('改签理由').fill('后台回读期间的新草稿');await expect(d.getByText('本地已保存，智慧课堂已确认该学生为出勤。',{exact:true})).toBeVisible({timeout:8000});await expect(d.getByRole('button',{name:'保存并推送',exact:true})).toBeEnabled();await expect(d.getByLabel('改签理由')).toHaveValue('后台回读期间的新草稿');expect(s.calls.filter((c:any)=>c.url.endsWith('/corrections'))).toHaveLength(1);expect(s.calls.filter((c:any)=>c.url.endsWith('/push/check'))).toHaveLength(1);expect(s.calls.filter((c:any)=>c.url.endsWith('/push')).length).toBeGreaterThan(1);expect(s.errors).toEqual([]);
+});
+
+test('LQ single student local save automatically rechecks eligibility without replacing the next draft',async({page})=>{
+  let release!:()=>void;const wait=new Promise<void>(resolve=>release=resolve);
+  const s=await correctionFixture(page,{correct:(route:Route,body:any,s:any)=>{s.accept(body);if(body.mode==='local')s.gate={allowed:false,code:'checking'};return json(route,{...s.dto(),round:s.current});},check:async(route:Route,_body:any,s:any)=>{await wait;s.gate=readyStudentGate();return json(route,s.dto());}}),d=s.dialog;
+  try{await d.getByLabel('改签理由').fill('先保存出勤');await d.getByRole('button',{name:'保存',exact:true}).click();await expect(d.getByText('本地已保存。',{exact:true})).toBeVisible();await expect.poll(()=>s.calls.filter((c:any)=>c.url.endsWith('/push/check')).length).toBe(1);await expect(d.getByRole('button',{name:'保存并推送',exact:true})).toBeDisabled();await choose(page,d,'出勤状态','病假');await d.getByLabel('改签理由').fill('随后补充学校病假');release();await expect(d.getByRole('button',{name:'保存并推送',exact:true})).toBeEnabled();await expect(d.getByLabel('改签理由')).toHaveValue('随后补充学校病假');await d.getByRole('button',{name:'保存并推送',exact:true}).click();await expect(d.getByText('本地已保存，智慧课堂已确认该学生为病假。',{exact:true})).toBeVisible();const writes=s.calls.filter((c:any)=>c.url.endsWith('/corrections'));expect(writes.map((c:any)=>c.body.mode)).toEqual(['local','push']);expect(writes[1].body.revision).toBe(2);expect(writes[1].body.idempotency_key).not.toBe(writes[0].body.idempotency_key);expect(s.errors).toEqual([]);}finally{release();}
+});
+
+for(const failsOnce of [false,true])test(`LQ single student correction refreshes resolved appeal without replacing the next draft${failsOnce?' after a read failure':''}`,async({page})=>{
+  let release!:()=>void,reads=0;const wait=new Promise<void>(resolve=>release=resolve);
+  const s=await correctionFixture(page,{pendingAppeal:{id:70,status:'pending'},appeal:async(route:Route)=>{reads++;if(reads===1)return json(route,{request:{id:70,status:'pending',status_label:'待处理',reason:'学生说明',can_decide:true}});if(reads===2){await wait;if(failsOnce)return json(route,{detail:'申诉读取暂不可用'},503);}return json(route,{request:{id:70,status:'cancelled',status_label:'已取消',reason:'教师已直接改签',can_decide:false}});}}),d=s.dialog;
+  try{await d.getByLabel('处理说明').fill('旧申诉草稿');await d.getByLabel('改签理由').fill('教师直接核准出勤');await d.getByLabel('改签理由').evaluate((n:Element)=>(window as any).savedCorrectionNode=n);await d.getByRole('button',{name:'保存',exact:true}).click();await expect(d.getByText('本地已保存。',{exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'按所选状态确认更正',exact:true})).toHaveCount(0);await d.getByLabel('改签理由').fill('下一份草稿保留');release();if(failsOnce){await expect(d.locator('.la-appeal').getByRole('alert')).toContainText('改签已保存');await d.getByRole('button',{name:'重新核对申诉状态',exact:true}).click();}await expect(d.locator('.la-appeal')).toContainText('已取消');await expect(d.getByLabel('处理说明')).toHaveCount(0);await expect(d.getByLabel('改签理由')).toHaveValue('下一份草稿保留');expect(await d.getByLabel('改签理由').evaluate((n:Element)=>n===(window as any).savedCorrectionNode)).toBe(true);expect(s.saves).toBe(1);expect(s.calls.some((c:any)=>/\/70\/(approve|reject)$/.test(c.url))).toBe(false);expect(s.errors).toEqual([]);}finally{release();}
+});
+
+test('LQ single student saved correction clears a resolved appeal draft from parent close confirmation',async({page})=>{
+  const s=await correctionFixture(page,{pendingAppeal:{id:70,status:'pending'},appeal:(route:Route,s:any)=>json(route,{request:{id:70,status:s.saves?'cancelled':'pending',status_label:s.saves?'已取消':'待处理',reason:'学生说明',can_decide:!s.saves}})}),d=s.dialog;
+  await d.getByLabel('处理说明').fill('不再需要的申诉草稿');await d.getByLabel('改签理由').fill('直接核准本地出勤');await d.getByRole('button',{name:'保存',exact:true}).click();await expect(d.locator('.la-appeal')).toContainText('已取消');await page.keyboard.press('Escape');await expect(d).not.toBeVisible();await page.keyboard.press('Escape');await expect(s.parent).not.toBeVisible();await expect(page.getByRole('dialog',{name:'关闭并放弃未提交内容？',exact:true})).toHaveCount(0);expect(s.errors).toEqual([]);
+});
+
+for(const statusCode of [409,422,403])test(`LQ single student explicit ${statusCode} rejection preserves drafts and never claims an uncertain save`,async({page})=>{
+  let attempts=0;const s=await correctionFixture(page,{correct:(route:Route,body:any,s:any)=>{attempts++;return attempts===1?json(route,{detail:{code:'rejected',message:'记录或权限已变化'}},statusCode):json(route,s.accept(body));}}),d=s.dialog;
+  await d.getByLabel('改签理由').fill('保留未保存的说明');await d.getByRole('button',{name:'保存',exact:true}).click();await expect(d.getByRole('alert')).toContainText('本次修改未保存');await expect(d.getByRole('alert')).not.toContainText('保存结果未确认');await expect(d.getByLabel('改签理由')).toHaveValue('保留未保存的说明');expect(s.saves).toBe(0);await d.getByRole('button',{name:'重新读取最新记录',exact:true}).click();await expect(d.getByLabel('改签理由')).toHaveValue('保留未保存的说明');await d.getByRole('button',{name:'保存',exact:true}).click();await expect(d.getByText('本地已保存。',{exact:true})).toBeVisible();const writes=s.calls.filter((c:any)=>c.url.endsWith('/corrections'));expect(writes[1].body.idempotency_key).not.toBe(writes[0].body.idempotency_key);expect(s.errors).toEqual([]);
+});
+
+for(const mode of ['local','push'])test(`LQ single student uncertain ${mode} response restores the original payload after rereading`,async({page})=>{
+  let attempts=0,accepted:any;const s=await correctionFixture(page,{correct:async(route:Route,body:any,s:any)=>{attempts++;if(attempts===1){accepted=s.accept(body);return route.abort('failed');}return json(route,accepted);}}),d=s.dialog;
+  await d.getByLabel('改签理由').fill('响应丢失后恢复同一改签');await d.getByRole('button',{name:mode==='local'?'保存':'保存并推送',exact:true}).click();await expect(d.getByRole('alert')).toContainText('保存结果未确认');await expect(d.getByLabel('改签理由')).toHaveValue('响应丢失后恢复同一改签');await d.getByRole('button',{name:'重新读取最新记录',exact:true}).click();await expect(d.getByLabel('改签理由')).toHaveValue('响应丢失后恢复同一改签');await d.getByRole('button',{name:mode==='local'?'保存':'确认保存并推送结果',exact:true}).click();await expect(d.getByLabel('改签理由')).toHaveValue('');const calls=s.calls.filter((c:any)=>c.url.endsWith('/corrections'));expect(calls).toHaveLength(2);expect(calls[1].body).toEqual(calls[0].body);expect(calls[1].body.revision).toBe(1);expect(s.saves).toBe(1);expect(s.errors).toEqual([]);
+});
+
+test('LQ single student unknown outcome permits readback-only recovery despite a blocked new-push gate',async({page})=>{
+  const current={...round(2),state:'published'};current.records[0]={...current.records[0],status:'PRESENT',status_label:'出勤',revision:3};
+  const s=await correctionFixture(page,{current,gate:{allowed:false,code:'alignment_required',message:'对齐关系已变化'},push:{id:'unknown-receipt',state:'outcome_unknown',message:'仅核对学校结果',local_revision:3,target_status:'PRESENT',can_retry:true,readback_only:true}}),d=s.dialog;
+  await expect(d.getByRole('button',{name:'核对推送结果',exact:true})).toBeEnabled();await d.getByRole('button',{name:'核对推送结果',exact:true}).click();await expect(d.getByText('本地已保存，智慧课堂已确认该学生为出勤。',{exact:true})).toBeVisible();expect(s.calls.filter((c:any)=>c.method==='POST').map((c:any)=>c.url)).toEqual(['/api/classrooms/2/login-attendance/rounds/9/external/students/1/push/unknown-receipt/retry']);expect(s.saves).toBe(0);expect(s.errors).toEqual([]);
+});
+
+test('LQ single student old unknown readback preserves a newer local decision and unsaved draft',async({page})=>{
+  const current={...round(2),state:'published'};current.records[0]={...current.records[0],status:'SICK_LEAVE',status_label:'病假',revision:5};
+  const s=await correctionFixture(page,{current,gate:{allowed:false,code:'alignment_required',message:'对齐关系已变化'},push:{id:'old-unknown',state:'outcome_unknown',local_revision:2,target_status:'PRESENT',can_retry:true,readback_only:true,is_current_decision:false}}),d=s.dialog;
+  await choose(page,d,'出勤状态','事假');await d.getByLabel('改签理由').fill('新草稿必须保留');await expect(d.getByRole('button',{name:'核对推送结果',exact:true})).toBeEnabled();await d.getByRole('button',{name:'核对推送结果',exact:true}).click();await expect(d.getByText('本地记录已更新，此前推送不代表当前状态。',{exact:true})).toBeVisible();await expect(d.getByLabel('改签理由')).toHaveValue('新草稿必须保留');expect(s.current.records[0].revision).toBe(5);expect(s.saves).toBe(0);expect(s.calls.filter((c:any)=>c.url.endsWith('/retry'))).toHaveLength(1);expect(s.errors).toEqual([]);
+});
+
+test('LQ single student local-only correction keeps the old unknown intent available for readback',async({page})=>{
+  const current={...round(2),state:'published'};current.records[0]={...current.records[0],status:'PRESENT',status_label:'出勤',revision:2};
+  const s=await correctionFixture(page,{current,gate:{allowed:false,code:'alignment_required',message:'对齐关系已变化'},push:{id:'old-unknown',state:'outcome_unknown',local_revision:2,target_status:'PRESENT',can_retry:true,readback_only:true,is_current_decision:true},correct:(route:Route,body:any,s:any)=>{const old=s.push;s.accept(body);s.push={...old,is_current_decision:false};return json(route,{...s.dto(),round:s.current});}}),d=s.dialog;
+  await choose(page,d,'出勤状态','病假');await d.getByLabel('改签理由').fill('仅修正本地，保留旧结果核对');await d.getByRole('button',{name:'保存',exact:true}).click();await expect(d.getByLabel('改签理由')).toHaveValue('');await expect(d.getByRole('button',{name:'核对推送结果',exact:true})).toBeEnabled();await expect(d.getByText(/上次推送目标为出勤/)).toBeVisible();await d.getByRole('button',{name:'核对推送结果',exact:true}).click();await expect(d.getByText('本地记录已更新，此前推送不代表当前状态。',{exact:true})).toBeVisible();expect(s.current.records[0]).toMatchObject({revision:3,status:'SICK_LEAVE'});expect(s.saves).toBe(1);expect(s.calls.filter((c:any)=>c.method==='POST').map((c:any)=>c.url.split('/').at(-1))).toEqual(['corrections','retry']);expect(s.errors).toEqual([]);
+});
+
+test('LQ single student pinned decision survives evidence revisions and automatically rechecks school readiness',async({page})=>{
+  const current={...round(2),state:'published'};current.records[0]={...current.records[0],status:'PRESENT',status_label:'出勤',revision:8};
+  const s=await correctionFixture(page,{current,push:{id:'pinned-decision',state:'failed',local_revision:2,target_status:'PRESENT',can_retry:true,readback_only:false,is_current_decision:true},retry:(route:Route,_body:any,s:any)=>{s.push={...s.push,state:'confirmed',can_retry:false};s.gate={allowed:false,code:'checking',message:'需要刷新学校状态'};return json(route,s.dto());}}),d=s.dialog;
+  await expect(d.getByRole('button',{name:'重试推送',exact:true})).toBeEnabled();await d.getByRole('button',{name:'重试推送',exact:true}).click();await expect(d.getByText('本地已保存，智慧课堂已确认该学生为出勤。',{exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'保存并推送',exact:true})).toBeEnabled();expect(s.calls.filter((c:any)=>c.url.endsWith('/push/check'))).toHaveLength(1);expect(s.saves).toBe(0);expect(s.errors).toEqual([]);
+});
+
+for(const code of ['alignment_required','school_not_started'])test(`LQ single student ${code} keeps local save available and blocks school writes`,async({page})=>{
+  const gate={allowed:false,code,message:code==='alignment_required'?'请先对齐课程和课次':'学校尚未开始本次点名'};const s=await correctionFixture(page,{gate,checkedGate:gate}),d=s.dialog;
+  await expect(d.getByText(gate.message,{exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'保存并推送',exact:true})).toBeDisabled();await expect(d.getByRole('button',{name:'保存',exact:true})).toBeEnabled();expect(s.calls.some((c:any)=>c.url.endsWith('/corrections'))).toBe(false);expect(s.errors).toEqual([]);
+});
+
+test('LQ single student busy save prevents duplicate submission and close, then returns focus',async({page})=>{
+  let release!:()=>void;const wait=new Promise<void>(resolve=>release=resolve);const s=await correctionFixture(page,{correct:async(route:Route,body:any,s:any)=>{await wait;return json(route,s.accept(body));}}),d=s.dialog;
+  try{await d.getByLabel('改签理由').fill('等待保存完成');await d.getByRole('button',{name:'保存',exact:true}).click();await expect(d.getByRole('button',{name:'保存',exact:true})).toBeDisabled();await expect(d.getByRole('button',{name:'保存并推送',exact:true})).toBeDisabled();await page.keyboard.press('Escape');await expect(d).toBeVisible();expect(s.calls.filter((c:any)=>c.url.endsWith('/corrections'))).toHaveLength(1);release();await expect(d.getByLabel('改签理由')).toHaveValue('');await page.keyboard.press('Escape');await expect(d).not.toBeVisible();await expect(s.card).toBeFocused();expect(s.errors).toEqual([]);}finally{release();}
+});
+
+test('LQ single student old eligibility cannot unlock a new student after close and reopen',async({page})=>{
+  let release!:()=>void;const wait=new Promise<void>(resolve=>release=resolve);const s=await correctionFixture(page,{gate:{allowed:false,code:'checking'},read:(route:Route,_body:any,s:any,url:string)=>json(route,{...s.dto(),gate:url.includes('/students/2/')?{allowed:false,code:'alignment_required',message:'第二位学生尚未对齐'}:{allowed:false,code:'checking'}}),check:async(route:Route,_body:any,s:any)=>{await wait;return json(route,{...s.dto(),gate:readyStudentGate()});}});
+  try{await expect.poll(()=>s.calls.some((c:any)=>c.url.endsWith('/push/check'))).toBe(true);await page.keyboard.press('Escape');await expect(s.dialog).not.toBeVisible();await s.parent.locator('.la-student-open').nth(1).click();const d=page.getByRole('dialog',{name:'学生签到详情',exact:true});await expect(d.getByText('第二位学生尚未对齐',{exact:true})).toBeVisible();release();await expect(d.getByRole('button',{name:'保存并推送',exact:true})).toBeDisabled();await expect(d.getByRole('heading',{name:'合成同学2 · 本次签到'})).toBeVisible();expect(s.errors).toEqual([]);}finally{release();}
+});
+
+for(const dark of [false,true])for(const width of [390,1440])test(`LQ single student correction ${dark?'dark':'light'} ${width}px keeps both actions readable`,async({page})=>{
+  await page.setViewportSize({width,height:980});const s=await correctionFixture(page,{dark}),d=s.dialog;
+  await expect(d.getByRole('button',{name:'保存',exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'保存并推送',exact:true})).toBeEnabled();expect(await d.evaluate(n=>n.scrollWidth<=n.clientWidth+1)).toBe(true);await expect.poll(()=>d.evaluate(n=>n.closest('[data-lq-layer-state]')?.getAttribute('data-lq-layer-state'))).toBe('open');await page.screenshot({path:`.codex-temp/evidence/attendance-student-push-20261112/student-${dark?'dark':'light'}-${width}.png`});expect(s.errors).toEqual([]);
+});
 
 function alignmentWorkflow(stage='course') {
   const localCourse={course_name:'计算机网络原理',course_code:'E030054B1',academic_year:'2026-2027',academic_term:1,student_count:42,session_count:32,total_hours:64,credits:4};
@@ -183,16 +385,16 @@ test('LQ streamlined attendance keeps unmatched recording local, then binds and 
 });
 
 test('LQ compact student card opens a nested editable detail, preserves conflict draft and returns focus',async({page})=>{
-  const current={...round(2),state:'published'};let saves=0;const errors=await fixture(page,async(route,url,body)=>{
+  const current={...round(2),state:'published',records:round(2).records.map(r=>({...r,revision:1}))};let saves=0;const errors=await fixture(page,async(route,url,body)=>{
     if(url.endsWith('/sessions/12'))return json(route,{session,policy:current.policy,round:current});
-    if(url.includes('/students/'))return json(route,{record:current.records[0],history:[]});
-    if(url.endsWith('/records')){saves++;if(saves===1)return json(route,{detail:'版本已变化，请重新读取'},409);current.records[0]={...current.records[0],status:body.records[0].status,status_label:'出勤',revision:1};return json(route,{round:current,results:[{student_id:1,result:'updated'}]});}
+    if(url.endsWith('/students/1'))return json(route,{record:current.records[0],history:[]});
+    if(url.endsWith('/corrections')){saves++;if(saves===1)return json(route,{detail:'版本已变化，请重新读取'},409);current.records[0]={...current.records[0],status:body.status,status_label:'出勤',revision:2};return json(route,{local_saved:true,record:current.records[0],round:current,push:null});}
     return json(route,{detail:'unexpected '+url},500);
   });
   await open(page,'teacher',false);const d=page.getByRole('dialog',{name:'自动点名',exact:true});const card=d.locator('.la-student-open').first();await card.click();const student=page.getByRole('dialog',{name:'学生签到详情',exact:true});
-  await choose(page,student,'出勤状态','出勤');await student.getByLabel('改签理由').fill('教师现场核对出勤');await student.getByRole('button',{name:'保存出勤状态'}).click();await expect(student.getByRole('alert')).toContainText('版本已变化');await expect(student.getByLabel('改签理由')).toHaveValue('教师现场核对出勤');
+  await choose(page,student,'出勤状态','出勤');await student.getByLabel('改签理由').fill('教师现场核对出勤');await student.getByRole('button',{name:'保存',exact:true}).click();await expect(student.getByRole('alert')).toContainText('版本已变化');await expect(student.getByLabel('改签理由')).toHaveValue('教师现场核对出勤');
   await page.keyboard.press('Escape');const confirm=page.getByRole('dialog',{name:'放弃本次改签草稿？'});await expect(confirm).toBeVisible();await confirm.getByRole('button',{name:'取消',exact:true}).click();
-  await student.getByRole('button',{name:'重新读取最新记录'}).click();await expect(student.getByLabel('改签理由')).toHaveValue('教师现场核对出勤');await student.getByRole('button',{name:'保存出勤状态'}).click();await expect(student.getByLabel('改签理由')).toHaveValue('');await page.keyboard.press('Escape');await expect(student).not.toBeVisible();await expect(card).toBeFocused();await expect(card).toContainText('出勤');expect(errors).toEqual([]);
+  await student.getByRole('button',{name:'重新读取最新记录'}).click();await expect(student.getByLabel('改签理由')).toHaveValue('教师现场核对出勤');await student.getByRole('button',{name:'保存',exact:true}).click();await expect(student.getByLabel('改签理由')).toHaveValue('');await page.keyboard.press('Escape');await expect(student).not.toBeVisible();await expect(card).toBeFocused();await expect(card).toContainText('出勤');expect(errors).toEqual([]);
 });
 
 test('LQ school account errors keep recording available and only missing credentials expose account setup',async({page})=>{
@@ -239,14 +441,15 @@ for(const rejected of [false,true])test(`LQ dispatch location handshake ${reject
 test('LQ delayed school refresh cannot unlock sync while a local revision is being recalculated',async({page})=>{
   const current={...round(2),state:'published'};let releaseWorkflow!:()=>void,releaseRecalculation!:()=>void,recalculating=false;
   const workflowWait=new Promise<void>(resolve=>releaseWorkflow=resolve),recalculationWait=new Promise<void>(resolve=>releaseRecalculation=resolve);
-  const errors=await fixture(page,async(route,url)=>{
+  const errors=await fixture(page,async(route,url,body)=>{
     if(url.endsWith('/sessions/12'))return json(route,{session,policy:current.policy,round:current});
     if(url.endsWith('/external/workflow')){await workflowWait;return json(route,{binding:{state:'matched',revision:1,needs_location:false,diagnostics:[]},can_sync:true,plan:null});}
-    if(url.endsWith('/recalculate')){recalculating=true;await recalculationWait;return json(route,{...current,revision:2});}
+    if(url.endsWith('/rounds/9'))return json(route,{...current,revision:2});
+    if(url.endsWith('/settlement')){if(!body)return json(route,{gate:{can_start:true,can_restart:false},task:null,round_revision:1});recalculating=true;await recalculationWait;return json(route,{gate:{can_start:true,can_restart:false},task:settlementTask(1,'completed'),round_revision:2,round:{...current,revision:2}},202);}
     return json(route,{detail:'unexpected '+url},500);
-  },'teacher','',undefined,true);
+  },'teacher','',undefined,true,false,true);
   try {
-    await open(page);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await d.getByRole('button',{name:'重新核算',exact:true}).click();await expect.poll(()=>recalculating).toBe(true);
+    await open(page);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await d.getByRole('button',{name:'立即结算',exact:true}).click();await expect.poll(()=>recalculating).toBe(true);
     releaseWorkflow();await expect(d.getByText('已对齐',{exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'对齐课次',exact:true})).toBeDisabled();await expect(d.getByRole('button',{name:'同步与推送',exact:true})).toBeDisabled();
     releaseRecalculation();await expect(d.getByRole('button',{name:'同步与推送',exact:true})).toBeEnabled();expect(errors).toEqual([]);
   } finally {releaseWorkflow();releaseRecalculation();}
@@ -427,7 +630,7 @@ test('LQ school auto push denied geolocation keeps draft and permits an existing
 test('LQ historical school sync exposes saved verification without remote mutations',async({page})=>{
   await page.setViewportSize({width:390,height:844});
   const current={...round(2),is_current:false,state:'void'},calls:string[]=[];
-  const errors=await fixture(page,async(route,url)=>{calls.push(route.request().method()+' '+url);if(url.endsWith('/sessions/12'))return json(route,{session,policy:current.policy,round:current});if(url.endsWith('/capabilities'))return json(route,{readback:true,auto_sync:true});if(url.endsWith('/auto-sync'))return json(route,{plan:{revision:3,state:'void',enabled:false,target:{},last_run:{operations:[{student_number:'S001',target_status:'CHECKED',remote_status:'CHECKED',state:'confirmed',reason:'学校回读一致'}]}}});if(url.endsWith('/runs'))return json(route,{items:[{id:'automatic-only-run',mode:'auto_sync'}]});if(url.endsWith('/bindings'))return json(route,{items:[]});return json(route,{detail:'unexpected'},500);});
+  const errors=await fixture(page,async(route,url)=>{calls.push(route.request().method()+' '+url);if(url.endsWith('/sessions/12'))return json(route,{session,policy:current.policy,round:current});if(url.endsWith('/capabilities'))return json(route,{readback:true,auto_sync:true});if(url.endsWith('/auto-sync'))return json(route,{plan:{revision:3,state:'void',enabled:false,target:{},last_run:{operations:[{student_number:'S001',target_status:'CHECKED',remote_status:'CHECKED',state:'confirmed',reason:'学校回读一致'}]}}});if(url.endsWith('/runs'))return json(route,{items:[{id:'student-only-run',mode:'student_push'},{id:'automatic-only-run',mode:'auto_sync'}]});if(url.endsWith('/bindings'))return json(route,{items:[]});return json(route,{detail:'unexpected'},500);});
   await open(page);await page.getByRole('button',{name:'查看学校同步记录'}).click();const d=page.getByRole('dialog',{name:'智慧课堂核对',exact:true});await expect(d.getByText('学校回读一致',{exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'启用本轮结束后自动推送'})).toHaveCount(0);await expect(d.getByRole('button',{name:'重新授权后台连接'})).toHaveCount(0);await expect(d.getByLabel('学年',{exact:true})).not.toBeVisible();expect(await d.evaluate(n=>n.scrollWidth<=n.clientWidth+1)).toBe(true);await page.screenshot({path:'.codex-temp/evidence/attendance-workflow-20261112/school-history-mobile.png',fullPage:true});expect(calls.every(x=>x.startsWith('GET '))).toBe(true);expect(calls.some(x=>x.endsWith('/runs/automatic-only-run'))).toBe(false);expect(errors).toEqual([]);
 });
 

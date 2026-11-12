@@ -189,6 +189,8 @@ def create_round(conn, offering_id, session_id, user, payload, *, timestamp=None
             raise HTTPException(409, "此课次已有进行中的点名。")
         if int(payload.get("supersedes_id") or 0) != previous["id"]:
             raise HTTPException(409, "此课次已有点名，请明确选择重新开启并保留历史。")
+        from .login_attendance_settlement_service import stop_settlement
+        stop_settlement(conn,previous['id'],'本轮已被新记录替代，旧结算不再发布；历史记录保留。')
         conn.execute("UPDATE login_attendance_rounds SET is_current=0,revision=revision+1 WHERE id=?", (previous["id"],))
         _cancel_appeals(conn, previous["id"], None, user, "本轮点名已被重新开启的轮次替代，历史申请与处理记录保留。")
     roster = _roster(conn, offering_id)
@@ -241,37 +243,41 @@ def evaluate_round(conn, round_id, *, timestamp=None):
     row = load_round(conn, round_id, lock=True)
     if row["state"] == "void" or not row["is_current"]:
         return
+    from .login_attendance_settlement_service import has_unpublished_settlement
+    if has_unpublished_settlement(conn, round_id):
+        return
+    # A scan may have captured its timestamp before a teacher's immediate
+    # settlement committed. Do not regress its cutoff, evidence or publication.
+    now = max(now, row.get('evaluated_at_ms') or 0)
     if row["state"] == "published" and now > row["window_end_ms"] + 7 * 86400_000:
         # Browser replay evidence has a bounded retention horizon. Historical
         # decisions remain editable, but expired raw coverage cannot erase a
         # previously sealed lesson's evidence.
         return
+    prepared = collect_evaluation(conn, row, timestamp=now)
+    if prepared is None:
+        if now+1 <= row['window_start_ms']:
+            conn.execute('UPDATE login_attendance_rounds SET next_evaluation_ms=? WHERE id=?', (row['window_start_ms'],round_id))
+        return
+    apply_evaluation(conn, row, compute_evaluation(prepared))
+
+
+def collect_evaluation(conn, row, *, timestamp):
+    """Read a conservative input snapshot; caller controls transaction scope."""
+    now = timestamp
+    round_id = row['id']
     policy = _load(row["policy_json"])
     records = _records(conn, round_id)
     if not records:
-        return
+        return None
     end_ms = min(row["window_end_ms"], now + 1)
     if end_ms <= row["window_start_ms"]:
-        conn.execute("UPDATE login_attendance_rounds SET next_evaluation_ms=? WHERE id=?", (row["window_start_ms"], round_id))
-        return
+        return None
     ids = [r["student_id"] for r in records]
     placeholders = ",".join("?" for _ in ids)
     observations = [dict(x) for x in conn.execute(
         f"SELECT * FROM login_attendance_access WHERE student_id IN ({placeholders}) AND observed_at_ms>=? AND observed_at_ms<? ORDER BY observed_at_ms,event_key",
         (*ids, row["window_start_ms"], end_ms)).fetchall()]
-    calculation = rules.evaluate_roster(records, observations, start_ms=row["window_start_ms"], end_ms=end_ms,
-                                        networks=policy["networks"], teacher_reference_ms=policy.get("teacher_reference_ms"))
-    network_evidence = {}
-    for event in observations:
-        sid=event["student_id"]
-        item=network_evidence.setdefault(sid,{"first_ip":event["ip_address"],"last_ip":event["ip_address"],
-            "distinct_ips":[],"source_types":[],"observation_count":0})
-        item["last_ip"]=event["ip_address"]
-        item["observation_count"]+=1
-        if event["ip_address"] not in item["distinct_ips"] and len(item["distinct_ips"])<16:
-            item["distinct_ips"].append(event["ip_address"])
-        if event["source"] not in item["source_types"]:
-            item["source_types"].append(event["source"])
     roster = [{"id":r["student_id"],"name":r["name"],"student_id_number":r["student_number"],"class_name":r["class_name"],
                "confirmed_retake":r["confirmed_retake"]} for r in records]
     # Observe receipts before reading derived facts. A batch applied midway
@@ -289,6 +295,29 @@ def evaluate_round(conn, round_id, *, timestamp=None):
         receipt_counts[int(receipt["user_pk"])][receipt["state"]]=int(receipt["n"])
     activity = build_classroom_activity_evidence(conn, row["class_offering_id"], rules.display_time(row["window_start_ms"]),
                                                 rules.display_time(end_ms), roster_rows=roster)
+    return {'round':dict(row), 'timestamp':now, 'end_ms':end_ms, 'policy':policy, 'records':records,
+            'observations':observations, 'receipt_rows':[dict(r) for r in receipt_rows],
+            'receipt_counts':receipt_counts, 'activity':activity}
+
+
+def compute_evaluation(prepared):
+    """Pure calculation shared by ordinary scans and durable settlement jobs."""
+    row, now, end_ms = prepared['round'], prepared['timestamp'], prepared['end_ms']
+    policy, records, observations = prepared['policy'], prepared['records'], prepared['observations']
+    receipt_rows, receipt_counts, activity = prepared['receipt_rows'], prepared['receipt_counts'], prepared['activity']
+    calculation = rules.evaluate_roster(records, observations, start_ms=row['window_start_ms'], end_ms=end_ms,
+        networks=policy['networks'], teacher_reference_ms=policy.get('teacher_reference_ms'))
+    network_evidence = {}
+    for event in observations:
+        sid=event['student_id']
+        item=network_evidence.setdefault(sid,{'first_ip':event['ip_address'],'last_ip':event['ip_address'],
+            'distinct_ips':[],'source_types':[],'observation_count':0})
+        item['last_ip']=event['ip_address']
+        item['observation_count']+=1
+        if event['ip_address'] not in item['distinct_ips'] and len(item['distinct_ips'])<16:
+            item['distinct_ips'].append(event['ip_address'])
+        if event['source'] not in item['source_types']:
+            item['source_types'].append(event['source'])
     by_student = {int(x["id"]):x for x in activity["students"]}
     for sid, counts in receipt_counts.items():
         collection = by_student[sid]["collection"]
@@ -310,6 +339,25 @@ def evaluate_round(conn, round_id, *, timestamp=None):
                  "receipt_last_received_at":max((x["last_received_at"] for x in receipt_rows),default=None),
                  "pending_batch_count": pending, "quarantined_batch_count": isolated,
                  "complete": not (pending or isolated)}
+    return {'round':row, 'timestamp':now, 'records':records, 'calculation':calculation,
+            'network_evidence':network_evidence, 'by_student':by_student, 'finalized':finalized,
+            'state':state, 'watermark':watermark}
+
+
+def apply_evaluation(conn, row, result):
+    """Atomically publish evidence while retaining the latest teacher decisions.
+
+    The caller must hold parent then round locks and fence its generation. No
+    caller can publish a stale snapshot of manual status or decision metadata.
+    """
+    round_id, now = row['id'], result['timestamp']
+    calculation, by_student = result['calculation'], result['by_student']
+    network_evidence, finalized = result['network_evidence'], result['finalized']
+    state, watermark = result['state'], result['watermark']
+    records = _records(conn, round_id)
+    identity = lambda rows: [(r['student_id'],r['student_number'],r['expected'],r['confirmed_retake']) for r in rows]
+    if identity(records) != identity(result['records']):
+        raise HTTPException(409, '本轮学生名单或免考勤范围已变化，请重新结算。')
     outputs, newly_present = [], set()
     for record in records:
         candidate = calculation["results"][record["student_id"]]
@@ -332,7 +380,7 @@ def evaluate_round(conn, round_id, *, timestamp=None):
             conn.execute("UPDATE login_attendance_records SET status=?,suggestion=?,quality=?,first_seen_ms=?,last_seen_ms=?,deviation_ms=?,"
                          "evidence_json=?,reason=?,revision=revision+1,updated_at_ms=? WHERE id=?",
                          (status,candidate["suggestion"],quality,candidate["first_seen_ms"],candidate["last_seen_ms"],candidate["deviation_ms"],
-                          _json(evidence),reason,now,record["id"]))
+                          _json(evidence),reason,max(now,record['updated_at_ms']),record["id"]))
         if status=="PRESENT" and record["status"]!="PRESENT":
             newly_present.add(record["student_id"])
         outputs.append({"student_id":record["student_id"],"status":status,"manual":bool(record["manual_confirmed"]),**candidate,
@@ -385,6 +433,8 @@ def void_round(conn, round_id, user, payload):
     reason = str(payload.get("reason") or "").strip()
     if not reason or len(reason) > 1000:
         raise HTTPException(422, "请填写 1—1000 字作废原因。")
+    from .login_attendance_settlement_service import stop_settlement
+    stop_settlement(conn, round_id, '本轮点名已作废，结算任务停止。')
     conn.execute("UPDATE login_attendance_rounds SET state='void',is_current=0,void_reason=?,revision=revision+1 WHERE id=?", (reason,round_id))
     _audit(conn, round_id, "void", user, before={"state":row["state"]}, reason=reason)
     _cancel_appeals(conn, round_id, None, user, "本次点名已作废，原记录保留供查询。")
@@ -474,6 +524,9 @@ def round_view(conn, round_id, user):
                               "counts":dict(counts),"expected_counts":dict(Counter(r["status"] for r in records if r["expected"])),
                               "provisionally_present":sum(r["suggestion"]=="PRESENT" and r["expected"] for r in records)},
                    "collection_health":collection_health()})
+    from .login_attendance_settlement_service import round_status
+    settlement=round_status(conn,row)
+    result.update(settlement=settlement['task'],settlement_gate=settlement['gate'])
     return result
 
 

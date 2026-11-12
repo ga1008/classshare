@@ -80,6 +80,7 @@ from ...services.late_submission_policy import (
     utc_like_now,
 )
 from ...services.assessment_appeal_service import resubmission_late_mode
+from ...services.assessment_question_contract import normalize_numbered_answer_payload, numbered_blank_questions
 from ...services.assignment_student_window_service import active_window, mark_window_used, window_late_snapshot
 from ...services.exam_json_service import (
     build_exam_rubric_md,
@@ -834,6 +835,7 @@ def _save_assignment_draft_without_files_sync(
             assignment=assignment,
             student_id=int(student_pk_id),
         )
+        answers_json = _normalize_exam_numbered_answer_json(conn, assignment, answers_json)
 
         replace_ids = {
             str(item or "").strip()
@@ -1178,7 +1180,7 @@ def _parse_answers_payload(answers_json: str) -> Any:
     return answers_data.get("answers", answers_data) if isinstance(answers_data, dict) else answers_data
 
 
-def _load_exam_attachment_policies(conn, assignment: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def _load_exam_answer_definition(conn, assignment: dict[str, Any]) -> dict[str, Any]:
     paper_id = assignment.get("exam_paper_id")
     if not paper_id:
         return {}
@@ -1189,6 +1191,31 @@ def _load_exam_attachment_policies(conn, assignment: dict[str, Any]) -> dict[str
         paper_data = json.loads(paper["questions_json"])
     except (TypeError, json.JSONDecodeError):
         return {}
+    return paper_data if isinstance(paper_data, dict) else {}
+
+
+def _normalize_exam_numbered_answer_json(conn, assignment: dict[str, Any], answers_json: str) -> str:
+    paper_data = _load_exam_answer_definition(conn, assignment)
+    if not numbered_blank_questions(paper_data):
+        return answers_json
+    try:
+        payload = json.loads(answers_json) if answers_json else {}
+        answers = payload.get("answers", payload) if isinstance(payload, dict) else payload
+        normalized = normalize_numbered_answer_payload(paper_data, answers)
+        if normalized is answers:
+            return answers_json
+        if isinstance(payload, dict) and "answers" in payload:
+            payload = {**payload, "answers": normalized}
+        else:
+            payload = normalized
+        return json.dumps(payload, ensure_ascii=False)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, f"填空作答格式不正确：{exc}") from exc
+
+
+def _load_exam_attachment_policies(conn, assignment: dict[str, Any], *, paper_data: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+    if paper_data is None:
+        paper_data = _load_exam_answer_definition(conn, assignment)
 
     policies: dict[str, dict[str, Any]] = {}
     for page in (paper_data.get("pages", []) if isinstance(paper_data, dict) else []):
@@ -1341,9 +1368,14 @@ async def _save_submission_payload(
             is_late_submission, late_by_seconds, late_snapshot_json = inherited
     started_at_normalized = _normalize_submission_started_at(started_at, submitted_at)
     answers_payload = _parse_answers_payload(answers_json)
+    paper_data = _load_exam_answer_definition(conn, assignment)
+    try:
+        answers_payload = normalize_numbered_answer_payload(paper_data, answers_payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     has_answer_content_before_storage = answers_have_content(answers_payload)
     allowed_file_types = decode_allowed_file_types_json(assignment.get("allowed_file_types_json"))
-    attachment_policies = _load_exam_attachment_policies(conn, assignment)
+    attachment_policies = _load_exam_attachment_policies(conn, assignment, paper_data=paper_data)
     student_pk_id = int(student["id"])
     draft = _load_submission_draft(conn, str(assignment["id"]), student_pk_id) if use_server_draft_files else None
     has_server_draft_files = bool(draft and _load_submission_draft_files(conn, int(draft["id"])))

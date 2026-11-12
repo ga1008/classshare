@@ -110,6 +110,11 @@ function collectDashboardContext() {
 }
 
 export function collectPageContext(extra = {}) {
+    if (CONFIG.assessmentAi?.allowed) {
+        return { page: { title: clampText(document.title, 140), path: window.location.pathname },
+            classOfferingId: CONFIG.classOfferingId || null, assignmentId: CONFIG.assignmentId || null,
+            assessmentAi: CONFIG.assessmentAi };
+    }
     const session = collectSelectedSessionContext();
     const context = {
         page: {
@@ -195,6 +200,8 @@ function sameOriginFrameText() {
 }
 
 export function collectPageText() {
+    // An exam permission covers listed questions, not all visible page text.
+    if (CONFIG.assessmentAi?.allowed) return String(CONFIG.assessmentAi.context || '');
     try {
         const root = PAGE_TEXT_ROOTS.map((selector) => $(selector)).find(Boolean);
         let text = textOfElement(root || document.body);
@@ -223,6 +230,7 @@ export function contextLabel(context = collectPageContext()) {
 }
 
 export function formatContextForPrompt(context = collectPageContext()) {
+    if (context.assessmentAi?.allowed) return `路径：${window.location.pathname}\n${context.assessmentAi.context || ''}`;
     const lines = ['【当前页面背景】', `页面：${context.page?.title || document.title}`, `路径：${context.page?.path || window.location.pathname}`];
     if (context.page?.activeArea) lines.push(`当前区域：${context.page.activeArea}`);
     if (context.page?.selectedText) lines.push(`用户选中文本：${context.page.selectedText}`);

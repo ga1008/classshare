@@ -68,6 +68,7 @@ ANSWER_METADATA_KEYS = {
     "question_no",
     "title",
     "type",
+    "blank_ids",
     "placeholder",
     "attachment_requirements",
     "attachment_requirement",

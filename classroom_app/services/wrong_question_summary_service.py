@@ -17,11 +17,13 @@ from ..db.connection import get_configured_db_engine
 from ..db.errors import DatabaseProgrammingError
 from .assignment_lifecycle_service import close_overdue_assignments, refresh_assignment_runtime_status
 from .offering_membership_service import count_offering_active_students
+from .assessment_question_contract import (
+    CHOICE_QUESTION_TYPES, LONG_ANSWER_TYPES, QUESTION_TYPE_LABELS,
+    SINGLE_CHOICE_TYPES, TEXT_QUESTION_TYPES, numbered_blank_answer_text,
+)
 
 
 PROMPT_VERSION = "wrong-question-summary-v4"
-TEXT_QUESTION_TYPES = {"text", "textarea"}
-CHOICE_QUESTION_TYPES = {"radio", "checkbox"}
 UNMATCHED_CHOICE_KEY = "__unmatched_choice__"
 BLANK_CHOICE_KEY = "__blank_choice__"
 KNOWLEDGE_ANALYSIS_CACHE_PREFIX = "assignment-knowledge"
@@ -79,14 +81,6 @@ WRONG_SUMMARY_POSTGRES_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "updated_at",
     ),
 }
-
-QUESTION_TYPE_LABELS = {
-    "radio": "单选题",
-    "checkbox": "多选题",
-    "text": "填空题",
-    "textarea": "问答题",
-}
-
 
 def ensure_wrong_summary_cache_tables(conn) -> None:
     engine = get_configured_db_engine()
@@ -1104,6 +1098,7 @@ def _extract_exam_questions(exam_data: dict[str, Any]) -> list[dict[str, Any]]:
                 "text": str(raw_question.get("text") or raw_question.get("question") or "").strip(),
                 "options": [str(item).strip() for item in options if str(item).strip()],
                 "answer": raw_question.get("answer"),
+                "blanks": raw_question.get("blanks"),
                 "answer_text": "",
                 "points": raw_question.get("points")
                 or (raw_question.get("grading") or {}).get("points")
@@ -2759,7 +2754,7 @@ async def _generate_text_wrong_clusters(
 ) -> dict[str, Any]:
     question_type = str(question.get("type") or "")
     answer_lines: list[str] = []
-    if question_type == "textarea":
+    if question_type in LONG_ANSWER_TYPES:
         for idx, record in enumerate(wrong_records[:60], start=1):
             answer_lines.append(
                 f"{idx}. 得分 {record.get('score_text') or '-'}："
@@ -2995,7 +2990,7 @@ def _canonical_answer_key(question: dict[str, Any], raw_value: Any) -> str:
         values = _split_answer_values(raw_value)
         canonical_values = [_canonical_choice_value(question, value) for value in values]
         return "|||".join(sorted(value for value in canonical_values if value))
-    if question_type == "radio":
+    if question_type in SINGLE_CHOICE_TYPES:
         return _canonical_choice_value(question, raw_value)
     return _normalize_free_text(raw_value)
 
@@ -3057,7 +3052,7 @@ def _format_student_answer(question: dict[str, Any], raw_value: Any) -> str:
         values = _split_answer_values(raw_value) if question_type == "checkbox" else [raw_value]
         display_values = [_choice_display(question, value) for value in values]
         return "；".join([value for value in display_values if value]) or str(raw_value)
-    return _clip_text(str(raw_value).strip(), 220)
+    return _clip_text(numbered_blank_answer_text(question, raw_value) or str(raw_value).strip(), 220)
 
 
 def _format_correct_answer(question: dict[str, Any]) -> str:
@@ -3065,6 +3060,9 @@ def _format_correct_answer(question: dict[str, Any]) -> str:
     question_type = question.get("type")
     if question_type in CHOICE_QUESTION_TYPES:
         return _format_student_answer(question, answer)
+    numbered = numbered_blank_answer_text(question, answer)
+    if numbered:
+        return numbered
     if isinstance(answer, list):
         return "；".join(str(item).strip() for item in answer if str(item).strip())
     return str(answer or "").strip()

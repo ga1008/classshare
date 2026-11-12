@@ -100,6 +100,7 @@ from ..services.file_service import resolve_global_file_path
 from ..services.materials_service import ensure_user_material_access, is_git_internal_material_path
 from ..services.organization_scope_service import load_teacher_org_scope
 from ..services.exam_json_service import normalize_exam_scoring_payload
+from ..services.assessment_question_contract import QUESTION_TYPE_LABELS, VALID_QUESTION_TYPES
 
 router = APIRouter(prefix="/api")
 
@@ -2613,8 +2614,12 @@ async def handle_ai_workspace_chat(
     web_search_enabled = web_search_enabled is True
     user_pk, user_role = _get_user_pk_role(user)
     with get_db_connection() as conn:
-        ensure_ai_workspace_access(conn, user, request, page_path=page_path, extra_context=context_prompt_extra)
+        assessment_access = ensure_ai_workspace_access(conn, user, request, page_path=page_path, extra_context=context_prompt_extra)
         workspace_store.owned_session(conn, session_uuid, user)
+    if assessment_access:
+        page_path = assessment_access['page_path']
+        context_prompt_extra = assessment_access['context']
+        page_text = ''
     cleaned_message = str(message or "").strip()
     if not cleaned_message and not files:
         raise HTTPException(status_code=400, detail="请输入要发送给 AI 助手的内容。")
@@ -2629,11 +2634,15 @@ async def handle_ai_workspace_chat(
         # The quota scan and atomic image writes share the short account lock,
         # but run off the event loop. Replays never write files a second time.
         with get_db_connection() as conn:
-            return workspace_store.begin_request(conn, session_uuid, user, request_id, cleaned_message,
+            current_access = ensure_ai_workspace_access(conn, user, request, page_path=page_path, extra_context=context_prompt_extra)
+            result = workspace_store.begin_request(conn, session_uuid, user, request_id, cleaned_message,
                 uploads["attachments"], {"message": cleaned_message, "deep_thinking": bool(deep_thinking),
                                        "web_search_enabled": bool(web_search_enabled),
-                                       "file_texts": uploads["file_texts"], "images": uploads["base64_urls"]},
+                                       "file_texts": uploads["file_texts"], "images": uploads["base64_urls"],
+                                       **({'assessment_scope': current_access['scope_key']} if current_access else {})},
                 image_uploads=uploads["private_images"])
+            result['_assessment_access'] = current_access
+            return result
 
     begin_task = asyncio.create_task(asyncio.to_thread(begin_workspace_request))
     try:
@@ -2656,6 +2665,10 @@ async def handle_ai_workspace_chat(
                         '发送已中断，请重试。', success=False)
         raise
     uploads.pop('private_images', None)
+    assessment_access = request_state.pop('_assessment_access', assessment_access)
+    if assessment_access:
+        context_prompt_extra = assessment_access['context']
+        page_text = ''
     with get_db_connection() as conn:
         if request_state.get("pending"):
             return JSONResponse({"status": "pending", "request_id": request_state["request_id"]}, status_code=202)
@@ -2673,7 +2686,8 @@ async def handle_ai_workspace_chat(
                 yield _encode_stream_event("answer_delta", delta=answer["final_answer"] or answer["message"])
                 yield _encode_stream_event("done", has_thinking=False)
             return StreamingResponse(replay(), media_type=STREAM_EVENT_MEDIA_TYPE, headers=STREAM_RESPONSE_HEADERS)
-        ai_history = workspace_store.ai_history(conn, request_state["session_id"], request_state["request_id"])
+        ai_history = workspace_store.ai_history(conn, request_state["session_id"], request_state["request_id"],
+                                               assessment_scope=(assessment_access or {}).get('scope_key'))
     base64_urls = uploads["base64_urls"]
     file_texts = uploads["file_texts"]
     model_capability: Literal["standard", "thinking", "vision"] = "thinking" if deep_thinking else "standard"
@@ -2923,7 +2937,13 @@ async def handle_ai_chat(
 
     # 1. 验证会话所有权并获取会话 DB ID
     with get_db_connection() as conn:
-        ensure_ai_workspace_access(conn, user, request, page_path=page_path, extra_context=context_prompt_extra)
+        assessment_access = ensure_ai_workspace_access(conn, user, request, page_path=page_path, extra_context=context_prompt_extra)
+        if assessment_access and int(class_offering_id) != assessment_access['class_offering_id']:
+            raise HTTPException(403, 'AI 协助课堂与当前考试不一致')
+        if assessment_access:
+            page_path = assessment_access['page_path']
+            context_prompt_extra = assessment_access['context']
+            page_text = ''
         _ensure_classroom_access(conn, class_offering_id, user_pk, user_role)
         session = conn.execute(
             """
@@ -2974,6 +2994,10 @@ async def handle_ai_chat(
 
     # 4. 保存用户的消息到数据库
     with get_db_connection() as conn:
+        current_access = ensure_ai_workspace_access(conn, user, request, page_path=page_path, extra_context=context_prompt_extra)
+        if current_access:
+            context_prompt_extra = current_access['context']
+            page_text = ''
         user_message_id = execute_insert_returning_id(conn,
             """
             INSERT INTO ai_chat_messages (session_id, role, message, attachments_json)
@@ -3023,7 +3047,9 @@ async def handle_ai_chat(
     ai_history_for_call = []
 
     # 提取除最后一条（我们刚插入的）之外的所有消息
-    for row in all_messages[:-1]:
+    # Legacy classroom messages have no permission scope metadata. Assessment
+    # assistance must not automatically carry unrelated historical questions.
+    for row in ([] if assessment_access else all_messages[:-1]):
         ai_history_for_call.append({
             "role": row['role'],
             "content": sanitize_hidden_profile_leaks(_extract_message_text(row['message'], row['final_answer']))
@@ -3393,12 +3419,12 @@ def _compose_exam_generation_prompt(
         else "总题数：教师未指定，请根据上传文档内容、难度和题型要求合理决定。"
     )
     if question_types:
-        labels = {"radio": "单选题", "checkbox": "多选题", "text": "填空题", "textarea": "问答题"}
+        labels = QUESTION_TYPE_LABELS
         descriptions = [f"{labels.get(kind, kind)}: {count}题" for kind, count in question_types.items() if int(count) > 0]
         if descriptions:
             prompt_parts.append(f"题型分布：{', '.join(descriptions)}")
     else:
-        prompt_parts.append("题型分布：教师未指定，请根据文档内容和难度自动分配单选、多选、填空、问答题。")
+        prompt_parts.append("题型分布：教师未指定，请根据文档内容和难度合理分配单选、多选、判断、填空、简答、分析、程序、综合题。")
     if has_source_files:
         prompt_parts.append(_build_exam_source_context(source_files))
     if class_offering_id:
@@ -3422,10 +3448,10 @@ def _compose_exam_generation_prompt(
             print(f"[WARN] 获取课程上下文失败: {exc}")
     prompt = "\n".join(prompt_parts)
     prompt += "\n\n请生成完整的试卷题目，具体要求如下："
-    prompt += "\n1. 题目类型说明：radio=单选题，checkbox=多选题，text=填空题，textarea=问答题"
+    prompt += "\n1. 题目类型说明：radio=单选，checkbox=多选，boolean=判断，text=填空，textarea=简答，analysis=分析，code=程序，comprehensive=综合"
     prompt += "\n2. 每道题必须包含：id（唯一标识，如q1,q2）、type（题型）、text（题目内容）"
     prompt += "\n3. 选择题必须提供options数组（至少2个选项），并指定answer（单选题为单个选项字母如'A'，多选题为数组如['A','B']）"
-    prompt += "\n4. 填空题和问答题可以提供placeholder作为提示文本，answer为字符串答案"
+    prompt += '\n4. 填空题题干用 {{1}}、{{2}} 标记，blanks 为 [{"id":"1","answer":"答案一"},{"id":"2","answer":"答案二"}]，answer为同顺序数组；编号一一对应，数量随内容决定；主观题answer为Markdown字符串，可提供placeholder'
     prompt += "\n5. 每道题必须包含explanation（解析），说明为什么答案正确或其他选项为什么错误"
     prompt += "\n6. 试卷可以分多个部分（pages），每个部分有name和questions数组"
     prompt += "\n7. 根据难度要求调整题目难度：简单=基础知识点，中等=需要一定思考，困难=综合应用或分析"
@@ -3875,7 +3901,7 @@ async def ai_generate_exam(request: Request, background_tasks: BackgroundTasks, 
         question_types = data.get('question_types') or {}
         if not isinstance(question_types, dict):
             raise HTTPException(status_code=400, detail="题型分布格式错误")
-        valid_types = ['radio', 'checkbox', 'text', 'textarea']
+        valid_types = VALID_QUESTION_TYPES
         normalized_question_types = {}
         for qtype, count in question_types.items():
             if qtype not in valid_types:

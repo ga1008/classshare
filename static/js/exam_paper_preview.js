@@ -1,12 +1,8 @@
 import { escapeHtml } from './ui.js';
-import { renderMarkdownHtml } from './grading_feedback.js';
+import { renderAssessmentMarkdown } from './assessment_editor.js';
+import { QUESTION_TYPE_LABELS, normalizeQuestionType, questionBlanks, questionTextForDisplay } from './assessment_questions.js';
 
-const TYPE_LABELS = {
-    radio: '单选题',
-    checkbox: '多选题',
-    text: '填空题',
-    textarea: '问答题',
-};
+const TYPE_LABELS = QUESTION_TYPE_LABELS;
 
 function parseMaybeJson(value, fallback = {}) {
     if (!value) return fallback;
@@ -57,7 +53,7 @@ function markdown(value, fallback = '') {
     const text = compactText(value, fallback);
     if (!text) return '';
     try {
-        return renderMarkdownHtml(text);
+        return renderAssessmentMarkdown(text);
     } catch {
         return escapeHtml(text).replace(/\n/g, '<br>');
     }
@@ -105,13 +101,13 @@ function normalizeAttachmentPolicy(question) {
 
 function questionCopy(question) {
     return compactText(
-        question?.text ?? question?.title ?? question?.question ?? question?.prompt,
+        questionTextForDisplay(question),
         '（未填写题目）'
     );
 }
 
 function questionType(question) {
-    return compactText(question?.type || question?.question_type || 'textarea').toLowerCase();
+    return normalizeQuestionType(question?.type || question?.question_type || 'textarea');
 }
 
 function renderAttachmentPolicy(question) {
@@ -137,17 +133,17 @@ function renderAttachmentPolicy(question) {
 
 function renderQuestionInput(question, index) {
     const type = questionType(question);
-    const options = normalizeOptions(question?.options);
-    if (type === 'radio' || type === 'checkbox') {
+    const options = normalizeOptions(question?.options || (type === 'boolean' ? ['正确', '错误'] : []));
+    if (type === 'radio' || type === 'checkbox' || type === 'boolean') {
         if (!options.length) {
             return '<div class="exam-paper-preview__empty-control">暂无选项</div>';
         }
-        const inputType = type === 'radio' ? 'radio' : 'checkbox';
+        const inputType = type === 'checkbox' ? 'checkbox' : 'radio';
         return `
             <div class="exam-paper-preview__options">
                 ${options.map((option, optionIndex) => `
                     <label class="exam-paper-preview__option">
-                        <input data-lq-component="input" class="lq-input" type="${inputType}" disabled tabindex="-1" name="preview-${index}-${type}" value="${escapeHtml(option)}">
+                        <input data-lq-component="${inputType}" class="lq-${inputType}" type="${inputType}" disabled tabindex="-1" name="preview-${index}-${type}" value="${escapeHtml(option)}">
                         <div>${markdown(option, '（空选项）')}</div>
                     </label>
                 `).join('')}
@@ -155,13 +151,15 @@ function renderQuestionInput(question, index) {
         `;
     }
     if (type === 'text') {
-        return `
-            <input data-lq-component="input" class="lq-input exam-paper-preview__input" type="text" disabled
-                placeholder="${escapeHtml(question?.placeholder || '请输入答案')}">
-        `;
+        const blanks = questionBlanks(question);
+        return (blanks.length ? blanks : [{ id: '', placeholder: question?.placeholder }]).map(blank => `
+            <label class="exam-paper-preview__blank"><span>${blank.id ? `第 ${escapeHtml(blank.id)} 空` : '答案'}</span>
+                <textarea data-lq-component="textarea" class="lq-textarea exam-paper-preview__input" disabled rows="2"
+                    placeholder="${escapeHtml(blank.placeholder || question?.placeholder || '请输入答案')}"></textarea>
+            </label>`).join('');
     }
     return `
-        <textarea data-lq-component="textarea" class="lq-textarea exam-paper-preview__input exam-paper-preview__textarea" disabled rows="5"
+        <textarea data-lq-component="textarea" class="lq-textarea exam-paper-preview__input exam-paper-preview__textarea" disabled rows="2"
             placeholder="${escapeHtml(question?.placeholder || '请在此作答...')}"></textarea>
     `;
 }
@@ -177,7 +175,7 @@ function renderQuestion(question, questionIndex) {
                 <span class="exam-paper-preview__question-number">${escapeHtml(displayId)}</span>
                 <div class="exam-paper-preview__question-main">
                     <div class="exam-paper-preview__question-meta">
-                        <span>${TYPE_LABELS[type] || '问答题'}</span>
+                        <span>${TYPE_LABELS[type] || '简答题'}</span>
                         ${pointText ? `<span>${escapeHtml(pointText)} 分</span>` : ''}
                         ${question?.allow_ai || question?.allow_student_ai || question?.ai_allowed ? '<span>允许 AI 辅助</span>' : ''}
                     </div>

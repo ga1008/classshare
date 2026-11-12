@@ -46,7 +46,8 @@ class WorkspaceAttachmentTests(unittest.TestCase):
                 CREATE TABLE class_offerings(id INTEGER PRIMARY KEY,class_id INTEGER);
                 CREATE TABLE class_offering_class_links(offering_id INTEGER,class_id INTEGER);
                 CREATE TABLE assignments(id TEXT,class_offering_id INTEGER,exam_paper_id TEXT,status TEXT,availability_mode TEXT,assessment_kind TEXT);
-                CREATE TABLE submissions(assignment_id TEXT,student_pk_id INTEGER,is_absence_score INTEGER);
+                CREATE TABLE submissions(assignment_id TEXT,student_pk_id INTEGER,is_absence_score INTEGER,status TEXT,resubmission_allowed INTEGER,resubmission_due_at TEXT);
+                CREATE TABLE assignment_student_windows(assignment_id TEXT,student_pk_id INTEGER,status TEXT,due_at TEXT);
                 CREATE TABLE learning_stage_exam_attempts(assignment_id TEXT,student_id INTEGER);
             ''')
             ensure_ai_workspace_schema(conn, engine='sqlite')

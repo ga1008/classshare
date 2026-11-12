@@ -12,9 +12,30 @@ from tools.isolated_environment import guard_dotenv_loading
 from tools.test_backend import isolate_environment, reject_postgres
 
 
+WORKER_PARENT_CODE = r'''
+import subprocess, sys
+from unittest.mock import patch
+from tools import test_backend
+worker_code = sys.argv.pop(1)
+real_popen = subprocess.Popen
+def launch_worker(command, **kwargs):
+    if len(command) > 1 and str(command[1]).endswith('test_backend.py'):
+        return real_popen([command[0], "-c", worker_code, *command[2:]], **kwargs)
+    return real_popen(command, **kwargs)
+with patch.object(test_backend.subprocess, "Popen", launch_worker):
+    raise SystemExit(test_backend._cli_main())
+'''
+
+
 def isolation_status(stdout):
     return next(json.loads(line) for line in stdout.splitlines()
                 if line.startswith('{"unit_test_isolation":'))
+
+
+def evidence_directory():
+    from tools import test_backend
+    test_backend.REPORT_PARENT.mkdir(parents=True, exist_ok=True)
+    return tempfile.TemporaryDirectory(prefix="runner-proof-", dir=test_backend.REPORT_PARENT)
 
 
 class BackendTestIsolationTests(unittest.TestCase):
@@ -49,6 +70,308 @@ class BackendTestIsolationTests(unittest.TestCase):
         self.assertEqual(status["dotenv_loaders"], "blocked_before_app_import")
         self.assertFalse(Path(status["runtime"]).is_relative_to(repo / "data"))
         self.assertEqual(status["postgres_connections"], "forbidden")
+        self.assertFalse(Path(status["runtime"]).exists(), "The CLI parent must remove its finished worker runtime")
+
+    def test_worker_exit_cleans_leaked_handles_and_nested_temps_but_keeps_evidence(self):
+        """Exercise actual child exit, including Windows-open DB/file handles."""
+        repo = Path(__file__).resolve().parents[1]
+        worker_code = r'''
+import json, os, sqlite3, subprocess, sys, tempfile, unittest
+from pathlib import Path
+from unittest.mock import patch
+from tools import test_backend
+held = []
+class LeakingFixture(unittest.TestCase):
+    def runTest(self):
+        directory = Path(tempfile.mkdtemp(prefix="nested-leak-"))
+        held.append((directory / "open.txt").open("w"))
+        held.append(sqlite3.connect(directory / "open.db"))
+        nested = subprocess.check_output([sys.executable, "-c",
+            "import tempfile; print(tempfile.mkdtemp(prefix='child-leak-'))"], text=True).strip()
+        print(json.dumps({"fixture_temps": [str(directory), nested]}), flush=True)
+        if os.environ.get("FIXTURE_FAIL") == "1":
+            self.fail("intentional failure with open disposable handles")
+with patch.object(unittest.defaultTestLoader, "discover", return_value=unittest.TestSuite([LeakingFixture()])):
+    raise SystemExit(test_backend.main())
+'''
+        with evidence_directory() as folder:
+            evidence = Path(folder)
+            sentinel = evidence / "deployment-backup.dump"
+            sentinel.write_bytes(b"must survive unit cleanup")
+            for should_fail in (False, True):
+                with self.subTest(failure=should_fail):
+                    report = evidence / f"result-{should_fail}.json"
+                    env = dict(os.environ, FIXTURE_FAIL="1" if should_fail else "0")
+                    completed = subprocess.run(
+                        [sys.executable, "-c", WORKER_PARENT_CODE, worker_code, "--report", str(report)],
+                        cwd=repo, env=env, text=True, capture_output=True, timeout=30,
+                    )
+                    self.assertEqual(completed.returncode, int(should_fail), completed.stderr)
+                    runtime = Path(isolation_status(completed.stdout)["runtime"])
+                    temps = next(json.loads(line)["fixture_temps"] for line in completed.stdout.splitlines()
+                                 if line.startswith('{"fixture_temps":'))
+                    self.assertTrue(all(Path(path).is_relative_to(runtime / "tmp") for path in temps))
+                    self.assertFalse(runtime.exists())
+                    summary = json.loads(report.read_text(encoding="utf-8"))
+                    self.assertEqual(summary["tests"], 1)
+                    self.assertEqual(summary["status"], "failed" if should_fail else "passed")
+                    self.assertEqual(len(summary["failures"]), int(should_fail))
+                    self.assertEqual(len(summary["run_id"]), 32)
+                    self.assertEqual(summary["cleanup"], "removed")
+            self.assertEqual(sentinel.read_bytes(), b"must survive unit cleanup")
+
+    def test_worker_refuses_to_put_evidence_inside_its_disposable_runtime(self):
+        from tools import test_backend
+        repo = Path(__file__).resolve().parents[1]
+        runtime = test_backend._new_runtime()
+        token = (runtime / test_backend.OWNER_FILE).read_text(encoding="ascii")
+        self.addCleanup(test_backend._remove_owned_runtime, runtime, token)
+        completed = subprocess.run(
+            [sys.executable, str(repo / "tools/test_backend.py"), "--_worker-runtime", str(runtime),
+             "--_worker-token", token, "--check-only", "--report", str(runtime / "must-retain.json")],
+            cwd=repo, text=True, capture_output=True, timeout=20,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("outside the disposable runtime", completed.stderr)
+        self.assertTrue(runtime.exists(), "A worker does not own cleanup of a caller-supplied path")
+
+    def test_report_cannot_target_another_runs_scratch(self):
+        from tools import test_backend
+        runtime = test_backend._new_runtime()
+        token = (runtime / test_backend.OWNER_FILE).read_text(encoding="ascii")
+        self.addCleanup(test_backend._remove_owned_runtime, runtime, token)
+        report = runtime / "older-evidence.json"
+        report.write_text('{"status":"passed","run_id":"old"}', encoding="utf-8")
+        completed = subprocess.run(
+            [sys.executable, str(test_backend.REPO / "tools/test_backend.py"), "--check-only", "--report", str(report)],
+            cwd=test_backend.REPO, text=True, capture_output=True, timeout=20,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("all scratch directories", completed.stderr)
+        self.assertEqual(json.loads(report.read_text(encoding="utf-8"))["run_id"], "old")
+
+    def test_initialization_failure_replaces_stale_passed_report(self):
+        from tools import test_backend
+        worker_code = r'''
+import os, unittest
+from unittest.mock import patch
+from tools import test_backend
+error = SystemExit(0) if os.environ.get('FIXTURE_ZERO_EXIT') == '1' else RuntimeError('synthetic discovery failure')
+with patch.object(unittest.defaultTestLoader, "discover", side_effect=error):
+    raise SystemExit(test_backend.main())
+'''
+        with evidence_directory() as folder:
+            for zero_exit in (False, True):
+                with self.subTest(system_exit_zero=zero_exit):
+                    report = Path(folder) / "result.json"
+                    report.write_text('{"status":"passed","run_id":"old"}', encoding="utf-8")
+                    completed = subprocess.run(
+                        [sys.executable, "-c", WORKER_PARENT_CODE, worker_code, "--report", str(report)],
+                        cwd=test_backend.REPO, env=dict(os.environ, FIXTURE_ZERO_EXIT="1" if zero_exit else "0"),
+                        text=True, capture_output=True, timeout=30,
+                    )
+                    self.assertNotEqual(completed.returncode, 0)
+                    summary = json.loads(report.read_text(encoding="utf-8"))
+                    self.assertEqual(summary["status"], "failed")
+                    self.assertNotEqual(summary["run_id"], "old")
+                    self.assertIn("SystemExit: 0" if zero_exit else "synthetic discovery failure", summary["error"])
+                    self.assertEqual(summary["cleanup"], "removed")
+                    self.assertFalse(Path(summary["runtime"]).exists())
+
+    def test_report_replace_failure_after_allocation_still_cleans_owned_runtime(self):
+        from tools import test_backend
+
+        evidence = Path(self.enterContext(evidence_directory()))
+        runtime_parent = evidence / "owned-runtimes"
+        older = runtime_parent / "unit-other-run"
+        older.mkdir(parents=True)
+        sentinel = older / "must-retain.dump"
+        sentinel.write_bytes(b"unrelated retained evidence")
+        report = evidence / "result.json"
+        allocated = []
+        real_new_runtime = test_backend._new_runtime
+        real_replace = Path.replace
+
+        def allocate(run_id):
+            runtime = real_new_runtime(run_id)
+            allocated.append(runtime)
+            return runtime
+
+        def fail_after_allocation(path, target):
+            if allocated and Path(target) == report:
+                raise PermissionError("synthetic report replace denied")
+            return real_replace(path, target)
+
+        with patch.object(test_backend, "RUNTIME_PARENT", runtime_parent), \
+                patch.object(test_backend, "_new_runtime", side_effect=allocate), \
+                patch.object(test_backend, "_run_tests") as run_tests, \
+                patch.object(Path, "replace", fail_after_allocation), \
+                patch.object(sys, "argv", ["test_backend.py", "--check-only", "--report", str(report)]):
+            with self.assertRaisesRegex(PermissionError, "synthetic report replace denied"):
+                test_backend.main()
+        run_tests.assert_not_called()
+        self.assertEqual(len(allocated), 1)
+        self.assertFalse(allocated[0].exists())
+        self.assertEqual(sentinel.read_bytes(), b"unrelated retained evidence")
+        self.assertEqual(list(evidence.glob(".result.json.*.tmp")), [])
+        self.assertNotEqual(json.loads(report.read_text(encoding="utf-8"))["status"], "passed")
+
+    def test_worker_report_replace_failure_exits_before_parent_cleanup(self):
+        from tools import test_backend
+
+        worker_code = r'''
+from pathlib import Path
+from unittest.mock import patch
+from tools import test_backend
+with patch.object(Path, "replace", side_effect=PermissionError("synthetic worker report replace denied")):
+    raise SystemExit(test_backend.main())
+'''
+        evidence = Path(self.enterContext(evidence_directory()))
+        report = evidence / "result.json"
+        report.write_text('{"status":"passed","run_id":"old"}', encoding="utf-8")
+        sentinel = evidence / "deployment-backup.dump"
+        sentinel.write_bytes(b"unrelated retained evidence")
+        completed = subprocess.run(
+            [sys.executable, "-c", WORKER_PARENT_CODE, worker_code, "--check-only", "--report", str(report)],
+            cwd=test_backend.REPO, text=True, capture_output=True, timeout=30,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("synthetic worker report replace denied", completed.stderr)
+        summary = json.loads(report.read_text(encoding="utf-8"))
+        self.assertEqual(summary["status"], "failed")
+        self.assertNotEqual(summary["run_id"], "old")
+        self.assertNotEqual(summary["worker_exit_code"], 0)
+        self.assertTrue(summary["worker_exit_confirmed"])
+        self.assertEqual(summary["cleanup"], "removed")
+        self.assertFalse(Path(summary["runtime"]).exists())
+        self.assertEqual(sentinel.read_bytes(), b"unrelated retained evidence")
+        self.assertEqual(list(evidence.glob(".result.json.*.tmp")), [])
+
+    @unittest.skipUnless(os.name == "nt", "Exercise actual Windows junction and process-tree semantics")
+    def test_allocation_refuses_junction_before_creating_any_workspace(self):
+        from tools import test_backend
+        with evidence_directory() as folder:
+            base = Path(folder)
+            target = base / "retained"
+            target.mkdir()
+            sentinel = target / "backup.dump"
+            sentinel.write_bytes(b"must survive")
+            link = base / "redirect"
+            created = subprocess.run(["cmd.exe", "/c", "mklink", "/J", str(link), str(target)],
+                                     capture_output=True, text=True, timeout=10)
+            self.assertEqual(created.returncode, 0, created.stderr)
+            self.addCleanup(lambda: link.rmdir() if link.exists() else None)
+            for entrypoint in (test_backend.main, test_backend._cli_main):
+                with self.subTest(entrypoint=entrypoint.__name__):
+                    with patch.object(test_backend, "RUNTIME_PARENT", link / "backend-tests"), \
+                            patch.object(sys, "argv", ["test_backend.py", "--check-only", "--report", str(base / "failure.json")]):
+                        if entrypoint is test_backend.main:
+                            with self.assertRaisesRegex(ValueError, "symlink or junction"):
+                                entrypoint()
+                        else:
+                            self.assertEqual(entrypoint(), 1)
+                    self.assertEqual(list(target.iterdir()), [sentinel])
+                    self.assertEqual(json.loads((base / "failure.json").read_text(encoding="utf-8"))["status"], "failed")
+
+    @unittest.skipUnless(os.name == "nt", "Exercise actual Windows taskkill of the owned worker tree")
+    def test_interrupt_stops_real_descendants_before_cleanup_and_records_new_run(self):
+        from tools import test_backend
+        worker_code = r'''
+import os, subprocess, sys, time, unittest
+from pathlib import Path
+from unittest.mock import patch
+from tools import test_backend
+child_code = "import json,os,sys,time; f=open(sys.argv[1],'w'); open(sys.argv[2],'w').write(json.dumps({'pid':os.getpid(),'held':sys.argv[1]})); time.sleep(90)"
+class WaitingFixture(unittest.TestCase):
+    def runTest(self):
+        held = Path(os.environ['TMP']) / 'grandchild-open.txt'
+        subprocess.Popen([sys.executable, '-c', child_code, str(held), os.environ['INTERRUPT_READY']])
+        time.sleep(90)
+with patch.object(unittest.defaultTestLoader, 'discover', return_value=unittest.TestSuite([WaitingFixture()])):
+    raise SystemExit(test_backend.main())
+'''
+        parent_code = r'''
+import _thread, os, subprocess, sys, threading, time
+from pathlib import Path
+from unittest.mock import patch
+from tools import test_backend
+worker_code = sys.argv.pop(1)
+real_popen = subprocess.Popen
+def launch_worker(command, **kwargs):
+    if len(command) > 1 and str(command[1]).endswith('test_backend.py'):
+        return real_popen([command[0], '-c', worker_code, *command[2:]], **kwargs)
+    return real_popen(command, **kwargs)
+def interrupt_when_ready():
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        if Path(os.environ['INTERRUPT_READY']).is_file():
+            _thread.interrupt_main()
+            return
+        time.sleep(0.02)
+threading.Thread(target=interrupt_when_ready, daemon=True).start()
+real_stop = test_backend._stop_worker_tree
+def stop_owned_tree(worker):
+    stopped = real_stop(worker)
+    return stopped and os.environ.get('UNCERTAIN_STOP') != '1'
+with patch.object(test_backend.subprocess, 'Popen', launch_worker), \
+     patch.object(test_backend, '_stop_worker_tree', stop_owned_tree):
+    raise SystemExit(test_backend._cli_main())
+'''
+        with evidence_directory() as folder:
+            import ctypes
+            from ctypes import wintypes
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+            kernel.OpenProcess.restype = wintypes.HANDLE
+            kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+            kernel.WaitForSingleObject.restype = wintypes.DWORD
+            kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+            for uncertain in (False, True):
+                with self.subTest(exit_confirmation=not uncertain):
+                    report = Path(folder) / f"result-{uncertain}.json"
+                    report.write_text('{"status":"passed","run_id":"old"}', encoding="utf-8")
+                    ready = Path(folder) / f"ready-{uncertain}.json"
+                    completed = subprocess.run(
+                        [sys.executable, "-c", parent_code, worker_code, "--report", str(report)],
+                        cwd=test_backend.REPO,
+                        env=dict(os.environ, INTERRUPT_READY=str(ready), UNCERTAIN_STOP="1" if uncertain else "0"),
+                        text=True, capture_output=True, timeout=40,
+                    )
+                    self.assertEqual(completed.returncode, 130, completed.stderr)
+                    summary = json.loads(report.read_text(encoding="utf-8"))
+                    self.assertEqual(summary["status"], "interrupted")
+                    self.assertNotEqual(summary["run_id"], "old")
+                    self.assertEqual(summary["worker_exit_confirmed"], not uncertain)
+                    self.assertEqual(summary["cleanup"], "retained" if uncertain else "removed")
+                    runtime = Path(summary["runtime"])
+                    self.assertEqual(runtime.exists(), uncertain)
+                    child_pid = json.loads(ready.read_text(encoding="utf-8"))["pid"]
+                    handle = kernel.OpenProcess(0x00100000, False, child_pid)
+                    if handle:
+                        try:
+                            self.assertNotEqual(kernel.WaitForSingleObject(handle, 0), 258, "Grandchild must have exited")
+                        finally:
+                            kernel.CloseHandle(handle)
+                    if uncertain:
+                        # This test independently observed the owned descendants
+                        # exit; the runner correctly retained its uncertain run.
+                        test_backend._remove_owned_runtime(runtime, summary["run_id"])
+
+    def test_private_worker_entry_refuses_existing_evidence_without_owner(self):
+        from tools import test_backend
+        with tempfile.TemporaryDirectory(prefix="unit-", dir=test_backend.RUNTIME_PARENT) as folder:
+            runtime = Path(folder)
+            backup = runtime / "backup.dump"
+            backup.write_bytes(b"retained evidence")
+            completed = subprocess.run(
+                [sys.executable, str(test_backend.REPO / "tools/test_backend.py"), "--_worker-runtime", str(runtime),
+                 "--_worker-token", "not-owned", "--check-only"],
+                cwd=test_backend.REPO, text=True, capture_output=True, timeout=20,
+            )
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("owned runtime token", completed.stderr)
+            self.assertEqual(backup.read_bytes(), b"retained evidence")
+            self.assertFalse((runtime / "db").exists())
 
     def test_both_dotenv_loaders_are_blocked_but_explicit_values_parser_remains_usable(self):
         import dotenv

@@ -122,6 +122,9 @@ def _rules() -> dict[str, MergeRule]:
     rules["smart_attendance_session_links"] = MergeRule(STRATEGY_KEEP_TARGET)
     rules["smart_attendance_course_links"] = MergeRule(STRATEGY_KEEP_TARGET)
     rules["smart_attendance_alignment_requests"] = MergeRule(STRATEGY_IMMUTABLE_RECEIPTS)
+    # A single-student correction authorizes its original school round only.
+    # The nullable live references may be cleared; origin_scope_json must not move.
+    rules["smart_attendance_student_corrections"] = MergeRule(STRATEGY_IMMUTABLE_RECEIPTS)
     rules["approval_requests"] = MergeRule(STRATEGY_REPOINT)
     rules["class_offering_sessions"] = MergeRule(STRATEGY_SESSION_STRUCTURE)
     rules["class_offering_class_links"] = MergeRule(STRATEGY_LINKS, offering_column="offering_id")
@@ -889,8 +892,9 @@ def execute_offering_merge(
             continue
         column = rule.offering_column
         if rule.strategy in (STRATEGY_BEHAVIOR_RECEIPTS, STRATEGY_IMMUTABLE_RECEIPTS):
-            # Tombstones have no offering FK. Their original scope participates
-            # in the immutable client batch key throughout the retry horizon.
+            # Preserve original scope in receipt columns/origin_scope_json.
+            # Nullable live pointers may clear on deletion, but never repoint
+            # an immutable school authorization into the merged classroom.
             summary[f"{table}.receipt_scope_preserved"] = _count_rows(conn, table, column, source_ids)
             continue
         if rule.strategy == STRATEGY_COLLECTION_OBSERVATIONS:

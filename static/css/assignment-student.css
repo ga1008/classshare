@@ -353,19 +353,9 @@
     background: var(--danger-light);
 }
 .answer-autosave-status {
-    display: inline-block;
     margin-left: 8px;
-    padding: 2px 9px;
-    border-radius: 999px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    background: rgba(148, 163, 184, 0.14);
-    color: var(--text-muted);
-    transition: background 0.2s, color 0.2s;
+    white-space: normal;
 }
-.answer-autosave-status[data-tone="saved"] { background: rgba(16, 185, 129, 0.14); color: var(--success-color); }
-.answer-autosave-status[data-tone="syncing"] { background: rgba(59, 130, 246, 0.14); color: var(--primary-color); }
-.answer-autosave-status[data-tone="warning"] { background: rgba(245, 158, 11, 0.16); color: var(--warning-color); }
 .submit-action-bar {
     background: hsl(var(--lq-page-control));
     padding: var(--spacing-md) var(--spacing-lg);

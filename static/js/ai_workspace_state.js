@@ -1,5 +1,5 @@
 /** Per-account, per-tab state. Chat history stays on the authenticated server. */
-export function createWorkspaceState(userKey) {
+export function createWorkspaceState(userKey, assessmentScope = '') {
     const valid = /^(teacher|student):[1-9]\d*$/.test(userKey || '');
     const prefix = 'lanshare.aiWorkspace.v2.';
     let tab = '';
@@ -7,8 +7,9 @@ export function createWorkspaceState(userKey) {
         tab = sessionStorage.getItem(prefix + 'tab') || crypto.randomUUID();
         sessionStorage.setItem(prefix + 'tab', tab);
     } catch { tab = crypto.randomUUID(); }
-    const key = valid ? prefix + userKey : null;
-    const draftKey = `${userKey}:${tab}`;
+    const scopeSuffix = /^[a-f0-9]{64}$/.test(assessmentScope) ? `.assessment.${assessmentScope}` : '';
+    const key = valid ? prefix + userKey + scopeSuffix : null;
+    const draftKey = `${userKey}:${tab}${scopeSuffix}`;
     let meta = {};
     try { if (key) meta = JSON.parse(sessionStorage.getItem(key) || '{}'); } catch { /* Restricted storage. */ }
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) meta = {};

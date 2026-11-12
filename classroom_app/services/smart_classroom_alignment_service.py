@@ -98,6 +98,8 @@ def alignment_view(conn, user, offering_id, session_id, context=None):
 
 
 def _busy(conn, offering_id, session_id=None):
+    from .smart_classroom_student_push_service import assert_no_active_push
+    assert_no_active_push(conn,offering_id=offering_id,session_id=session_id)
     clause, values = ('class_offering_id=?', [offering_id]) if session_id is None else ('session_id=?', [session_id])
     if conn.execute(f'SELECT 1 FROM smart_attendance_auto_sync WHERE {clause} AND (state=\'outcome_unknown\' OR (enabled=1 AND state IN {ACTIVE}))', values).fetchone():
         raise HTTPException(409, {'code': 'alignment_busy', 'message': '学校同步正在执行或等待回读，请完成后再对齐；当前选择保留。'})

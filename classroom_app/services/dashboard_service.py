@@ -2610,6 +2610,10 @@ def _build_student_dashboard_context(
     message_summary = get_message_center_summary(conn, user)
     unread_total = int(message_summary.get("unread_total") or 0)
     cultivation_profile = build_student_global_cultivation_profile(conn, student_id)
+    cultivation_score_label = (
+        "生成中" if cultivation_profile.get("score") is None
+        else _format_dashboard_metric_value(cultivation_profile["score"])
+    )
     ui_copy = render_ui_copy_block(
         get_ui_copy_block(conn, scene="dashboard", role="student"),
         {
@@ -2949,7 +2953,7 @@ def _build_student_dashboard_context(
             "subtitle": ui_copy["hero_subtitle"],
             "chips": [
                 class_name or "当前班级",
-                f"{cultivation_profile['highest_level']['level_name']} · 修为 {cultivation_profile['score']:g}",
+                f"{cultivation_profile['highest_level']['level_name']} · 修为 {cultivation_score_label}",
                 f"累计登录 {total_logins} 次",
                 f"同班 {classmate_count} 人",
             ],

@@ -19,6 +19,7 @@ from ..core import ai_client
 from ..database import get_db_connection
 from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
 from .exam_json_service import EXAM_JSON_TEMPLATE, normalize_exam_json_payload, normalize_exam_scoring_payload
+from .assessment_question_contract import CHOICE_QUESTION_TYPES, SINGLE_CHOICE_TYPES
 from .ai_gateway_service import ai_gateway_post
 from .offering_membership_service import offering_class_ids, offering_student_where
 from .material_mastery_check_service import (
@@ -4293,7 +4294,7 @@ def _validate_stage_exam_answer_options(exam_payload: dict[str, Any]) -> list[st
     errors: list[str] = []
     for index, question in enumerate(_flatten_stage_exam_questions(exam_payload), start=1):
         question_type = str(question.get("type") or "").strip().lower()
-        if question_type not in {"radio", "checkbox"}:
+        if question_type not in CHOICE_QUESTION_TYPES:
             continue
         option_tokens: set[str] = set()
         for option in question.get("options") or []:
@@ -4302,7 +4303,7 @@ def _validate_stage_exam_answer_options(exam_payload: dict[str, Any]) -> list[st
             errors.append(f"question {index} has no selectable options")
             continue
         answer = question.get("answer")
-        if question_type == "radio":
+        if question_type in SINGLE_CHOICE_TYPES:
             answer_tokens = {" ".join(str(answer or "").strip().lower().split())}
         elif isinstance(answer, list):
             answer_tokens = {" ".join(str(item or "").strip().lower().split()) for item in answer}
@@ -4903,7 +4904,7 @@ def _build_stage_exam_prompt(
 【硬性要求】
 1. 境界：{level['name']}，通过线 {PASSING_STAGE_SCORE} 分，总分 100 分。
 2. 顶层必须包含 title、description、pages；每个 page 必须包含 name、questions。
-3. 题型只能使用 radio、checkbox、text、textarea。radio/checkbox 必须有 options；checkbox 的 answer 必须是数组。
+3. 题型可使用 radio（单选）、checkbox（多选）、boolean（判断）、text（填空）、textarea（简答）、analysis（分析）、code（程序）、comprehensive（综合）。radio/checkbox/boolean 必须有 options；checkbox 的 answer 必须是数组。新填空题使用 {{{{1}}}}、{{{{2}}}} 标记，并提供 blanks 数组（每项 id 为编号字符串、answer 为该空标准答案），顶层 answer 按相同顺序存放数组。
 4. 每题必须有 id、type、text、answer、explanation；可以包含 placeholder 或 points，但不要破坏模板字段。
 5. 题目范围只围绕【当前破境范围】和范围内学习文档，不要考后续境界未覆盖的知识。
 6. 题量与题型严格按下方【试炼难度指引】执行（本境界 {profile['question_count']} 题）；难度随境界单调上升，前期简单直接，后期综合迁移。

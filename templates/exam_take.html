@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="{{ asset_url('css/exam-take.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/assessment-student-material.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/assessment-appeal.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/assessment-editor.css') }}">
 </head>
 <body class="exam-page{% if submission %} exam-is-submitted{% endif %}" {{ body_attrs(ui_palette) }}>
 
@@ -73,7 +74,7 @@
                     <small>回看</small>
                 </span>
             </button>
-            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--primary exam-edit-action" id="topbarNextBtn" title="下一页" aria-label="下一页">
+            <button data-lq-component="button" data-lq-shape="surface" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action exam-edit-action" id="topbarNextBtn" title="下一页" aria-label="下一页">
                 <span class="app-topbar-action__icon exam-icon-next" aria-hidden="true">{{ app_topbar_icon('arrow-left') }}</span>
                 <span class="app-topbar-action__text">
                     <strong>下一页</strong>
@@ -100,7 +101,7 @@
                     </button>
                 </div>
             </div>
-            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action app-topbar-action--primary exam-topbar-submit exam-edit-action" id="topbarSubmitBtn" title="确认交卷" aria-label="确认交卷">
+            <button data-lq-component="button" data-lq-shape="surface" type="button" class="lq-btn lq-btn--sm lq-btn--glass app-topbar-action exam-topbar-submit exam-edit-action" id="topbarSubmitBtn" title="确认交卷" aria-label="确认交卷">
                 <span class="app-topbar-action__icon" aria-hidden="true">{{ app_topbar_icon('upload') }}</span>
                 <span class="app-topbar-action__text">
                     <strong>交卷</strong>
@@ -196,6 +197,8 @@
     import { initReviewDocxExportButtons } from '{{ asset_url('js/review_docx_export.js') }}';
     import { mountAppealEntry } from '{{ asset_url('js/assessment_appeal.js') }}';
     import { localDraftKey, purgeForeignLocalDrafts } from '{{ asset_url('js/local_draft_scope.js') }}';
+    import { mountAssessmentEditor, attachAutosize, renderAssessmentMarkdown } from '{{ asset_url('js/assessment_editor.js') }}';
+    import { QUESTION_TYPE_LABELS, normalizeQuestionType, questionBlanks, blankAnswerValues, answerHasText, answerIsComplete, answerDisplayText, questionTextForDisplay } from '{{ asset_url('js/assessment_questions.js') }}';
     import {
         findQuestionFeedback,
         parseGradingFeedback,
@@ -226,6 +229,7 @@
     const RESUBMISSION_STATE = {{ resubmission_state | tojson }};
     const RESUBMISSION_DUE_AT = {{ resubmission_due_at | tojson }};
     const PERSONAL_WINDOW_DUE_AT = {{ (personal_window.due_at if personal_window else none) | tojson }};
+    const AI_ASSISTED_QUESTION_IDS = new Set({{ (exam_ai_access.question_ids if exam_ai_access else []) | tojson }});
     // Judge the window by server time: both strings are naive server-local ISO.
     const PERSONAL_WINDOW_CLOCK_OFFSET = (() => {
         const serverNow = Date.parse({{ (assignment.server_now or '') | tojson }});
@@ -372,6 +376,7 @@
             buildPendingQuestionDraftPayload,
             markPendingQuestionDraftsClean,
             answerHasContent,
+            answerIsComplete: q => questionBlanks(q).length ? answerIsComplete(q, state.answers[q.id]) : answerHasContent(q),
             hasDrawing,
             hasQuestionFiles,
             validateQuestionAttachmentRequirements,
@@ -394,6 +399,7 @@
             removeLocalDraft: key => localStorage.removeItem(key),
             onSubmissionSucceeded: () => {
                 submissionSucceeded = true;
+                updateExamAiAvailability();
                 clearTimeout(serverDraftSaveTimer);
                 clearQuestionDraftUploadTimers();
             },
@@ -464,6 +470,13 @@
         if (elements.topbarClearPageBtn) elements.topbarClearPageBtn.disabled = !isEditable;
         if (elements.topbarClearAllBtn) elements.topbarClearAllBtn.disabled = !isEditable;
         if (elements.topbarSubmitBtn) elements.topbarSubmitBtn.disabled = !isEditable;
+        updateExamAiAvailability();
+    }
+
+    function updateExamAiAvailability() {
+        const editable = !submissionSucceeded && (!SUBMISSION_EXISTS || isEditingResubmission) && assignmentAcceptingSubmissions;
+        window.LANSHARE_EXAM_AI_EDITABLE = editable;
+        window.dispatchEvent(new CustomEvent('lanshare:assessment-ai-state', { detail: { editable } }));
     }
 
     function updateExamSubmitAvailability(stateMap) {
@@ -557,7 +570,8 @@
         // Ensure all questions have at least an empty string entry
         for (const page of state.pages) {
             for (const q of (page.questions || [])) {
-                if (state.answers[q.id] === undefined) state.answers[q.id] = '';
+                if (questionBlanks(q).length) state.answers[q.id] = blankAnswerValues(q, state.answers[q.id]);
+                else if (state.answers[q.id] === undefined) state.answers[q.id] = '';
             }
         }
     }
@@ -640,6 +654,7 @@
             question: q.text,
             type: q.type || '',
             answer: state.answers[q.id] || '',
+            ...(questionBlanks(q).length ? { blank_ids: questionBlanks(q).map(blank => String(blank.id)) } : {}),
             attachments: attachmentMap.get(String(q.id)) || [],
         }));
     }
@@ -654,13 +669,11 @@
                     if (!item || typeof item !== 'object') return;
                     const qid = item.question_id || item.question;
                     if (!qid) return;
-                    state.answers[qid] = item.answer || item.text || item.content || '';
+                    state.answers[qid] = storedQuestionAnswer(qid, item);
                 });
             } else if (answers && typeof answers === 'object') {
                 Object.entries(answers).forEach(([qid, value]) => {
-                    state.answers[qid] = typeof value === 'object'
-                        ? (value.answer || value.text || value.content || '')
-                        : String(value || '');
+                    state.answers[qid] = storedQuestionAnswer(qid, value);
                 });
             }
         } catch (error) {
@@ -692,10 +705,17 @@
         });
     }
 
+    function storedQuestionAnswer(qid, record) {
+        const question = findQuestionById(qid);
+        const value = record && typeof record === 'object' && !Array.isArray(record)
+            ? record.answer ?? record.text ?? record.content ?? '' : record ?? '';
+        return questionBlanks(question).length ? blankAnswerValues(question, value, record?.blank_ids) : value;
+    }
     function ensureAnswerKeys() {
         for (const page of state.pages) {
             for (const q of (page.questions || [])) {
-                if (state.answers[q.id] === undefined) state.answers[q.id] = '';
+                if (questionBlanks(q).length) state.answers[q.id] = blankAnswerValues(q, state.answers[q.id]);
+                else if (state.answers[q.id] === undefined) state.answers[q.id] = '';
             }
         }
     }
@@ -720,9 +740,7 @@
     }
 
     function isDrawingQuestion(q) {
-        const type = String(q?.type || '').toLowerCase();
-        if (type === 'radio' || type === 'checkbox' || type === 'text') return false;
-        return ['textarea', 'essay', 'short_answer', 'short-answer', 'shortanswer', 'subjective', 'open', '简答', '简答题', '问答题'].includes(type) || !type;
+        return ['textarea', 'analysis', 'code', 'comprehensive'].includes(normalizeQuestionType(q?.type));
     }
 
     function hasDrawing(qId) {
@@ -812,7 +830,7 @@
     }
 
     function answerHasContent(q) {
-        return Boolean(String(state.answers[q.id] || '').trim() || hasDrawing(q.id) || hasQuestionFiles(q.id));
+        return Boolean(answerHasText(state.answers[q.id]) || hasDrawing(q.id) || hasQuestionFiles(q.id));
     }
 
     function sanitizeFileSegment(value, fallback) {
@@ -881,9 +899,13 @@
 
     function normalizeAnswerRecord(item) {
         if (item == null) return { text: '', attachments: [] };
+        if (Array.isArray(item)) return { text: answerDisplayText(null, item), value: item, attachments: [] };
         if (typeof item !== 'object') return { text: String(item || ''), attachments: [] };
+        const value = item.answer ?? item.content ?? item.text ?? '';
+        const question = findQuestionById(item.question_id);
         return {
-            text: String(item.answer ?? item.content ?? item.text ?? ''),
+            text: answerHasText(value) ? answerDisplayText(question, value, item.blank_ids) : '',
+            value, blank_ids: item.blank_ids,
             attachments: Array.isArray(item.attachments) ? item.attachments : [],
         };
     }
@@ -1040,8 +1062,14 @@
 
     // --- UI Rendering ---
 
+    let answerNavigationSignature = '';
+    function updateAnswerNavigation() {
+        const signature = getAllQuestions().map(q => answerHasContent(q) ? '1' : '0').join('');
+        if (signature !== answerNavigationSignature) renderSidebar();
+    }
     function renderSidebar() {
         if (!elements.sidebarBody) return;
+        answerNavigationSignature = getAllQuestions().map(q => answerHasContent(q) ? '1' : '0').join('');
 
         let answeredCount = 0;
         state.pages.forEach(p => (p.questions || []).forEach(q => {
@@ -1119,6 +1147,12 @@
         });
     }
 
+    let answerEditors = [];
+    let answerInputSaveTimer = null;
+    function disposeAnswerEditors() {
+        answerEditors.forEach(editor => editor.destroy());
+        answerEditors = [];
+    }
     function renderCurrentPage() {
         const page = state.pages[state.currentPageIdx];
         if (!page) return;
@@ -1130,49 +1164,53 @@
 
         (page.questions || []).forEach((q) => {
             const val = state.answers[q.id] || '';
+            const type = normalizeQuestionType(q.type);
             const isAnswered = answerHasContent(q);
 
             html += `
-                <div data-lq-component="surface" class="lq-surface question-card ${isAnswered ? 'answered' : ''}" id="q-${q.id}" data-lq-material="content">
+                <div data-lq-component="surface" class="lq-surface question-card ${isAnswered ? 'answered' : ''}" id="q-${esc(q.id)}" data-lq-material="content">
                     <div class="q-header">
                         <span class="q-number">${esc(getQuestionDisplayLabel(q))}</span>
-                        <div class="q-body">${formatText(q.text)}</div>
+                        <div class="q-body"><span class="text-sm text-muted">${esc(QUESTION_TYPE_LABELS[type] || '题目')}${AI_ASSISTED_QUESTION_IDS.has(String(q.id)) ? ' · 可使用 AI 协助' : ''}</span>${formatText(questionTextForDisplay(q))}</div>
                     </div>
             `;
 
-            if (q.type === 'radio' && q.options) {
+            if ((type === 'radio' || type === 'boolean') && q.options) {
                 html += `<div class="q-options">`;
                 q.options.forEach((opt, idx) => {
                     const isSelected = val === opt;
                     const optId = `q_${q.id}_opt_${idx}`;
                     html += `
-                        <label class="option-label ${isSelected ? 'selected' : ''}" for="${optId}">
-                            <input data-lq-component="radio" type="radio" id="${optId}" name="${q.id}" value="${esc(opt)}" ${isSelected ? 'checked' : ''} class="lq-radio q-radio-input">
+                        <label class="option-label ${isSelected ? 'selected' : ''}" for="${esc(optId)}">
+                            <input data-lq-component="radio" type="radio" id="${esc(optId)}" name="${esc(q.id)}" value="${esc(opt)}" ${isSelected ? 'checked' : ''} class="lq-radio q-radio-input">
                             ${formatInlineMarkdown(opt)}
                         </label>
                     `;
                 });
                 html += `</div>`;
-            } else if (q.type === 'checkbox' && q.options) {
+            } else if (type === 'checkbox' && q.options) {
                 html += `<div class="q-options">`;
-                const selectedList = val ? val.split('|||') : [];
+                const selectedList = Array.isArray(val) ? val : val ? String(val).split('|||') : [];
                 q.options.forEach((opt, idx) => {
                     const isSelected = selectedList.includes(opt);
                     const optId = `q_${q.id}_opt_${idx}`;
                     html += `
-                        <label class="option-label ${isSelected ? 'selected' : ''}" for="${optId}">
-                            <input data-lq-component="checkbox" type="checkbox" id="${optId}" value="${esc(opt)}" ${isSelected ? 'checked' : ''} class="lq-checkbox q-check-input" data-qid="${q.id}">
+                        <label class="option-label ${isSelected ? 'selected' : ''}" for="${esc(optId)}">
+                            <input data-lq-component="checkbox" type="checkbox" id="${esc(optId)}" value="${esc(opt)}" ${isSelected ? 'checked' : ''} class="lq-checkbox q-check-input" data-qid="${esc(q.id)}">
                             ${formatInlineMarkdown(opt)}
                         </label>
                     `;
                 });
                 html += `</div>`;
-            } else if (q.type === 'text') {
-                html += `
-                    <div class="q-text-input">
-                        <input data-lq-component="input" type="text" class="lq-input form-control" value="${esc(val)}" placeholder="${esc(q.placeholder || '请输入答案')}" data-text-input="${q.id}">
-                    </div>
-                `;
+            } else if (type === 'text') {
+                const blanks = questionBlanks(q);
+                const values = blankAnswerValues(q, val);
+                html += `<div class="q-text-input assessment-blank-fields">${blanks.length ? blanks.map((blank, index) => `
+                    <label class="assessment-blank-field" for="answer-${getQuestionDisplayNumber(q.id)}-${index}">
+                        <span>第 ${esc(blank.id)} 空</span>
+                        <textarea id="answer-${getQuestionDisplayNumber(q.id)}-${index}" data-lq-component="textarea" class="lq-textarea form-control" rows="2" placeholder="${esc(blank.placeholder || '请输入本空答案')}" data-text-input="${esc(q.id)}" data-blank-index="${index}">${esc(values[index])}</textarea>
+                    </label>`).join('') : `
+                    <textarea aria-label="第 ${esc(getQuestionDisplayLabel(q))} 题答案" data-lq-component="textarea" class="lq-textarea form-control" rows="2" placeholder="${esc(q.placeholder || '请输入答案')}" data-text-input="${esc(q.id)}">${esc(val)}</textarea>`}</div>`;
             } else {
                 const drawing = state.drawings[q.id];
                 const drawingSrc = drawing?.dataUrl || drawing?.sourceUrl || '';
@@ -1188,23 +1226,23 @@
                     || `可上传本题截图、报告、代码文件等；总附件限制与交卷附件一致，最多 ${MAX_FILE_COUNT} 个文件。`;
                 html += `
                     <div class="q-text-input">
-                        <textarea data-lq-component="textarea" class="lq-textarea form-control" rows="5" placeholder="${esc(q.placeholder || '请在此作答...')}" data-text-input="${q.id}">${esc(val)}</textarea>
+                        <textarea aria-label="第 ${esc(getQuestionDisplayLabel(q))} 题答案" data-lq-component="textarea" class="lq-textarea form-control" rows="2" placeholder="${esc(q.placeholder || '请在此作答...')}" data-text-input="${esc(q.id)}">${esc(val)}</textarea>
                         ${attachmentPolicy.enabled ? `
-                            <div data-lq-component="surface" class="lq-surface question-attachment-panel" data-question-attachment-panel="${q.id}">
+                            <div data-lq-component="surface" class="lq-surface question-attachment-panel" data-question-attachment-panel="${esc(q.id)}">
                                 <div class="question-attachment-head">
                                     <strong>本题附件</strong>
-                                    <span class="question-attachment-badge ${attachmentPolicy.required ? 'required' : ''}" data-question-attachment-status="${q.id}">
+                                    <span class="question-attachment-badge ${attachmentPolicy.required ? 'required' : ''}" data-question-attachment-status="${esc(q.id)}">
                                         ${attachmentStatusText}
                                     </span>
                                 </div>
                                 <div class="question-attachment-hint">${esc(attachmentHint)}${attachmentPolicy.allowedFileTypes.length ? ` 本题建议类型：${esc(attachmentPolicy.allowedFileTypes.join(', '))}。` : ''}${ALLOWED_FILE_TYPES.length ? ` 交卷允许类型：${esc(ALLOWED_FILE_TYPES_LABEL)}。` : ''}</div>
                                 ${attachmentPolicy.allowDrawing ? `
                                     <div class="drawing-answer-actions">
-                                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-open-drawing="${q.id}">绘图作答</button>
-                                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm text-danger" data-remove-drawing="${q.id}" ${drawingSrc ? '' : 'hidden'}>移除附图</button>
-                                        <span class="drawing-answer-status" data-drawing-status="${q.id}">${drawingSrc ? '已保存题目附图' : '可在此题补充手写图、结构图或示意图'}</span>
+                                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-open-drawing="${esc(q.id)}">绘图作答</button>
+                                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm text-danger" data-remove-drawing="${esc(q.id)}" ${drawingSrc ? '' : 'hidden'}>移除附图</button>
+                                        <span class="drawing-answer-status" data-drawing-status="${esc(q.id)}">${drawingSrc ? '已保存题目附图' : '可在此题补充手写图、结构图或示意图'}</span>
                                     </div>
-                                    <div class="drawing-preview ${drawingSrc ? 'has-drawing' : ''}" data-drawing-preview="${q.id}">
+                                    <div class="drawing-preview ${drawingSrc ? 'has-drawing' : ''}" data-drawing-preview="${esc(q.id)}">
                                         ${drawingSrc ? `<img src="${drawingSrc}" alt="${esc(drawingName)}">` : ''}
                                         <div class="drawing-preview-meta">
                                             <div class="font-medium">${esc(drawingName)}</div>
@@ -1264,10 +1302,17 @@
             `;
         }
 
+        disposeAnswerEditors();
         elements.pageContent.innerHTML = html;
         updateProgress();
         renderSidebar();
         bindQuestionInputs();
+        elements.pageContent.querySelectorAll('textarea[data-text-input]').forEach(input => {
+            const type = normalizeQuestionType(findQuestionById(input.dataset.textInput)?.type);
+            answerEditors.push(type === 'text' ? attachAutosize(input) : mountAssessmentEditor(input, {
+                format: true, code: type === 'code' || type === 'comprehensive', label: input.getAttribute('aria-label'),
+            }));
+        });
         mountQuestionUploadManagers(page.questions || []);
         if (state.currentPageIdx === state.pages.length - 1) {
             mountUploadManager();
@@ -1421,7 +1466,7 @@
                 const val = e.target.value;
                 const isChecked = e.target.checked;
 
-                let current = state.answers[qId] ? state.answers[qId].split('|||') : [];
+                let current = Array.isArray(state.answers[qId]) ? [...state.answers[qId]] : state.answers[qId] ? String(state.answers[qId]).split('|||') : [];
                 if (isChecked && !current.includes(val)) current.push(val);
                 if (!isChecked) current = current.filter(v => v !== val);
 
@@ -1447,11 +1492,15 @@
         // Text inputs & textareas
         document.querySelectorAll('[data-text-input]').forEach(input => {
             // Use debounce for performance on typing
-            let timeout = null;
             input.addEventListener('input', (e) => {
                 const qId = e.target.dataset.textInput;
                 const val = e.target.value;
-                state.answers[qId] = val;
+                const question = findQuestionById(qId);
+                if (e.target.hasAttribute('data-blank-index')) {
+                    const values = blankAnswerValues(question, state.answers[qId]);
+                    values[Number(e.target.dataset.blankIndex)] = val;
+                    state.answers[qId] = values;
+                } else state.answers[qId] = val;
 
                 const card = document.getElementById(`q-${qId}`);
                 if(card) {
@@ -1460,10 +1509,10 @@
                     else card.classList.remove('answered');
                 }
 
-                clearTimeout(timeout);
-                timeout = setTimeout(() => {
+                clearTimeout(answerInputSaveTimer);
+                answerInputSaveTimer = setTimeout(() => {
                     saveToLocal();
-                    renderSidebar();
+                    updateAnswerNavigation();
                 }, 500);
             });
         });
@@ -1669,7 +1718,8 @@
     function resetQuestionDraftState(qId) {
         const key = String(qId || '');
         if (!key) return;
-        state.answers[key] = '';
+        const question = findQuestionById(key);
+        state.answers[key] = questionBlanks(question).length ? blankAnswerValues(question, '') : '';
         delete state.drawings[key];
         state.questionFiles[key] = [];
         if (state.serverQuestionFiles) state.serverQuestionFiles[key] = [];
@@ -1683,7 +1733,7 @@
     function questionHasAnyDraftState(q) {
         if (!q) return false;
         const qId = String(q.id || '');
-        return Boolean(String(state.answers[qId] || '').trim()
+        return Boolean(answerHasText(state.answers[qId])
             || hasDrawing(qId)
             || getQuestionFileEntries(qId).length
             || getServerQuestionFileEntries(qId).length);
@@ -2168,10 +2218,10 @@
             });
 
             html += `
-                <div data-lq-component="surface" class="lq-surface question-card" id="q-${q.id}" data-lq-material="content">
+                <div data-lq-component="surface" class="lq-surface question-card" id="q-${esc(q.id)}" data-lq-material="content">
                     <div class="q-header">
                         <span class="q-number">${esc(String(index + 1))}</span>
-                        <div class="q-body">${formatText(q.text)}</div>
+                        <div class="q-body"><span class="text-sm text-muted">${esc(QUESTION_TYPE_LABELS[normalizeQuestionType(q.type)] || '题目')}</span>${formatText(questionTextForDisplay(q))}</div>
                     </div>
                     <div class="readonly-answer ${!hasAns ? 'empty' : ''}">
                         ${hasAns ? formatAnswerMarkdown(ans) : '(未作答)'}
@@ -2214,11 +2264,11 @@
             if (Array.isArray(ansList)) {
                 ansList.forEach(item => {
                     const key = item.question_id || item.question;
-                    if (key) submittedAnswers[key] = item.answer || '';
+                    if (key) submittedAnswers[key] = storedQuestionAnswer(key, item);
                 });
             } else if (typeof ansList === 'object') {
                 Object.entries(ansList).forEach(([key, value]) => {
-                    submittedAnswers[key] = typeof value === 'object' ? (value.answer || value.text || '') : String(value || '');
+                    submittedAnswers[key] = storedQuestionAnswer(key, value);
                 });
             }
         }
@@ -2469,19 +2519,19 @@
     function formatText(s) {
         const text = String(s || '').trim();
         if (!text) return '';
-        return `<div class="md-content exam-question-md">${renderMarkdownHtml(text)}</div>`;
+        return `<div class="md-content exam-question-md">${renderAssessmentMarkdown(text)}</div>`;
     }
 
     function formatInlineMarkdown(s) {
         const text = String(s || '').trim();
         if (!text) return '';
-        return `<div class="md-content exam-option-md">${renderMarkdownHtml(text)}</div>`;
+        return `<div class="md-content exam-option-md">${renderAssessmentMarkdown(text)}</div>`;
     }
 
     function formatAnswerMarkdown(s) {
         const text = String(s || '').trim();
         if (!text) return '';
-        return `<div class="md-content exam-answer-md">${renderMarkdownHtml(text)}</div>`;
+        return `<div class="md-content exam-answer-md">${renderAssessmentMarkdown(text)}</div>`;
     }
 
     function truncate(s, n) {

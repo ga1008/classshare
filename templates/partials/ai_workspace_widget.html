@@ -27,7 +27,8 @@
         classOfferingId: {{ ai_widget.class_offering_id | tojson }},
         assignmentId: {{ ai_widget.assignment_id | tojson }},
         materialId: {{ ai_widget.material_id | tojson }},
-        taskCenterEnabled: {{ ai_widget_has_agent | tojson }}
+        taskCenterEnabled: {{ ai_widget_has_agent | tojson }},
+        assessmentAi: {{ (exam_ai_access if exam_ai_access is defined and exam_ai_access else none) | tojson }}
     });
 </script>
 

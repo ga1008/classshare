@@ -44,10 +44,12 @@ class AiWorkspaceTemplateTests(unittest.TestCase):
             vite_entry_tags=lambda entry: '',
         )
 
-    def render(self, template='base.html', role='student', path='/dashboard', query='', **context):
+    def render(self, template='base.html', role='student', path='/dashboard', query='', verified_exam_access=None, **context):
         user = {'id': 17, 'role': role, 'name': '测试用户'} if role else None
         request = Request({'type': 'http', 'scheme': 'http', 'path': path,
                            'query_string': query.encode(), 'headers': [], 'server': ('fixture.test', 80)})
+        if verified_exam_access:
+            request.state.exam_ai_access = verified_exam_access
         return self.env.get_template(template).render(user_info=user, request=request, **context)
 
     def assert_single_workspace(self, html, role='student', path='/dashboard'):
@@ -100,6 +102,16 @@ class AiWorkspaceTemplateTests(unittest.TestCase):
                 self.assertNotIn('id="ai-chat-fab"', html)
                 self.assertNotIn('ai_workspace.css', html)
                 self.assertNotIn('ai_chat_component.js', html)
+
+    def test_verified_exam_scope_mounts_one_workspace_with_filtered_context(self):
+        scope = {'allowed': True, 'user_key': 'student:17', 'page_path': '/exam/take/12',
+                 'assignment_id': '12', 'question_ids': ['q2'], 'context': '仅允许的题目'}
+        html = self.render(path='/exam/take/12', verified_exam_access=scope, exam_ai_access=scope)
+        self.assert_single_workspace(html, path='/exam/take/12')
+        self.assertIn('assessmentAi:', html)
+        self.assertIn('"question_ids": ["q2"]', html)
+        # A template context dictionary alone remains insufficient.
+        self.assertNotIn('id="ai-chat-fab"', self.render(path='/exam/take/12', exam_ai_access=scope))
 
     def test_manage_and_resume_independent_roots_reuse_workspace_and_respect_embed(self):
         user = {'id': 17, 'role': 'teacher', 'name': '测试用户'}

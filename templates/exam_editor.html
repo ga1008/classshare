@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="{{ asset_url('css/exam_paper_preview.css') }}">
 
     <link rel="stylesheet" href="{{ asset_url('css/exam_editor.css') }}">
+    <link rel="stylesheet" href="{{ asset_url('css/assessment-editor.css') }}">
 </head>
 <body {{ body_attrs(ui_palette) }}>
     {% include "partials/lq_page_backdrop.html" %}
@@ -76,7 +77,7 @@
                         <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" id="exam-allow-student-ai">
                         <span>整卷允许学生使用课堂 AI</span>
                     </label>
-                    <small>适合开放实验、综合项目和论述题；开启后学生答题页会出现同课堂一致的 AI 助手，并携带当前试卷上下文。</small>
+                    <small>开启后整卷都允许 AI 协助；关闭时只允许下方逐题勾选的题目。学生仅在可作答期间看到 AI 助手，自动上下文只包含允许的题目。</small>
                 </div>
             </div>
 
@@ -294,13 +295,17 @@
                             </div>
                         </div>
                         <div class="grid grid-cols-2 gap-3">
-                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">单选题</label><input data-lq-component="input" type="number" id="ai-exam-radio" class="lq-input form-control form-control-sm w-16" min="0" placeholder="自动"></div>
-                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">多选题</label><input data-lq-component="input" type="number" id="ai-exam-checkbox" class="lq-input form-control form-control-sm w-16" min="0" placeholder="自动"></div>
-                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">填空题</label><input data-lq-component="input" type="number" id="ai-exam-text" class="lq-input form-control form-control-sm w-16" min="0" placeholder="自动"></div>
-                            <div class="flex items-center gap-2"><label class="text-sm text-muted flex-1">问答题</label><input data-lq-component="input" type="number" id="ai-exam-textarea" class="lq-input form-control form-control-sm w-16" min="0" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label for="ai-exam-radio" class="text-sm text-muted flex-1">单选题</label><input data-lq-component="input" type="number" id="ai-exam-radio" class="lq-input form-control form-control-sm w-16" min="0" max="100" step="1" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label for="ai-exam-checkbox" class="text-sm text-muted flex-1">多选题</label><input data-lq-component="input" type="number" id="ai-exam-checkbox" class="lq-input form-control form-control-sm w-16" min="0" max="100" step="1" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label for="ai-exam-boolean" class="text-sm text-muted flex-1">判断题</label><input data-lq-component="input" type="number" id="ai-exam-boolean" class="lq-input form-control form-control-sm w-16" min="0" max="100" step="1" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label for="ai-exam-text" class="text-sm text-muted flex-1">填空题</label><input data-lq-component="input" type="number" id="ai-exam-text" class="lq-input form-control form-control-sm w-16" min="0" max="100" step="1" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label for="ai-exam-textarea" class="text-sm text-muted flex-1">简答题</label><input data-lq-component="input" type="number" id="ai-exam-textarea" class="lq-input form-control form-control-sm w-16" min="0" max="100" step="1" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label for="ai-exam-analysis" class="text-sm text-muted flex-1">分析题</label><input data-lq-component="input" type="number" id="ai-exam-analysis" class="lq-input form-control form-control-sm w-16" min="0" max="100" step="1" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label for="ai-exam-code" class="text-sm text-muted flex-1">程序题</label><input data-lq-component="input" type="number" id="ai-exam-code" class="lq-input form-control form-control-sm w-16" min="0" max="100" step="1" placeholder="自动"></div>
+                            <div class="flex items-center gap-2"><label for="ai-exam-comprehensive" class="text-sm text-muted flex-1">综合题</label><input data-lq-component="input" type="number" id="ai-exam-comprehensive" class="lq-input form-control form-control-sm w-16" min="0" max="100" step="1" placeholder="自动"></div>
                         </div>
                         <div class="form-group mt-3 mb-0">
-                            <label class="form-label">问答题附件要求（可选）</label>
+                            <label class="form-label">主观题附件要求（可选）</label>
                             <textarea data-lq-component="textarea" id="ai-exam-attachment-requirements" class="lq-textarea form-control" rows="2" placeholder="例如：实验题至少上传 1 张运行截图，可附代码文件；普通问答题不需要附件。"></textarea>
                         </div>
                     </div>
@@ -429,14 +434,17 @@
     <script type="module">
         import { showToast } from '{{ asset_url('js/ui.js') }}';
         import { createDomainModal } from '{{ asset_url("js/lq/domain-modal.js") }}';
-        import { renderMarkdownHtml } from '{{ asset_url('js/grading_feedback.js') }}';
+        import { mountAssessmentEditor, attachAutosize, renderAssessmentMarkdown } from '{{ asset_url('js/assessment_editor.js') }}';
+        import { QUESTION_TYPE_LABELS, normalizeQuestionType, questionBlanks, questionTextForDisplay } from '{{ asset_url('js/assessment_questions.js') }}';
+        import { enhanceDropdowns } from '{{ asset_url('js/lq/dropdown.js') }}';
+        import { confirm as confirmAssessmentAction } from '{{ asset_url('js/lq/dialogs.js') }}';
         import { renderExamPaperPreview } from '{{ asset_url("js/exam_paper_preview.js") }}';
         import { enhancePromptPoolInput, recordPromptForInput } from '{{ asset_url("js/prompt_pool.js") }}';
 
         // Expose to window for inline onclick handlers
         window.showToast = showToast;
 
-        const EXAM_ID = "{{ paper.id if paper else '' }}";
+        let examPaperId = "{{ paper.id if paper else '' }}";
         const EXAM_CONFIG_RAW = {{ (paper.exam_config_json if paper else '{}') | tojson }};
         let examRevision = {{ (paper.revision if paper else none) | tojson }};
         let examSaveBusy = false;
@@ -448,6 +456,7 @@
         let redirectAfterSaveToList = false;
         const selectedExamSourceMaterials = new Map();
         let scoringSaveAfterApply = false;
+        let scoringDraftSnapshot = null;
         let activeScoringIndex = 0;
         const aiExamScopeInput = document.getElementById('ai-exam-scope');
         enhancePromptPoolInput(aiExamScopeInput);
@@ -461,12 +470,35 @@
             examConfig = {};
         }
 
-        const typeLabels = {
-            radio: '单选题',
-            checkbox: '多选题',
-            text: '填空题',
-            textarea: '问答题'
-        };
+        const typeLabels = QUESTION_TYPE_LABELS;
+        const typeOrder = ['radio', 'checkbox', 'boolean', 'text', 'textarea', 'analysis', 'code', 'comprehensive'];
+        const isChoiceQuestion = q => ['radio', 'checkbox', 'boolean'].includes(normalizeQuestionType(q.type));
+        const editorBindings = new Map();
+        let questionDropdowns = null;
+        let previewTimer = null;
+        const removedBlankAnswers = new WeakMap();
+
+        function destroyEditors(root) {
+            for (const [textarea, owner] of editorBindings) {
+                if (root.contains(textarea)) { owner.destroy(); editorBindings.delete(textarea); }
+            }
+        }
+
+        function enhanceEditors(root) {
+            root.querySelectorAll('textarea').forEach(textarea => {
+                if (textarea.disabled) return;
+                if (editorBindings.has(textarea)) { editorBindings.get(textarea).refresh(); return; }
+                const owner = textarea.hasAttribute('data-assessment-format')
+                    ? mountAssessmentEditor(textarea, { format: true, code: textarea.dataset.assessmentCode === 'true', label: textarea.getAttribute('aria-label') || 'Markdown 编辑器' })
+                    : attachAutosize(textarea, { minRows: 2, maxRows: 16 });
+                editorBindings.set(textarea, owner);
+            });
+        }
+
+        function queuePreview() {
+            clearTimeout(previewTimer);
+            previewTimer = setTimeout(() => window.renderPreview(), 160);
+        }
         const scoringStyleLabels = {
             strict: '严格',
             medium: '中等',
@@ -477,19 +509,27 @@
         function renderEditorMarkdown(value, emptyText = '') {
             const text = String(value || '').trim();
             if (!text) return emptyText ? escapeHtml(emptyText) : '';
-            return renderMarkdownHtml(text);
+            return renderAssessmentMarkdown(text);
         }
 
-        function isQuestionAiAllowed(q) {
-            return Boolean(q?.allow_ai || q?.allow_student_ai || q?.ai_allowed);
+        function readAiFlag(data, keys) {
+            for (const key of keys) if (Object.hasOwn(data || {}, key)) {
+                const value = data[key];
+                return value === true || value === 1 || ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+            }
+            return false;
         }
+        function isQuestionAiAllowed(q) { return readAiFlag(q, ['allow_ai', 'allow_student_ai', 'ai_allowed']); }
+        function isWholePaperAiAllowed() { return readAiFlag(examConfig, ['allow_student_ai', 'student_ai_enabled', 'allow_ai']); }
 
         document.addEventListener('DOMContentLoaded', () => {
             const aiPolicyInput = document.getElementById('exam-allow-student-ai');
             if (aiPolicyInput) {
-                aiPolicyInput.checked = Boolean(examConfig.allow_student_ai || examConfig.student_ai_enabled || examConfig.allow_ai);
+                aiPolicyInput.checked = isWholePaperAiAllowed();
                 aiPolicyInput.addEventListener('change', () => {
                     examConfig.allow_student_ai = aiPolicyInput.checked;
+                    delete examConfig.student_ai_enabled; delete examConfig.allow_ai;
+                    window.renderQuestionEditor();
                     window.renderPreview();
                 });
             }
@@ -517,6 +557,13 @@
                 }
             });
             restoreRetryExamGeneration();
+            enhanceEditors(document);
+            savedEditorSnapshot = editorSnapshot();
+            window.addEventListener('beforeunload', event => {
+                if (savedEditorSnapshot !== null && editorSnapshot() !== savedEditorSnapshot) {
+                    event.preventDefault(); event.returnValue = '';
+                }
+            });
         });
 
         function hasExistingQuestions() {
@@ -587,7 +634,7 @@
                 examConfig = imported.exam_config || questions.exam_config || imported.config || questions.config || {};
                 const aiPolicyInput = document.getElementById('exam-allow-student-ai');
                 if (aiPolicyInput) {
-                    aiPolicyInput.checked = Boolean(examConfig.allow_student_ai || examConfig.student_ai_enabled || examConfig.allow_ai);
+                    aiPolicyInput.checked = isWholePaperAiAllowed();
                 }
             }
             if (examData.pages.length === 0) {
@@ -609,7 +656,7 @@
         function formatImportStats(stats) {
             if (!stats) return '';
             const byType = stats.by_type || {};
-            const parts = ['radio', 'checkbox', 'text', 'textarea']
+            const parts = typeOrder
                 .filter(type => Number(byType[type] || 0) > 0)
                 .map(type => `${typeLabels[type]} ${byType[type]}`);
             return `${stats.pages || 0} 个部分，${stats.questions || 0} 题${parts.length ? '（' + parts.join('，') + '）' : ''}`;
@@ -659,19 +706,20 @@
         }
 
         function answerHasValueForQuestion(q) {
+            if (q.type === 'text' && Array.isArray(q.blanks)) return q.blanks.length > 0 && q.blanks.every(blank => String(blank.answer ?? '').trim());
             if (q.type === 'checkbox') return splitCheckboxAnswer(q.answer).length > 0;
             return String(q.answer ?? '').trim().length > 0;
         }
 
         function defaultGuidanceForQuestion(q) {
-            if (q.type === 'radio') return '选中标准答案得满分；答案明确且无歧义。';
+            if (q.type === 'radio' || q.type === 'boolean') return '选中标准答案得满分；答案明确且无歧义。';
             if (q.type === 'checkbox') return '标准答案全部选中且无错选得满分；漏选或错选按扣分点处理。';
             if (q.type === 'text') return '答案与参考答案含义一致得满分；等价表达可酌情认可。';
             return '围绕参考答案中的关键步骤、结论和证据评分；过程完整、表达清楚可得满分。';
         }
 
         function defaultDeductionForQuestion(q) {
-            if (q.type === 'radio') return '选错不得分；多写无关内容不加分。';
+            if (q.type === 'radio' || q.type === 'boolean') return '选错不得分；多写无关内容不加分。';
             if (q.type === 'checkbox') return '漏选按比例扣分；错选无关项最多得一半；关键项全错不得分。';
             if (q.type === 'text') return '核心概念错误不得分；仅格式瑕疵可少量扣分。';
             return '缺少关键步骤、结论错误、证据不足或未满足附件要求时按比例扣分。';
@@ -729,7 +777,7 @@
         }
 
         function renderScoringAnswerControl(q, idx) {
-            if (q.type === 'radio' || q.type === 'checkbox') {
+            if (isChoiceQuestion(q)) {
                 const isCheckbox = q.type === 'checkbox';
                 const selected = new Set(isCheckbox ? splitCheckboxAnswer(q.answer) : [String(q.answer || '').trim()].filter(Boolean));
                 const inputType = isCheckbox ? 'checkbox' : 'radio';
@@ -740,7 +788,7 @@
                             const value = optionAnswerValue(option, optionIdx);
                             return `
                                 <label class="scoring-answer-option">
-                                    <input data-lq-component="input" class="lq-input" type="${inputType}" ${name} value="${escapeHtml(value)}" ${selected.has(value) ? 'checked' : ''} onchange="window.updateScoringChoiceAnswer(${idx})">
+                                    <input data-lq-component="${inputType}" class="lq-${inputType}" type="${inputType}" ${name} value="${escapeHtml(value)}" ${selected.has(value) || selected.has(String(option || '').trim()) ? 'checked' : ''} onchange="window.updateScoringChoiceAnswer(${idx})">
                                     <span><strong>${escapeHtml(value)}.</strong> ${escapeHtml(String(option || '').replace(/^[A-Za-z][\.\、\)\s]+/, ''))}</span>
                                 </label>
                             `;
@@ -748,9 +796,10 @@
                     </div>
                 `;
             }
-            return `
-                <textarea data-lq-component="textarea" class="lq-textarea form-control" rows="${q.type === 'textarea' ? 4 : 2}" placeholder="${q.type === 'text' ? '填写填空题参考答案' : '填写问答题参考答案、关键步骤或参考结论'}" oninput="window.updateScoringTextAnswer(${idx}, this.value)">${escapeHtml(q.answer || '')}</textarea>
-            `;
+            if (q.type === 'text' && Array.isArray(q.blanks)) {
+                return q.blanks.map((blank, bi) => `<label class="blank-answer-field"><span>第 ${escapeHtml(blank.id)} 空</span><textarea data-lq-component="textarea" class="lq-textarea form-control" rows="2" aria-label="第 ${escapeHtml(blank.id)} 空参考答案" oninput="window.updateScoringBlankAnswer(${idx}, ${bi}, this.value)">${escapeHtml(blank.answer || '')}</textarea></label>`).join('');
+            }
+            return `<textarea data-lq-component="textarea" class="lq-textarea form-control" rows="2" data-assessment-format data-assessment-code="${['code', 'comprehensive'].includes(q.type)}" aria-label="第 ${idx + 1} 题参考答案" placeholder="${q.type === 'text' ? '填写填空题参考答案' : '填写参考答案、关键步骤或参考结论'}" oninput="window.updateScoringTextAnswer(${idx}, this.value)">${escapeHtml(q.answer || '')}</textarea>`;
         }
 
         function scoringQuestionState(q) {
@@ -794,7 +843,8 @@
                 const q = questions[index]?.q || {};
                 const stateKey = scoringQuestionState(q);
                 const isActive = index === activeScoringIndex;
-                button.className = `scoring-question-tab is-${stateKey}${isActive ? ' is-active' : ''}`;
+                button.className = `lq-btn lq-btn--sm lq-btn--glass lq-domain-choice scoring-question-tab is-${stateKey}${isActive ? ' is-active' : ''}`;
+                if (isActive) button.dataset.lqSelected = 'true'; else delete button.dataset.lqSelected;
                 button.setAttribute('aria-current', isActive ? 'true' : 'false');
                 const label = button.querySelector('[data-scoring-label]');
                 const meta = button.querySelector('[data-scoring-meta]');
@@ -806,6 +856,7 @@
         window.selectScoringQuestion = function(idx) {
             activeScoringIndex = Number(idx || 0);
             syncScoringWorkbench();
+            enhanceEditors(document.getElementById('scoring-question-list'));
         };
 
         function renderScoringModal() {
@@ -821,6 +872,7 @@
             const list = document.getElementById('scoring-question-list');
             const menu = document.getElementById('scoring-question-menu');
             if (!list || !menu) return;
+            destroyEditors(list);
             activeScoringIndex = Math.max(0, Math.min(activeScoringIndex, Math.max(questions.length - 1, 0)));
             menu.innerHTML = questions.map(({ q }, idx) => {
                 const stateKey = scoringQuestionState(q);
@@ -872,6 +924,7 @@
             `).join('');
             updateScoringSummary();
             syncScoringWorkbench();
+            enhanceEditors(list);
         }
 
         function updateScoringSummary() {
@@ -891,6 +944,12 @@
             if (!grading.style || !scoringStyleLabels[grading.style]) errors.push('请选择评分风格');
             questions.forEach(({ q }, idx) => {
                 const label = `第 ${idx + 1} 题`;
+                if (q.type === 'text' && Array.isArray(q.blanks)) {
+                    const markers = [...String(q.text || '').matchAll(/\{\{\s*([1-9]\d*)\s*\}\}/g)].map(match => match[1]);
+                    const ids = q.blanks.map(blank => String(blank.id));
+                    if (markers.length !== new Set(markers).size) errors.push(`${label} 存在重复填空编号，每个空位请使用不同编号`);
+                    if (markers.length !== ids.length || markers.some(id => !ids.includes(id))) errors.push(`${label} 的题干编号与空位答案不一致`);
+                }
                 if (!answerHasValueForQuestion(q)) errors.push(`${label} 缺少标准答案`);
                 if (getQuestionPoints(q) <= 0) errors.push(`${label} 缺少有效分值`);
                 if (!getQuestionGuidance(q)) errors.push(`${label} 缺少评分指导`);
@@ -925,7 +984,14 @@
                 },
                 onClose: () => {
                     modal.classList.remove(className); modal.style.display = 'none';
-                    if (id === 'scoring-modal') scoringSaveAfterApply = false;
+                    if (id === 'scoring-modal') {
+                        scoringSaveAfterApply = false;
+                        if (scoringDraftSnapshot !== null) {
+                            examData = JSON.parse(scoringDraftSnapshot);
+                            scoringDraftSnapshot = null;
+                            window.renderQuestionEditor(); window.renderPreview();
+                        }
+                    }
                 },
             });
             editorModalOwners.set(id, owner);
@@ -936,6 +1002,7 @@
             if (!modal) return;
             modal.style.display = 'flex'; modal.classList.add(className);
             editorModalOwner(id, className).open();
+            enhanceEditors(modal);
         }
         window.openScoringModal = function(saveAfterApply = false) {
             if (!getAllEditorQuestions().length) {
@@ -947,6 +1014,7 @@
             window.closeNativeJsonImportModal?.();
             const modal = document.getElementById('scoring-modal');
             if (!modal) return;
+            if (scoringDraftSnapshot === null) scoringDraftSnapshot = JSON.stringify(examData);
             renderScoringModal();
             showScoringWarning('');
             const applyBtn = document.getElementById('apply-scoring-btn');
@@ -996,6 +1064,14 @@
             syncScoringWorkbench();
         };
 
+        window.updateScoringBlankAnswer = function(idx, blankIndex, value) {
+            const q = getAllEditorQuestions()[idx]?.q;
+            if (!q?.blanks?.[blankIndex]) return;
+            q.blanks[blankIndex].answer = value;
+            q.answer = q.blanks.map(blank => blank.answer || '');
+            syncScoringWorkbench();
+        };
+
         window.updateScoringGuidance = function(idx, value) {
             const item = getAllEditorQuestions()[idx];
             if (!item) return;
@@ -1029,6 +1105,7 @@
 
             showScoringWarning('');
             const shouldSave = scoringSaveAfterApply;
+            scoringDraftSnapshot = null;
             window.closeScoringModal();
             window.renderQuestionEditor();
             window.renderPreview();
@@ -1106,33 +1183,23 @@
                 html += renderQuestionCard(q, i);
             });
 
-            html += `
-                <div class="add-question-bar">
-                    <span class="text-sm text-muted font-medium mr-2">添加题目:</span>
-                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm bg-surface" onclick="window.addQuestion('radio')">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>单选题
-                    </button>
-                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm bg-surface" onclick="window.addQuestion('checkbox')">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><polyline points="9 12 12 15 15 9"></polyline></svg>多选题
-                    </button>
-                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm bg-surface" onclick="window.addQuestion('text')">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>填空题
-                    </button>
-                    <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm bg-surface" onclick="window.addQuestion('textarea')">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="3" x2="17" y2="21"></line><path d="M12 8h8"></path><path d="M12 12h8"></path><path d="M12 16h8"></path><path d="M4 4h4"></path><path d="M4 8h4"></path><path d="M4 12h4"></path><path d="M4 16h4"></path><path d="M4 20h4"></path></svg>问答题
-                    </button>
-                </div>
-            `;
+            html += `<div class="add-question-bar" role="group" aria-label="添加题目">
+                <span class="text-sm text-muted font-medium">添加题目</span>
+                ${typeOrder.map(type => `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass" onclick="window.addQuestion('${type}')">${typeLabels[type]}</button>`).join('')}
+            </div>`;
 
+            destroyEditors(editor);
+            (questionDropdowns || []).forEach(owner => owner.destroy());
             editor.innerHTML = html;
+            enhanceEditors(editor);
+            questionDropdowns = enhanceDropdowns(editor);
         }
 
         function renderQuestionCard(q, idx) {
-            const isChoice = q.type === 'radio' || q.type === 'checkbox';
-            const typeLabels = {radio:'单选', checkbox:'多选', text:'填空', textarea:'问答'};
+            const isChoice = isChoiceQuestion(q);
 
             let html = `
-            <div data-lq-component="surface" class="lq-surface question-card group">
+            <div data-lq-component="surface" class="lq-surface question-card group" data-question-index="${idx}">
                 <div class="q-header">
                     <div class="flex items-center gap-3">
                         <span class="q-badge">第 ${idx+1} 题</span>
@@ -1143,10 +1210,7 @@
                     </div>
                     <div class="q-actions opacity-50 group-hover:opacity-100 transition-opacity">
                         <select aria-label="题目类型" data-lq-dropdown data-lq-component="select" class="lq-select q-type-select" onchange="window.changeQType(${idx}, this.value)">
-                            <option value="radio" ${q.type==='radio'?'selected':''}>单选题</option>
-                            <option value="checkbox" ${q.type==='checkbox'?'selected':''}>多选题</option>
-                            <option value="text" ${q.type==='text'?'selected':''}>填空题</option>
-                            <option value="textarea" ${q.type==='textarea'?'selected':''}>问答题</option>
+                            ${typeOrder.map(type => `<option value="${type}" ${normalizeQuestionType(q.type) === type ? 'selected' : ''}>${typeLabels[type]}</option>`).join('')}
                         </select>
                         <div data-lq-component="surface" class="lq-surface flex bg-surface border border-border rounded-md overflow-hidden ml-1">
                             <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm p-1 rounded-none border-r border-border text-muted h-auto ${idx === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:text-primary'}" onclick="window.moveQ(${idx},-1)" ${idx === 0 ? 'disabled' : ''} title="上移">
@@ -1162,10 +1226,11 @@
                     </div>
                 </div>
 
-                <textarea data-lq-component="textarea" class="lq-textarea q-title-input" rows="3" placeholder="在此输入题目内容，可使用 Markdown，例如 **重点**、列表、行内命令或代码块" oninput="window.updateQText(${idx}, this.value)">${escapeHtml(q.text||'')}</textarea>
+                <label class="form-label" for="question-text-${idx}">题干 · Markdown</label>
+                <textarea id="question-text-${idx}" data-lq-component="textarea" class="lq-textarea q-title-input" rows="2" data-assessment-format data-assessment-code="true" aria-label="第 ${idx + 1} 题题干" placeholder="在此输入题目内容，可使用 Markdown，例如 **重点**、列表、行内命令或代码块" oninput="window.updateQText(${idx}, this.value)">${escapeHtml(q.text||'')}</textarea>
                 <label class="question-ai-toggle">
-                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" ${isQuestionAiAllowed(q) ? 'checked' : ''} onchange="window.updateQuestionAllowAi(${idx}, this.checked)">
-                    <span>允许学生答本题时使用课堂 AI</span>
+                    <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" ${isWholePaperAiAllowed() || isQuestionAiAllowed(q) ? 'checked' : ''} ${isWholePaperAiAllowed() ? 'disabled' : ''} onchange="window.updateQuestionAllowAi(${idx}, this.checked)">
+                    <span>${isWholePaperAiAllowed() ? '整卷已允许 AI 协助；关闭整卷开关后可逐题设置' : '允许学生答本题时使用课堂 AI'}</span>
                 </label>
             `;
 
@@ -1174,8 +1239,8 @@
                 (q.options || []).forEach((opt, oi) => {
                     html += `
                     <div class="option-item group/opt">
-                        <div class="option-marker ${q.type}"></div>
-                        <input data-lq-component="input" class="lq-input option-input" value="${escapeHtml(opt)}" placeholder="选项 ${oi+1}" oninput="window.updateOption(${idx},${oi},this.value)">
+                        <div class="option-marker ${q.type === 'checkbox' ? 'checkbox' : 'radio'}" aria-hidden="true"></div>
+                        <textarea data-lq-component="textarea" class="lq-textarea option-input" rows="2" aria-label="第 ${idx + 1} 题选项 ${oi + 1}" placeholder="选项 ${oi+1}（支持 Markdown）" oninput="window.updateOption(${idx},${oi},this.value)">${escapeHtml(opt)}</textarea>
                         <button data-lq-component="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--destructive btn-sm p-1 h-auto text-muted hover:text-danger opacity-0 group-hover/opt:opacity-100 transition-opacity" onclick="window.removeOption(${idx},${oi})" title="移除选项">
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                         </button>
@@ -1188,10 +1253,11 @@
                 </button>`;
             } else {
                 if (q.type === 'text') {
-                    html += `<input data-lq-component="input" class="lq-input text-preview-input" value="${escapeHtml(q.placeholder||'')}" placeholder="提示文本 (例如: 请输入函数名)" oninput="window.updatePlaceholder(${idx}, this.value)">`;
+                    html += `<div class="blank-editor" data-blank-editor="${idx}">${renderBlankEditor(q, idx)}</div>`;
+                    html += `<label class="blank-answer-field"><span class="text-sm">作答提示（可选）</span><textarea data-lq-component="textarea" class="lq-textarea text-preview-input" rows="2" oninput="window.updatePlaceholder(${idx}, this.value)">${escapeHtml(q.placeholder || '')}</textarea></label>`;
                 } else {
                     const attachmentReq = normalizeAttachmentRequirementForEditor(q);
-                    html += `<textarea data-lq-component="textarea" class="lq-textarea text-preview-input" rows="3" placeholder="提示文本 (例如: 请详细说明...)" oninput="window.updatePlaceholder(${idx}, this.value)">${escapeHtml(q.placeholder||'')}</textarea>`;
+                    html += `<textarea data-lq-component="textarea" class="lq-textarea text-preview-input" rows="2" aria-label="作答提示" placeholder="提示文本 (例如: 请详细说明...)" oninput="window.updatePlaceholder(${idx}, this.value)">${escapeHtml(q.placeholder||'')}</textarea>`;
                     html += `
                         <div class="attachment-requirement-box">
                             <label class="attachment-requirement-head">
@@ -1213,14 +1279,93 @@
             return html;
         }
 
+        function blankMarker(id) { return '{' + '{' + id + '}' + '}'; }
+
+        function synchronizeBlankMarkers(q) {
+            const ids = [...new Set([...String(q.text || '').matchAll(/\{\{\s*([1-9]\d*)\s*\}\}/g)].map(match => match[1]))];
+            const current = q.blanks || [];
+            const cache = removedBlankAnswers.get(q) || new Map();
+            current.forEach(blank => cache.set(String(blank.id), { ...blank }));
+            removedBlankAnswers.set(q, cache);
+            if (ids.join('|') === current.map(blank => String(blank.id)).join('|')) return false;
+            q.blanks = ids.map(id => cache.get(id) || { id, answer: '' });
+            q.answer = q.blanks.map(blank => blank.answer || '');
+            return true;
+        }
+
+        function convertQuestionToBlanks(q) {
+            const prior = Array.isArray(q.answer) ? q.answer.join('\n') : String(q.answer || '');
+            q.blanks = [{ id: '1', answer: prior }];
+            q.answer = [prior];
+            if (!/\{\{\s*1\s*\}\}/.test(q.text || '')) q.text = `${q.text || ''}${q.text ? ' ' : ''}${blankMarker('1')}`;
+            synchronizeBlankMarkers(q);
+        }
+
+        function renderBlankEditor(q, idx) {
+            if (!Array.isArray(q.blanks)) return `<p class="text-sm text-muted">旧格式填空题：保留原答案与作答方式。启用编号后，每个编号对应一个独立输入框。</p><button data-lq-component="button" type="button" class="lq-btn lq-btn--glass lq-btn--sm" onclick="window.enableNumberedBlanks(${idx})">启用编号填空</button>`;
+            return `<p class="text-sm text-muted">在题干中使用 ${escapeHtml(blankMarker('1'))}、${escapeHtml(blankMarker('2'))} 标记空位；每个编号只出现一次，对应一个输入框。编号可增减，其他答案互不影响。</p>
+                <div class="blank-editor-fields">${q.blanks.map((blank, bi) => `<div class="blank-editor-row"><label class="blank-answer-field"><span>第 ${escapeHtml(blank.id)} 空参考答案</span><textarea data-lq-component="textarea" class="lq-textarea" rows="2" data-blank-id="${escapeHtml(blank.id)}" aria-label="第 ${escapeHtml(blank.id)} 空参考答案" oninput="window.updateBlankAnswer(${idx}, ${bi}, this.value)">${escapeHtml(blank.answer || '')}</textarea></label><button data-lq-component="button" type="button" class="lq-btn lq-btn--ghost lq-btn--sm" onclick="window.removeBlank(${idx}, ${bi})" aria-label="删除第 ${escapeHtml(blank.id)} 空">删除</button></div>`).join('')}</div>
+                ${q.blanks.length ? '' : '<p class="text-sm" role="status">尚无编号空位，请添加空位或在题干中输入编号。</p>'}
+                <button data-lq-component="button" type="button" class="lq-btn lq-btn--glass lq-btn--sm" onclick="window.addBlank(${idx})">添加空位</button>`;
+        }
+
+        function refreshBlankEditor(idx) {
+            const q = examData.pages[currentPageIdx].questions[idx];
+            const target = document.querySelector(`[data-blank-editor="${idx}"]`);
+            if (!target) return;
+            destroyEditors(target);
+            target.innerHTML = renderBlankEditor(q, idx);
+            enhanceEditors(target);
+        }
+
+        window.enableNumberedBlanks = async function(idx) {
+            const q = examData.pages[currentPageIdx].questions[idx];
+            if (!await confirmAssessmentAction({ title: '启用编号填空', message: '旧标准答案将完整保留为第 1 空答案。启用后请按题意拆分其他空位。', confirmLabel: '启用' })) return;
+            convertQuestionToBlanks(q);
+            window.renderQuestionEditor(); window.renderPreview();
+        };
+
+        window.updateBlankAnswer = function(idx, blankIndex, value) {
+            const q = examData.pages[currentPageIdx].questions[idx];
+            if (!q.blanks?.[blankIndex]) return;
+            q.blanks[blankIndex].answer = value;
+            q.answer = q.blanks.map(blank => blank.answer || '');
+        };
+
+        window.addBlank = function(idx) {
+            const q = examData.pages[currentPageIdx].questions[idx];
+            const used = new Set((q.blanks || []).map(blank => String(blank.id)));
+            let next = 1;
+            while (used.has(String(next))) next += 1;
+            const textarea = document.getElementById(`question-text-${idx}`);
+            if (!textarea) return;
+            textarea.focus();
+            textarea.setRangeText(blankMarker(String(next)), textarea.selectionStart, textarea.selectionEnd, 'end');
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+
+        window.removeBlank = async function(idx, blankIndex) {
+            const q = examData.pages[currentPageIdx].questions[idx];
+            const blank = q.blanks?.[blankIndex];
+            if (!blank || !await confirmAssessmentAction({ title: '删除空位', message: `删除第 ${blank.id} 空及其题干标记和答案？其他空位保持原编号与答案。`, confirmLabel: '删除空位', danger: true })) return;
+            q.text = String(q.text || '').replace(/\{\{\s*([1-9]\d*)\s*\}\}/g, (marker, id) => id === String(blank.id) ? '' : marker);
+            synchronizeBlankMarkers(q);
+            window.renderQuestionEditor(); window.renderPreview();
+        };
+
         // Questions Actions
         window.addQuestion = function(type) {
             const page = examData.pages[currentPageIdx];
             if (!page.questions) page.questions = [];
             const qNum = page.questions.length + 1;
-            const qId = `p${currentPageIdx+1}_q${qNum}`;
+            const existingIds = new Set(getAllEditorQuestions().map(item => String(item.q.id)));
+            let serial = qNum;
+            while (existingIds.has(`p${currentPageIdx+1}_q${serial}`)) serial += 1;
+            const qId = `p${currentPageIdx+1}_q${serial}`;
             const newQ = { id: qId, type: type, text: '', placeholder: '' };
             if (type === 'radio' || type === 'checkbox') newQ.options = ['', '', '', ''];
+            if (type === 'boolean') newQ.options = ['正确', '错误'];
+            if (type === 'text') { newQ.text = blankMarker('1'); newQ.blanks = [{ id: '1', answer: '' }]; newQ.answer = ['']; }
             page.questions.push(newQ);
             window.renderQuestionEditor();
             window.renderPreview();
@@ -1250,42 +1395,43 @@
             window.renderPreview();
         }
 
-        window.changeQType = function(idx, newType) {
+        window.changeQType = async function(idx, newType) {
             const q = examData.pages[currentPageIdx].questions[idx];
+            const oldType = normalizeQuestionType(q.type);
+            if (newType === oldType) return;
+            // Switching answer shapes is an explicit edit; keep all text and attachments.
+            if ((isChoiceQuestion(q) || Array.isArray(q.blanks)) && answerHasValueForQuestion(q)
+                && !await confirmAssessmentAction({ title: '切换题型', message: '切换题型会改变答案格式，请在切换后核对标准答案。', confirmLabel: '切换' })) {
+                window.renderQuestionEditor(); return;
+            }
             q.type = newType;
-            if ((newType === 'radio' || newType === 'checkbox') && !q.options) {
-                q.options = ['', '', '', ''];
-            }
-            if (newType === 'checkbox' && !Array.isArray(q.answer)) {
-                q.answer = q.answer ? [String(q.answer)] : [];
-            }
-            if (newType !== 'checkbox' && Array.isArray(q.answer)) {
-                q.answer = q.answer[0] || '';
-            }
-            if (newType === 'text' || newType === 'textarea') {
+            if (isChoiceQuestion(q)) {
+                if (!Array.isArray(q.options) || !q.options.length) q.options = newType === 'boolean' ? ['正确', '错误'] : ['', '', '', ''];
+                if (newType === 'checkbox') q.answer = Array.isArray(q.answer) ? q.answer : (q.answer ? [String(q.answer)] : []);
+                else if (Array.isArray(q.answer)) q.answer = q.answer[0] || '';
+            } else {
                 delete q.options;
-                if (!q.placeholder) q.placeholder = '';
+                if (Array.isArray(q.answer)) q.answer = q.answer.join('\n');
             }
-            if (newType !== 'textarea') {
-                delete q.attachment_requirements;
-                delete q.attachment_requirement;
-                delete q.answer_attachments;
-            }
+            if (newType !== 'text') delete q.blanks;
+            else if (!Array.isArray(q.blanks)) convertQuestionToBlanks(q);
             window.renderQuestionEditor();
             window.renderPreview();
         }
 
-        window.updateQText = function(idx, val) { examData.pages[currentPageIdx].questions[idx].text = val; window.renderPreview(); }
+        window.updateQText = function(idx, val) {
+            const q = examData.pages[currentPageIdx].questions[idx];
+            q.text = val;
+            if (q.type === 'text' && Array.isArray(q.blanks) && synchronizeBlankMarkers(q)) refreshBlankEditor(idx);
+            queuePreview();
+        }
         window.updateQId = function(idx, val) { examData.pages[currentPageIdx].questions[idx].id = val; }
-        window.updatePlaceholder = function(idx, val) { examData.pages[currentPageIdx].questions[idx].placeholder = val; window.renderPreview(); }
+        window.updatePlaceholder = function(idx, val) { examData.pages[currentPageIdx].questions[idx].placeholder = val; queuePreview(); }
         window.updateQuestionAllowAi = function(idx, checked) {
             const q = examData.pages[currentPageIdx].questions[idx];
-            if (checked) q.allow_ai = true;
-            else {
-                delete q.allow_ai;
-                delete q.allow_student_ai;
-                delete q.ai_allowed;
-            }
+            q.allow_ai = Boolean(checked);
+            delete q.allow_student_ai;
+            delete q.ai_allowed;
             window.renderPreview();
         }
         window.updateAttachmentRequired = function(idx, checked) {
@@ -1324,12 +1470,31 @@
             req.description = val;
             window.renderPreview();
         }
-        window.updateOption = function(qIdx, optIdx, val) { examData.pages[currentPageIdx].questions[qIdx].options[optIdx] = val; window.renderPreview(); }
+        window.updateOption = function(qIdx, optIdx, val) {
+            const q = examData.pages[currentPageIdx].questions[qIdx];
+            const previous = q.options[optIdx];
+            if (Array.isArray(q.answer)) q.answer = q.answer.map(answer => answer === previous ? val : answer);
+            else if (q.answer === previous && previous) q.answer = val;
+            q.options[optIdx] = val; queuePreview();
+        }
         window.addOption = function(qIdx) { examData.pages[currentPageIdx].questions[qIdx].options.push(''); window.renderQuestionEditor(); window.renderPreview(); }
-        window.removeOption = function(qIdx, optIdx) { examData.pages[currentPageIdx].questions[qIdx].options.splice(optIdx, 1); window.renderQuestionEditor(); window.renderPreview(); }
+        window.removeOption = function(qIdx, optIdx) {
+            const q = examData.pages[currentPageIdx].questions[qIdx];
+            const answers = (Array.isArray(q.answer) ? q.answer : [String(q.answer || '')]).map(String).filter(answer => answer.trim());
+            const selectedIndices = new Set(answers.flatMap(answer => {
+                const exact = q.options.map((option, index) => String(option).trim() === answer.trim() ? index : -1).filter(index => index >= 0);
+                return exact.length ? exact : q.options.map((option, index) => optionAnswerValue(option, index) === answer.trim().toUpperCase() ? index : -1).filter(index => index >= 0);
+            }));
+            const selected = q.options.map((_, index) => selectedIndices.has(index));
+            q.options.splice(optIdx, 1); selected.splice(optIdx, 1);
+            const mapped = q.options.flatMap((option, index) => selected[index] ? [optionAnswerValue(option, index)] : []);
+            q.answer = q.type === 'checkbox' ? mapped : (mapped[0] || '');
+            window.renderQuestionEditor(); window.renderPreview();
+        }
 
         // === 预览 ===
         window.renderPreview = function() {
+            clearTimeout(previewTimer);
             const page = examData.pages[currentPageIdx];
             if (!page) return;
             const container = document.getElementById('preview-content');
@@ -1345,24 +1510,26 @@
             questions.forEach((q, i) => {
                 html += `
                 <div class="preview-q">
-                    <div class="preview-q-title"><span class="text-muted mr-1">${i+1}.</span> <div class="md-content">${renderEditorMarkdown(q.text, '(未填写题干)')}</div></div>
+                    <div class="text-xs text-muted mb-2">${typeLabels[normalizeQuestionType(q.type)] || '简答题'}</div>
+                    <div class="preview-q-title"><span class="text-muted mr-1">${i+1}.</span> <div class="md-content">${renderEditorMarkdown(questionTextForDisplay(q), '(未填写题干)')}</div></div>
                     ${isQuestionAiAllowed(q) ? '<div class="text-xs text-primary mb-2">本题允许学生使用课堂 AI</div>' : ''}`;
 
-                if ((q.type === 'radio' || q.type === 'checkbox') && q.options) {
+                if (isChoiceQuestion(q) && q.options) {
                     html += `<div class="preview-q-options">`;
-                    const inputType = q.type === 'radio' ? 'radio' : 'checkbox';
+                    const inputType = q.type === 'checkbox' ? 'checkbox' : 'radio';
                     q.options.forEach(opt => {
                         html += `
                         <label class="preview-q-option">
-                            <input data-lq-component="input" type="${inputType}" disabled class="lq-input cursor-not-allowed">
+                            <input data-lq-component="${inputType}" type="${inputType}" disabled class="lq-${inputType} cursor-not-allowed">
                             <div class="md-content">${renderEditorMarkdown(opt, '(空)')}</div>
                         </label>`;
                     });
                     html += `</div>`;
                 } else if (q.type === 'text') {
-                    html += `<input data-lq-component="input" type="text" class="lq-input preview-q-input cursor-not-allowed" disabled placeholder="${escapeHtml(q.placeholder || '填空答案')}">`;
+                    const blanks = questionBlanks(q);
+                    html += (blanks.length ? blanks : [{ id: '', placeholder: q.placeholder }]).map(blank => `<label class="blank-answer-field"><span>${blank.id ? `第 ${escapeHtml(blank.id)} 空` : '答案'}</span><textarea data-lq-component="textarea" class="lq-textarea preview-q-input" disabled rows="2" placeholder="${escapeHtml(blank.placeholder || q.placeholder || '填空答案')}"></textarea></label>`).join('');
                 } else {
-                    html += `<textarea data-lq-component="textarea" class="lq-textarea preview-q-input cursor-not-allowed" rows="3" disabled placeholder="${escapeHtml(q.placeholder || '问答作答区域...')}"></textarea>`;
+                    html += `<textarea data-lq-component="textarea" class="lq-textarea preview-q-input cursor-not-allowed" rows="2" disabled placeholder="${escapeHtml(q.placeholder || '请在此作答...')}"></textarea>`;
                     const attachmentReq = normalizeAttachmentRequirementForEditor(q);
                     if (attachmentReq.required || attachmentReq.description) {
                         const minText = attachmentReq.required ? `至少 ${Math.max(attachmentReq.min_count || 1, 1)} 个附件` : '可附加文件';
@@ -1378,6 +1545,16 @@
         }
 
         // === 保存 ===
+        let savedEditorSnapshot = null;
+        function editorSnapshot() {
+            return JSON.stringify({
+                title: document.getElementById('exam-title')?.value || '',
+                description: document.getElementById('exam-desc')?.value || '',
+                scope: document.getElementById('exam-scope-level')?.value || 'department',
+                allowAi: Boolean(document.getElementById('exam-allow-student-ai')?.checked),
+                questions: examData, config: examConfig,
+            });
+        }
         async function persistExam() {
             if (examSaveBusy) return;
             const title = document.getElementById('exam-title').value.trim();
@@ -1398,16 +1575,17 @@
                 },
                 status: 'draft'
             };
-            if (EXAM_ID) payload.expected_revision = examRevision;
+            if (examPaperId) payload.expected_revision = examRevision;
+            const savingSnapshot = editorSnapshot();
+            const creatingPaper = !examPaperId;
 
             const saveButton = document.getElementById('exam-save-button');
             examSaveBusy = true;
             saveButton.disabled = true;
             saveButton.setAttribute('aria-busy', 'true');
-            let leaving = false;
             try {
-                const url = EXAM_ID ? `/api/exam-papers/${EXAM_ID}` : '/api/exam-papers';
-                const method = EXAM_ID ? 'PUT' : 'POST';
+                const url = examPaperId ? `/api/exam-papers/${encodeURIComponent(examPaperId)}` : '/api/exam-papers';
+                const method = examPaperId ? 'PUT' : 'POST';
                 const resp = await fetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
@@ -1415,15 +1593,25 @@
                 });
                 const data = await resp.json();
                 if (resp.ok) {
+                    if (creatingPaper && data.paper_id) {
+                        // Adopt the created identity before permitting another save.
+                        // Updating the URL preserves edits typed while POST was pending.
+                        examPaperId = String(data.paper_id);
+                        try { window.history.replaceState(window.history.state, '', `/exam/${encodeURIComponent(examPaperId)}/edit`); }
+                        catch (error) { console.warn('试卷已创建，地址栏未能更新', error); }
+                    }
+                    savedEditorSnapshot = savingSnapshot;
                     if (typeof data.revision === 'string') examRevision = data.revision;
                     document.getElementById('exam-save-conflict').hidden = true;
                     showToast('试卷保存成功', 'success');
-                    if (redirectAfterSaveToList) {
-                        leaving = true;
-                        setTimeout(() => window.location.href = '/manage/library/exams', 650);
-                    } else if (!EXAM_ID && data.paper_id) {
-                        leaving = true;
-                        setTimeout(() => window.location.href = `/exam/${data.paper_id}/edit`, 800);
+                    if (redirectAfterSaveToList && editorSnapshot() === savingSnapshot) {
+                        setTimeout(() => {
+                            // Recheck after the toast delay: typing or a later save
+                            // must not be replaced by this earlier response.
+                            if (!examSaveBusy && savedEditorSnapshot === savingSnapshot && editorSnapshot() === savingSnapshot) {
+                                window.location.href = '/manage/library/exams';
+                            }
+                        }, 650);
                     }
                 } else if (resp.status === 409 && data.detail?.code === 'revision_conflict') {
                     const conflict = document.getElementById('exam-save-conflict');
@@ -1435,11 +1623,9 @@
             } catch(e) {
                 showToast('保存失败: ' + e.message, 'error');
             } finally {
-                if (!leaving) {
-                    examSaveBusy = false;
-                    saveButton.disabled = false;
-                    saveButton.setAttribute('aria-busy', 'false');
-                }
+                examSaveBusy = false;
+                saveButton.disabled = false;
+                saveButton.setAttribute('aria-busy', 'false');
             }
         }
 
@@ -1637,10 +1823,7 @@
             setFieldValue('ai-exam-difficulty', config.difficulty || 'medium');
             setFieldValue('ai-exam-total', config.total_questions || '');
             setFieldValue('ai-exam-offering', config.class_offering_id || '');
-            setFieldValue('ai-exam-radio', questionTypes.radio || '');
-            setFieldValue('ai-exam-checkbox', questionTypes.checkbox || '');
-            setFieldValue('ai-exam-text', questionTypes.text || '');
-            setFieldValue('ai-exam-textarea', questionTypes.textarea || '');
+            typeOrder.forEach(type => setFieldValue(`ai-exam-${type}`, questionTypes[type] || ''));
 
             selectedExamSourceMaterials.clear();
             const sourceItems = Array.isArray(config.source_files) ? config.source_files : [];
@@ -1975,7 +2158,7 @@
             const readOptionalCount = (id, label) => {
                 const raw = document.getElementById(id).value.trim();
                 if (!raw) return null;
-                const value = parseInt(raw, 10);
+                const value = Number(raw);
                 if (!Number.isInteger(value) || value < 0 || value > 100) {
                     throw new Error(`${label}数量必须是 0-100 之间的整数`);
                 }
@@ -1983,15 +2166,10 @@
             };
 
             try {
-                const radioCount = readOptionalCount('ai-exam-radio', '单选题');
-                const checkboxCount = readOptionalCount('ai-exam-checkbox', '多选题');
-                const textCount = readOptionalCount('ai-exam-text', '填空题');
-                const textareaCount = readOptionalCount('ai-exam-textarea', '问答题');
-
-                if (radioCount > 0) questionTypes.radio = radioCount;
-                if (checkboxCount > 0) questionTypes.checkbox = checkboxCount;
-                if (textCount > 0) questionTypes.text = textCount;
-                if (textareaCount > 0) questionTypes.textarea = textareaCount;
+                typeOrder.forEach(type => {
+                    const count = readOptionalCount(`ai-exam-${type}`, typeLabels[type]);
+                    if (count > 0) questionTypes[type] = count;
+                });
             } catch (error) {
                 showToast(error.message, 'warning');
                 return;

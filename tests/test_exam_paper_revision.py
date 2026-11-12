@@ -130,6 +130,23 @@ class ExamPaperRevisionTests(PlatformWriteFixture):
         self.assertEqual('Metadata only', self.paper()['title'])
         self.assertEqual(result['revision'], self.get()['paper']['revision'])
 
+    def test_existing_drafts_allow_permission_revocation_but_not_question_or_answer_changes(self):
+        payload = copy.deepcopy(self.payload)
+        question = payload['questions']['pages'][0]['questions'][0]
+        question['allow_ai'] = True
+        enabled = self.save({**payload, 'expected_revision': self.get()['paper']['revision']})
+        question['allow_ai'] = False
+        with patch.object(route, '_count_exam_drafts', return_value=1):
+            revoked = self.save({**payload, 'expected_revision': enabled['revision']})
+            self.assertNotEqual(revoked['revision'], enabled['revision'])
+            self.assert_conflict({**payload, 'expected_revision': enabled['revision']})
+            for field in ('text', 'answer', 'grading_guidance'):
+                changed = copy.deepcopy(payload)
+                changed['questions']['pages'][0]['questions'][0][field] = 'changed protected content'
+                with self.subTest(field=field), self.assertRaises(HTTPException) as blocked:
+                    self.save({**changed, 'expected_revision': revoked['revision']})
+                self.assertEqual(blocked.exception.status_code, 409)
+
     def test_two_connections_with_same_revision_commit_once_and_conflict_once(self):
         revision = self.get()['paper']['revision']
         with tempfile.TemporaryDirectory(prefix='lanshare-exam-revision-') as folder:

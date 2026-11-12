@@ -7,11 +7,13 @@ TABLES = (
     "login_attendance_policies", "login_attendance_rounds", "login_attendance_records",
     "login_attendance_access", "login_attendance_evaluations", "login_attendance_audit",
     "login_attendance_attention",
+    "login_attendance_settlement_runs",
 )
 
 REQUIRED_COLUMNS = {
     "login_attendance_policies": tuple("class_offering_id revision closed_at_ms networks_json before_minutes after_minutes appeal_days teacher_reference_ms updated_by updated_at_ms".split()),
-    "login_attendance_rounds": tuple("id class_offering_id session_id teacher_id request_key state is_current revision starts_at_ms ends_at_ms window_start_ms window_end_ms settle_at_ms created_at_ms ended_at_ms evaluated_at_ms next_evaluation_ms policy_json context_json baseline_json watermark_json supersedes_id void_reason".split()),
+    "login_attendance_rounds": tuple("id class_offering_id session_id teacher_id request_key state is_current revision settlement_generation starts_at_ms ends_at_ms window_start_ms window_end_ms settle_at_ms created_at_ms ended_at_ms evaluated_at_ms next_evaluation_ms policy_json context_json baseline_json watermark_json supersedes_id void_reason".split()),
+    "login_attendance_settlement_runs": tuple("id round_id owner_teacher_id generation revision request_key request_hash state stage completed total cutoff_ms scope_json worker_token message created_at_ms updated_at_ms".split()),
     "login_attendance_records": tuple("id round_id student_id student_number name class_name expected confirmed_retake status suggestion quality manual_confirmed revision first_seen_ms last_seen_ms deviation_ms evidence_json reason decided_by decided_at_ms updated_at_ms".split()),
     "login_attendance_access": tuple("event_key student_id observed_at_ms ip_address network_source auth_channel session_hash source class_offering_hint received_at_ms".split()),
     "login_attendance_evaluations": tuple("id round_id evaluated_at_ms algorithm_version input_hash baseline_json watermark_json results_json".split()),
@@ -37,6 +39,7 @@ def ensure_login_attendance_schema(conn, *, engine=None):
             teacher_id BIGINT, request_key TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'running'
                 CHECK(state IN ('scheduled','running','settling','published','void')),
             is_current INTEGER NOT NULL DEFAULT 1, revision INTEGER NOT NULL DEFAULT 1,
+            settlement_generation INTEGER NOT NULL DEFAULT 0,
             starts_at_ms BIGINT NOT NULL, ends_at_ms BIGINT NOT NULL,
             window_start_ms BIGINT NOT NULL, window_end_ms BIGINT NOT NULL,
             settle_at_ms BIGINT NOT NULL, created_at_ms BIGINT NOT NULL, ended_at_ms BIGINT,
@@ -87,6 +90,17 @@ def ensure_login_attendance_schema(conn, *, engine=None):
             claim_owner TEXT NOT NULL DEFAULT '', claim_until_ms BIGINT,
             created_at_ms BIGINT NOT NULL
         )""",
+        """CREATE TABLE IF NOT EXISTS login_attendance_settlement_runs (
+            id TEXT PRIMARY KEY, round_id BIGINT NOT NULL REFERENCES login_attendance_rounds(id),
+            owner_teacher_id BIGINT NOT NULL, generation INTEGER NOT NULL, revision INTEGER NOT NULL DEFAULT 1,
+            request_key TEXT NOT NULL, request_hash TEXT NOT NULL,
+            state TEXT NOT NULL CHECK(state IN ('queued','running','completed','failed','superseded')),
+            stage TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 4,
+            cutoff_ms BIGINT NOT NULL, scope_json TEXT NOT NULL, worker_token TEXT NOT NULL DEFAULT '',
+            message TEXT NOT NULL DEFAULT '', created_at_ms BIGINT NOT NULL, updated_at_ms BIGINT NOT NULL,
+            UNIQUE(round_id,generation), UNIQUE(owner_teacher_id,request_key)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_attendance_settlement_round ON login_attendance_settlement_runs(round_id,generation)",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_login_attendance_current ON login_attendance_rounds(session_id) WHERE is_current=1 AND state<>'void'",
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_due ON login_attendance_rounds(next_evaluation_ms,id) WHERE state IN ('scheduled','running','settling')",
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_published_due ON login_attendance_rounds(next_evaluation_ms,created_at_ms,id) WHERE state='published'",
@@ -98,3 +112,9 @@ def ensure_login_attendance_schema(conn, *, engine=None):
     )
     for sql in statements:
         conn.execute(sql)
+    if engine == 'postgres':
+        columns = {r['column_name'] for r in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='login_attendance_rounds'").fetchall()}
+    else:
+        columns = {r[1] for r in conn.execute('PRAGMA table_info(login_attendance_rounds)').fetchall()}
+    if 'settlement_generation' not in columns:
+        conn.execute('ALTER TABLE login_attendance_rounds ADD COLUMN settlement_generation INTEGER NOT NULL DEFAULT 0')

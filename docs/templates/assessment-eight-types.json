@@ -1,0 +1,177 @@
+{
+  "title": "八题型示例试卷（请按课程目标改编）",
+  "description": "8题，共100分，建议45分钟，在lanshare平台提交。仅第8题可请AI解释思路，代码与验证由本人完成；附件可选。",
+  "exam_config": {
+    "allow_student_ai": false
+  },
+  "grading": {
+    "total_score": 100,
+    "description": "逐题按得分点评分，题分合计100分。同一错误不重复扣分；等价正确方法可得对应分，未要求的附件不影响得分。",
+    "style": "medium",
+    "style_options": {
+      "strict": "严格",
+      "medium": "中等",
+      "loose": "宽松",
+      "rescue": "捞一捞"
+    }
+  },
+  "json_authoring_notes": [
+    "2026-11-12版；示例用于说明八题型合同，不要求每份课程作业凑齐八型。请替换题目、答案、分值与评分点后再使用。",
+    "题干、选项、答案、解析使用 Markdown；代码用带语言名的围栏，如 ```python。不要嵌入脚本、HTML表单或编辑器内部标记。",
+    "Markdown 中的反斜杠、双引号和换行必须保持合法 JSON 转义；推荐先让第三方 AI 输出 JSON，再用 JSON 校验器检查。",
+    "整卷 exam_config.allow_student_ai 默认为 false，仅确需协助的开放题设置 allow_ai: true；整卷 true 将允许全部题，题级 false 不会收回整卷授权。AI仍须通过服务端的发布状态、作答时间、学生权限与提交状态校验。",
+    "题型：radio 单选、checkbox 多选、boolean 判断、text 填空、textarea 简答、analysis 分析、code 程序、comprehensive 综合。",
+    "新填空题使用 {{1}}、{{2}} 等编号与 blanks 数组一一对应；每个正整数id只出现一次，可不连续。answer是按blanks顺序排列的答案数组，不是同义答案列表。删除空位不重排其他id，数量按题目需要动态确定。",
+    "附件要求适用于 textarea、analysis、code、comprehensive；min_count 大于 0 会被视为必传附件并在学生端显示必传标记。",
+    "导入 JSON 必须包含 grading.total_score、grading.description、grading.style，以及每题 answer、points、grading_guidance、deduction_points；points 合计必须等于 total_score。"
+  ],
+  "pages": [
+    {
+      "name": "基础理解（30分）",
+      "questions": [
+        {
+          "id": "p1_q1",
+          "type": "radio",
+          "text": "（5分）表达式 `len([10, 20, 30])` 的值是多少？",
+          "options": [
+            "A. 1",
+            "B. 2",
+            "C. 3",
+            "D. 30"
+          ],
+          "answer": "C",
+          "explanation": "len返回列表元素个数，该列表含3个元素。",
+          "points": 5,
+          "grading_guidance": "选C得5分。",
+          "deduction_points": "错选或未答得0分。"
+        },
+        {
+          "id": "p1_q2",
+          "type": "checkbox",
+          "text": "（10分，多选）哪些表达式的值是 `True`？全选且无错选得10分；无错选时，每选对一项得5分；有错选得0分。",
+          "options": [
+            "A. `2 < 3`",
+            "B. `3 == 4`",
+            "C. `5 >= 5`",
+            "D. `1 > 2`"
+          ],
+          "answer": [
+            "A",
+            "C"
+          ],
+          "explanation": "2小于3，5等于5，因此A、C为True。",
+          "points": 10,
+          "grading_guidance": "A、C全选且无错选得10分；无错选时每个正确项5分；有错选得0分。",
+          "deduction_points": "无错选时每漏一项扣5分；有错选得0分。"
+        },
+        {
+          "id": "p1_q3",
+          "type": "boolean",
+          "text": "（5分）判断：Python列表中的元素可以被修改。",
+          "options": [
+            "A. 正确",
+            "B. 错误"
+          ],
+          "answer": "A",
+          "explanation": "列表是可变对象，可通过索引赋值修改元素。",
+          "points": 5,
+          "grading_guidance": "选A得5分。",
+          "deduction_points": "错选或未答得0分。"
+        },
+        {
+          "id": "p1_q4",
+          "type": "text",
+          "text": "（10分）Python定义函数使用关键字 {{1}}，从函数返回结果使用关键字 {{2}}。",
+          "blanks": [
+            {
+              "id": "1",
+              "answer": "def",
+              "placeholder": "填写定义关键字"
+            },
+            {
+              "id": "2",
+              "answer": "return",
+              "placeholder": "填写返回关键字"
+            }
+          ],
+          "answer": [
+            "def",
+            "return"
+          ],
+          "explanation": "def定义函数，return结束函数并返回结果。",
+          "points": 10,
+          "grading_guidance": "编号1答def得5分，编号2答return得5分；按编号分别计分。",
+          "deduction_points": "每空错答或空缺扣该空5分，不影响另一空。"
+        }
+      ]
+    },
+    {
+      "name": "解释与分析（25分）",
+      "questions": [
+        {
+          "id": "p2_q1",
+          "type": "textarea",
+          "text": "（10分）以计算两数之和为例，分别说明程序的输入、处理和输出是什么。请分点回答。",
+          "placeholder": "按输入、处理、输出说明",
+          "answer": "1. 输入：两个待相加的数。\n2. 处理：执行加法，得到两数之和。\n3. 输出：显示计算结果，例如输入2和3，输出5。",
+          "explanation": "输入提供数据，处理完成计算，输出呈现结果。",
+          "points": 10,
+          "grading_guidance": "说明输入3分；说明加法处理3分；说明输出并举正确结果4分。",
+          "deduction_points": "缺失或错误仅扣对应得分点，同项不重复扣分。"
+        },
+        {
+          "id": "p2_q2",
+          "type": "analysis",
+          "text": "（15分）阅读代码，写出输出结果，并解释变量之间的关系和列表发生变化的原因。\n\n```python\nnumbers = [2, 4]\nalias = numbers\nalias.append(6)\nprint(numbers)\n```",
+          "placeholder": "先写结果，再说明原因",
+          "answer": "输出为 `[2, 4, 6]`。`alias`与`numbers`引用同一个列表，赋值没有复制列表。`append(6)`原地修改该列表，因此通过numbers也能看到新元素。",
+          "explanation": "变量别名共享同一个可变列表。",
+          "points": 15,
+          "grading_guidance": "输出正确5分；解释共享同一列表5分；解释append原地修改5分。",
+          "deduction_points": "各得分点独立计分；只写结果最多5分。"
+        }
+      ]
+    },
+    {
+      "name": "编程与综合（45分）",
+      "questions": [
+        {
+          "id": "p3_q1",
+          "type": "code",
+          "text": "（20分）编写函数 `total_even(values)`，接收整数列表，返回其中所有偶数之和；空列表返回0。提交完整Python代码，并记录 `[1, 2, 3, 4]`、`[]`、`[-2, 3, 4]` 三组测试结果。可使用代码块，不要求附件。",
+          "placeholder": "插入代码块并写出测试结果",
+          "answer": "```python\ndef total_even(values):\n    total = 0\n    for value in values:\n        if value % 2 == 0:\n            total += value\n    return total\n```\n\n三组测试依次返回 `6`、`0`、`2`。",
+          "explanation": "从0开始累加偶数，空列表不会进入循环，结果仍为0。",
+          "points": 20,
+          "grading_guidance": "函数参数与返回4分；遍历4分；偶数判断4分；累加与空列表4分；三组测试均正确4分（前两组各1分，负数组2分）。",
+          "deduction_points": "只扣对应错误点；等价正确实现同分，不按代码长度扣分。"
+        },
+        {
+          "id": "p3_q2",
+          "type": "comprehensive",
+          "text": "（25分）某活动四场报名人数为 `[12, 8, 15, 5]`。请完成以下任务：\n\n1. 计算原总人数和单场最多人数。\n2. 新增一场20人，写代码更新列表并重新统计。\n3. 记录更新后的场次数、总人数和最多人数，说明怎样核对结果。\n4. 解释append对原列表的影响。\n\n可附运行图；若环境无法运行，写出手工追踪过程和遇到的问题。",
+          "placeholder": "按四项任务组织文字与代码",
+          "answer": "1. 原总人数40，最多15人。\n2. 示例代码：\n\n```python\ncounts = [12, 8, 15, 5]\ncounts.append(20)\nprint(len(counts), sum(counts), max(counts))\n```\n\n3. 输出 `5 60 20`；场次增加1，总人数增加20，最多人数变为20，可分别手算核对。\n4. append原地追加元素，原列表变为 `[12, 8, 15, 5, 20]`。",
+          "explanation": "综合核对列表更新、统计结果和操作影响，手工追踪也应与代码一致。",
+          "points": 25,
+          "grading_guidance": "原总数与最大值各2.5分；追加与重新统计代码8分；三个新结果各2分、核对方法2分；解释原地修改4分。无运行环境时以正确手工追踪替代运行证据，不重复加分。",
+          "deduction_points": "缺失或错误扣对应分；附件可选，未上传不扣分。",
+          "allow_ai": true,
+          "attachment_requirements": {
+            "enabled": true,
+            "required": false,
+            "min_count": 0,
+            "max_count": 1,
+            "allowed_file_types": [
+              ".png",
+              ".jpg",
+              ".txt"
+            ],
+            "allow_drawing": true,
+            "description": "可选：1张运行图或1份文字记录；不上传不扣分。"
+          }
+        }
+      ]
+    }
+  ]
+}

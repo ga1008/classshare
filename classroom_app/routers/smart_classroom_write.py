@@ -12,6 +12,7 @@ from ..services import smart_classroom_write_service as service
 from ..services import smart_classroom_attendance_adapter as adapter
 from ..services import smart_classroom_auto_sync_service as auto_sync
 from ..services import smart_classroom_workflow_service as workflow_service
+from ..services import smart_classroom_student_push_service as student_push
 from ..services.smart_classroom_session_service import SmartClassroomSessionError
 from ..services.attendance_report_service import sign_attendance_source_option, _decode_option
 from ..services.trusted_network_service import require_same_origin
@@ -82,6 +83,46 @@ class AlignmentConfirmation(Strict):
     expected_course_revision:int=Field(ge=0)
     expected_binding_revision:int=Field(ge=0)
     idempotency_key:str=Field(min_length=8,max_length=100)
+
+
+class StudentCorrection(Strict):
+    status:Literal['PRESENT','ABSENT','SICK_LEAVE','PERSONAL_LEAVE','LATE','EARLY']
+    revision:int=Field(ge=1,strict=True)
+    reason:str=Field(min_length=1,max_length=1000)
+    idempotency_key:str=Field(min_length=8,max_length=100)
+    mode:Literal['local','push']
+    expected_binding_revision:int|None=Field(default=None,ge=1,strict=True)
+    expected_remote_checkin_id:str|None=Field(default=None,min_length=1,max_length=160)
+
+
+@router.post('/students/{student_id}/corrections')
+def correct_student(offering_id:int,round_id:int,student_id:int,payload:StudentCorrection,request:Request,user:dict=Depends(get_current_teacher)):
+    require_same_origin(request)
+    with get_db_connection() as conn:
+        result=student_push.correct(conn,user,offering_id,round_id,student_id,payload.model_dump(exclude_none=True))
+        conn.commit()
+        return result
+
+
+@router.get('/students/{student_id}/push')
+def student_push_status(offering_id:int,round_id:int,student_id:int,user:dict=Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        return student_push.status(conn,user,offering_id,round_id,student_id)
+
+
+@router.post('/students/{student_id}/push/check')
+async def check_student_push(offering_id:int,round_id:int,student_id:int,request:Request,user:dict=Depends(get_current_teacher)):
+    require_same_origin(request)
+    return await _call(asyncio.wait_for(student_push.check(user,offering_id,round_id,student_id),timeout=90))
+
+
+@router.post('/students/{student_id}/push/{intent_id}/retry')
+def retry_student_push(offering_id:int,round_id:int,student_id:int,intent_id:str,request:Request,user:dict=Depends(get_current_teacher)):
+    require_same_origin(request)
+    with get_db_connection() as conn:
+        result=student_push.retry(conn,user,offering_id,round_id,student_id,intent_id)
+        conn.commit()
+        return result
 
 
 @session_router.get("/workflow")

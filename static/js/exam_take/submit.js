@@ -141,7 +141,7 @@ export function createExamSubmissionController({ context, state, live, ports }) 
         const allQuestions = [];
         state.pages.forEach(p => (p.questions || []).forEach(q => allQuestions.push(q)));
 
-        const unanswered = allQuestions.filter(q => !ports.answerHasContent(q));
+        const unanswered = allQuestions.filter(q => !(ports.answerIsComplete || ports.answerHasContent)(q));
         const hasAnswered = allQuestions.some(q => ports.answerHasContent(q));
         const hasQuestionUploads = allQuestions.some(q => ports.hasDrawing(q.id) || ports.hasQuestionFiles(q.id));
         const hasFiles = (live.uploadManager?.hasFiles() ?? false) || hasQuestionUploads;
@@ -165,7 +165,7 @@ export function createExamSubmissionController({ context, state, live, ports }) 
         }
 
         if (unanswered.length > 0) {
-            if (!ports.confirm(`还有 ${unanswered.length} 道题未作答，确定要强行交卷吗？`)) return;
+            if (!ports.confirm(`还有 ${unanswered.length} 道题未完成（包括未填写的空位），确定要交卷吗？`)) return;
         } else {
             const confirmText = live.isEditingResubmission
                 ? '确定要重新提交试卷吗？新的提交会替换当前版本。'
@@ -251,6 +251,7 @@ export function createExamSubmissionController({ context, state, live, ports }) 
                     question: q.text,
                     type: q.type || '',
                     answer: state.answers[q.id] || '',
+                    ...(Array.isArray(q.blanks) && q.blanks.length ? { blank_ids: q.blanks.map(blank => String(blank.id)) } : {}),
                     attachments: attachmentMap.get(q.id) || [],
                 };
             });

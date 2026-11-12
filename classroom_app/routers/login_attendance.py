@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher, get_current_user
 from ..services import login_attendance_service as service
+from ..services import login_attendance_settlement_service as settlement
 from ..services import attendance_dashboard_service as dashboard_service
 from ..services import approval_workflow_service as workflow
 from ..services.trusted_network_service import client_network, require_same_origin
@@ -28,6 +29,15 @@ archive_router = APIRouter(prefix="/api/login-attendance/archive", dependencies=
 
 class Revision(BaseModel):
     revision: int = Field(ge=0)
+
+
+class SettlementRequest(BaseModel):
+    model_config = {'extra':'forbid'}
+    idempotency_key: str = Field(min_length=8,max_length=100)
+    expected_round_revision: int = Field(ge=1,strict=True)
+    restart: bool = Field(default=False,strict=True)
+    expected_task_id: str | None = Field(default=None,min_length=1,max_length=64)
+    expected_task_generation: int | None = Field(default=None,ge=1,strict=True)
 
 
 class CreateRound(BaseModel):
@@ -200,6 +210,7 @@ def recalculate(offering_id: int, round_id: int, body: Revision, request: Reques
         _offering_round(conn,offering_id,round_id)
         row=service.load_round(conn,round_id,user,lock=True)
         service._revision(row,body.model_dump())
+        settlement.assert_no_unpublished_settlement(conn,round_id)
         if row["state"]=="void" or not row["is_current"]:
             raise HTTPException(409,"本轮已作废或替代，仅可查看历史记录。")
         if row["state"]=="published" and service.now_ms()>row["window_end_ms"]+7*86400_000:
@@ -208,6 +219,21 @@ def recalculate(offering_id: int, round_id: int, body: Revision, request: Reques
             return service.round_view(conn,round_id,user)
         service.evaluate_round(conn,round_id)
         result=service.round_view(conn,round_id,user)
+        conn.commit()
+        return result
+
+
+@router.get('/rounds/{round_id}/settlement')
+def settlement_status(offering_id:int,round_id:int,user:dict=Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        return settlement.status(conn,user,offering_id,round_id)
+
+
+@router.post('/rounds/{round_id}/settlement',status_code=202)
+def request_settlement(offering_id:int,round_id:int,body:SettlementRequest,request:Request,user:dict=Depends(get_current_teacher)):
+    _origin(request)
+    with get_db_connection() as conn:
+        result=settlement.request_settlement(conn,user,offering_id,round_id,body.model_dump(exclude_none=True))
         conn.commit()
         return result
 

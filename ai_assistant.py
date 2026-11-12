@@ -121,6 +121,9 @@ from classroom_app.services.ai_durable_job_service import (
 )
 from classroom_app.database import get_db_connection
 from classroom_app.services.exam_json_service import normalize_exam_scoring_payload
+from classroom_app.services.assessment_question_contract import (
+    LONG_ANSWER_TYPES, TEXT_QUESTION_TYPES, normalize_question_type, normalize_numbered_blanks,
+)
 from classroom_app.services.ai_usage_budget_service import (
     reserve_grading_review, mark_grading_review_sent, finish_grading_review, release_unsent_grading_review,
 )
@@ -1823,14 +1826,14 @@ EXAM_GENERATION_SYSTEM_PROMPT = """
 
 注意：
 1. id字段格式：q1, q2, q3... 或 p1_q1, p1_q2...
-2. type字段必须是：radio（单选题）、checkbox（多选题）、text（填空题）、textarea（问答题）
-3. 对于radio和checkbox类型，必须提供options数组（至少2个选项）
+2. type字段必须是：radio（单选）、checkbox（多选）、boolean（判断）、text（填空）、textarea（简答）、analysis（分析）、code（程序）、comprehensive（综合）
+3. 对于radio、checkbox和boolean类型，必须提供options数组（至少2个选项）；判断题通常为正确、错误
 4. 题干、选项、解析都支持简易 Markdown；请优先使用 **加粗**、列表、`行内代码`、```代码块```，但必须保持合法 JSON：双引号要转义，换行用 \n 或由 JSON 序列化器处理，不要在字符串外直接写 Markdown 符号
-5. answer字段：radio类型为单个选项字母（如"A"），checkbox类型为选项字母数组（如["A", "B"]），text和textarea类型为字符串答案
+5. answer字段：radio/boolean为单个选项字母，checkbox为选项字母数组；新text题干用 {{1}}、{{2}} 标记填空，blanks 为 [{"id":"1","answer":"答案一"},{"id":"2","answer":"答案二"}]，answer为同顺序字符串数组，编号必须一一对应；四类主观题answer为Markdown字符串
 6. explanation字段：每道题的解析，说明为什么答案正确或其他选项为什么错误
 7. 试卷可以包含多个pages（部分），每个部分有name和questions数组
 8. 根据教师要求的总题数、题型分布和难度生成题目
-9. 如果问答题要求学生上传截图、代码文件、报告或绘图，请只在textarea题目中添加attachment_requirements字段；required表示是否硬性要求，min_count/max_count表示本题附件数量约束，min_count大于0时必须同时视为required=true，allowed_file_types可写建议后缀或MIME类型，description写清楚附件条件
+9. 如果主观题要求学生上传截图、代码文件、报告或绘图，请在textarea、analysis、code或comprehensive题目中添加attachment_requirements字段；required表示是否硬性要求，min_count/max_count表示本题附件数量约束，min_count大于0时必须同时视为required=true，allowed_file_types可写建议后缀或MIME类型，description写清楚附件条件
 10. 开放性题目可设置 allow_ai=true，表示学生答题页允许打开课堂 AI；闭卷题、记忆性客观题不要开启
 11. 必须生成 grading.total_score、grading.description、grading.style。style 只能是 strict、medium、loose、rescue 之一，对应严格、中等、宽松、捞一捞；默认用 medium。
 12. 每道题必须生成 points、grading_guidance、deduction_points，points 合计必须等于 grading.total_score；评分指导只写得分点和失分点，不要冗长。
@@ -3625,18 +3628,12 @@ def _looks_like_exam_question(value: Any) -> bool:
 
 def _normalize_exam_question_type(raw_type: Any, options: list[str], answer: Any) -> str:
     normalized = str(raw_type or "").strip().lower().replace("-", "_").replace(" ", "_")
-    aliases = {
-        "radio": {"radio", "single", "single_choice", "choice", "单选", "单选题", "选择题"},
-        "checkbox": {"checkbox", "multiple", "multi", "multiple_select", "multi_choice", "多选", "多选题"},
-        "text": {"text", "fill", "fill_blank", "blank", "completion", "填空", "填空题"},
-        "textarea": {"textarea", "essay", "short_answer", "qa", "question_answer", "问答", "问答题", "简答", "简答题", "主观题", "论述题"},
-    }
-    for question_type, values in aliases.items():
-        if normalized in values:
-            return question_type
-
     if normalized == "multiple_choice":
         return "checkbox" if isinstance(answer, list) else "radio"
+    try:
+        return normalize_question_type(raw_type)
+    except ValueError:
+        pass
     if options:
         return "checkbox" if isinstance(answer, list) and len(answer) > 1 else "radio"
     return "textarea"
@@ -3714,7 +3711,7 @@ def _coerce_attachment_allowed_file_types(raw_value: Any) -> list[str]:
 
 
 def _normalize_attachment_requirements(raw_question: dict[str, Any], question_type: str) -> dict[str, Any] | None:
-    if question_type != "textarea":
+    if question_type not in LONG_ANSWER_TYPES:
         return None
 
     raw = (
@@ -3798,6 +3795,10 @@ def _normalize_exam_question(raw_question: Any, ordinal: int) -> dict[str, Any] 
         options,
         answer,
     )
+    if question_type == "boolean" and not options:
+        options = ["正确", "错误"]
+    if question_type == "boolean" and isinstance(answer, bool):
+        answer = "正确" if answer else "错误"
     if question_type in {"radio", "checkbox"} and len(options) < 2:
         question_type = "textarea"
 
@@ -3811,11 +3812,10 @@ def _normalize_exam_question(raw_question: Any, ordinal: int) -> dict[str, Any] 
     )
     if options:
         question["options"] = options
-    if "answer" not in question:
-        question["answer"] = answer
+    question["answer"] = answer
     if "explanation" not in question:
         question["explanation"] = _first_non_empty_text(raw_question, ("explanation", "analysis", "解析"), "")
-    if question_type in {"text", "textarea"} and "placeholder" not in question:
+    if question_type in TEXT_QUESTION_TYPES and "placeholder" not in question:
         placeholder = _first_non_empty_text(raw_question, ("placeholder", "hint", "提示"), "")
         if placeholder:
             question["placeholder"] = placeholder
@@ -3836,7 +3836,7 @@ def _normalize_exam_question(raw_question: Any, ordinal: int) -> dict[str, Any] 
         question.pop("allow_ai", None)
         question.pop("allow_student_ai", None)
         question.pop("ai_allowed", None)
-    return question
+    return normalize_numbered_blanks(question)
 
 
 def _normalize_exam_generation_result(raw_result: Any) -> dict[str, Any]:

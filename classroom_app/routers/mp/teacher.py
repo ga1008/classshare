@@ -22,6 +22,7 @@ from ...services.deterministic_exam_grading import (
 )
 from ...services.submission_preview_service import ensure_submission_file_access
 from ...services.assessment_classification_service import assessment_kind_info
+from ...services.assessment_question_contract import QUESTION_TYPE_LABELS, numbered_blank_answer_text
 from ...services.offering_membership_service import offering_student_where
 from ...services.submission_grade_guard_service import editable_manual_feedback, submission_review_revision
 from .deps import get_current_mp_teacher
@@ -101,12 +102,7 @@ def _parse_answers(answers_json: str | None) -> list[dict]:
     return items
 
 
-_QUESTION_TYPE_LABELS = {
-    "radio": "单选",
-    "checkbox": "多选",
-    "text": "填空",
-    "textarea": "问答",
-}
+_QUESTION_TYPE_LABELS = {kind: label.removesuffix("题") for kind, label in QUESTION_TYPE_LABELS.items()}
 
 _VERDICT_LABELS = {
     "full": "满分",
@@ -205,7 +201,9 @@ def _flatten_paper_questions(questions_json: str | None) -> list[dict]:
             except (TypeError, ValueError):
                 points = 0.0
             answer = raw.get("answer")
-            if isinstance(answer, list):
+            if isinstance(raw.get("blanks"), list) and isinstance(answer, list):
+                answer_text = numbered_blank_answer_text(raw, answer)
+            elif isinstance(answer, list):
                 answer_text = "、".join(str(item) for item in answer if str(item).strip())
             else:
                 answer_text = str(answer or "").strip()
@@ -213,6 +211,7 @@ def _flatten_paper_questions(questions_json: str | None) -> list[dict]:
                 {
                     "id": str(raw.get("id") or f"q{len(questions) + 1}"),
                     "type": str(raw.get("type") or "").strip().lower(),
+                    "blanks": raw.get("blanks"),
                     "text": text,
                     "options": [str(opt) for opt in options],
                     "points": points,
@@ -307,7 +306,9 @@ def build_submission_review(
             if answer_entry is None and no <= len(normalized_entries):
                 answer_entry = normalized_entries[no - 1]
             raw_answer = (answer_entry or {}).get("answer")
-            if isinstance(raw_answer, list):
+            if isinstance(question.get("blanks"), list) and isinstance(raw_answer, list):
+                student_answer = numbered_blank_answer_text(question, raw_answer)
+            elif isinstance(raw_answer, list):
                 student_answer = "、".join(str(part) for part in raw_answer)
             else:
                 student_answer = str(raw_answer or "")

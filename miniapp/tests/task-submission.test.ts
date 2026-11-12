@@ -35,7 +35,7 @@ function harness() {
   const uni = { getStorageSync: (key: string) => store.get(key), setStorageSync: (key: string, value: unknown) => store.set(key, value),
     removeStorageSync: (key: string) => store.delete(key), showToast: vi.fn(),
     showModal: vi.fn((options: { success?: Function }) => options.success?.({ confirm: true })) };
-  const exposed = "loadDetail, saveLocalDraft, saveServerDraft, uploadEntries, submit, reconcileSubmission, assignmentId, detail, answers, plainAnswer, questionFiles, pendingSubmissionVersion, localDraftKey, remainingSeconds, startCountdown, clearFiles, verifyDraftFiles, onTextInput";
+  const exposed = "loadDetail, saveLocalDraft, saveServerDraft, uploadEntries, submit, reconcileSubmission, assignmentId, detail, answers, plainAnswer, questionFiles, pendingSubmissionVersion, localDraftKey, remainingSeconds, startCountdown, clearFiles, verifyDraftFiles, onTextInput, onBlankInput, tapOption, buildAnswersJson, answeredCount, restoreFromAnswersList";
   const code = ts.transpileModule(`${pageScript}\nexport const testPage = { ${exposed} };`, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText;
@@ -55,6 +55,26 @@ function harness() {
 afterEach(() => { vi.useRealTimers(); });
 
 describe("task writes and account-bound drafts", () => {
+  it("saves, restores and submits structured blanks without joining or dropping empty positions", async () => {
+    const { page, request, store } = harness();
+    const blank = { id: "q1", type: "text", text: "{{1}} {{3}}", blanks: [{ id: "1" }, { id: "3" }] };
+    const judge = { id: "q2", type: "boolean", text: "判断", options: ["正确", "错误"] };
+    const paper = { pages: [{ questions: [blank, judge] }] };
+    request.mockImplementation((options: any) => Promise.resolve(options.path.endsWith("/draft") ? {} : detail({ paper })));
+    await page.loadDetail();
+    page.onBlankInput(blank, 1, { detail: { value: "return" } });
+    page.tapOption(judge, "正确");
+    expect(page.answeredCount.value).toBe(1); // First blank is still unanswered.
+    expect((store.get(page.localDraftKey.value) as any).answers.q1).toEqual(["", "return"]);
+    expect(JSON.parse(page.buildAnswersJson()).answers[0]).toMatchObject({ answer: ["", "return"], blank_ids: ["1", "3"] });
+    page.restoreFromAnswersList([{ question_id: "q1", answer: ["return", "def"], blank_ids: ["3", "1"] }]);
+    expect(page.answers.q1).toEqual(["def", "return"]);
+    request.mockClear();
+    await page.saveServerDraft();
+    const saved = request.mock.calls.find(([options]) => options.path.endsWith("/draft"));
+    expect(JSON.parse((saved?.[0] as any).data.answers_json).answers[0]).toMatchObject({ answer: ["def", "return"], blank_ids: ["1", "3"] });
+  });
+
   it("separates API, role, user, task, and returned round and never uses a legacy key", () => {
     const key = (api = "a", role = "student", id = 1, task = "42", revision = "initial") => flow.taskDraftKey(api, { role, id }, task, revision);
     expect(new Set([key(), key("b"), key("a", "teacher"), key("a", "student", 2), key("a", "student", 1, "43"), key("a", "student", 1, "42", "return:2")]).size).toBe(6);

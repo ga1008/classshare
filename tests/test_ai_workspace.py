@@ -42,7 +42,8 @@ class WorkspaceTests(unittest.TestCase):
                 CREATE TABLE class_offering_class_links(offering_id INTEGER,class_id INTEGER);
                 CREATE TABLE assignments(id TEXT PRIMARY KEY,class_offering_id INTEGER,exam_paper_id TEXT,status TEXT,availability_mode TEXT,
                                          starts_at TEXT,due_at TEXT,closed_at TEXT,auto_close INTEGER DEFAULT 1,assessment_kind TEXT);
-                CREATE TABLE submissions(assignment_id TEXT,student_pk_id INTEGER,is_absence_score INTEGER DEFAULT 0);
+                CREATE TABLE submissions(assignment_id TEXT,student_pk_id INTEGER,is_absence_score INTEGER DEFAULT 0,status TEXT,resubmission_allowed INTEGER,resubmission_due_at TEXT);
+                CREATE TABLE assignment_student_windows(assignment_id TEXT,student_pk_id INTEGER,status TEXT,due_at TEXT);
                 CREATE TABLE learning_stage_exam_attempts(assignment_id TEXT,student_id INTEGER);
                 INSERT INTO students VALUES(1,11),(2,22);
                 INSERT INTO class_offerings VALUES(10,11),(20,22);
@@ -205,7 +206,7 @@ class WorkspaceTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 ensure_ai_workspace_access(conn, STUDENT, request('/'), page_path='/student/dashboard')
             ensure_ai_workspace_access(conn, TEACHER, request('/'))
-            conn.execute("INSERT INTO submissions VALUES('1',1,0)")
+            conn.execute("INSERT INTO submissions(assignment_id,student_pk_id,is_absence_score) VALUES('1',1,0)")
             ensure_ai_workspace_access(conn, STUDENT, request('/'))
 
     def test_postgres_schema_has_real_workspace_fk_and_no_classroom_zero(self):

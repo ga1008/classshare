@@ -73,3 +73,11 @@ def ensure_tasks(conn):
 def register_handlers():
     register_task_handler(TASK_KIND,handle_scan)
     register_task_handler(RETENTION_KIND,handle_retention)
+    from .login_attendance_settlement_service import TASK_KIND as SETTLEMENT_KIND
+    register_task_handler(SETTLEMENT_KIND,handle_settlement)
+
+
+def handle_settlement(task):
+    from .login_attendance_settlement_service import process_settlement
+    payload=task['payload']
+    return process_settlement(int(payload['teacher_id']),str(payload['run_id']),scheduler_task=task)
