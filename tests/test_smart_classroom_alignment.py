@@ -15,6 +15,13 @@ from tests.test_smart_classroom_workflow_router import WorkflowRouterTests
 
 
 class AlignmentEvidenceTests(unittest.TestCase):
+    def test_roster_authorization_is_shared_by_reuse_and_push(self):
+        evidence=rules.roster_evidence(range(10),range(15))
+        self.assertFalse(rules.roster_authorized(evidence,{'course_alignment_method':'ai'},'current'))
+        source={'course_alignment_method':'manual','remote_roster_fingerprint':'sealed'}
+        self.assertTrue(rules.roster_authorized(evidence,source,'sealed'))
+        self.assertFalse(rules.roster_authorized(evidence,source,'changed'))
+        self.assertFalse(rules.roster_authorized(rules.roster_evidence(['a'],['b']),source,'sealed'))
     def test_symmetric_difference_and_majority_are_both_required(self):
         self.assertFalse(rules.roster_evidence(['a'], ['b'])['accepted'])
         self.assertFalse(rules.roster_evidence(['a','b'], ['a'])['accepted'])
@@ -70,6 +77,69 @@ class AlignmentIntegrationTests(WorkflowRouterTests):
         self.assertEqual(4,evidence['roster']['difference_count'])
         self.assertEqual('deterministic',evidence['method'])
         flow._ai_assist.assert_not_awaited()
+
+    def test_automatic_target_reuse_marks_large_roster_drift_stale_without_erasing_mapping(self):
+        self.add_students()
+        initial=self.match()
+        saved=tuple(self.conn.execute('SELECT source_json,slot_json FROM smart_attendance_session_links WHERE session_id=21').fetchone())
+        selected=initial['alignment']['course']['selected_id']
+        self.remote.update({f'R{i}':'CHECKED' for i in range(5)})
+        stale=self.match()
+        self.assertEqual('stale',stale['alignment']['course']['state'])
+        self.assertEqual('stale',stale['binding']['state'])
+        self.assertFalse(stale['can_sync'])
+        self.assertEqual(selected,stale['alignment']['course']['selected_id'])
+        self.assertEqual(saved,tuple(self.conn.execute('SELECT source_json,slot_json FROM smart_attendance_session_links WHERE session_id=21').fetchone()))
+        self.assertEqual('roster_changed',stale['alignment']['course']['error_code'])
+
+    def test_manual_large_roster_requires_reconfirmation_when_school_membership_changes(self):
+        self.add_students()
+        self.remote.update({f'R{i}':'CHECKED' for i in range(5)})
+        first=self.match()
+        confirmed=self.confirm(self.confirmation(first,'course')).json()
+        old_source=json.loads(self.conn.execute('SELECT source_json FROM smart_attendance_course_links').fetchone()[0])
+        self.remote['NEW']='CHECKED'
+        stale=self.match()
+        self.assertEqual('stale',stale['binding']['state'])
+        self.assertEqual(old_source,json.loads(self.conn.execute('SELECT source_json FROM smart_attendance_course_links').fetchone()[0]))
+        renewed=self.confirm(self.confirmation(stale,'course',key='explicit-roster-reconfirmation'))
+        self.assertEqual(200,renewed.status_code,renewed.text)
+        self.assertEqual('matched',renewed.json()['binding']['state'])
+        fresh_source=json.loads(self.conn.execute('SELECT source_json FROM smart_attendance_course_links').fetchone()[0])
+        self.assertEqual('manual',fresh_source['course_alignment_method'])
+        self.assertNotEqual(old_source['remote_roster_fingerprint'],fresh_source['remote_roster_fingerprint'])
+        self.assertEqual(2,self.conn.execute('SELECT count(*) FROM smart_attendance_alignment_requests').fetchone()[0])
+
+    def test_session_confirmation_cannot_bypass_changed_course_roster(self):
+        self.add_students()
+        self.remote.update({f'R{i}':'CHECKED' for i in range(5)})
+        self.conn.execute("UPDATE class_offering_sessions SET session_date='2026-11-16',week_index=12 WHERE id=21")
+        self.conn.commit()
+        first=self.match()
+        confirmed=self.confirm(self.confirmation(first,'course')).json()
+        self.assertEqual('review',confirmed['binding']['state'])
+        self.remote['NEW']='CHECKED'
+        response=self.confirm(self.confirmation(confirmed,'session',key='forbidden-session-bypass'))
+        self.assertEqual(409,response.status_code,response.text)
+        self.assertEqual('roster_changed',response.json()['detail']['code'])
+        current=self.client.get(self.base+'/workflow').json()
+        self.assertEqual('stale',current['alignment']['course']['state'])
+        self.assertEqual('stale',current['binding']['state'])
+        self.assertEqual(0,self.conn.execute("SELECT count(*) FROM smart_attendance_alignment_requests WHERE request_key='forbidden-session-bypass'").fetchone()[0])
+
+    def test_background_missing_lesson_keeps_persisted_stale_instead_of_rolling_back(self):
+        self.add_students()
+        first=self.match()
+        old_source=self.conn.execute('SELECT source_json FROM smart_attendance_course_links').fetchone()[0]
+        self.conn.execute("INSERT INTO class_offering_sessions(id,class_offering_id,order_index,title,session_date,weekday,week_index,academic_section_text,academic_course_code) VALUES(22,10,2,'Later','2026-11-16',0,12,'2-3','E1')")
+        self.conn.commit()
+        mini.list_schedules.return_value['items'][0]['weeks']=[11,12]
+        self.remote.update({f'R{i}':'CHECKED' for i in range(5)})
+        result=asyncio.run(flow.align_offering(self.user,10,background=True))
+        self.assertEqual('stale',result['status'])
+        row=self.conn.execute('SELECT state,source_json FROM smart_attendance_course_links').fetchone()
+        self.assertEqual(('stale',old_source),tuple(row))
+        self.assertEqual('stale',self.conn.execute('SELECT state FROM smart_attendance_session_links WHERE session_id=21').fetchone()[0])
 
     def test_unrelated_bad_school_candidate_is_isolated_as_diagnostic_card(self):
         self.groups.return_value.insert(0,{'id':'other-row','courseId':'OTHER','course':'Unrelated synthetic course','claId':'other-class','claName':'Other class','credits':2,'total_hours':2})

@@ -321,6 +321,22 @@ def _recheck(conn, user, offering_id, initial):
     return fresh
 
 
+def _stale_roster(conn, user, offering_id, initial, old, candidates, ai):
+    """Keep the last authorized mapping, but revoke its green/write state."""
+    message = '学校名单已超出原确认范围，请在课程卡片重新确认；原绑定、人工选择和本地记录已保留。'
+    data = _load(old['alignment_json'])
+    data.update(candidates=[_public(c) for c in candidates], input_fingerprint=initial['fingerprint'],
+                expires_at_ms=int(time.time()*1000)+TTL_SECONDS*1000, error_code='roster_changed',
+                ai={k:ai.get(k) for k in ('status','decision','code','reason')})
+    changed = conn.execute("UPDATE smart_attendance_course_links SET state='stale',revision=revision+1,alignment_json=?,message=?,updated_at=? WHERE class_offering_id=? AND owner_teacher_id=? AND revision=?",
+        (ledger._json(data),message,ledger._now(),offering_id,user['id'],old['revision']))
+    if changed.rowcount != 1:
+        raise HTTPException(409,'课程对齐版本已变化，请刷新后核对。')
+    conn.execute("UPDATE smart_attendance_session_links SET state='stale',revision=revision+1,message=?,updated_at=? WHERE class_offering_id=? AND owner_teacher_id=? AND course_link_revision=?",
+        (message,ledger._now(),offering_id,user['id'],old['revision']))
+    return message
+
+
 async def align_offering(user, offering_id, *, background=False, session_id=None, confirmation=None):
     background_missing = None
     with get_db_connection() as conn:
@@ -367,9 +383,13 @@ async def align_offering(user, offering_id, *, background=False, session_id=None
             if not candidate or not candidate.get('eligible') or data.get('expires_at_ms', 0) < time.time() * 1000:
                 raise HTTPException(409, '候选已过期或不可确认，请重新对齐后选择。')
     candidates, ai = await _read_candidates(initial, session_id, candidate['target'] if confirmation and confirmation['scope'] == 'session' else None)
+    previous_candidate = next((c for c in candidates if old and c['id'] == _load(old['alignment_json']).get('selected_id')),None)
+    old_source = _load(old['source_json']) if old else {}
+    roster_changed = bool(old_source and previous_candidate and not rules.roster_authorized(
+        previous_candidate['evidence']['roster'],old_source,previous_candidate['_roster_fingerprint']))
     chosen = next((c for c in candidates if c['id'] == ai.get('decision') and c['evidence']['method'] in {'deterministic', 'ai'}), None)
     if not confirmation and old and old['state'] == 'matched' and old['context_fingerprint'] == initial['course_fingerprint']:
-        previous = next((c for c in candidates if c['id'] == _load(old['alignment_json']).get('selected_id') and c['eligible']), None)
+        previous = previous_candidate if previous_candidate and previous_candidate['eligible'] and not roster_changed else None
         if previous:
             chosen = previous
             chosen['evidence']['method'] = _load(old['source_json']).get('course_alignment_method', 'manual')
@@ -384,7 +404,7 @@ async def align_offering(user, offering_id, *, background=False, session_id=None
             chosen = next((c for c in candidates if c['id'] == _load(old['alignment_json']).get('selected_id') and c['eligible']), None)
             if chosen:
                 chosen['evidence']['method'] = _load(old['source_json']).get('course_alignment_method', 'manual')
-        if not chosen:
+        if not chosen and not (roster_changed and confirmation['scope']=='session'):
             raise HTTPException(409, '学校课程候选已变化，请重新对齐；未保存旧选择。')
     with get_db_connection() as conn:
         _recheck(conn, user, offering_id, initial)
@@ -392,6 +412,12 @@ async def align_offering(user, offering_id, *, background=False, session_id=None
         latest_session = flow._link(conn, user, session_id) if session_id else None
         if (latest['revision'] if latest else 0) != before_course_revision or (latest_session['revision'] if latest_session else 0) != before_session_revision:
             raise HTTPException(409, '另一操作已更新对齐结果，请刷新后核对。')
+        if roster_changed and not (confirmation and confirmation['scope']=='course'):
+            message = _stale_roster(conn,user,offering_id,initial,old,candidates,ai)
+            conn.commit()
+            if confirmation:
+                raise HTTPException(409,{'code':'roster_changed','message':message})
+            return flow.workflow(conn,user,offering_id,session_id) if session_id is not None else {'status':'stale','message':message}
         if confirmation:
             inserted = conn.execute('INSERT INTO smart_attendance_alignment_requests(owner_teacher_id,request_key,request_hash,class_offering_id,session_id,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(owner_teacher_id,request_key) DO NOTHING RETURNING request_key',
                 (user['id'], confirmation['idempotency_key'], ledger._hash({'offering_id': offering_id, 'session_id': session_id, **confirmation}), offering_id, session_id, ledger._now())).fetchone()

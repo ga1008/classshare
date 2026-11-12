@@ -128,11 +128,9 @@ def _guard_remote_roster(user, plan, ctx, remote):
     source = json.loads(plan["source_json"])
     if source.get("course_match_evidence") != "verified_course_alignment":
         return
-    from .smart_classroom_alignment import roster_evidence
+    from .smart_classroom_alignment import roster_evidence, roster_authorized
     evidence = roster_evidence((s["student_number"] for s in ctx["students"]), remote)
-    manual_roster = (source.get("course_alignment_method") == "manual" and evidence["majority"] and
-                     source.get("remote_roster_fingerprint") == ledger._hash(sorted(remote)))
-    if evidence["accepted"] or manual_roster:
+    if roster_authorized(evidence, source, ledger._hash(sorted(remote))):
         return
     message = "学校名单已变化，双方共有学生或人数差异不再符合已确认范围。请重新对齐课次；本地记录完整保留。"
     with get_db_connection() as conn:

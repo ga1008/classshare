@@ -68,7 +68,7 @@ class WorkflowTests(AutoEngineTests):
         self.assertEqual([], self.writes)
         self.remote.pop("002")
         result = await workflow.match_lesson(self.user, 1, 2)
-        self.assertEqual("unmatched", result["binding"]["state"])
+        self.assertEqual("stale", result["binding"]["state"])
         self.assertFalse(result["can_sync"])
         self.assertEqual("published", self.conn.execute("SELECT state FROM login_attendance_rounds").fetchone()[0])
 
@@ -93,7 +93,7 @@ class WorkflowTests(AutoEngineTests):
         self.assertEqual(1, self.ai.call_count)
         self.remote.pop("001")
         result = await workflow.match_lesson(self.user, 1, 2)
-        self.assertEqual("unmatched", result["binding"]["state"])
+        self.assertEqual("stale", result["binding"]["state"])
 
     async def test_roster_changed_during_read_prevents_binding(self):
         self.patch(workflow.local, "_roster", Mock(side_effect=[[{"student_id_number": "001"}], [{"student_id_number": "001"}, {"student_id_number": "003"}]]))

@@ -18,6 +18,13 @@ def roster_evidence(local_numbers, remote_numbers):
             'difference_count': difference, 'majority': majority, 'accepted': majority and difference < 5}
 
 
+def roster_authorized(evidence, source, remote_fingerprint):
+    """The same roster authorization gates alignment reuse and school writes."""
+    return bool(evidence['accepted'] or (source.get('course_alignment_method') == 'manual' and
+        evidence['majority'] and source.get('remote_roster_fingerprint') and
+        source['remote_roster_fingerprint'] == remote_fingerprint))
+
+
 def positive_number(value):
     text = str(value or '').strip()
     if not re.fullmatch(r'\d+(?:\.\d+)?', text):
