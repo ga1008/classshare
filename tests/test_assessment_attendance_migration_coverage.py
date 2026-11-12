@@ -34,6 +34,9 @@ class _RecordingConnection:
             if "table_name='login_attendance_rounds'" in sql:
                 # Existing rounds predate the additive settlement generation.
                 return _Rows([{"column_name": "id"}, {"column_name": "revision"}])
+            if "table_name='login_attendance_policies'" in sql:
+                # Existing policies predate the optional network restriction.
+                return _Rows([{"column_name": "class_offering_id"}, {"column_name": "networks_json"}])
             if "table_name='smart_attendance_session_links'" in sql:
                 return _Rows([{"column_name": "alignment_json"}, {"column_name": "course_link_revision"}])
             raise AssertionError(f"Unexpected schema introspection: {sql}")
@@ -91,10 +94,12 @@ class AttendanceMigrationCoverageTests(unittest.TestCase):
         self.assertLess(created.index("smart_attendance_sync_runs"), created.index("smart_attendance_student_corrections"))
         self.assertLess(created.index("smart_classroom_session_grants"), created.index("smart_attendance_student_corrections"))
         self.assertIn("ALTER TABLE login_attendance_rounds ADD COLUMN settlement_generation INTEGER NOT NULL DEFAULT 0", statements)
+        self.assertIn("ALTER TABLE login_attendance_policies ADD COLUMN enforce_network INTEGER NOT NULL DEFAULT 0", statements)
+        self.assertIn("CREATE INDEX IF NOT EXISTS idx_login_attendance_access_received ON login_attendance_access(student_id,received_at_ms)", statements)
         for index in ("idx_attendance_settlement_round", "idx_smart_student_correction_round",
                       "idx_smart_student_correction_offering", "idx_smart_student_correction_session"):
             self.assertTrue(any(sql.startswith(f"CREATE INDEX IF NOT EXISTS {index} ") for sql in statements), index)
-        self.assertEqual([sqlite_compatible_dict_row, sqlite_compatible_dict_row], self.connection.introspection_row_factories)
+        self.assertEqual([sqlite_compatible_dict_row] * 3, self.connection.introspection_row_factories)
         self.assertIs(original_factory, self.connection.row_factory)
 
     def test_schema_failure_propagates_and_restores_snapshot_row_contract(self):

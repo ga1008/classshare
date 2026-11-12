@@ -338,6 +338,10 @@ class SignatureExtractionTests(unittest.TestCase):
 
     def test_extract_from_real_docx_if_available(self):
         path = Path(self.SAMPLE)
+        # A Windows absolute path is one long relative filename on POSIX;
+        # reject the foreign-platform fixture before stat can raise ENAMETOOLONG.
+        if not path.is_absolute():
+            self.skipTest("optional sample docx uses a different platform's path")
         if not path.is_file():
             self.skipTest("sample docx not available in this environment")
         images = imp.extract_docx_signature_images(path)
