@@ -1,0 +1,153 @@
+{
+  "status": "deployed_and_verified",
+  "verified_at_utc": "2026-11-12T06:15:25.890862+00:00",
+  "release": "20261112-140433-b3451a0158c9",
+  "runtime_source_commit": "ee110c184adaeaca6a092e44a7f4201ddad72a56",
+  "git_targets": [
+    "dev",
+    "codex/attendance-workflow-20261112"
+  ],
+  "public_url": "https://guardianangel.net.cn",
+  "image": "sha256:cc8b9347f3a6be7a4bcaf78b750eafa2e672fe049c8bc511fd9b15a482ff512b",
+  "static_graph": "2e29b832b778077b2be5fb21f33846d20b91cd6104c8d3a84b2f3c688f248c04",
+  "validation": {
+    "formal_image_smart_classroom": {
+      "executed": 110,
+      "passed": 110,
+      "skipped": 0
+    },
+    "formal_image_local_attendance": {
+      "executed": 118,
+      "passed": 115,
+      "skipped": 3
+    },
+    "native_pg_workflow": {
+      "checks": 23,
+      "passed": 23
+    },
+    "frontend_unit": {
+      "tests": 834,
+      "files": 96,
+      "passed": 834
+    },
+    "formal_browser": {
+      "tests": 30,
+      "passed": 30
+    },
+    "anonymous_public_checks": {
+      "checks": 35,
+      "passed": 35
+    },
+    "native_migration": {
+      "status": "ok",
+      "source_files": 102,
+      "restored_tables": 391,
+      "restored_rows": 867966,
+      "repeated_incremental": 2,
+      "fresh_startup": 2,
+      "required_tables": 207,
+      "new_tables": [
+        "smart_attendance_session_links",
+        "smart_attendance_workflow_requests"
+      ],
+      "unexpected_differences": [
+        [],
+        []
+      ],
+      "allowed_marker_change": "account_control_migrations",
+      "cleanup": {
+        "status": "removed",
+        "cluster_stopped": true,
+        "cluster_removed": true,
+        "runtime_removed": true,
+        "keep_runtime": false,
+        "errors": []
+      }
+    }
+  },
+  "production_preservation": {
+    "postgres_container": true,
+    "data_directory_identity": true,
+    "environment_except_release": true,
+    "dependency_images": true,
+    "explicit_material_rows": true,
+    "representative_attachment_paths_bytes_sha256": true,
+    "fixed_manual_decisions_rounds_and_projection_metadata": true,
+    "changed_source_host_and_image_file_count": 34,
+    "old_database_content": "covered_by_matching_native_rehearsal_and_cutover_backup; not a live full-table equality claim",
+    "manual_records": 13,
+    "local_rounds": 1,
+    "school_schedules": 2,
+    "school_rounds": 5,
+    "school_student_projection_rows": 239,
+    "historical_materials": 3,
+    "representative_attachment_files": 4,
+    "representative_attachment_bytes": 854787,
+    "data_device_inode": "64770:2359378"
+  },
+  "live_school_reads": {
+    "attendance_mutations": 0,
+    "automatic_login_observed": false,
+    "expiry_path_proof": "isolated_mock_regressions; no forced live invalidation",
+    "forced_token_invalidation": false,
+    "local_session_cache_may_update": true,
+    "school_read_http": [
+      200,
+      200
+    ],
+    "server_login_requests": 0,
+    "session_state": "active",
+    "shared_session_reused": true,
+    "status": "passed",
+    "synthetic_business_data_created": false
+  },
+  "health": {
+    "status": "passed",
+    "release": "20261112-140433-b3451a0158c9",
+    "cache_headers": [
+      {
+        "http": 200,
+        "release": "20261112-140433-b3451a0158c9",
+        "clear_site_data": "\"cache\""
+      },
+      {
+        "http": 200,
+        "release": "20261112-140433-b3451a0158c9",
+        "clear_site_data": null
+      }
+    ],
+    "queue_depth": 0,
+    "worker_alive": true,
+    "behavior_last_error": "",
+    "background_failures_before": 1081,
+    "background_failures_after": 1081,
+    "background_running_after": 0
+  },
+  "backup": {
+    "directory": "/var/backups/lanshare-attendance-workflow-20261112-140433-b3451a0158c9",
+    "cutover_database": "db-cutover-20261112-140810.sql.gz",
+    "database_bytes": 159474365,
+    "code": "code-20261112-140810.tgz",
+    "code_bytes": 267790031,
+    "file_mode": "600",
+    "database_gzip_verified_before_migration": true,
+    "source_rehearsal_dump_sha256": "b1ee739c10f5479f2e531d4ae45eb1e86d550ec0ab0f525a90eaa602fa34fc87"
+  },
+  "limits": [
+    "Remote attendance mutations and expiry/captcha branches were tested with isolated synthetic school interfaces; live school account was valid and reused.",
+    "No production test records or forced token invalidation. No long-duration capacity test.",
+    "Source inventory is not an all-platform runtime acceptance claim."
+  ],
+  "evidence_sha256": {
+    "release-source.json": "7bed9129b29fc7584dc3abbf96d0e4fbc5d83a2546866b65a6cf00c7a25937bd",
+    "release-deploy-inputs.json": "68b72420301c30b35705859cc5d191e90138a74a74dfd35398a7058ef9641a49",
+    "release-stage-3.log": "13909a8e9081faecdafa0cb2db671e9e1f19427745818f44615adce21c03493c",
+    "production-before-v3.json": "4145fcfcf5ef4d1e51d01b9ebd2e641ab42b0beeecc6a3ac4d170b4e50f2d803",
+    "production-after.json": "4332e8b07ab469af7104479808de3cdec83020fbdaa9dcc9af011e6f0779786f",
+    "frontend-production-postflight.json": "0de9465cef01e693c469160b367d6bf63bc84f0864d59ae4a8da2fadf09c15c1",
+    "live-school-read.json": "569ec6e9461a70d18144589b39ef913ed6040b211f4b182db73f081a8dc39063",
+    "health-and-cache-verification.json": "4980f9b24245847206707156f37dc734cad75f67bce8f02ee91d02c587999d20",
+    "native-migration-3x6sofjp/native-report.json": "a3bd989513bb77e83da197e3b18b25e5f73a1b4b2191be232f6d0141e72421f5",
+    "ui-clean-production-result.json": "80fd0e4a9475a54c16d81f606074b060cf78cea64789d19a270a07ab6dc7f6d7"
+  }
+}
