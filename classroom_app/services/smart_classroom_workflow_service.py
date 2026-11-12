@@ -68,8 +68,22 @@ def workflow(conn, user, offering_id, session_id):
     if plan and plan.get("remote_checkin_id"):
         binding["needs_location"] = False
     active = bool(plan and plan["enabled"] and plan["state"] in {"pending", "running", "comparing", "reading", "outcome_unknown"})
-    can_sync = bool(row and row["state"] == "published" and binding["state"] == "matched" and not active and not ctx["closed"])
+    from .login_attendance_settlement_service import has_unpublished_settlement
+    settling = bool(row and has_unpublished_settlement(conn,row['id']))
+    if row:
+        from .smart_classroom_student_push_service import assert_no_active_push
+        try:
+            assert_no_active_push(conn,row['id'])
+        except HTTPException as exc:
+            if exc.status_code != 409 or not isinstance(exc.detail,dict) or exc.detail.get('code') != 'student_push_busy':
+                raise
+            active = True
+    can_sync = bool(row and row["state"] == "published" and binding["state"] == "matched" and not active and not settling and not ctx["closed"])
     message = binding["message"] if binding["state"] != "matched" else ("下课自动结算完成后，点击同步与推送。" if not row or row["state"] != "published" else "已准备好同步本次课；远端出勤和特殊请假状态会受到保护。")
+    if active and binding['state'] == 'matched':
+        message = '学校同步正在处理或等待回读，请完成后再同步整班。'
+    if settling:
+        message = '本地结算尚未完成，请等待结果发布；失败时可点击立即结算重试。'
     return {"binding": binding, "plan": plan, "alignment": alignment, "can_sync": can_sync, "message": message, "capabilities": ledger.capabilities()}
 
 
@@ -153,6 +167,10 @@ async def dispatch_sync(user, offering_id, round_id, payload):
             result = enqueue_sync(conn,user,offering_id,round_id,payload)
             conn.commit()
             return result
+        from .smart_classroom_student_push_service import assert_no_active_push
+        assert_no_active_push(conn,round_id)
+        from .login_attendance_settlement_service import assert_no_unpublished_settlement
+        assert_no_unpublished_settlement(conn,round_id)
         if ctx['state'] != 'published' or not ctx.get('is_current') or ctx.get('closed'):
             raise HTTPException(409,'本轮须完成本地结算且仍有效，才能同步与推送。')
         link = _link(conn,user,ctx['session_id'])
@@ -201,6 +219,10 @@ def enqueue_sync(conn, user, offering_id, round_id, payload):
         if receipt["local_round_id"] != str(round_id) or receipt["context_fingerprint"] != fingerprint or receipt["binding_revision"] != payload["expected_binding_revision"]:
             raise HTTPException(409, "该同步请求已处理，不能用旧请求标识提交另一课次或新版本；请刷新后重新点击。")
         return workflow(conn, user, offering_id, ctx["session_id"])
+    from .smart_classroom_student_push_service import assert_no_active_push
+    assert_no_active_push(conn,round_id)
+    from .login_attendance_settlement_service import assert_no_unpublished_settlement
+    assert_no_unpublished_settlement(conn,round_id)
     lesson = _lesson(conn, user, offering_id, ctx["session_id"])
     link = _link(conn, user, ctx["session_id"])
     if not link or _binding_view(lesson, link)["state"] != "matched":

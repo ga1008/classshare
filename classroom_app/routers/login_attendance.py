@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher, get_current_user
 from ..services import login_attendance_service as service
+from ..services import login_attendance_settlement_service as settlement
 from ..services import attendance_dashboard_service as dashboard_service
 from ..services import approval_workflow_service as workflow
 from ..services.trusted_network_service import client_network, require_same_origin
@@ -30,10 +31,22 @@ class Revision(BaseModel):
     revision: int = Field(ge=0)
 
 
+class SettlementRequest(BaseModel):
+    model_config = {'extra':'forbid'}
+    idempotency_key: str = Field(min_length=8,max_length=100)
+    expected_round_revision: int = Field(ge=1,strict=True)
+    restart: bool = Field(default=False,strict=True)
+    adopt_current_rules: bool = Field(default=False,strict=True)
+    expected_task_id: str | None = Field(default=None,min_length=1,max_length=64)
+    expected_task_generation: int | None = Field(default=None,ge=1,strict=True)
+
+
 class CreateRound(BaseModel):
     request_key: str = Field(min_length=8, max_length=100)
     policy_revision: int | None = Field(default=None, ge=0)
     networks: list[str] | None = Field(default=None, max_length=16)
+    enforce_network: bool | None = Field(default=None, strict=True)
+    duration_minutes: int | None = Field(default=None, ge=1, le=240, strict=True)
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     teacher_reference_at: datetime | None = None
@@ -59,7 +72,8 @@ class Appeal(BaseModel):
 
 
 class Policy(Revision):
-    networks: list[str] = Field(min_length=1, max_length=16)
+    networks: list[str] = Field(default_factory=list, max_length=16)
+    enforce_network: bool = Field(default=False, strict=True)
     before_minutes: int = Field(default=10, ge=0, le=20)
     after_minutes: int = Field(default=10, ge=0, le=20)
     appeal_days: int = Field(default=7, ge=1, le=30)
@@ -132,6 +146,7 @@ def session(offering_id: int, session_id: int, request: Request, user: dict=Depe
     with get_db_connection() as conn:
         result=service.session_view(conn,offering_id,session_id,user)
         result["teacher_network"]=client_network(request)
+        result['teacher_network']['suggested_cidr']=service.rules.suggested_network(result['teacher_network']['ip'])
         return result
 
 
@@ -140,8 +155,10 @@ def create(offering_id: int, session_id: int, body: CreateRound, request: Reques
     _origin(request)
     with get_db_connection() as conn:
         payload=body.model_dump(mode="json", exclude_none=True)
-        if not payload.get("networks") and not service.load_policy(conn,offering_id)["networks"]:
-            payload["networks"]=[client_network(request)["ip"]]
+        policy=service.load_policy(conn,offering_id)
+        if payload.get('enforce_network',policy['enforce_network']) and 'networks' not in payload and not policy['networks']:
+            suggestion=service.rules.suggested_network(client_network(request)['ip'])
+            payload['networks']=[suggestion] if suggestion else []
         result=service.create_round(conn,offering_id,session_id,user,payload)
         conn.commit()
         return result
@@ -200,6 +217,7 @@ def recalculate(offering_id: int, round_id: int, body: Revision, request: Reques
         _offering_round(conn,offering_id,round_id)
         row=service.load_round(conn,round_id,user,lock=True)
         service._revision(row,body.model_dump())
+        settlement.assert_no_unpublished_settlement(conn,round_id)
         if row["state"]=="void" or not row["is_current"]:
             raise HTTPException(409,"本轮已作废或替代，仅可查看历史记录。")
         if row["state"]=="published" and service.now_ms()>row["window_end_ms"]+7*86400_000:
@@ -208,6 +226,21 @@ def recalculate(offering_id: int, round_id: int, body: Revision, request: Reques
             return service.round_view(conn,round_id,user)
         service.evaluate_round(conn,round_id)
         result=service.round_view(conn,round_id,user)
+        conn.commit()
+        return result
+
+
+@router.get('/rounds/{round_id}/settlement')
+def settlement_status(offering_id:int,round_id:int,user:dict=Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        return settlement.status(conn,user,offering_id,round_id)
+
+
+@router.post('/rounds/{round_id}/settlement',status_code=202)
+def request_settlement(offering_id:int,round_id:int,body:SettlementRequest,request:Request,user:dict=Depends(get_current_teacher)):
+    _origin(request)
+    with get_db_connection() as conn:
+        result=settlement.request_settlement(conn,user,offering_id,round_id,body.model_dump(exclude_none=True))
         conn.commit()
         return result
 

@@ -12,7 +12,7 @@ import { openAttendanceAlignment } from './login_attendance_alignment.js';
 const el = (tag, text) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = String(text); return n; };
 
 /** One owner for the lesson binding and the teacher-triggered durable sync. */
-export function createAttendanceWorkflow({ host, base, sessionId, getRound, getLayer, isLocalBusy = () => false }) {
+export function createAttendanceWorkflow({ host, base, sessionId, getRound, getLayer, isLocalBusy = () => false, isSettlementActive = () => false }) {
     const sessionBase = `${base}/sessions/${sessionId}/external`, endpoint = `${sessionBase}/workflow`;
     let value = null, disposed = false, pending = false, refreshing = null, serial = 0, syncKey = crypto.randomUUID(), keyRevision = null, review = null;
     const requests = new Set();
@@ -39,7 +39,7 @@ export function createAttendanceWorkflow({ host, base, sessionId, getRound, getL
     function gate() {
         const round = getRound(), historical = Boolean(round && round.is_current !== undefined && !round.is_current), locked = pending || isLocalBusy() || historical;
         host.hidden = historical;
-        for (const [button, disabled] of [[match, locked], [doubt, locked], [sync, locked || value?.binding?.state !== 'matched' || !value?.can_sync || round?.state !== 'published' || !round?.is_current]]) {
+        for (const [button, disabled] of [[match, locked], [doubt, locked], [sync, locked || isSettlementActive() || value?.binding?.state !== 'matched' || !value?.can_sync || round?.state !== 'published' || !round?.is_current]]) {
             button.disabled = disabled; button.setAttribute('aria-disabled', String(disabled)); button.dataset.lqDisabled = String(disabled);
         }
         match.setAttribute('aria-busy', String(pending)); host.setAttribute('aria-busy', String(pending));
@@ -315,10 +315,11 @@ export function openAttendanceSync({ base, round, trigger, parentLayer, readOnly
         autoPanel.hidden = !Object.hasOwn(cap, 'auto_sync');
         if (Object.hasOwn(cap, 'auto_sync')) await refreshAuto();
         const [list, bindings] = await Promise.all([call('/runs'), call('/bindings')]);
-        const readback = (list.items || []).find(item => item.mode !== 'auto_sync');
+        const isTeacherHandoff = item => item?.mode == null || item.mode === 'teacher_handoff';
+        const readback = (list.items || []).find(isTeacherHandoff);
         if (!closed && readback) {
             run = await call(`/runs/${readback.id}`); if (closed) return;
-            if (run.mode === 'auto_sync') { run = null; return; }
+            if (!isTeacherHandoff(run)) { run = null; return; }
             binding = (bindings.items || []).find(item => item.id === run.binding_id && Number.isInteger(item.revision)) || null;
             if (run.state === 'preview' && binding) preview = run;
             paintRun();

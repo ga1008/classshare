@@ -1,0 +1,115 @@
+{
+  "date": "2026-11-12",
+  "status": "local_review_only",
+  "base_commit": "e1bfe4c98f0acf94979e8c36758c23e03c6a48e3",
+  "git_committed": false,
+  "git_pushed": false,
+  "deployed": false,
+  "production_tests_run": false,
+  "real_school_attendance_mutations": 0,
+  "backend": {
+    "local_attendance": {
+      "run": 146,
+      "passed": 143,
+      "skipped": 3,
+      "seconds": 11.296,
+      "evidence": ".codex-temp/evidence/attendance-immediate-settlement-20261112/final-local-backend.txt"
+    },
+    "smart_classroom": {
+      "run": 223,
+      "passed": 223,
+      "skipped": 0,
+      "seconds": 15.483,
+      "evidence": ".codex-temp/evidence/attendance-immediate-settlement-20261112/smart-classroom-tests.log"
+    },
+    "offering_merge": {
+      "run": 31,
+      "passed": 31,
+      "skipped": 0,
+      "seconds": 23.953,
+      "evidence": ".codex-temp/evidence/attendance-immediate-settlement-20261112/offering-merge-tests.log"
+    },
+    "scheduler": {
+      "run": 41,
+      "passed": 41,
+      "skipped": 0,
+      "seconds": 9.382,
+      "evidence": ".codex-temp/evidence/attendance-immediate-settlement-20261112/final-scheduler-backend.txt"
+    },
+    "schema_plan": {
+      "run": 3,
+      "passed": 3,
+      "skipped": 0,
+      "seconds": 0.035,
+      "evidence": ".codex-temp/evidence/attendance-immediate-settlement-20261112/schema-plan-tests.log"
+    }
+  },
+  "backend_skip_reason": "3 existing appeal PostgreSQL tests require ASSESSMENT_REHEARSAL_TEST_CLUSTER and are not run by the isolated SQLite suite. The separate settlement native PostgreSQL probe below is not a claim that those appeal tests ran.",
+  "native_postgres": {
+    "checks_passed": 51,
+    "seconds": 18.167,
+    "evidence": ".codex-temp/evidence/attendance-immediate-settlement-20261112/settlement-native-pg-oegnbh7y/result.json",
+    "business_data_used": false,
+    "production_connections": 0,
+    "school_network_calls": 0,
+    "cleanup": {
+      "status": "removed",
+      "cluster_stopped": true,
+      "cluster_removed": true,
+      "runtime_removed": true,
+      "keep_runtime": false,
+      "errors": []
+    },
+    "source_sha256": {
+      "classroom_app/services/login_attendance_settlement_service.py": "fbe3cad38c9e2d3e3c2f33bec2813462080eb9f82d2da3593da7950e3824ef21",
+      "classroom_app/services/login_attendance_settlement_guard.py": "df108f42d1dd6cfb27f7707b2bb2ae2f09f671d45f9d83c2128c5b005838b15b",
+      "classroom_app/services/login_attendance_service.py": "7bbdd283533a9e6c45a618bcb855372408a136cb719ae6388f982e2b00b52114",
+      "classroom_app/services/login_attendance_jobs.py": "1336d4c2e01ca323b7effdcd00081b0cfec4810729d9f4bfd00e30d8cd7f95a9",
+      "classroom_app/services/scheduled_task_service.py": "2e75640de37a4f2a2bbdfd967f2b993c4bfc51ede353fdfdd0463f35d1a61a20",
+      "classroom_app/routers/login_attendance.py": "ff6a3bde3a635c892d15c075f2c6e4f58cde11335f678472bc2f599b38e11741",
+      "classroom_app/db/schema_login_attendance.py": "e1bbf5a935cf9508473c88967e583ebd2e1a9669108ab0fed789089052b9ff30",
+      "classroom_app/services/smart_classroom_student_push_service.py": "adcd207c4ab0f875c5079a06e4606db511296a8757169f3a54bea54c381f7517",
+      "classroom_app/services/smart_classroom_auto_sync_service.py": "62b32026270ed1c3e1978a1e50ca5a8665e9c1e998bebf08c7ae0d3b6fe814c4",
+      "classroom_app/services/login_attendance_lifecycle_service.py": "c11a7ad28c5f319047a7e6b759fbf7eac9e0b23237ba751460e80e16d2e1121f"
+    }
+  },
+  "frontend": {
+    "unit_tests_passed": 834,
+    "unit_test_files_passed": 96,
+    "unit_evidence": ".codex-temp/evidence/attendance-immediate-settlement-20261112/frontend-unit.log",
+    "formal_browser_checks_passed": 93,
+    "formal_browser_evidence": ".codex-temp/evidence/attendance-immediate-settlement-20261112/ui-production-final.log",
+    "production_asset_graph": "5ed5d30f06614b3a2972df17c8963d0ae1f6197602328100092f77da36a578e3",
+    "typecheck": "passed",
+    "lq_registry_check": "passed",
+    "verification_record": ".codex-temp/evidence/attendance-immediate-settlement-20261112/frontend-validation.json",
+    "source_sha256": {
+      "static/js/login_attendance.js": "3000b2ec54046b8accdebf1e582674be645d2be7c9a77c026d173432db6b02d3",
+      "static/js/login_attendance_sync.js": "36e042884d2189e69f940b60253983eef59f5b3f4876b9061659ca939bf8a5c6",
+      "static/js/login_attendance_settlement.js": "fcfad249bae958bb3d54b5be2733a8f02b9c6f389642e7ee5778b2af57520a21",
+      "static/js/login_attendance_student_correction.js": "ffa0a05104463471ae2aa4b82d36c62e1e35d90f1c9a40bf63f372ad81ffd7b5",
+      "static/css/login_attendance.css": "edca05ec733ef00cd8037ebe589bc0ed6ed6a8692ce2c9164ea235ab2497d1ca"
+    },
+    "screenshots": {
+      "settlement-light-390.png": "9b507d649156b9e901c467125fa6de13fbb65d388c15d828b9761e4c2675908a",
+      "settlement-light-1440.png": "6b3271026e38949013fc839497ded60251b57dccedebd7af74b5f63105988293",
+      "settlement-dark-390.png": "568e992c8399021334a7e1b5efcfc339c2656a8de2fc294ac5d9f63d9d60cb71",
+      "settlement-dark-1440.png": "75d61ee25eaa9a93d504d28a29e5c6fdec0684cd14120da745eb47f3e5bb8741"
+    }
+  },
+  "source_inventory": {
+    "files": 605,
+    "templates": 209,
+    "entries": 5754,
+    "runtime_acceptance_implied": false,
+    "lq_blocking": 0,
+    "existing_lq_warnings": 3677,
+    "summary": "docs/lq-attendance-immediate-settlement-source-summary-2026-11-12.json"
+  },
+  "limitations": [
+    "All runtime validation used isolated synthetic data; no production database or real school endpoint was exercised.",
+    "Formal browser suite uses the production asset build and synthetic API responses; native PostgreSQL probes separately validate the real HTTP/backend/database flow.",
+    "Source inventory is not full-platform runtime or capacity acceptance.",
+    "Raw evidence lives in ignored .codex-temp and is local only. Previous student-correction review records describe their own earlier verified snapshot."
+  ]
+}

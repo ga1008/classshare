@@ -7,6 +7,7 @@ import re
 from statistics import median
 
 VERSION = "cohort-v2-20261109"
+ACTUAL_WINDOW_VERSION = "actual-window-v3-20261112"
 SHANGHAI = timezone(timedelta(hours=8))
 TOLERANCE_MS = 20 * 60 * 1000
 SCHOOL_PERIODS = {
@@ -54,6 +55,72 @@ def matches_network(ip, networks):
         return any(address in ipaddress.ip_network(network) for network in networks)
     except (ValueError, TypeError):
         return False
+
+
+def suggested_network(ip):
+    """Editable network suggestion, never an automatically enabled trust rule."""
+    try:
+        address = ipaddress.ip_address(ip)
+        address = getattr(address, 'ipv4_mapped', None) or address
+        return str(ipaddress.ip_network(f'{address}/{24 if address.version == 4 else 64}', strict=False))
+    except (ValueError, TypeError):
+        return None
+
+
+def actual_session_window(session, *, timestamp, duration_minutes=None, explicit_start=None, explicit_end=None):
+    """A teacher starts a real recording now; timetable identity stays separate."""
+    if explicit_start is not None:
+        raise ValueError('记录从点击开始时的服务器时间起算，请设置预计时长，不要填写课表开始时间。')
+    if duration_minutes is not None and explicit_end is not None:
+        raise ValueError('预计时长和预计结束时间只能选择一种。')
+    if explicit_end is not None:
+        end = to_ms(explicit_end)
+    else:
+        if duration_minutes is None:
+            duration_minutes = default_duration_minutes(session)
+        if isinstance(duration_minutes, bool) or not isinstance(duration_minutes, int) or not 1 <= duration_minutes <= 240:
+            raise ValueError('预计时长须为 1—240 分钟的整数。')
+        end = timestamp + duration_minutes * 60_000
+    if not 0 < end - timestamp <= 4 * 3600_000:
+        raise ValueError('预计结束必须晚于当前服务器时间，且不超过 4 小时。')
+    return {'starts_at_ms': timestamp, 'ends_at_ms': end, 'time_source': 'server_actual'}
+
+
+def default_duration_minutes(session):
+    try:
+        period = resolve_session_window(session)
+        return max(1, (period['ends_at_ms'] - period['starts_at_ms']) // 60_000)
+    except (TypeError, ValueError):
+        return 90
+
+
+def evaluate_actual_roster(roster, observations, *, start_ms, end_ms, networks, enforce_network, applied_receipts=None):
+    """Positive server-time facts; cohort statistics never veto an individual."""
+    ids = {int(row['student_id']) for row in roster}
+    first, last, seen, counts = {}, {}, set(), {}
+    for item in observations:
+        sid, stamp = int(item['student_id']), int(item['received_at_ms'])
+        if sid not in ids or not start_ms <= stamp < end_ms:
+            continue
+        seen.add(sid)
+        if enforce_network and not matches_network(item.get('ip_address'), networks):
+            continue
+        first[sid] = min(first.get(sid, stamp), stamp)
+        last[sid] = max(last.get(sid, stamp), stamp)
+        counts[sid] = counts.get(sid, 0) + 1
+    results = {}
+    for row in roster:
+        sid = int(row['student_id'])
+        access = sid in first
+        receipt = (applied_receipts or {}).get(sid) if not enforce_network else None
+        good = access or bool(receipt)
+        reason = ('server_access_observed' if access else 'server_learning_received') if good else (
+            'network_unconfirmed' if sid in seen else 'no_access_evidence')
+        results[sid] = {'suggestion':'PRESENT' if good else 'PENDING', 'reason_code':reason,
+            'first_seen_ms':first.get(sid), 'last_seen_ms':last.get(sid), 'deviation_ms':None,
+            'matching_seen_ms':first.get(sid) if access else receipt,
+            'quality':'server_observed' if good else 'unknown', 'access_observation_count':counts.get(sid,0)}
+    return {'version':ACTUAL_WINDOW_VERSION, 'baseline':{'state':'not_required', 'method':'individual_server_evidence'}, 'results':results}
 
 
 def resolve_session_window(session, *, explicit_start=None, explicit_end=None):

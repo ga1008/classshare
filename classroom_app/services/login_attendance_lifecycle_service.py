@@ -41,10 +41,33 @@ def blockers(conn, offering_ids, *, merging):
             f"ON l.external_account_key=a.external_account_key WHERE a.class_offering_id IN ({marks}) AND l.lease_until>?",
             (*ids,_now())).fetchone()['n']
         if unknown or active:messages.append("智慧课堂自动推送尚有进行中或结果未知的请求，请先完成回读核实，保护原考勤。")
+    if _exists(conn,'smart_attendance_student_corrections'):
+        unknown=conn.execute(f"SELECT COUNT(*) AS n FROM smart_attendance_student_corrections WHERE class_offering_id IN ({marks}) "
+            "AND mode='push' AND state='outcome_unknown'",ids).fetchone()['n']
+        if unknown:messages.append("学生改签推送仍有结果待核实，请先完成远端回读，再合班或删除课堂；本地更正已保留。")
     return messages
 
 
+def _pause_student_corrections(conn, offering_ids):
+    if not offering_ids or not _exists(conn,'smart_attendance_student_corrections'):return
+    marks=','.join('?' for _ in offering_ids)
+    rows=conn.execute(f"SELECT id,state FROM smart_attendance_student_corrections WHERE class_offering_id IN ({marks}) "
+        "AND mode='push' AND state IN ('queued','checking','outcome_unknown','blocked','conflict','failed')",tuple(offering_ids)).fetchall()
+    if any(row['state']=='outcome_unknown' for row in rows):
+        raise HTTPException(409,'学生改签推送结果尚未核实，不能归档其原始授权。')
+    from .scheduled_task_service import cancel_tasks_by_dedupe
+    from .smart_classroom_write_service import _now
+    for row in rows:
+        if _exists(conn,'scheduled_tasks'):
+            tasks=conn.execute("SELECT dedupe_key FROM scheduled_tasks WHERE task_kind='smart_attendance_student_push' "
+                "AND dedupe_key LIKE ? AND status IN ('pending','running')",('student-push:'+row['id']+':%',)).fetchall()
+            for task in tasks:cancel_tasks_by_dedupe(conn,task['dedupe_key'])
+        conn.execute("UPDATE smart_attendance_student_corrections SET state='superseded',code='classroom_archived',"
+            "message=?,updated_at=? WHERE id=?",('课堂已归档，单人推送已停止；原更正、授权范围和审计保留。',_now(),row['id']))
+
+
 def _pause_remote(conn, offering_ids, *, target_id=None):
+    _pause_student_corrections(conn,offering_ids)
     if not _exists(conn,'smart_attendance_write_bindings'):return 0
     marks=','.join('?' for _ in offering_ids)
     bindings=conn.execute(f"SELECT id FROM smart_attendance_write_bindings WHERE class_offering_id IN ({marks})",tuple(offering_ids)).fetchall()
@@ -119,6 +142,9 @@ def archive_for_merge(conn, target_id, source_ids, teacher_id):
     messages=blockers(conn,[target_id,*source_ids],merging=True)
     if messages:raise HTTPException(409,'；'.join(messages))
     user={'role':'teacher','id':teacher_id}
+    # The target roster changes too; pending individual writes must not carry
+    # the old authorization into the merged classroom.
+    _pause_student_corrections(conn,[target_id])
     if _exists(conn,'smart_attendance_course_links'):
         conn.execute("UPDATE smart_attendance_course_links SET state='stale',revision=revision+1,"
                      "message=? WHERE class_offering_id=?",
@@ -132,6 +158,8 @@ def archive_for_merge(conn, target_id, source_ids, teacher_id):
     rows=conn.execute(f"SELECT * FROM login_attendance_rounds WHERE class_offering_id IN ({marks}) ORDER BY id",tuple(source_ids)).fetchall()
     for raw in rows:
         row=dict(raw);context=attendance._load(row['context_json'])
+        from .login_attendance_settlement_service import stop_settlement
+        stop_settlement(conn,row['id'],'课堂合班，停止未发布结算；原任务与历史记录保留。')
         context.setdefault('merged_from',{'class_offering_id':row['class_offering_id'],'session_id':row['session_id'],
                                          'was_current':bool(row['is_current'])})
         context['merged_into_offering_id']=target_id
@@ -163,6 +191,8 @@ def prepare_deletion(conn, offering_id, user):
         if row['state'] in {'scheduled','running','settling'}:
             attendance.void_round(conn,row['id'],user,{'revision':row['revision'],'reason':'课堂已删除，停止本轮统计并保留历史。'})
         else:
+            from .login_attendance_settlement_service import stop_settlement
+            stop_settlement(conn,row['id'],'课堂已删除，停止未发布结算；原任务与历史记录保留。')
             attendance._cancel_appeals(conn,row['id'],None,user,'课堂已归档，本次申请结束；历史证据保留。')
         context=attendance._load(row['context_json'])
         context['deleted_from']={'class_offering_id':offering_id,'session_id':row['session_id']}

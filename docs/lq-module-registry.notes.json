@@ -110,7 +110,7 @@
         "LqAvatar"
       ]
     },
-    "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem=\"off\"。 2026-10-27 四种顶栏好友入口共用 data-social 钩子与 LQ Badge，数字放入口右上角；免打扰消息仍纳入未读。角标是显示状态，不能承载读取确认或权限逻辑。 2026-11-12学校同步使用同一Progress：百分比只消费后台已确认阶段/学生数，未知值保持不定进度；partial/conflict/验证码不冒充100%成功。"
+    "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem=\"off\"。 2026-10-27 四种顶栏好友入口共用 data-social 钩子与 LQ Badge，数字放入口右上角；免打扰消息仍纳入未读。角标是显示状态，不能承载读取确认或权限逻辑。 2026-11-12学校同步使用同一Progress：百分比只消费后台已确认阶段/学生数，未知值保持不定进度；partial/conflict/验证码不冒充100%成功。 立即结算复用原生Progress条，0阶段排队/读取的null进度不变成0%；实际阶段2/4可显示50%，快任务完成直接显示最终结果，不添加计时器假进度。"
   },
   "skeleton": {
     "title": "Skeleton 骨架屏",
@@ -232,7 +232,7 @@
     "layer": "component",
     "summary": "模态与非模态浮层外壳：raised Surface、scrim、头/体/脚槽；`openDialog` 与 `confirm/choose` 返回 Promise，取消不执行分支；关闭可被未保存草稿否决。",
     "states": "open / closing（可取消）/ busy 否决关闭 / nested child。",
-    "rules": "浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。 2026-10-27 好友页「+新朋友」复用二层 Dialog，取消后恢复触发器，已发申请与找人草稿由同一持久 owner 保留。道印点击后 createDialog/openDialog 创建 parentLayer 为 Viewer 的保存子层，取消只关闭子层、焦点回到道印；写入期间否决关闭与重复保存。 2026-10-27用户管理4个原生表单继续由manage_users.js显式createDomainModal托管；confirm导入别名confirmDialog区分共享确认与浏览器原生确认，未更改取消/脏草稿/忙碌合同。 2026-10-28群设置与邀请由social_dom适配共享Dialog；busy阻重复与关闭，dirty关闭用共享confirm；对话失权/切换的销毁不保留孤立子层，网络失败保留输入。 2026-10-28私聊设置遵循同一子层合同，读取失败原位重试、保存失败留稿、成功字段推进基线、防止部分成功后重复写入。 2026-11-09本地点名复用二层Dialog（课次为parentLayer），学校回读为其子层；原智慧课堂导入入口保留。批量6态保留revision冲突选择与理由，申诉草稿按request保存；ambient poll仅可见且无草稿时运行，关闭销毁请求、dropdown和轮询。教师跨页申诉强提醒使用同一LQ层栈与服务端tab lease，不抢占已有弹层/表单/IME；已知悉、审批、邮件发送是独立状态。学校仅显示已验证capability，当前交接/学生状态回读不能冒充远端开始、结束或完整完成。验收见docs/login-attendance-ui-validation-2026-11-09.json。 合班历史另用teacher-only picker每页50轮与history_only精确round入口，session可空且绝不借用当前课次；can_edit与is_current分开门禁，原班级来自封存record。React宿主对显式历史或无效点名意图禁用旧panel恢复；强提醒保留BFC缓存返回恢复，ack与审批分离。 2026-11-09闭环补验：普通课次作废后仅latest void且无current有效轮允许重开，historyOnly及被新轮替代的旧void链接禁新开；通用审批复用六态共享常量，冲突后保留说明并显式刷新展示revision，绝不自动吞409；失权attention claim/ack404销毁旧层释放inert，不将权限丢失记作ACK。 2026-11-12自动点名按课前核对、后台记录、课后同步组织：全宽学生Choice卡片点击打开独立详情Dialog，详情更正持有独立草稿/revision；不再常驻右侧详情栏。主浮窗内联课次匹配与Progress，历史学校核对入口保留在更多操作中；关闭释放请求、轮询与下拉，服务器持久任务继续。"
+    "rules": "浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。 2026-10-27 好友页「+新朋友」复用二层 Dialog，取消后恢复触发器，已发申请与找人草稿由同一持久 owner 保留。道印点击后 createDialog/openDialog 创建 parentLayer 为 Viewer 的保存子层，取消只关闭子层、焦点回到道印；写入期间否决关闭与重复保存。 2026-10-27用户管理4个原生表单继续由manage_users.js显式createDomainModal托管；confirm导入别名confirmDialog区分共享确认与浏览器原生确认，未更改取消/脏草稿/忙碌合同。 2026-10-28群设置与邀请由social_dom适配共享Dialog；busy阻重复与关闭，dirty关闭用共享confirm；对话失权/切换的销毁不保留孤立子层，网络失败保留输入。 2026-10-28私聊设置遵循同一子层合同，读取失败原位重试、保存失败留稿、成功字段推进基线、防止部分成功后重复写入。 2026-11-09本地点名复用二层Dialog（课次为parentLayer），学校回读为其子层；原智慧课堂导入入口保留。批量6态保留revision冲突选择与理由，申诉草稿按request保存；ambient poll仅可见且无草稿时运行，关闭销毁请求、dropdown和轮询。教师跨页申诉强提醒使用同一LQ层栈与服务端tab lease，不抢占已有弹层/表单/IME；已知悉、审批、邮件发送是独立状态。学校仅显示已验证capability，当前交接/学生状态回读不能冒充远端开始、结束或完整完成。验收见docs/login-attendance-ui-validation-2026-11-09.json。 合班历史另用teacher-only picker每页50轮与history_only精确round入口，session可空且绝不借用当前课次；can_edit与is_current分开门禁，原班级来自封存record。React宿主对显式历史或无效点名意图禁用旧panel恢复；强提醒保留BFC缓存返回恢复，ack与审批分离。 2026-11-09闭环补验：普通课次作废后仅latest void且无current有效轮允许重开，historyOnly及被新轮替代的旧void链接禁新开；通用审批复用六态共享常量，冲突后保留说明并显式刷新展示revision，绝不自动吞409；失权attention claim/ack404销毁旧层释放inert，不将权限丢失记作ACK。 2026-11-12自动点名按课前核对、后台记录、课后同步组织：全宽学生Choice卡片点击打开独立详情Dialog，详情更正持有独立草稿/revision；不再常驻右侧详情栏。主浮窗内联课次匹配与Progress，历史学校核对入口保留在更多操作中；关闭释放请求、轮询与下拉，服务器持久任务继续。 2026-11-12学生签到详情由login_attendance_student_correction.js管理双动作：保存只写本地，保存并推送只作用该学生且须课程课次对齐与学校点名预检。学校异步状态不重建表单，明确拒绝保留草稿，响应未知复用原收据，旧未知推送可在新本地改签后继续只读恢复；关闭焦点与请求代次由父详情层持有。 立即结算中断确认显式绑定稳定trigger；确认层靠共享inert防重入，取消时按钮保持可恢复焦点。后台执行允许关闭主窗，只有提交请求期间否决关闭。"
   },
   "layers": {
     "title": "Layer 层栈",
@@ -352,6 +352,14 @@
       "states": "默认关闭、等待本地结束、等待补报结算、排队、处理中、逐人确认、部分完成、冲突、结果未知、需要重新授权、暂停与作废；单会话影响明确提示。定位拒绝仍可绑定已有点名；409 保留课次和授权草稿，刷新版本后由教师重试。",
       "rules": "学校账号与 token 不进入浏览器；签名 source/slot 由服务端核对，UI 不拼造学校标识。PUT 使用幂等键，暂停/重试/重新授权携带 revision；GET 状态更新不替换配置草稿，迟到响应由代次排除。父层迟到请求不重建子层触发器；关闭确认保留已保存后台任务，销毁清理请求、dropdown 与轮询。学生入口不加载学校账号与推送细节。隔离 browser 用例见 login-attendance.spec.ts 的 school auto push、historical school 与原 handoff/recovery；正式构建结果由发布验收单独记录。"
     },
+    "attendance-student-correction": {
+      "title": "学生签到单独更正 static/js/login_attendance_student_correction.js",
+      "layer": "composite",
+      "summary": "学生详情子层把本地保存与单人推送分为两个明确动作。课程与课次有效对齐且学校确有当前点名时允许保存并推送；学校已结束仍可更正，不开始或结束学校点名。后台状态与本地表单独立更新。",
+      "params": "复用 DomainButton(glass/prominent/ghost)、共享 Form(select/textarea) 和 Dropdown，父控制器持有 LQ Dialog、原生焦点与关闭否决；领域只使用现有 la-record-edit/la-actions/la-notice 布局。GET 状态使用可见性、顶层与失败退避限制的 ambient poll，只有明确预检才请求学校。",
+      "states": "核对中/未对齐/学校未点名只禁推送；本地保存、排队、推送确认、失败重试、结果未知只读恢复；明确403/409/422未保存与响应丢失未确认分别提示。保存后按需自动预检门禁，保留下一份未保存草稿。旧未知结果与新本地决定分开展示，后台证据版本推进使用 is_current_decision 判断。",
+      "rules": "单学生 corrections 使用 mode、记录 revision 和幂等键，推送额外封存 binding revision 与已预检 remote checkin ID。响应丢失按原 payload/key 恢复；已接收失败只 retry 原 intent，不重复本地保存；未知结果只回读即使当前对齐已失效也可恢复。异步状态不替换输入节点或草稿；关闭/切换代次使迟到响应失效并清理请求与轮询。批量和申诉保留旧 PATCH 合同。合成浏览器见 login-attendance.spec.ts；源码登记不等于全平台或学校线上验收。 更正成功后的关联申诉区独立更新并销毁旧下拉和处理草稿，失败局部重试；不替换改签表单或下一份草稿。"
+    },
     "attendance-dashboard": {
       "title": "课程签到统计 static/js/attendance_dashboard.js",
       "layer": "composite",
@@ -359,6 +367,22 @@
       "params": "LQ Dialog、Card(stat/default)、Chip、Progress、Input/Search、Textarea、NativeSelect和Button；领域CSS仅布局，按需加载统计模块。",
       "states": "学生无本人有效来源时隐藏入口及旧智慧面板；页面可见时一分钟一次轻量ID可见性查询，无全班轮询；加载/错误/空/多来源/未纳入/采集中/申诉待处理，来源CAS冲突保留说明。",
       "rules": "学生只读本人；本地和学校来源取舍、分母由后端判定，不以计划课次推算缺勤。LQ独占嵌套焦点/关闭否决；申诉保留学校原记录，批准只作用本地统计。深链精确学生课次，未知来源不猜替代记录。"
+    },
+    "attendance-immediate-settlement": {
+      "title": "立即结算本地点名 static/js/login_attendance_settlement.js",
+      "layer": "composite",
+      "summary": "主操作区固定立即结算入口；开始记录前及后端禁用轮次保持原生禁用。首次请求停止记录并按当前已收到证据结算；补报等待、进行中和失败任务再次点击须明确确认中断重算。已完成可在证据期内重新结算。",
+      "params": "复用DomainButton(glass/ghost)、LQ confirm(parentLayer/trigger)与Progress(bar)；持久任务轻量GET轮询仅更新阶段，百分比消费服务端phase计数，未知值为null。领域CSS仅排列、间距及宽度，无新材质动效。",
+      "states": "未开始、预约未到时间、历史/作废、证据过期；排队/读取/核算/发布/完成/失败/替代。提交中禁重复和关闭，后台执行中按钮可点以确认中断；取消归还按钮焦点。网络未知复用原payload/key，409禁操作直到读取新任务，旧代迟到响应丢弃。",
+      "rules": "使用任务id/generation和round revision做显式并发确认，后台工作不持有前台全局busy。进行中可见顶层2.5秒轻量GET，失败退避且终态停止快轮询；关闭后后台继续，重开恢复。任务完成单次读取round结果，不重建学生详情、批量表单或未保存草稿；旧版本结果不能覆盖新手工改签。学校推送在结算时受本地状态与服务器门禁阻止，旧重新核算入口收敛到此动作，原end与后端兼容接口保留。 结束等待同样消费processing与server_now_ms，倒计时结束只显示排队，不能猜测已开始计算；旧规则升级须显式确认，取消不提交且返回焦点。"
+    },
+    "attendance-network-timing": {
+      "title": "课堂网络范围、服务器时间与证据排序 static/js/login_attendance.js / login_attendance_clock.js",
+      "layer": "composite",
+      "summary": "新轮默认不限定IP；LQ Switch开启才显示逐行CIDR，教师网段是可改建议。开始记录采用服务器实际开始与1–240分钟预计时长，原课次身份独立展示；旧记录窗口不冒称实际点击时间。",
+      "params": "复用LQ Switch/Input/NativeSelect/Progress与原生文本槽；登录跨度及学习时长升降序，未知排末，同值保持名单顺序。共享控件未改，领域CSS仅布局。",
+      "states": "开关隐藏保留网段草稿、422保留配置；服务器时钟缺失显示校准，server_now_ms+performance.now单一锚点，客户端时钟偏差不改变计时。结束显示补报倒计时/排队/真实阶段/完成/失败；不把倒计时伪作计算百分比。",
+      "rules": "一套每秒文本时钟，仅可见顶层更新，关闭清理；计时不重建表单或学生卡，不决定业务权限。六态筛选与排序不是未保存改签，搜索/选择/批量功能保留。登录跨度仅首末服务器接入间隔，不代表连续在线；学习时长只展示有效来源，null不作为0。旧算法仅点击立即结算并确认后adopt_current_rules，保留旧IP限定、原时间窗口及人工决定。浏览器隔离合成验证，不连接真实数据。 关闭IP限制时省略networks字段以保留已存网段，隐藏的未完成输入不验证。结束请求已返回较新round时立即采用其gate/processing快照并废弃旧GET，任务代次不倒退，未知提交恢复键不清空。"
     }
   },
   "_tools": {

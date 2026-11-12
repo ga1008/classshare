@@ -257,6 +257,10 @@ async def configure_auto_sync(user, round_id, payload):
             if prior["source_json"] != _json(source) or prior["slot_json"] != _json(slot):
                 raise HTTPException(409, "同一请求标识不能用于不同课程或排课。")
             return get_auto_sync(conn, user, round_id)
+        from .smart_classroom_student_push_service import assert_no_active_push
+        assert_no_active_push(conn,round_id)
+        from .login_attendance_settlement_service import assert_no_unpublished_settlement
+        assert_no_unpublished_settlement(conn,round_id)
         if prior and prior["revision"] != payload.get("expected_revision"):
             raise HTTPException(409, "同步配置已变化，请刷新。")
         if not ctx.get("is_current", True) or ctx["state"] == "void":
@@ -301,6 +305,10 @@ def _change_plan(conn, user, round_id, revision, *, reauthorize=False, pause=Fal
         if unknown:
             schedule_due_auto_sync(conn, round_id, force=True)
     else:
+        from .smart_classroom_student_push_service import assert_no_active_push
+        assert_no_active_push(conn,round_id)
+        from .login_attendance_settlement_service import assert_no_unpublished_settlement
+        assert_no_unpublished_settlement(conn,round_id)
         if not ctx.get("is_current", True) or ctx["state"] == "void":
             raise HTTPException(409, "历史或作废轮次只能查看原核对记录。")
         access = ledger._account_access(conn, user["id"], plan["external_account_key"], None if reauthorize else plan["credential_generation"])
@@ -340,6 +348,10 @@ async def reauthorize_auto_sync(user, round_id, expected_revision):
         ctx, plan = _plan(conn, user, round_id)
         if not plan or plan["revision"] != expected_revision:
             raise HTTPException(409, "同步配置已变化，请刷新。")
+        from .smart_classroom_student_push_service import assert_no_active_push
+        assert_no_active_push(conn,round_id)
+        from .login_attendance_settlement_service import assert_no_unpublished_settlement
+        assert_no_unpublished_settlement(conn,round_id)
         if not ctx.get("is_current", True) or ctx["state"] == "void":
             raise HTTPException(409, "历史或作废轮次只能查看原核对记录。")
         access = ledger._account_access(conn, user["id"], plan["external_account_key"])
@@ -453,6 +465,8 @@ def _fence(user, plan, *, sending=False, expected_fingerprint=None):
         if sending and intent.get("manual_dispatch") and _fingerprint(ctx, fresh) != intent.get("authorized_fingerprint"):
             raise HTTPException(409, "本地结果已更新，请点击同步与推送以提交新版本。")
         if sending:
+            from .login_attendance_settlement_service import assert_no_unpublished_settlement
+            assert_no_unpublished_settlement(conn,plan['local_round_id'])
             _assert_alignment(conn, user, fresh)
         if expected_fingerprint and (ctx["state"] != "published" or _fingerprint(ctx, fresh) != expected_fingerprint):
             raise HTTPException(409, "本地点名结果已变化，旧版本停止发送。")
@@ -732,6 +746,8 @@ def _submission_intent(user, plan, run, op):
     """Final local fence and intent are in one transaction before external IO."""
     with get_db_connection() as conn:
         ctx, fresh = _plan(conn, user, plan["local_round_id"], lock=True)
+        from .login_attendance_settlement_service import assert_no_unpublished_settlement
+        assert_no_unpublished_settlement(conn,plan['local_round_id'])
         ledger._account_access(conn, user["id"], plan["external_account_key"], plan["credential_generation"])
         binding = conn.execute("SELECT state,revision,credential_generation FROM smart_attendance_write_bindings WHERE id=?", (run["binding_id"],)).fetchone()
         if not fresh or not fresh["enabled"] or fresh["revision"] != plan["revision"] or ctx["state"] != "published" or _fingerprint(ctx, fresh) != run["context_fingerprint"]:

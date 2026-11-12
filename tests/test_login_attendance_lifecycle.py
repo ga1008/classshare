@@ -39,6 +39,95 @@ class AttendanceLifecycleTests(unittest.TestCase):
         conn.execute("INSERT INTO smart_attendance_sync_runs(id,binding_id,owner_teacher_id,local_round_id,local_revision,context_fingerprint,credential_generation,binding_revision,target_json,baseline_json,state,created_at,updated_at) "
             "VALUES('run','b',?,?,1,'fingerprint','g',1,'{}','{}',?,'2026-03-09','2026-03-09')",(self.f.teacher_id,str(rid),state))
 
+    def correction(self,conn,rid,*,key='single',state='queued',offering_id=None,session_id=None):
+        oid=self.f.source_id if offering_id is None else offering_id
+        sid=self.f.source_session if session_id is None else session_id
+        scope=json.dumps({'offering_id':oid,'session_id':sid,'round_id':rid,'student_id':self.f.student_b},sort_keys=True)
+        conn.execute("INSERT INTO smart_attendance_student_corrections(id,owner_teacher_id,request_key,request_hash,class_offering_id,"
+            "session_id,origin_scope_json,local_round_id,student_id,student_number,local_revision,target_status,mode,state,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?,'SYN',1,'SICK_LEAVE','push',?,'2026-11-12','2026-11-12')",
+            (key,self.f.teacher_id,key,'immutable-'+key,oid,sid,scope,str(rid),self.f.student_b,state))
+        return scope
+
+    def settlement(self,conn,rid,*,state='running'):
+        scope=json.dumps({'class_offering_id':self.f.source_id,'round_id':rid},sort_keys=True)
+        conn.execute("INSERT INTO login_attendance_settlement_runs(id,round_id,owner_teacher_id,generation,request_key,request_hash,state,stage,cutoff_ms,scope_json,worker_token,created_at_ms,updated_at_ms) "
+            "VALUES('local-settlement',?,?,1,'local-settlement-key','sealed-request',?,'collecting',3,?,'worker',3,3)",
+            (rid,self.f.teacher_id,state,scope))
+        conn.execute('UPDATE login_attendance_rounds SET settlement_generation=1 WHERE id=?',(rid,))
+        return scope
+
+    def test_deletion_revokes_running_settlement_but_retains_decisions_and_receipt(self):
+        from datetime import datetime
+        from classroom_app.services.scheduled_task_service import schedule_task, ensure_scheduler_schema
+        from classroom_app.db import schema_scheduler
+        with database.get_db_connection() as conn:
+            with patch.object(schema_scheduler,'_SCHEMA_READY',False):ensure_scheduler_schema(conn)
+            rid=self.seed(conn,state='settling');scope=self.settlement(conn,rid)
+            schedule_task(conn,task_kind='login_attendance_settle',run_at=datetime.now(),dedupe_key='attendance-settle:local-settlement',
+                payload={'run_id':'local-settlement','teacher_id':self.f.teacher_id},owner_role='teacher',owner_user_pk=self.f.teacher_id)
+            conn.commit()
+            lifecycle.prepare_deletion(conn,self.f.source_id,self.user);conn.commit()
+            task=conn.execute("SELECT * FROM login_attendance_settlement_runs WHERE id='local-settlement'").fetchone()
+            self.assertEqual(('superseded','',scope,'sealed-request'),(task['state'],task['worker_token'],task['scope_json'],task['request_hash']))
+            row=conn.execute('SELECT * FROM login_attendance_rounds WHERE id=?',(rid,)).fetchone()
+            self.assertEqual(('void',0,2),(row['state'],row['is_current'],row['settlement_generation']))
+            self.assertEqual('PRESENT',conn.execute('SELECT status FROM login_attendance_records WHERE round_id=?',(rid,)).fetchone()[0])
+            self.assertEqual('cancelled',conn.execute("SELECT status FROM scheduled_tasks WHERE dedupe_key='attendance-settle:local-settlement'").fetchone()[0])
+
+    def test_merge_keeps_completed_settlement_with_its_original_scope(self):
+        with database.get_db_connection() as conn:
+            rid=self.seed(conn);scope=self.settlement(conn,rid,state='completed');conn.commit()
+            self.f._execute(conn);conn.commit()
+            task=conn.execute("SELECT * FROM login_attendance_settlement_runs WHERE id='local-settlement'").fetchone()
+            self.assertEqual(('completed',rid,scope,'sealed-request'),(task['state'],task['round_id'],task['scope_json'],task['request_hash']))
+            row=conn.execute('SELECT * FROM login_attendance_rounds WHERE id=?',(rid,)).fetchone()
+            self.assertEqual((self.f.target_id,0,1),(row['class_offering_id'],row['is_current'],row['settlement_generation']))
+
+    def test_individual_unknown_blocks_archive_without_a_legacy_binding(self):
+        with database.get_db_connection() as conn:
+            rid=self.seed(conn)
+            self.correction(conn,rid,state='outcome_unknown')
+            conn.commit()
+            self.assertTrue(any('学生改签' in m for m in lifecycle.blockers(conn,[self.f.source_id],merging=True)))
+            with self.assertRaises(HTTPException):lifecycle.prepare_deletion(conn,self.f.source_id,self.user)
+            conn.rollback()
+            self.assertEqual('outcome_unknown',conn.execute("SELECT state FROM smart_attendance_student_corrections WHERE id='single'").fetchone()[0])
+
+    def test_merge_cancels_individual_jobs_and_preserves_original_scope(self):
+        from datetime import datetime
+        from classroom_app.services.scheduled_task_service import schedule_task, ensure_scheduler_schema
+        from classroom_app.db import schema_scheduler
+        with database.get_db_connection() as conn:
+            with patch.object(schema_scheduler,'_SCHEMA_READY',False):
+                ensure_scheduler_schema(conn)
+            rid=self.seed(conn)
+            original=self.correction(conn,rid)
+            self.correction(conn,rid,key='confirmed',state='confirmed')
+            self.correction(conn,rid,key='target-pending',offering_id=self.f.target_id,session_id=self.f.target_session)
+            schedule_task(conn,task_kind='smart_attendance_student_push',run_at=datetime.now(),dedupe_key='student-push:single:1',
+                payload={'intent_id':'single','teacher_id':self.f.teacher_id},owner_role='teacher',owner_user_pk=self.f.teacher_id)
+            conn.commit()
+            self.f._execute(conn);conn.commit()
+            row=conn.execute("SELECT * FROM smart_attendance_student_corrections WHERE id='single'").fetchone()
+            self.assertEqual('superseded',row['state']);self.assertIsNone(row['class_offering_id']);self.assertIsNone(row['session_id'])
+            self.assertEqual(original,row['origin_scope_json']);self.assertEqual('immutable-single',row['request_hash'])
+            self.assertEqual('SICK_LEAVE',row['target_status'])
+            self.assertEqual('confirmed',conn.execute("SELECT state FROM smart_attendance_student_corrections WHERE id='confirmed'").fetchone()[0])
+            self.assertEqual('superseded',conn.execute("SELECT state FROM smart_attendance_student_corrections WHERE id='target-pending'").fetchone()[0])
+            self.assertEqual('cancelled',conn.execute("SELECT status FROM scheduled_tasks WHERE dedupe_key='student-push:single:1'").fetchone()[0])
+
+    def test_deletion_keeps_individual_receipts_and_local_decisions(self):
+        with database.get_db_connection() as conn:
+            rid=self.seed(conn)
+            original=self.correction(conn,rid,state='blocked')
+            lifecycle.prepare_deletion(conn,self.f.source_id,self.user)
+            conn.execute('DELETE FROM class_offerings WHERE id=?',(self.f.source_id,));conn.commit()
+            row=conn.execute("SELECT * FROM smart_attendance_student_corrections WHERE id='single'").fetchone()
+            self.assertEqual('superseded',row['state']);self.assertIsNone(row['class_offering_id'])
+            self.assertEqual(original,row['origin_scope_json'])
+            self.assertEqual('PRESENT',attendance._records(conn,rid)[0]['status'])
+
     def test_full_startup_repairs_absent_approval_dependency_before_attendance_reads(self):
         # A fresh installation may never have opened an approval page. Also
         # exercise the warm process cache left by a previously initialized DB.

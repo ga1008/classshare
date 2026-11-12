@@ -28,8 +28,9 @@ def enabled():
 
 def record_access(conn, *, student_id, ip_address, source, observed_at_ms=None,
                   network_source="verified_login", auth_channel="web", session_hash="", class_offering_hint=None):
-    if not enabled() or not ip_address:
+    if not enabled():
         return
+    ip_address = str(ip_address or '')
     now = int(time.time() * 1000) if observed_at_ms is None else int(observed_at_ms)
     # This is platform presence, not a per-page counter. Arbitrarily many
     # paths/tabs must not multiply writes or manufacture additional votes.
@@ -51,8 +52,6 @@ def observe_authenticated_request(request, user):
         return
     request.state.attendance_observed = True
     network = client_network(request)
-    if not network["ip"]:
-        return
     sid = int(user["id"])
     raw_session = str(user.get("session_id") or "")
     session_hash = hashlib.sha256(raw_session.encode()).hexdigest()[:24] if raw_session else ""

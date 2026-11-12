@@ -42,15 +42,15 @@ class AttendanceWorkflowDefaultsTests(unittest.TestCase):
         self.assertEqual(['192.0.2.0/24'], created['policy']['networks'])
         self.assertEqual(['198.51.100.0/24'], service.load_policy(self.conn, 10)['networks'])
 
-    def test_unknown_schedule_still_opens_and_accepts_explicit_times(self):
+    def test_unknown_schedule_still_opens_and_accepts_actual_duration(self):
         self.conn.execute("UPDATE class_offering_sessions SET academic_section_text='' WHERE id=21")
         self.conn.commit()
         view = service.session_view(self.conn, 10, 21, self.user)
         self.assertIsNone(view['window'])
-        self.assertIn('开始、结束', view['window_error'])
-        created = Fixture.create(self, starts_at='2026-11-08T08:30:00+08:00',
-                                 ends_at='2026-11-08T10:00:00+08:00')
-        self.assertEqual(self.start_ms, created['starts_at_ms'])
+        self.assertEqual(90,view['default_duration_minutes'])
+        created = Fixture.create(self,duration_minutes=80)
+        self.assertEqual(self.mock_now.return_value,created['starts_at_ms'])
+        self.assertEqual(80*60000,created['ends_at_ms']-created['starts_at_ms'])
 
     def test_partial_time_edit_is_not_silently_ignored(self):
         with self.assertRaises(HTTPException) as error:

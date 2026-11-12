@@ -1,0 +1,113 @@
+{
+  "date": "2026-11-12",
+  "status": "local_review_only",
+  "base_commit": "e1bfe4c98f0acf94979e8c36758c23e03c6a48e3",
+  "git_committed": false,
+  "git_pushed": false,
+  "deployed": false,
+  "production_tests_run": false,
+  "real_school_attendance_mutations": 0,
+  "backend": {
+    "smart_classroom": {
+      "run": 223,
+      "skipped": 0,
+      "passed": 223,
+      "seconds": 19.877,
+      "evidence": ".codex-temp/evidence/attendance-student-push-20261112/final-smart-backend.txt"
+    },
+    "local_attendance": {
+      "run": 121,
+      "skipped": 3,
+      "passed": 118,
+      "seconds": 9.933,
+      "evidence": ".codex-temp/evidence/attendance-student-push-20261112/login-attendance-tests.log"
+    },
+    "offering_merge": {
+      "run": 31,
+      "skipped": 0,
+      "passed": 31,
+      "seconds": 27.714,
+      "evidence": ".codex-temp/evidence/attendance-student-push-20261112/offering-merge-tests.log"
+    },
+    "scheduler": {
+      "run": 41,
+      "skipped": 0,
+      "passed": 41,
+      "seconds": 6.627,
+      "evidence": ".codex-temp/evidence/attendance-student-push-20261112/scheduled-tasks-tests.log"
+    },
+    "schema_plan": {
+      "run": 3,
+      "skipped": 0,
+      "passed": 3,
+      "seconds": 0.033,
+      "evidence": ".codex-temp/evidence/attendance-student-push-20261112/schema-plan-tests.log"
+    }
+  },
+  "native_postgres": {
+    "checks_passed": 66,
+    "seconds": 23.434,
+    "evidence": ".codex-temp/evidence/attendance-student-push-20261112/student-push-native-pg-8d2gp7b6/result.json",
+    "business_data_used": false,
+    "production_connections": 0,
+    "school_operations_are_synthetic": true,
+    "school_operations": {
+      "changeStuStatus": 18,
+      "view": 48
+    },
+    "cleanup": {
+      "status": "removed",
+      "cluster_stopped": true,
+      "cluster_removed": true,
+      "runtime_removed": true,
+      "keep_runtime": false,
+      "errors": []
+    }
+  },
+  "frontend": {
+    "unit_tests_passed": 834,
+    "unit_test_files_passed": 96,
+    "production_asset_graph": "4b4524c62ac2a66b53e973f3e7eed97befa16b8960178bca58a0bb30b4b4e878",
+    "formal_browser_checks_passed": 72,
+    "formal_browser_runs": {
+      "complete_suite": 71,
+      "queued_readback_followup": 1
+    },
+    "formal_browser_evidence": ".codex-temp/evidence/attendance-student-push-20261112/ui-production-accepted.log",
+    "queued_readback_evidence": ".codex-temp/evidence/attendance-student-push-20261112/ui-production-queued.log",
+    "typecheck": "passed",
+    "lq_registry_check": "passed",
+    "verification_record": ".codex-temp/evidence/attendance-student-push-20261112/frontend-validation.json",
+    "final_typecheck_evidence": "typecheck-accepted.log",
+    "evidence_directory": ".codex-temp/evidence/attendance-student-push-20261112"
+  },
+  "source_inventory": {
+    "files": 604,
+    "templates": 209,
+    "entries": 5752,
+    "runtime_acceptance_implied": false,
+    "lq_blocking": 0,
+    "existing_lq_warnings": 3677
+  },
+  "source_sha256": {
+    "classroom_app/db/schema_smart_classroom_auto_sync.py": "f1cbd23b350e0908f3918feeccbab0a7fe276617703aba7183eed3e2906dfb0a",
+    "classroom_app/routers/smart_classroom_write.py": "c48f5625cb246a22a1b1b4c789b57e61be83875aaa94a79b0aac1e1908772a90",
+    "classroom_app/services/login_attendance_lifecycle_service.py": "9ab61e4696bf5ed90ef351a7727c97ec1886c9c60982efab72b6c6a45ec7ec75",
+    "classroom_app/services/offering_merge_service.py": "c1b09d143fcb913ad06649ec05eb0b9a19b59386666c13202d78a16b404ad444",
+    "classroom_app/services/smart_classroom_alignment_service.py": "b9a4dd9024b96678a1ab39ea7295e0bbb4872424fce7cbc61657dfa5eef26d3e",
+    "classroom_app/services/smart_classroom_auto_sync_service.py": "8c02538cd324c533a9881f2dbe3640fbff3ecdce0aef28b15bb894a7dfa2ca09",
+    "classroom_app/services/smart_classroom_workflow_service.py": "a201c6e2d668edb63c1dd980cb47ce879cf7fc9b81c0a6d8e84843f70b02f262",
+    "classroom_app/services/smart_classroom_write_jobs.py": "453e2d56243480ffc985b8023ff8ade4d485f32d22c9d1f0172efe634ad956fc",
+    "classroom_app/services/smart_classroom_write_service.py": "39651ed0e57622d531fb38c2f18f90e26272c2a8d07f6e655acb943dcd089c2c",
+    "classroom_app/services/smart_classroom_student_push_service.py": "54cedbe17c21da48d12a826d9ee229ff3c9512365b53f010d6a0028e716f1f8b",
+    "static/js/login_attendance.js": "eaa872e4383eadb59cd7d8fea085b7e95b923d67416d979347fa843a1515c044",
+    "static/js/login_attendance_sync.js": "c17ff3de0b89b33dccba3205dec50695b9b95ca3e6dc4136e884d86dbfeda3e9",
+    "static/js/login_attendance_student_correction.js": "ffa0a05104463471ae2aa4b82d36c62e1e35d90f1c9a40bf63f372ad81ffd7b5"
+  },
+  "limits": [
+    "Only isolated synthetic databases and school protocol responses were used.",
+    "No deployment, production verification or Git commit/push was performed.",
+    "Source inventory does not establish whole-platform runtime or capacity acceptance.",
+    "Local LATE and EARLY both map to the school LATE_OR_EARLY status; local distinction is preserved."
+  ]
+}

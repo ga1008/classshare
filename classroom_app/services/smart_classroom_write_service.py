@@ -276,11 +276,14 @@ def _run(conn, user, round_id, run_id):
     row = conn.execute("SELECT * FROM smart_attendance_sync_runs WHERE id=? AND owner_teacher_id=? AND local_round_id=?",
                        (str(run_id),int(user["id"]),str(round_id))).fetchone()
     if not row: raise HTTPException(404, "同步任务不存在或无访问权限。")
-    return ctx, {**dict(row),"mode":"auto_sync" if str(row["request_key"] or "").startswith("auto:") else "teacher_handoff"}
+    key = str(row['request_key'] or '')
+    return ctx, {**dict(row),"mode":"auto_sync" if key.startswith("auto:") else "student_push" if key.startswith('student:') else "teacher_handoff"}
 
 
 def _require_handoff(run):
-    if run.get("mode")=="auto_sync":
+    if run.get('mode') == 'student_push':
+        raise HTTPException(409,'此任务属于单学生更正，请从该学生卡片查看或回读原推送结果。')
+    if run.get("mode") == "auto_sync":
         raise HTTPException(409,"此任务属于本轮自动推送，请在自动推送区域查看、暂停或重试，保留逐人提交记录。")
 
 
@@ -299,7 +302,7 @@ def enqueue_readback(conn, user, round_id, preview_id, request_key):
     _require_handoff(run)
     key = str(request_key or "").strip()
     if not 1 <= len(key) <= 160: raise HTTPException(422,"请提供有效幂等请求标识。")
-    if key.startswith("auto:"):raise HTTPException(422,"该请求标识前缀保留给自动推送任务。")
+    if key.startswith(("auto:", "student:")):raise HTTPException(422,"该请求标识前缀保留给推送任务。")
     prior = conn.execute("SELECT id FROM smart_attendance_sync_runs WHERE owner_teacher_id=? AND request_key=?",(user["id"],key)).fetchone()
     if prior:
         if str(prior["id"]) != str(preview_id): raise HTTPException(409,"该请求标识已用于另一预览。")
@@ -416,6 +419,8 @@ def pause_run(conn,user,round_id,run_id,expected_revision):
 def reauthorize_binding(conn,user,round_id,binding_id,expected_revision,*,auto_sync=False):
     """Same external account only; never relabel old work as unsent."""
     _,binding=_binding(conn,user,round_id,binding_id,lock=True)
+    from .smart_classroom_student_push_service import assert_no_active_push
+    assert_no_active_push(conn, round_id)
     if not auto_sync and conn.execute("SELECT 1 FROM smart_attendance_auto_sync WHERE binding_id=? LIMIT 1",(binding_id,)).fetchone():
         raise HTTPException(409,"此绑定由自动推送管理，请使用自动推送区域的重新授权入口。")
     if binding["revision"]!=expected_revision:raise HTTPException(409,"绑定已变化，请刷新。")
@@ -425,7 +430,7 @@ def reauthorize_binding(conn,user,round_id,binding_id,expected_revision,*,auto_s
     if cursor.rowcount!=1:raise HTTPException(409,"绑定已变化，请刷新。")
     # New previews are required for normal tasks. An unknown submitted action
     # can only be reconciled, never restarted or silently rebound.
-    conn.execute("UPDATE smart_attendance_sync_runs SET credential_generation=?,binding_revision=?,state=CASE WHEN state='outcome_unknown' THEN 'outcome_unknown' ELSE 'pending' END,revision=revision+1,updated_at=? WHERE binding_id=? AND state IN ('outcome_unknown','needs_teacher_reauth')",
+    conn.execute("UPDATE smart_attendance_sync_runs SET credential_generation=?,binding_revision=?,state=CASE WHEN state='outcome_unknown' THEN 'outcome_unknown' ELSE 'pending' END,revision=revision+1,updated_at=? WHERE binding_id=? AND state IN ('outcome_unknown','needs_teacher_reauth') AND (request_key IS NULL OR request_key NOT LIKE 'student:%')",
                  (access["credential_generation"],expected_revision+1,_now(),binding_id))
     return {"id":binding_id,"revision":expected_revision+1,"state":binding["state"]}
 
@@ -433,7 +438,7 @@ def reauthorize_binding(conn,user,round_id,binding_id,expected_revision,*,auto_s
 def list_runs(conn,user,round_id):
     load_read_context(conn,user,round_id)
     return [dict(row) for row in conn.execute("SELECT id,binding_id,state,revision,message,verified_at,created_at,updated_at,"
-        "CASE WHEN request_key LIKE 'auto:%' THEN 'auto_sync' ELSE 'teacher_handoff' END AS mode "
+        "CASE WHEN request_key LIKE 'auto:%' THEN 'auto_sync' WHEN request_key LIKE 'student:%' THEN 'student_push' ELSE 'teacher_handoff' END AS mode "
         "FROM smart_attendance_sync_runs WHERE owner_teacher_id=? AND local_round_id=? ORDER BY created_at DESC LIMIT 50",(user["id"],str(round_id))).fetchall()]
 
 

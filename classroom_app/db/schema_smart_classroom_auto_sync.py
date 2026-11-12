@@ -1,6 +1,22 @@
 """One explicit, durable school-sync authorization for each local round."""
 
 SMART_CLASSROOM_AUTO_SYNC_TABLES = {
+    "smart_attendance_student_corrections": """CREATE TABLE IF NOT EXISTS smart_attendance_student_corrections (
+        id TEXT PRIMARY KEY, owner_teacher_id BIGINT NOT NULL,
+        request_key TEXT NOT NULL, request_hash TEXT NOT NULL,
+        class_offering_id BIGINT REFERENCES class_offerings(id) ON DELETE SET NULL,
+        session_id BIGINT REFERENCES class_offering_sessions(id) ON DELETE SET NULL,
+        origin_scope_json TEXT NOT NULL, local_round_id TEXT NOT NULL,
+        student_id BIGINT NOT NULL, student_number TEXT NOT NULL,
+        local_revision INTEGER NOT NULL, target_status TEXT NOT NULL,
+        mode TEXT NOT NULL, state TEXT NOT NULL,
+        source_json TEXT NOT NULL DEFAULT '{}', slot_json TEXT NOT NULL DEFAULT '{}',
+        binding_revision INTEGER, external_account_key TEXT, credential_generation TEXT,
+        remote_checkin_id TEXT, run_id TEXT REFERENCES smart_attendance_sync_runs(id) ON DELETE RESTRICT,
+        baseline_status TEXT, code TEXT NOT NULL DEFAULT '', message TEXT NOT NULL DEFAULT '',
+        dispatch_seq INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(owner_teacher_id,request_key)
+    )""",
     "smart_attendance_course_links": """CREATE TABLE IF NOT EXISTS smart_attendance_course_links (
         class_offering_id BIGINT PRIMARY KEY REFERENCES class_offerings(id) ON DELETE CASCADE,
         owner_teacher_id BIGINT NOT NULL, revision INTEGER NOT NULL DEFAULT 1,
@@ -45,6 +61,7 @@ SMART_CLASSROOM_AUTO_SYNC_TABLES = {
     )""",
 }
 SMART_CLASSROOM_AUTO_SYNC_REQUIRED_COLUMNS = {
+    "smart_attendance_student_corrections": tuple("id owner_teacher_id request_key request_hash class_offering_id session_id origin_scope_json local_round_id student_id student_number local_revision target_status mode state source_json slot_json binding_revision external_account_key credential_generation remote_checkin_id run_id baseline_status code message dispatch_seq created_at updated_at".split()),
     "smart_attendance_course_links": tuple("class_offering_id owner_teacher_id revision state context_fingerprint source_json alignment_json message updated_at".split()),
     "smart_attendance_alignment_requests": tuple("owner_teacher_id request_key request_hash class_offering_id session_id created_at".split()),
     "smart_attendance_workflow_requests": tuple("owner_teacher_id request_key local_round_id context_fingerprint binding_revision created_at".split()),
@@ -73,3 +90,6 @@ def ensure_smart_classroom_auto_sync_schema(conn, *, engine=None):
                  "smart_attendance_auto_sync(enabled,state,updated_at)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_smart_session_links_offering ON smart_attendance_session_links(class_offering_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_smart_course_links_owner ON smart_attendance_course_links(owner_teacher_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_smart_student_correction_round ON smart_attendance_student_corrections(local_round_id,student_id,created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_smart_student_correction_offering ON smart_attendance_student_corrections(class_offering_id,state)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_smart_student_correction_session ON smart_attendance_student_corrections(session_id)")

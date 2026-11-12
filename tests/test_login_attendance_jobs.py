@@ -32,6 +32,41 @@ class AttendanceJobTests(unittest.TestCase):
         self.assertEqual([],again['completed'])
         self.assertEqual(6,self.conn.execute('SELECT COUNT(*) FROM login_attendance_records').fetchone()[0])
 
+    def settlement_run(self, rnd, generation, state):
+        key=f"scan-fairness-{rnd['id']}-{generation}"
+        self.conn.execute("INSERT INTO login_attendance_settlement_runs(id,round_id,owner_teacher_id,generation,request_key,request_hash,state,stage,cutoff_ms,scope_json,created_at_ms,updated_at_ms) "
+            "VALUES(?,?,7,?,?,?,?,?,?,'{}',?,?)",
+            (key,rnd['id'],generation,key,key,state,state,rnd['settle_at_ms'],self.start_ms,self.start_ms))
+
+    def test_twelve_durable_settlements_cannot_starve_thirteenth_ordinary_round(self):
+        rounds=[]
+        for index in range(13):
+            session_id=100+index
+            self.conn.execute("INSERT INTO class_offering_sessions SELECT ?,class_offering_id,title,session_date,weekday,week_index,academic_section_text,academic_time_text,academic_course_code,schedule_status FROM class_offering_sessions WHERE id=21",(session_id,))
+            rnd=jobs.attendance.create_round(self.conn,10,session_id,self.user,{'request_key':f'fair-scan-round-{index}'})
+            self.conn.execute('UPDATE login_attendance_rounds SET next_evaluation_ms=? WHERE id=?',(self.start_ms+index,rnd['id']))
+            if index < 12:
+                self.conn.execute('UPDATE login_attendance_rounds SET settlement_generation=1 WHERE id=?',(rnd['id'],))
+                self.settlement_run(rnd,1,('queued','running','failed')[index%3])
+            rounds.append(rnd)
+        self.conn.commit();Fixture.observe(self)
+        self.mock_now.return_value=rounds[-1]['settle_at_ms']
+        before=[jobs.attendance._records(self.conn,r['id']) for r in rounds[:-1]]
+        outcome=jobs.handle_scan({'payload':{}})
+        self.assertEqual([rounds[-1]['id']],outcome['completed'])
+        self.assertEqual('published',jobs.attendance.load_round(self.conn,rounds[-1]['id'])['state'])
+        self.assertEqual(before,[jobs.attendance._records(self.conn,r['id']) for r in rounds[:-1]])
+
+    def test_historical_failed_generation_does_not_block_current_ordinary_scan(self):
+        rnd=Fixture.create(self);Fixture.observe(self)
+        self.conn.execute('UPDATE login_attendance_rounds SET settlement_generation=2 WHERE id=?',(rnd['id'],))
+        self.settlement_run(rnd,1,'failed');self.settlement_run(rnd,2,'completed');self.conn.commit()
+        self.mock_now.return_value=rnd['settle_at_ms']
+        outcome=jobs.handle_scan({'payload':{}})
+        self.assertEqual([rnd['id']],outcome['completed'])
+        self.assertEqual('published',jobs.attendance.load_round(self.conn,rnd['id'])['state'])
+        self.assertEqual('failed',self.conn.execute('SELECT state FROM login_attendance_settlement_runs WHERE generation=1').fetchone()[0])
+
     def test_retention_removes_expired_unpinned_observations_and_preserves_pending_appeal(self):
         rnd=Fixture.create(self)
         Fixture.observe(self,students=(1,2))
