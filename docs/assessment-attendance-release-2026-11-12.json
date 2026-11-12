@@ -1,0 +1,683 @@
+{
+  "kind": "assessment_attendance_release_verification",
+  "status": "deployed_and_git_product_verified",
+  "prepared_at": "2026-11-12T14:43:48.576510+00:00",
+  "candidate": {
+    "commit": "fcec4999e34e7561a449684278c06bcb43ce88fe",
+    "static_graph": "7c2431c3b5cdee0e14971fb4847519ce643a62c96c9129b329f9e6250db9c9ae",
+    "merged_attendance_commit": "d76697e2a7db470ebe1ca3916ce9a4ed86120e8c",
+    "source_manifest": {
+      "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\release-source-verified.json",
+      "sha256": "6f49d640f3349fb6bf804f3616362fc3b285c2343098495421b7a67c66566f05"
+    }
+  },
+  "counting_policy": "Counts sum the selected group reports, not a deduplicated census of unique tests; superseded runs and focused reruns are not added again. Native scenario checks and migration source-file seals are reported separately.",
+  "backend": {
+    "totals": {
+      "discovered": 697,
+      "passed": 684,
+      "skipped": 13,
+      "failures": 0,
+      "errors": 0
+    },
+    "groups": [
+      {
+        "group": "AI workspace",
+        "discovered": 37,
+        "passed": 37,
+        "skipped": 0,
+        "skip_details": [],
+        "failures": 0,
+        "errors": 0,
+        "reused_prior_report": true,
+        "evidence": {
+          "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-release-20261112\\backend-ai.json",
+          "sha256": "07f34171487eecf563d795c34b8a2af53cff15418059c74c772d9f9a4a76debc"
+        },
+        "cleanup": "removed"
+      },
+      {
+        "group": "Assessment",
+        "discovered": 154,
+        "passed": 147,
+        "skipped": 7,
+        "skip_details": [
+          {
+            "test": "test_actual_release_ddl_twice_preserves_all_old_fields_and_sequence_state (test_assessment_postgres_rehearsal.NativePostgresRehearsalTests.test_actual_release_ddl_twice_preserves_all_old_fields_and_sequence_state)",
+            "reason": "Requires an explicitly created offline PostgreSQL cluster"
+          },
+          {
+            "test": "test_agent_migration_preserves_every_old_row_and_proves_actor_pk_and_key_repair (test_assessment_postgres_rehearsal.NativePostgresRehearsalTests.test_agent_migration_preserves_every_old_row_and_proves_actor_pk_and_key_repair)",
+            "reason": "Requires an explicitly created offline PostgreSQL cluster"
+          },
+          {
+            "test": "test_grade_changes_and_non_idempotent_new_rows_are_failed_gates (test_assessment_postgres_rehearsal.NativePostgresRehearsalTests.test_grade_changes_and_non_idempotent_new_rows_are_failed_gates)",
+            "reason": "Requires an explicitly created offline PostgreSQL cluster"
+          },
+          {
+            "test": "test_raw_json_schema_sequence_and_relationship_changes_are_detected (test_assessment_postgres_rehearsal.NativePostgresRehearsalTests.test_raw_json_schema_sequence_and_relationship_changes_are_detected)",
+            "reason": "Requires an explicitly created offline PostgreSQL cluster"
+          },
+          {
+            "test": "test_recorder_proof_excludes_unrelated_sequence_but_the_complete_gate_protects_it (test_assessment_postgres_rehearsal.NativePostgresRehearsalTests.test_recorder_proof_excludes_unrelated_sequence_but_the_complete_gate_protects_it)",
+            "reason": "Requires an explicitly created offline PostgreSQL cluster"
+          },
+          {
+            "test": "test_signature_scope_repair_allows_only_exact_scope_values_and_new_marker (test_assessment_postgres_rehearsal.NativePostgresRehearsalTests.test_signature_scope_repair_allows_only_exact_scope_values_and_new_marker)",
+            "reason": "Requires an explicitly created offline PostgreSQL cluster"
+          },
+          {
+            "test": "test_signature_seed_preserves_pg_serial_and_updates_only_changed_metadata (test_assessment_postgres_rehearsal.NativePostgresRehearsalTests.test_signature_seed_preserves_pg_serial_and_updates_only_changed_metadata)",
+            "reason": "Requires an explicitly created offline PostgreSQL cluster"
+          }
+        ],
+        "failures": 0,
+        "errors": 0,
+        "reused_prior_report": false,
+        "evidence": {
+          "path": "JOINT_WORKTREE\\.codex-temp\\evidence\\merge-d76697e2-backend\\backend-assessment-final.json",
+          "sha256": "abae0b9ac350edf6349652fe786ce5bfd5057cf384cd10b95c187f75282d494b"
+        },
+        "cleanup": "removed"
+      },
+      {
+        "group": "Login attendance",
+        "discovered": 165,
+        "passed": 162,
+        "skipped": 3,
+        "skip_details": [
+          {
+            "test": "test_native_creation_waits_for_void_and_rechecks_before_insert (test_login_attendance_appeal_postgres.AttendanceAppealPostgresTests.test_native_creation_waits_for_void_and_rechecks_before_insert)",
+            "reason": "Requires an explicitly owned offline PostgreSQL cluster"
+          },
+          {
+            "test": "test_native_parent_fence_does_not_block_recorder_key_share (test_login_attendance_appeal_postgres.AttendanceAppealPostgresTests.test_native_parent_fence_does_not_block_recorder_key_share)",
+            "reason": "Requires an explicitly owned offline PostgreSQL cluster"
+          },
+          {
+            "test": "test_native_transfer_during_approval_wait_cannot_authorize_old_teacher (test_login_attendance_appeal_postgres.AttendanceAppealPostgresTests.test_native_transfer_during_approval_wait_cannot_authorize_old_teacher)",
+            "reason": "Requires an explicitly owned offline PostgreSQL cluster"
+          }
+        ],
+        "failures": 0,
+        "errors": 0,
+        "reused_prior_report": false,
+        "evidence": {
+          "path": "JOINT_WORKTREE\\.codex-temp\\evidence\\merge-d76697e2-backend\\backend-attendance-merged.json",
+          "sha256": "b71634f8d524af652a136959f2f4dbaf1c8e8873c858d46af679502303f8bec1"
+        },
+        "cleanup": "removed"
+      },
+      {
+        "group": "Smart classroom",
+        "discovered": 223,
+        "passed": 223,
+        "skipped": 0,
+        "skip_details": [],
+        "failures": 0,
+        "errors": 0,
+        "reused_prior_report": true,
+        "evidence": {
+          "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-release-20261112\\backend-smart.json",
+          "sha256": "75c00b127e289793bf5ad8d9c0abf2bbe5dbf2e99f8dbecbbeecf0d81fcac22a"
+        },
+        "cleanup": "removed"
+      },
+      {
+        "group": "Offering",
+        "discovered": 31,
+        "passed": 31,
+        "skipped": 0,
+        "skip_details": [],
+        "failures": 0,
+        "errors": 0,
+        "reused_prior_report": true,
+        "evidence": {
+          "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-release-20261112\\backend-offering.json",
+          "sha256": "e885607a95a6fd228278aafe9738ce65cddb12bb18ae7f7fc3a74b26239e4406"
+        },
+        "cleanup": "removed"
+      },
+      {
+        "group": "Scheduler",
+        "discovered": 41,
+        "passed": 41,
+        "skipped": 0,
+        "skip_details": [],
+        "failures": 0,
+        "errors": 0,
+        "reused_prior_report": true,
+        "evidence": {
+          "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-release-20261112\\backend-scheduler.json",
+          "sha256": "a61bd9cc9f0e5f22bc4ad7698bd02f38377ecb5b3de25d5d1b044e19a93d394e"
+        },
+        "cleanup": "removed"
+      },
+      {
+        "group": "Exam",
+        "discovered": 32,
+        "passed": 29,
+        "skipped": 3,
+        "skip_details": [
+          {
+            "test": "test_native_web_same_revision_commits_once_and_returns_one_conflict (test_exam_paper_revision_postgres.ExamPaperRevisionPostgresTests.test_native_web_same_revision_commits_once_and_returns_one_conflict)",
+            "reason": "Requires an explicitly created offline PostgreSQL cluster"
+          },
+          {
+            "test": "test_native_web_rechecks_side_edit_after_wait_without_timestamp_change (test_exam_paper_revision_postgres.ExamPaperRevisionPostgresTests.test_native_web_rechecks_side_edit_after_wait_without_timestamp_change)",
+            "reason": "Requires an explicitly created offline PostgreSQL cluster"
+          },
+          {
+            "test": "test_native_web_waiter_can_save_after_side_edit_rolls_back (test_exam_paper_revision_postgres.ExamPaperRevisionPostgresTests.test_native_web_waiter_can_save_after_side_edit_rolls_back)",
+            "reason": "Requires an explicitly created offline PostgreSQL cluster"
+          }
+        ],
+        "failures": 0,
+        "errors": 0,
+        "reused_prior_report": true,
+        "evidence": {
+          "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-release-20261112\\backend-exams.json",
+          "sha256": "19fd89a2a4bb3af0cd17eda84c8fb6b8433332e50516c592a6ee1d96071fbea7"
+        },
+        "cleanup": "removed"
+      },
+      {
+        "group": "Isolated test runner",
+        "discovered": 14,
+        "passed": 14,
+        "skipped": 0,
+        "skip_details": [],
+        "failures": 0,
+        "errors": 0,
+        "reused_prior_report": true,
+        "evidence": {
+          "path": "JOINT_WORKTREE\\.codex-temp\\evidence\\assessment-attendance-release-20261112\\backend-runner-report-failure.json",
+          "sha256": "695760eec27804c061541a5806d47b17b9ecd4a25ccffdad6146fe3ac3241704"
+        },
+        "cleanup": "removed"
+      }
+    ],
+    "skip_note": "All 13 local skips require an explicitly owned offline PostgreSQL cluster. Native gates below are separate; their passing results do not relabel skipped unit cases as passed.",
+    "runner_filename_note": "The selected joint-worktree backend-runner-report-failure.json is the successful 14-test rerun. The similarly named MAIN old-EV report is a retained failure and is not counted."
+  },
+  "frontend": {
+    "vitest": {
+      "tests": 866,
+      "files": 100,
+      "passed": 866,
+      "evidence": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\frontend-all.log",
+        "sha256": "e0e61acb146927d7e99603062589b59a21c44d56b555e2fc2f7565eeacf133fe"
+      }
+    },
+    "components": {
+      "tests": 120,
+      "passed": 120,
+      "groups": [
+        {
+          "file": "tests\\e2e\\components\\assessment-editor.spec.ts",
+          "passed": 10
+        },
+        {
+          "file": "tests\\e2e\\components\\login-attendance.spec.ts",
+          "passed": 110
+        }
+      ],
+      "evidence": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\component-browser\\verification.json",
+        "sha256": "e75ade5cdf65e75aa267a15efd1b7be60bde268a221191913473d669789fc7c6"
+      }
+    },
+    "application": {
+      "tests": 8,
+      "passed": 8,
+      "unexpected": 0,
+      "flaky": 0,
+      "evidence": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\application\\browser-results.json",
+        "sha256": "31789f16d3576a43274067c9d55e7e08af32b0bcdd6844c1f44ec0cb42246caa"
+      },
+      "fixture": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\application\\fixture.json",
+        "sha256": "8f66369bd9b6f3fb80b8c510eac045d5cae423b9b8b7d54fc0f3db9f16505fe0"
+      },
+      "lifecycle": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\application\\runtime-lifecycle.json",
+        "sha256": "66591239ebd32437dfad7a3de25966bebd627241e938a3136e8ebb768a08c137"
+      },
+      "cleanup": "removed"
+    },
+    "layout_scans": {
+      "observations": 8,
+      "reports": [
+        {
+          "role": "teacher",
+          "observations": 4,
+          "evidence": {
+            "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\application\\layout-teacher.json",
+            "sha256": "52bb77fcfb744a5772b8a09fb04fe7f41e6cafbce0f74b94822f9d681644d84f"
+          }
+        },
+        {
+          "role": "student",
+          "observations": 4,
+          "evidence": {
+            "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\application\\layout-student.json",
+            "sha256": "f490cd85d62ffc4740e3a2838b82d9643bab6337feeb586f253a317c0bb9998e"
+          }
+        }
+      ],
+      "heuristic_occurrence_counts": {
+        "tight": 20,
+        "glued": 10,
+        "contrast": 17,
+        "overlay": 0,
+        "capsule": 4
+      },
+      "all_clear": false,
+      "interpretation": "Repeated page/theme observations, not unique defect counts. Heuristics need human review; zero overlay hits does not mean all visual/accessibility checks passed."
+    },
+    "miniapp": {
+      "tests": 61,
+      "passed": 61,
+      "files": 9,
+      "reused_prior_report": true,
+      "source_unchanged_since": "bdbffb28a7917483d95130fd4895ab73bdea091f",
+      "evidence": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-release-20261112\\miniapp-unit.log",
+        "sha256": "4618aa59f9f38de021ea06966fe2e5fbb9fc24f5e481d7ee0776524744f757aa"
+      },
+      "build": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-release-20261112\\miniapp-build.log",
+        "sha256": "efc90999f807041880a9801fc4083680db75ebe7f6a47921dbfbf842083d7506"
+      },
+      "typecheck": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-release-20261112\\miniapp-typecheck.log",
+        "sha256": "38e81a07befb857e162c247eeb3f9c59fef4408ad6b003a9f74746f969a1bcc1"
+      },
+      "physical_device_verified": false
+    }
+  },
+  "native_attendance": {
+    "checks": 117,
+    "settlement": 51,
+    "student_push": 66,
+    "evidence": {
+      "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\attendance-native-verification.json",
+      "sha256": "9fc9fb92ddfd9f1240230a2996ca132a7e597dc08396575175f1c14984ed83a5"
+    },
+    "inputs": {
+      "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\attendance-native-probe-inputs.json",
+      "sha256": "d846fcbdf177a48187d253e87a4b9029347bd2cd43e563718bda8b54da0821c9"
+    },
+    "business_data_used": false,
+    "production_connections": 0,
+    "all_owned_clusters_stopped_and_removed": true,
+    "source_hashes_verified": true
+  },
+  "native_migration": {
+    "status": "ok",
+    "source_file_count": 102,
+    "source_hashes_match_current_candidate": true,
+    "original_report_commit": "6267aeed72ec35ed3d0c6f5ce1b0ba529a40e53d",
+    "original_commit_note": "Report was generated before the final test-only compatibility commit; all 102 actual migration-source hashes were rechecked against the final candidate and match.",
+    "evidence": {
+      "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\native-migration-f_h1a2ir\\native-report.json",
+      "sha256": "1d2bc39c1f71bb6715668ad4f6d1750d917839e167cc33a0a8d1fee203ffb89b"
+    },
+    "validation": {
+      "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\native-migration-f_h1a2ir\\native-validation.json",
+      "sha256": "c3969a4f8ae7911acdd1c1b898099b53ae3febd7ae412349fbd3d6b0be744f6a"
+    },
+    "cleanup": {
+      "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\native-migration-f_h1a2ir\\cleanup.json",
+      "sha256": "7e009f5e7f7cdc30facadc39d989ae4642094a2ed3ccbb30c89f948af956a938"
+    },
+    "passes": {
+      "incremental": {
+        "status": "ok",
+        "database_preservation_passed": true,
+        "old_differences_per_pass": [
+          [],
+          []
+        ],
+        "unexpected_old_differences_per_pass": [
+          [],
+          []
+        ],
+        "idempotency_differences": []
+      },
+      "full_startup": {
+        "status": "ok",
+        "database_preservation_passed": true,
+        "old_differences_per_pass": [
+          [],
+          []
+        ],
+        "unexpected_old_differences_per_pass": [
+          [],
+          []
+        ],
+        "idempotency_differences": []
+      }
+    },
+    "backup_sha256": "0b4c6f0db2250e8115ce5182e729ebcb5fb78ec8cd8e6bd9b8ba8be969485a26",
+    "data_scope": "Read-only production backup restored into newly owned offline local databases solely for migration preservation/idempotency checks. No application or workers started, no production tables modified.",
+    "isolation": {
+      "dedicated_new_cluster": true,
+      "dedicated_new_database": true,
+      "production_tables_modified": false,
+      "app_or_workers_started": false,
+      "listener": "127.0.0.1",
+      "port": 51152,
+      "cluster_stopped": true,
+      "runtime_removed": true,
+      "cluster_removed": true
+    }
+  },
+  "performance": {
+    "status": "measured_with_limits",
+    "evidence": {
+      "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\assessment-performance.json",
+      "sha256": "4099f09c8fc5ec62481356d2ca9ef18f0ff56f9522c4b5af208104ec52cf4eb6"
+    },
+    "assessment_assets_gzip_bytes": 14477,
+    "assessment_assets_scope": "Only the two assessment JS entry modules and two assessment CSS files; excludes reused dependencies and the rest of the page.",
+    "root_dependency_manifests_unchanged": true,
+    "lq_shell_gzip_bytes": 18244,
+    "lq_shell_budget_bytes": 18432,
+    "lq_shell_remaining_bytes": 188,
+    "long_tasks_ms": [
+      134,
+      158,
+      145,
+      144
+    ],
+    "limits": [
+      "Four long tasks were observed (134, 158, 145, 144ms); this is not a zero-long-task result and does not attribute those tasks to this editor.",
+      "One local synthetic application flow on a desktop Chromium-family browser, without a before-change baseline, typing-latency percentiles, explicit CPU/network throttling, mobile hardware, or concurrent-user capacity testing.",
+      "No Firefox/Safari or majority-browser performance guarantee; 390px screenshots are viewport emulation, not physical-device acceptance.",
+      "The page resource list is name-filtered and is not total page transfer size; the asset byte total excludes reused dependencies.",
+      "Unchanged root manifests show no new dependency entries in those files; they do not establish performance equivalence.",
+      "The LQ shell passes its present size budget with only 188 bytes remaining.",
+      "Screenshot review demonstrates visible geometry only; it does not establish contrast ratios or assistive-technology usability."
+    ]
+  },
+  "build_and_source_guards": {
+    "formal_build": {
+      "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\build.log",
+      "sha256": "2acb804a5f34503ea6fa233d62c88f7308f6d44c342755a582220fc98a950187"
+    },
+    "typecheck": {
+      "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\typecheck.log",
+      "sha256": "e5046545a3a9fcc0cf6950c9402c78a2b227f07a6a658d2a0c1fbc5f4a194da0"
+    },
+    "lq_lint": {
+      "blocking": 0,
+      "warnings": 3669,
+      "evidence": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\lq-lint.log",
+        "sha256": "08865c0c4e0e364bcd567f11da5457b5adbd9b5a6c4a33080122e8c6f75ae18d"
+      }
+    },
+    "lq_size": {
+      "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\lq-size.log",
+      "sha256": "dbd7cd1da4ba262e1dbc37e038d7228b1106a61cd4d413c076178552729c978f"
+    },
+    "miniapp_build_typecheck_reused_because_source_unchanged": true
+  },
+  "retained_failed_attempts": [
+    {
+      "kind": "concurrent_deploy_lock",
+      "evidence": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-release-20261112\\release-stage-3.log",
+        "sha256": "64ef0d61f3f224b947a2ae181427637e694d073573afa3708f60db861bff6d82"
+      },
+      "outcome": "Release lock prevented overwriting another active attendance release. Candidate subsequently merged d76697e2 and relevant verification was rerun."
+    },
+    {
+      "kind": "first_image_compatibility_gate",
+      "evidence": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\release-stage-3.log",
+        "sha256": "e9373956b08c5ffb2f96dfba05a44310daf0c61fec621342336e0d7bccc39d88"
+      },
+      "outcome": "Two migration-recorder assertions lacked the new policy introspection; optional Windows DOCX sample path raised ENAMETOOLONG on Linux. The gate stopped before quiescing writers or switching release. Only tests were corrected.",
+      "fixed_in_commit": "fcec4999e34e7561a449684278c06bcb43ce88fe",
+      "local_assessment_rerun": {
+        "path": "JOINT_WORKTREE\\.codex-temp\\evidence\\merge-d76697e2-backend\\backend-assessment-final.json",
+        "sha256": "abae0b9ac350edf6349652fe786ce5bfd5057cf384cd10b95c187f75282d494b"
+      },
+      "image_rerun_log": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\verified-stage-3.log",
+      "image_rerun_status": "pending_final_root_confirmation",
+      "linux_skip_note": "Linux assessment suite intentionally adds one optional Windows-sample skip (8 instead of local 7); this is separate from local totals."
+    },
+    {
+      "kind": "settlement_probe_fixture_clock",
+      "evidence": {
+        "status": "failed",
+        "exit_code": 1,
+        "result_path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\settlement-native-pg-vhgwhmu4\\result.json",
+        "cleanup_path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\settlement-native-pg-vhgwhmu4\\cleanup.json",
+        "cleanup": {
+          "status": "removed",
+          "cluster_stopped": true,
+          "cluster_removed": true,
+          "runtime_removed": true,
+          "keep_runtime": false,
+          "errors": []
+        },
+        "log_path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\native-settlement-run-attempt-1.log",
+        "reason": "Old synthetic clock did not advance between second round creation and settlement; actual window became zero-length and worker correctly rejected no_evaluation_input before the compute barrier. Retained original failure and cleanup; fixture only adjusted.",
+        "superseded_by": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\settlement-native-pg-fm7p56zv\\result.json"
+      },
+      "outcome": "Initial frozen synthetic clock produced a zero-duration second actual window. Original failed input/log/result/cleanup retained; advance synthetic time only and retain all 51 assertions; final rerun passed."
+    },
+    {
+      "kind": "earlier_test_runner_report_failure",
+      "evidence": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-release-20261112\\backend-runner-report-failure.json",
+        "sha256": "c5a54d16cb64b3d431fec7e8af00a3f452148d4aa6ed4cb84239393b1ff3f11e"
+      },
+      "outcome": "Original failure report retained; selected successful rerun is the joint-worktree 14-test report."
+    },
+    {
+      "kind": "earlier_browser_cleanup_failure",
+      "evidence": {
+        "path": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-editor-20261112\\final-verified\\runtime-lifecycle.json",
+        "sha256": "95961154144e8dd0232d2c2c2f22ddf3f467f7878757a5ad60c0de23cabd5ee6"
+      },
+      "outcome": "Earlier owned browser-9ixpdtsd residue retained after cleanup error and automatic approval rejection of deletion. It was not deleted or hidden. Final joint synthetic browser runtime cleaned successfully."
+    }
+  ],
+  "isolation_statement": "No live business database was used for functional, concurrency, or browser tests. Synthetic tests use isolated runtimes. The migration-only preservation rehearsal separately uses an offline restore of a read-only backup; original data and backup are retained.",
+  "limitations": [
+    "No claim of full-platform correctness from these scoped gates.",
+    "No Firefox/Safari coverage or majority-browser guarantee.",
+    "Viewport emulation is not physical mobile device or WeChat-device acceptance.",
+    "No concurrent-user capacity or production latency baseline established.",
+    "Layout heuristic findings and 3669 LQ source warnings remain explicitly recorded; zero blocking lint findings is not zero warnings."
+  ],
+  "deployment": {
+    "status": "verified",
+    "release_id": "20261112-223742-ce409262ea79",
+    "url": "https://guardianangel.net.cn",
+    "source_commit": "fcec4999e34e7561a449684278c06bcb43ce88fe",
+    "image": "sha256:57c3819e706738da8d9c53e7096e78bbcda827486613fd166e499a2ad1e530c2",
+    "static_graph": "7c2431c3b5cdee0e14971fb4847519ce643a62c96c9129b329f9e6250db9c9ae",
+    "asset_files": 565,
+    "source_host_and_image_files_matched": 127,
+    "role_count": 6,
+    "all_roles_same_image": true,
+    "schema_required_and_present": 211,
+    "source_seal": {
+      "path": ".codex-temp/evidence/assessment-attendance-final-20261112/release-source-verified.json",
+      "sha256": "6f49d640f3349fb6bf804f3616362fc3b285c2343098495421b7a67c66566f05"
+    },
+    "execution": {
+      "path": ".codex-temp/evidence/assessment-attendance-final-20261112/verified-stage-3.log",
+      "sha256": "aaef5cbcaa35e325af7e3615b4d1dadf52548a3162155c8af95997e4205b96f2"
+    },
+    "input_seal": {
+      "path": ".codex-temp/evidence/assessment-attendance-final-20261112/verified-deploy-inputs.json",
+      "sha256": "dcba0ca2388dddce384877687dd242f973d106d51c0f1f2d1026dba40f3ee568"
+    },
+    "public": {
+      "passed": 74,
+      "failed": 0,
+      "evidence": {
+        "path": ".codex-temp/evidence/assessment-attendance-final-20261112/public-final.json",
+        "sha256": "600f628252f2f40f41041210562ebdc8a0f06db7d49746556f66e9a245594a41"
+      }
+    },
+    "preservation": {
+      "postgres_container": true,
+      "data_directory_identity": true,
+      "environment_except_release": true,
+      "dependency_images": true,
+      "explicit_material_rows": true,
+      "representative_attachment_paths_bytes_sha256": true,
+      "fixed_manual_decisions_rounds_and_projection_metadata": true,
+      "changed_source_host_and_image_file_count": 127,
+      "old_database_content": "covered_by_matching_native_rehearsal_and_cutover_backup; not a live full-table equality claim"
+    },
+    "before_snapshot": {
+      "path": ".codex-temp/evidence/assessment-attendance-final-20261112/production-before-verified.json",
+      "sha256": "50b19bc11f0697794fe875568a1a6c2012888e26030a518a463fd84b1a681726"
+    },
+    "after_snapshot": {
+      "path": ".codex-temp/evidence/assessment-attendance-final-20261112/production-after.json",
+      "sha256": "3de3f1e57ba550aab59dfc2f2eb15671adc8ce149f546861700f1b9ddf8537da"
+    },
+    "health": {
+      "release": "20261112-223742-ce409262ea79",
+      "health": "ok",
+      "behavior_worker_alive": true,
+      "behavior_queue_depth": 0,
+      "behavior_last_error": "",
+      "background_summary": {
+        "task_type_count": 11,
+        "total_queue_depth": 125,
+        "total_running_count": 0,
+        "total_failed_count": 1106,
+        "total_stale_count": 0,
+        "active_worker_count": 4,
+        "problem_task_types": [
+          "ai_grading",
+          "material_ai_import",
+          "email_outbox",
+          "blog_news_crawler",
+          "agent_task",
+          "scheduled_task"
+        ]
+      },
+      "course_alignment_counts": {
+        "matched": 3
+      },
+      "lesson_alignment_counts": {
+        "matched": 90
+      },
+      "alignment_task_counts": [
+        {
+          "kind": "smart_classroom_align_offering",
+          "status": "done",
+          "count": 6
+        },
+        {
+          "kind": "smart_classroom_alignment_bootstrap",
+          "status": "pending",
+          "count": 1
+        }
+      ]
+    },
+    "backup_directory": "/var/backups/lanshare-assessment-attendance-20261112-223742-ce409262ea79",
+    "backups": {
+      "code-20261112-223842.tgz": {
+        "bytes": 269093546,
+        "mode": "0o600"
+      },
+      "db-cutover-20261112-223842.sql.gz": {
+        "bytes": 163564933,
+        "mode": "0o600"
+      }
+    },
+    "backup_content_sha256_recorded": false,
+    "backup_validation": "Mandatory quiesced pg_dump and gzip integrity check; metadata recorded separately."
+  },
+  "git": {
+    "status": "verified",
+    "product_commit": "fcec4999e34e7561a449684278c06bcb43ce88fe",
+    "integration_commit": "71edd7116e8d54a15b45531c812ab5f03f428ad1",
+    "refs": {
+      "dev": "71edd7116e8d54a15b45531c812ab5f03f428ad1",
+      "codex/assessment-attendance-20261112": "71edd7116e8d54a15b45531c812ab5f03f428ad1"
+    },
+    "force": false,
+    "evidence": {
+      "path": ".codex-temp/evidence/assessment-attendance-final-20261112/git-product-refs.json",
+      "sha256": "80510965997eacafa508427530a429f0a47101ce9d552d0124c043fab162053d"
+    },
+    "method": "Exact original Git objects via GitHub Git Data API; connector compare_commits read-back after leased fast-forward and branch creation.",
+    "note": "This report is committed afterwards; final documentation ref verification is retained in git-final-refs.json. Product bytes do not change."
+  },
+  "verified_at_utc": "2026-11-12T14:52:05.489779+00:00",
+  "release_image_tests": {
+    "groups": [
+      {
+        "pattern": "test_smart_classroom_*.py",
+        "run": 223,
+        "passed": 223,
+        "skipped": 0
+      },
+      {
+        "pattern": "test_login_attendance*.py",
+        "run": 165,
+        "passed": 162,
+        "skipped": 3
+      },
+      {
+        "pattern": "test_assessment*.py",
+        "run": 154,
+        "passed": 146,
+        "skipped": 8
+      },
+      {
+        "pattern": "test_exam*.py",
+        "run": 32,
+        "passed": 29,
+        "skipped": 3
+      },
+      {
+        "pattern": "test_ai_workspace*.py",
+        "run": 37,
+        "passed": 37,
+        "skipped": 0
+      }
+    ],
+    "run": 611,
+    "passed": 597,
+    "skipped": 14,
+    "network": "none",
+    "production_mounts": false,
+    "included_in_local_totals": false,
+    "additional_skip": "Optional local Windows DOCX sample unavailable on Linux.",
+    "evidence": {
+      "path": ".codex-temp/evidence/assessment-attendance-final-20261112/verified-stage-3.log",
+      "sha256": "aaef5cbcaa35e325af7e3615b4d1dadf52548a3162155c8af95997e4205b96f2"
+    }
+  },
+  "templates": {
+    "repository": "docs/templates/assessment-eight-types.json",
+    "guide": "docs/assessment-json-authoring.md",
+    "semester": "2026-2027-1/00_作业试卷模板_八题型.json",
+    "sha256": "38e4d1b98248c4b2bfcdbe0b97823f1a80721195e40cd97ba7aec278ac3c5a6e",
+    "existing_course_json_preserved": 167,
+    "old_guides_marked_obsolete": true,
+    "semester_and_course_agents_updated": true
+  },
+  "release_notes": [
+    "Earlier lock rejection prevented overwriting the concurrent attendance release. Its final product and documentation commits are merged.",
+    "First combined image failed only test compatibility gates before stopping production writers. The final image passed all five suites, then cutover and postflight completed.",
+    "Historical background failed-task count remains 1106; no retries or deletion of unrelated tasks were performed.",
+    "Evidence includes failed attempts and owned cleanup receipts; it does not claim whole-platform, real-school-write, cross-browser or load acceptance."
+  ]
+}
