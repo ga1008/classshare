@@ -1,0 +1,532 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-12",
+  "status": "deployed_and_git_product_verified",
+  "product_commit": "d76697e2a7db470ebe1ca3916ce9a4ed86120e8c",
+  "baseline_commit": "e1bfe4c98f0acf94979e8c36758c23e03c6a48e3",
+  "release": "20261112-221059-c5a1e3e4dba1",
+  "base_url": "https://guardianangel.net.cn",
+  "human_report": "docs/attendance-network-timing-release-2026-11-12.md",
+  "git": {
+    "status": "verified",
+    "product_committed": true,
+    "product_commit": "d76697e2a7db470ebe1ca3916ce9a4ed86120e8c",
+    "pushed": true,
+    "remote_verified": true,
+    "remote_commit": "d76697e2a7db470ebe1ca3916ce9a4ed86120e8c",
+    "evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/git-product-refs.json",
+      "sha256": "88fca15918a35a86d93d8191c36ea89c02e89622e2fb5de9cfd9f2db1e9d50d3"
+    },
+    "note": "Product commit is published and verified on both refs. This report is a subsequent documentation-only commit; its final ref check is retained separately in git-final-refs.json.",
+    "refs": {
+      "dev": "d76697e2a7db470ebe1ca3916ce9a4ed86120e8c",
+      "codex/attendance-alignment-20261112": "d76697e2a7db470ebe1ca3916ce9a4ed86120e8c"
+    },
+    "verified_at_utc": "2026-11-12T14:37:18.651356+00:00",
+    "object_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/git-product-objects.json",
+      "sha256": "fcaab40d1782c8bd854fe8262479dfe46252cf153c436cfd0f82f4ea789d23aa"
+    },
+    "large_blob_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/github-large-blob-receipt.json",
+      "sha256": "1b76ec4750682a7c1c17fdca4341da2e7b9dd28a6a305c8709c6edb34eb8e54a"
+    },
+    "remaining_blobs_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/github-remaining-blobs-receipt.json",
+      "sha256": "dc170c36d6aea244978aadf53bca8226be36f4529da1a35e2ebb3854f506272e"
+    },
+    "method": "Original Git objects published via GitHub Git Data API after HTTP 408 failures, exact commit SHA preserved; non-forced ref updates with expected old SHA."
+  },
+  "deployment": {
+    "status": "verified",
+    "deployed": true,
+    "release": "20261112-221059-c5a1e3e4dba1",
+    "product_source_seal": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/release-source.json",
+      "sha256": "b8f98ac529550971e3dd9f09f964bc024efff8cc90dfb4b7820edb75db1f7f77"
+    },
+    "static_graph": "ebf703c60a65fdec5822d5c0222770223056c05365208d25ab527315d642e672",
+    "built_files": 561,
+    "changed_source_host_and_image_files_matched": 47,
+    "exit_marker": "DEPLOY_DONE",
+    "execution": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/deploy-execution.log",
+      "sha256": "f2ec0a3e746c304487515da336b8b8244ac2eb1fbf99b577166e28ad178d6207"
+    },
+    "stage_3": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/release-stage-3.log",
+      "sha256": "9e0528a62c75157a8a1c75420886e2838177f8d93c1c98825e1e43ca71815914"
+    },
+    "roles": {
+      "agent-worker": {
+        "running": true,
+        "health": null,
+        "restarts": 0,
+        "oom_killed": false,
+        "started_at": "2026-11-12T14:17:00.185848964Z"
+      },
+      "ai": {
+        "running": true,
+        "health": "healthy",
+        "restarts": 0,
+        "oom_killed": false,
+        "started_at": "2026-11-12T14:16:23.099834799Z"
+      },
+      "app": {
+        "running": true,
+        "health": "healthy",
+        "restarts": 0,
+        "oom_killed": false,
+        "started_at": "2026-11-12T14:16:29.740962702Z"
+      },
+      "blog-crawler": {
+        "running": true,
+        "health": null,
+        "restarts": 0,
+        "oom_killed": false,
+        "started_at": "2026-11-12T14:16:54.365010891Z"
+      },
+      "mailer": {
+        "running": true,
+        "health": "healthy",
+        "restarts": 0,
+        "oom_killed": false,
+        "started_at": "2026-11-12T14:16:47.287961355Z"
+      },
+      "scheduler": {
+        "running": true,
+        "health": "healthy",
+        "restarts": 0,
+        "oom_killed": false,
+        "started_at": "2026-11-12T14:17:05.958035219Z"
+      }
+    },
+    "behavior_worker_alive": true,
+    "behavior_queue_depth": 0,
+    "health": "ok",
+    "health_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/health-after.json",
+      "sha256": "6ea50cdea9bcd28d21f99cc3bec364cd9cb0e0382de94cb2bea657cc09a63f1a"
+    }
+  },
+  "backend": {
+    "run": 463,
+    "passed": 460,
+    "skipped": 3,
+    "suites": {
+      "local_attendance": {
+        "run": 165,
+        "passed": 162,
+        "skipped": 3,
+        "seconds": 13.526,
+        "evidence": {
+          "path": ".codex-temp/evidence/attendance-network-timing-20261112/final-local.txt",
+          "sha256": "a9c4741ad5cda3b956c429420b68c65c2e2e39e5ddf8228fec033418ddbe6e3e"
+        }
+      },
+      "smart_classroom": {
+        "run": 223,
+        "passed": 223,
+        "skipped": 0,
+        "seconds": 16.468,
+        "evidence": {
+          "path": ".codex-temp/evidence/attendance-network-timing-20261112/smart-backend.log",
+          "sha256": "d0c6c3e3344ccc6aa093510fbad53d9b6338b01123f97ec2f27e2513eb5c4e34"
+        }
+      },
+      "offering_merge": {
+        "run": 31,
+        "passed": 31,
+        "skipped": 0,
+        "seconds": 24.576,
+        "evidence": {
+          "path": ".codex-temp/evidence/attendance-network-timing-20261112/merge-backend.log",
+          "sha256": "997966c4dfdeb39f2df4af256cc8f470ac48c4ae022a6b617a790dc385b7ad8a"
+        }
+      },
+      "scheduler": {
+        "run": 41,
+        "passed": 41,
+        "skipped": 0,
+        "seconds": 9.128,
+        "evidence": {
+          "path": ".codex-temp/evidence/attendance-network-timing-20261112/scheduler-backend.log",
+          "sha256": "3f4a86e1511a7c30f2f6f52483c2f82f3b8203ea93bc0bcb90994923363567a2"
+        }
+      },
+      "schema_plan": {
+        "run": 3,
+        "passed": 3,
+        "skipped": 0,
+        "seconds": 0.134,
+        "evidence": {
+          "path": ".codex-temp/evidence/attendance-network-timing-20261112/schema-plan-final.log",
+          "sha256": "66e2263ed3e9ec503b591a5e0501b1c31f1da15f368ee373a45ecea50472d255"
+        }
+      }
+    },
+    "skip_reason": "Three existing PostgreSQL appeal tests require their explicit native opt-in. The separate native probe below is not a claim that these skipped appeal tests ran.",
+    "release_image_recheck": {
+      "smart_classroom_passed": 223,
+      "local_attendance_passed": 162,
+      "local_attendance_skipped": 3,
+      "included_in_totals": false,
+      "note": "Repeated validation of the same suites inside the release image; not additional unique tests.",
+      "evidence": {
+        "path": ".codex-temp/evidence/attendance-network-timing-20261112/release-stage-3.log",
+        "sha256": "9e0528a62c75157a8a1c75420886e2838177f8d93c1c98825e1e43ca71815914"
+      }
+    }
+  },
+  "native_business": {
+    "status": "passed",
+    "checks_passed": 66,
+    "seconds": 63.779,
+    "business_data_used": false,
+    "production_connections": 0,
+    "school_network_calls": 0,
+    "source_sha256": {
+      "classroom_app/services/login_attendance_settlement_service.py": "66193a83c599e9fc2fcd990353be0fdf7dc35adaa9073c38e2acb9b426faca54",
+      "classroom_app/services/login_attendance_settlement_guard.py": "df108f42d1dd6cfb27f7707b2bb2ae2f09f671d45f9d83c2128c5b005838b15b",
+      "classroom_app/services/login_attendance_service.py": "474f7ec88be17c1d3cd6c19c9fa8860cd58514292d50b2b51d514b2b58760d80",
+      "classroom_app/services/login_attendance_jobs.py": "e830a57ba5c54b25c8505898407b44260123d4e8be2ec1aa8d5fc7c68ccaf0b0",
+      "classroom_app/services/scheduled_task_service.py": "2e75640de37a4f2a2bbdfd967f2b993c4bfc51ede353fdfdd0463f35d1a61a20",
+      "classroom_app/routers/login_attendance.py": "96f220a5efa0abd8aad624171badb2f684b9bc99a314f4d3e8b5744fa9809272",
+      "classroom_app/db/schema_login_attendance.py": "c80f6c494f2ca8beae1349be8d6a0067a9ba4d9bbb555e81f60186998e0daca8",
+      "classroom_app/services/smart_classroom_student_push_service.py": "adcd207c4ab0f875c5079a06e4606db511296a8757169f3a54bea54c381f7517",
+      "classroom_app/services/smart_classroom_auto_sync_service.py": "62b32026270ed1c3e1978a1e50ca5a8665e9c1e998bebf08c7ae0d3b6fe814c4",
+      "classroom_app/services/login_attendance_lifecycle_service.py": "c11a7ad28c5f319047a7e6b759fbf7eac9e0b23237ba751460e80e16d2e1121f",
+      "classroom_app/services/login_attendance_rules.py": "b9834d169dec89ad3f15b16cc6799bf41d5266216a21c549404005322e98bfee",
+      "classroom_app/services/login_attendance_access_service.py": "1e12f381682436f3ae1238bcc8a652edb2d9da5a5488eb4f3a8c2b3dfee6f472",
+      "classroom_app/services/classroom_activity_evidence_service.py": "3bf4ce7abee64a02b8a0579a53c8c1b711fe4b3787aba38716b067bf7841c399"
+    },
+    "evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/network-timing-native-pg-i4pkq1lf/result.json",
+      "sha256": "a1c2a0527a8748693667b8eeca604aaef1e6ca1c460ed8396e1edecf092f213a"
+    },
+    "cleanup": {
+      "status": "removed",
+      "cluster_stopped": true,
+      "cluster_removed": true,
+      "runtime_removed": true,
+      "keep_runtime": false,
+      "errors": []
+    },
+    "cleanup_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/network-timing-native-pg-i4pkq1lf/cleanup.json",
+      "sha256": "7e009f5e7f7cdc30facadc39d989ae4642094a2ed3ccbb30c89f948af956a938"
+    }
+  },
+  "migration_fidelity": {
+    "status": "passed",
+    "engine": "postgres",
+    "source_files_matched": 102,
+    "blockers": [],
+    "production_data_modified": false,
+    "baseline_tables": 393,
+    "baseline_rows": 868565,
+    "incremental_migration_runs": 2,
+    "independently_restored_full_startup_runs": 2,
+    "unexpected_old_data_or_schema_differences": 0,
+    "rehearsal_input_backup_sha256": "e2c82e3e8b19a87c021f1e20d88660f5cb5cfbf54b4d618a9fd7a2eed8a87226",
+    "validation": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/native-migration-l3tb93yl/native-validation.json",
+      "sha256": "82f03c4f2df7d6b97a1864e25e974598b6f05ccc1fb4445566a0aee54da54f48"
+    },
+    "report": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/native-migration-l3tb93yl/native-report.json",
+      "sha256": "e808ad273b3972527c3ddfcd5fd5e4898092b8b895dff88b40ffe506ffc2e86d"
+    },
+    "incremental_log": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/native-migration-l3tb93yl/inc-rehearsal.stdout",
+      "sha256": "9be6123ab1ca50518cd99c6de68750e8b3e66391a2bb660c55e3fc0e12abad24"
+    },
+    "full_startup_log": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/native-migration-l3tb93yl/full-rehearsal.stdout",
+      "sha256": "a7ec8872c94855b9ad75077ad782dcb94813bcbbd31f487a178fcabdc54b8fe2"
+    },
+    "cleanup": {
+      "status": "removed",
+      "cluster_stopped": true,
+      "cluster_removed": true,
+      "runtime_removed": true,
+      "keep_runtime": false,
+      "errors": []
+    },
+    "cleanup_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/native-migration-l3tb93yl/cleanup.json",
+      "sha256": "7e009f5e7f7cdc30facadc39d989ae4642094a2ed3ccbb30c89f948af956a938"
+    },
+    "limitation": "Restored isolated database migration rehearsal. Attachment preservation and live deployment checks are separately recorded; no live full-table equality claim."
+  },
+  "frontend": {
+    "unit_tests_passed": 834,
+    "unit_test_files_passed": 96,
+    "unit_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/frontend-unit.log",
+      "sha256": "0828adef3aab3cc3809cf52822c3d4a1ad4146b3038f2501461d99485dcabc7d"
+    },
+    "formal_browser_passed": 110,
+    "new_network_timing_checks": 17,
+    "previous_feature_checks": 93,
+    "formal_browser_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/ui-production-final.log",
+      "sha256": "e8f13d14e91a7479a99aa72c8139b90042794b8cbbb90e05015d6d0e71694edd"
+    },
+    "validation": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/frontend-validation.json",
+      "sha256": "0bf6cf3eb0072fd7c49172130732c48d469d7bc108553e73b39109a3c508c37d"
+    },
+    "static_graph": "ebf703c60a65fdec5822d5c0222770223056c05365208d25ab527315d642e672",
+    "built_files": 561,
+    "manifest_source_parity": true,
+    "typecheck": "passed",
+    "build": "passed",
+    "lq_registry": "passed",
+    "typecheck_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/typecheck-final.log",
+      "sha256": "e5046545a3a9fcc0cf6950c9402c78a2b227f07a6a658d2a0c1fbc5f4a194da0"
+    },
+    "build_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/build-final.log",
+      "sha256": "78c6edb34f66fa18e23fa43e6ba51d3ec4bdc8dcf5d996008313aadb28ba6a97"
+    },
+    "registry_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/registry-check-final.log",
+      "sha256": "46aa834cdca42849522e99cb14a8ebfb19b7d0be28c6fac1064bc1be65ef8076"
+    },
+    "source_sha256": {
+      "static/js/login_attendance.js": "6f4193e11739347a92660335e943339f09c639d2901c7efb02b82b37d7d61742",
+      "static/js/login_attendance_settlement.js": "c5193b48bd9629aece1f905b16b4739d96db31a3be7e4da7e6b57417e4c8e381",
+      "static/js/login_attendance_clock.js": "8feeaccc8af6f96d91294a4aee85385ce58fe0411922c80676c4c4dca91861d5",
+      "static/js/login_attendance_sync.js": "36e042884d2189e69f940b60253983eef59f5b3f4876b9061659ca939bf8a5c6",
+      "static/js/login_attendance_student_correction.js": "ffa0a05104463471ae2aa4b82d36c62e1e35d90f1c9a40bf63f372ad81ffd7b5",
+      "static/css/login_attendance.css": "712fb7bc4f184233165a10123ccb9303ab65f72356d246c62329f45278bf479a"
+    },
+    "screenshots": [
+      {
+        "path": ".codex-temp/evidence/attendance-network-timing-20261112/recording-dark-1440.png",
+        "sha256": "c1ae478ea32d12ef00ed015444104636ce4b18fe4a65c1bd9323fae37dcedcb9"
+      },
+      {
+        "path": ".codex-temp/evidence/attendance-network-timing-20261112/recording-dark-390.png",
+        "sha256": "428dfd4c0a5db1856afda01b73d0e8c63231dbc18710a29691599312012141c7"
+      },
+      {
+        "path": ".codex-temp/evidence/attendance-network-timing-20261112/recording-light-1440.png",
+        "sha256": "b863fd5ae17b9e3b1ae991d4917092b6518a13d3e8b2f9c8c384fc43ff65afdf"
+      },
+      {
+        "path": ".codex-temp/evidence/attendance-network-timing-20261112/recording-light-390.png",
+        "sha256": "03b44d31d26423bfaf6a7d4ab80aa40a1f33dcc716b38b6839eff7e95437386c"
+      },
+      {
+        "path": ".codex-temp/evidence/attendance-network-timing-20261112/setup-dark-1440.png",
+        "sha256": "724f6d7d14e935c04fc3d4d34b73a6ad24cb0dfef256ab8f715ed44460904a3b"
+      },
+      {
+        "path": ".codex-temp/evidence/attendance-network-timing-20261112/setup-dark-390.png",
+        "sha256": "45de6dfc7da7a5849d9655c47133ea0f26bde9ad9e1a37ba8ed65d346866ddd3"
+      },
+      {
+        "path": ".codex-temp/evidence/attendance-network-timing-20261112/setup-light-1440.png",
+        "sha256": "7b2943bb2a164aef289cf5120f862d7561e298af5b3d268f57b0d5d81c218c87"
+      },
+      {
+        "path": ".codex-temp/evidence/attendance-network-timing-20261112/setup-light-390.png",
+        "sha256": "b275cf9917f9662390e622ff36ed9bef1e6df36e873eade65c6e9fa74819b839"
+      }
+    ]
+  },
+  "real_application": {
+    "status": "passed",
+    "synthetic_only": true,
+    "checks_passed": 7,
+    "page_errors": 0,
+    "external_requests": 0,
+    "backend_worker_errors": 0,
+    "uses_actual_app_router_scheduler": true,
+    "evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/real-page-report.json",
+      "sha256": "bcac271607306f884875c9e05f23dac98873bb481d51372fe52b9ac89a7c69b7"
+    },
+    "cleanup_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/real-cleanup.json",
+      "sha256": "95dbb67e427bba8dd2302181d2a0d8f79149f7011d49317f5d66801e40b1625c"
+    },
+    "server_stopped": true,
+    "scratch_exists": false,
+    "runtime_exists": false
+  },
+  "online_verification": {
+    "status": "passed",
+    "checks_passed": 56,
+    "checked_at_utc": "2026-11-12T14:17:42.790347+00:00",
+    "scope": "Public read-only release/assets/cache verification and anonymous empty-body write rejection using zero placeholder identifiers; no authenticated business mutation.",
+    "safety": {
+      "credentials_sent": false,
+      "cookies_persisted": false,
+      "business_data_read": false,
+      "database_connections": false,
+      "browser_or_storage_access": false,
+      "post_probe_body": "{}",
+      "post_probe_ids": "zero placeholders",
+      "cookie_scope": "public lanshare_cache_release marker only; no cookie jar",
+      "cache_validation": "response headers observed, no browser cache or user storage changed"
+    },
+    "evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/public-final.json",
+      "sha256": "972f8cac251870c102b3936da575412dd174e262d80b1fe21da7d8a53d03fa4e"
+    }
+  },
+  "data_protection": {
+    "production_tests_run": false,
+    "real_school_attendance_mutations": 0,
+    "forced_real_token_expiry_tests": 0,
+    "preservation": {
+      "postgres_container": true,
+      "data_directory_identity": true,
+      "environment_except_release": true,
+      "dependency_images": true,
+      "explicit_material_rows": true,
+      "representative_attachment_paths_bytes_sha256": true,
+      "fixed_manual_decisions_rounds_and_projection_metadata": true,
+      "changed_source_host_and_image_file_count": 47,
+      "old_database_content": "covered_by_matching_native_rehearsal_and_cutover_backup; not a live full-table equality claim"
+    },
+    "network_policy_column_present": true,
+    "received_time_index_present": true,
+    "backup_directory": "/var/backups/lanshare-attendance-network-timing-20261112-221059-c5a1e3e4dba1",
+    "backups": {
+      "db-cutover-20261112-221322.sql.gz": {
+        "bytes": 163544668,
+        "mode": "0o600"
+      },
+      "code-20261112-221322.tgz": {
+        "bytes": 268213142,
+        "mode": "0o600"
+      }
+    },
+    "backup_content_sha256_recorded": false,
+    "backup_metadata_evidence": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/backup-metadata.json",
+      "sha256": "deb1a738567ae79a50af87d41c5873fae73333653cba3e62fd8d775f40066dea"
+    },
+    "preflight_snapshot": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/production-before-verified.json",
+      "sha256": "4f36efe5e07791aaad760dc4055d72b201274e21d27861ca006d96903cc95bfd"
+    },
+    "postflight_snapshot": {
+      "path": ".codex-temp/evidence/attendance-network-timing-20261112/production-after.json",
+      "sha256": "8bb943d0a41d704c2a8be2caae9773167eb3f0ff5231d9fb204f87ab95383bb6"
+    },
+    "snapshot_privacy": "Only evidence paths, hashes, aggregate checks and safe metadata are copied here; student-level records, credentials and attachment contents are excluded."
+  },
+  "known_boundaries": {
+    "source_inventory": {
+      "acceptance": "pending",
+      "files": 606,
+      "html_templates": 209,
+      "entries": 5755,
+      "summary": {
+        "path": "docs/lq-attendance-network-timing-source-summary-2026-11-12.json",
+        "sha256": "e5127bffff416a26edc7cc58dd344d4e661326dd0874bcb451b2914cee8cda2f"
+      },
+      "limitation": "Source coverage is not platform-wide runtime acceptance."
+    },
+    "lq_lint": {
+      "blocking": 0,
+      "existing_warnings": 3677,
+      "evidence": {
+        "path": ".codex-temp/evidence/attendance-network-timing-20261112/lq-lint-final.log",
+        "sha256": "c98bf863aae449baf6ffe653237fdbb2dc882dd2560a6e815258cd058ef1e9ac"
+      }
+    },
+    "layout_candidates": {
+      "1440": [
+        {
+          "appearance": "light",
+          "candidate_counts": {
+            "tight": 4,
+            "glued": 0,
+            "contrast": 4,
+            "overlay": 1,
+            "capsule": 0
+          }
+        },
+        {
+          "appearance": "dark",
+          "candidate_counts": {
+            "tight": 4,
+            "glued": 0,
+            "contrast": 0,
+            "overlay": 1,
+            "capsule": 0
+          }
+        }
+      ],
+      "390": [
+        {
+          "appearance": "light",
+          "candidate_counts": {
+            "tight": 4,
+            "glued": 0,
+            "contrast": 4,
+            "overlay": 1,
+            "capsule": 0
+          }
+        },
+        {
+          "appearance": "dark",
+          "candidate_counts": {
+            "tight": 4,
+            "glued": 0,
+            "contrast": 0,
+            "overlay": 1,
+            "capsule": 1
+          }
+        }
+      ]
+    },
+    "layout_evidence": [
+      {
+        "path": ".codex-temp/evidence/attendance-network-timing-20261112/layout-1440.json",
+        "sha256": "e6cf999ec238eedce3f34793a21e8ac1d3e9a039ad0c9492e4890704804d4bd4"
+      },
+      {
+        "path": ".codex-temp/evidence/attendance-network-timing-20261112/layout-390.json",
+        "sha256": "db559116c0e0473d109272ba7c9aa9f18122898518f9b91fed41e53d8a888fc9"
+      }
+    ],
+    "classroom_horizontal_overflow_observed": false,
+    "completed_page_copy": "One previous-stage background receipt explanation remains visible on the completed page; completion state and controls still pass.",
+    "background_failed_records_observed_after_deployment": 1106,
+    "background_failed_categories": {
+      "attendance_export": 0,
+      "attendance_parse": 0,
+      "ai_grading": 473,
+      "material_ai_import": 1,
+      "session_material_generation": 0,
+      "private_message_ai_reply": 0,
+      "email_outbox": 591,
+      "blog_news_crawler": 8,
+      "agent_task": 4,
+      "scheduled_task": 29,
+      "behavior_write_pipeline": 0
+    },
+    "unrelated_failures_retried_or_deleted": false,
+    "school_live_write_limit": "School mutations were verified only with isolated synthetic protocol fixtures. Real school operation remains a teacher-authorized business action.",
+    "metrics_semantics": {
+      "access_span_seconds": "First-to-last observed authenticated server access span, not continuous online time.",
+      "learning_seconds": "Existing validated interval union; independent of attendance and points."
+    }
+  },
+  "evidence_policy": {
+    "root": ".codex-temp/evidence/attendance-network-timing-20261112",
+    "earlier_failed_or_superseded_candidates_retained": true,
+    "earlier_candidates_counted_as_final_passes": false,
+    "native_migration_report_may_contain_protected_snapshot_data": true,
+    "sensitive_evidence_not_embedded": true
+  }
+}
