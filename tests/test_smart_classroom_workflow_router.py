@@ -117,6 +117,9 @@ class WorkflowRouterTests(unittest.TestCase):
         matched = self.client.post(self.base + "/match", headers=self.headers, json={})
         self.assertEqual(200, matched.status_code, matched.text)
         self.assertEqual("matched", matched.json()["binding"]["state"])
+        previous_schedule = {"id": "schedule", "week": "1-18", "sections": "2-3", "xqj": 1, "classRoomName": "Synthetic room", "stuNo": 42}
+        self.conn.execute("INSERT INTO smart_classroom_schedule_items(teacher_id,class_offering_id,platform_code,remote_schedule_id,metadata_json) VALUES(7,10,'gxufl_smart_classroom','schedule',?)", (json.dumps(previous_schedule),))
+        self.conn.commit()
         self.seed_round()
         payload = {"idempotency_key": "http-teacher-click", "expected_binding_revision": matched.json()["binding"]["revision"]}
         response = self.client.post("/api/classrooms/10/login-attendance/rounds/31/external/sync", headers=self.headers, json=payload)
@@ -126,6 +129,8 @@ class WorkflowRouterTests(unittest.TestCase):
         self.assertEqual({"S1": "CHECKED", "S2": "CHECKED"}, self.remote)
         self.assertEqual(["CHECKED", "CHECKED"], [r[0] for r in self.conn.execute("SELECT status FROM smart_classroom_checkin_students ORDER BY student_number")])
         self.assertEqual(2, self.conn.execute("SELECT checked_count FROM smart_classroom_checkin_sessions").fetchone()[0])
+        saved_schedule = self.conn.execute("SELECT weeks_text,sections_text,weekday,classroom_name,student_count FROM smart_classroom_schedule_items").fetchone()
+        self.assertEqual(("1-18", "2-3", 0, "Synthetic room", 42), tuple(saved_schedule))
         self.assertEqual(["PRESENT", "ABSENT"], [r[0] for r in self.conn.execute("SELECT status FROM login_attendance_records ORDER BY student_number")])
         repeated = self.client.post("/api/classrooms/10/login-attendance/rounds/31/external/sync", headers=self.headers, json=payload)
         self.assertEqual(202, repeated.status_code)

@@ -231,6 +231,16 @@ def enqueue_sync(conn, user, offering_id, round_id, payload):
     intent = {"manual_dispatch": True, "authorized_fingerprint": fingerprint, "allow_create": creating, "location": location,
               "binding_revision": link["revision"]}
     now = ledger._now()
+    # Reserve the teacher-scoped request before the plan's independent UNIQUE
+    # constraint. Different classrooms hold different parent locks, so a late
+    # receipt insert would otherwise let concurrent keys raise a raw DB error.
+    occupied = conn.execute("SELECT local_round_id FROM smart_attendance_auto_sync WHERE owner_teacher_id=? AND request_key=?", (user["id"], key)).fetchone()
+    if occupied and str(occupied["local_round_id"]) != str(round_id):
+        raise HTTPException(409, "该操作标识已用于其他课次，请刷新核对后重试。")
+    inserted = conn.execute("INSERT INTO smart_attendance_workflow_requests(owner_teacher_id,request_key,local_round_id,context_fingerprint,binding_revision,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(owner_teacher_id,request_key) DO NOTHING RETURNING request_key",
+                 (user["id"], key, str(round_id), fingerprint, link["revision"], now)).fetchone()
+    if not inserted:
+        raise HTTPException(409, "该操作标识已由另一同步请求使用，请刷新核对后重试。")
     conn.execute("""INSERT INTO smart_attendance_auto_sync(local_round_id,owner_teacher_id,class_offering_id,session_id,
         external_account_key,credential_generation,source_json,slot_json,remote_checkin_id,enabled,state,request_key,intent_json,created_at,updated_at)
         VALUES(?,?,?,?,?,?,?,?,?,1,'pending',?,?,?,?) ON CONFLICT(local_round_id) DO UPDATE SET enabled=1,state='pending',
@@ -243,10 +253,6 @@ def enqueue_sync(conn, user, offering_id, round_id, payload):
         ledger.reauthorize_binding(conn, user, round_id, old["binding_id"], binding["revision"], auto_sync=True)
     auto._grant(conn, access, round_id)
     auto.schedule_due_auto_sync(conn, round_id, force=True)
-    inserted = conn.execute("INSERT INTO smart_attendance_workflow_requests(owner_teacher_id,request_key,local_round_id,context_fingerprint,binding_revision,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(owner_teacher_id,request_key) DO NOTHING RETURNING request_key",
-                 (user["id"], key, str(round_id), fingerprint, link["revision"], now)).fetchone()
-    if not inserted:
-        raise HTTPException(409, "该操作标识已由另一同步请求使用，请刷新核对后重试。")
     return workflow(conn, user, offering_id, ctx["session_id"])
 
 
@@ -300,7 +306,15 @@ def persist_remote_snapshot(conn, user, ctx, source, snapshot):
     if offering is None:
         raise HTTPException(409, "课堂归属已变化，学校记录未覆盖本地数据。")
     now = ledger._now()
-    schedule = {"id": source["remote_schedule_id"], "courseId": source["course_code"], "course": source.get("course_name"),
+    previous = conn.execute("SELECT metadata_json FROM smart_classroom_schedule_items WHERE teacher_id=? AND platform_code=? AND remote_schedule_id=?", (user["id"], imports.SMART_PLATFORM_CODE, source["remote_schedule_id"])).fetchone()
+    previous_schedule = local._load(previous["metadata_json"], {}) if previous else {}
+    if not isinstance(previous_schedule, dict):
+        previous_schedule = {}
+    # An attendance read has a narrower shape than the full timetable import.
+    # Preserve its weeks, classroom, sections and roster size when refreshing
+    # the shared schedule projection; only verified identity fields replace it.
+    schedule = {**(snapshot.get("schedule") or {}), **previous_schedule,
+                "id": source["remote_schedule_id"], "courseId": source["course_code"], "course": source.get("course_name"),
                 "claId": source["remote_class_id"], "claName": source.get("teaching_class_name"), "year": source["academic_year"], "semester": source["academic_term"]}
     names = {str(r["student_number"]): r.get("name", "") for r in ctx["students"]}
     saved_names = {r["student_number"]: r["student_name"] for r in conn.execute("SELECT st.student_number,st.student_name FROM smart_classroom_checkin_students st JOIN smart_classroom_checkin_sessions se ON se.id=st.checkin_session_id WHERE se.teacher_id=? AND se.remote_checkin_id=? AND se.platform_code=?", (user["id"], str(snapshot["record"]["id"]), imports.SMART_PLATFORM_CODE)).fetchall()}

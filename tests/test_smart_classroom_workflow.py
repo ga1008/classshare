@@ -102,6 +102,19 @@ class WorkflowTests(AutoEngineTests):
         self.assertEqual("awaiting_push", result["state"])
         self.assertEqual([], self.writes)
 
+    async def test_request_key_already_used_by_legacy_other_round_is_clean_conflict(self):
+        binding = (await self.bind_lesson())["binding"]
+        self.conn.execute("""INSERT INTO smart_attendance_auto_sync(local_round_id,owner_teacher_id,class_offering_id,session_id,
+            external_account_key,credential_generation,source_json,slot_json,enabled,state,request_key,created_at,updated_at)
+            VALUES('legacy-other',1,1,2,?,'g1',?,?,0,'confirmed','legacy-shared-key','now','now')""",
+            (self.account, json.dumps(self.source), json.dumps(self.slot)))
+        self.conn.commit()
+        with self.assertRaises(HTTPException) as raised:
+            workflow.enqueue_sync(self.conn, self.user, 1, "local", {"idempotency_key": "legacy-shared-key", "expected_binding_revision": binding["revision"]})
+        self.assertEqual(409, raised.exception.status_code)
+        self.assertEqual(0, self.conn.execute("SELECT COUNT(*) FROM smart_attendance_workflow_requests").fetchone()[0])
+        self.assertIsNone(self.conn.execute("SELECT 1 FROM smart_attendance_auto_sync WHERE local_round_id='local'").fetchone())
+
     async def test_remote_newer_preserves_attendance_and_imports_before_write(self):
         self.record["updateTime"] = "2035-01-01T00:00:00+08:00"
         self.ctx["students"][1].update(manual_confirmed=1, decided_at_ms=2000000000000)
