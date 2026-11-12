@@ -448,7 +448,7 @@
         "sha256": "abae0b9ac350edf6349652fe786ce5bfd5057cf384cd10b95c187f75282d494b"
       },
       "image_rerun_log": "PRIMARY_CHECKOUT\\.codex-temp\\evidence\\assessment-attendance-final-20261112\\verified-stage-3.log",
-      "image_rerun_status": "pending_final_root_confirmation",
+      "image_rerun_status": "passed_final_immutable_image_before_cutover",
       "linux_skip_note": "Linux assessment suite intentionally adds one optional Windows-sample skip (8 instead of local 7); this is separate from local totals."
     },
     {
