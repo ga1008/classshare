@@ -66,6 +66,11 @@ class AttendanceLifecycleTests(unittest.TestCase):
             conn.execute("INSERT INTO smart_attendance_session_links(session_id,class_offering_id,owner_teacher_id,"
                          "state,context_fingerprint,updated_at) VALUES(?,?,?,'matched','original-scope','2026-11-12')",
                          (self.f.source_session,self.f.source_id,self.f.teacher_id))
+            for oid in (self.f.source_id,self.f.target_id):
+                conn.execute("INSERT INTO smart_attendance_course_links(class_offering_id,owner_teacher_id,state,context_fingerprint,updated_at) VALUES(?,?,'matched','original-scope','2026-11-12')",
+                             (oid,self.f.teacher_id))
+            conn.execute("INSERT INTO smart_attendance_alignment_requests(owner_teacher_id,request_key,request_hash,class_offering_id,session_id,created_at) VALUES(?,'original-confirm','hash',?,?,'2026-11-12')",
+                         (self.f.teacher_id,self.f.source_id,self.f.source_session))
             conn.commit()
             self.f._execute(conn);conn.commit()
             row=attendance.load_round(conn,rid,self.user)
@@ -87,6 +92,9 @@ class AttendanceLifecycleTests(unittest.TestCase):
             self.assertIsNone(conn.execute('SELECT id FROM class_offerings WHERE id=?',(self.f.source_id,)).fetchone())
             self.assertEqual(0,conn.execute('SELECT COUNT(*) FROM smart_attendance_session_links WHERE session_id=?',
                                           (self.f.source_session,)).fetchone()[0])
+            self.assertEqual(0,conn.execute('SELECT COUNT(*) FROM smart_attendance_course_links WHERE class_offering_id=?',(self.f.source_id,)).fetchone()[0])
+            self.assertEqual('stale',conn.execute('SELECT state FROM smart_attendance_course_links WHERE class_offering_id=?',(self.f.target_id,)).fetchone()[0])
+            self.assertEqual(self.f.source_id,conn.execute("SELECT class_offering_id FROM smart_attendance_alignment_requests WHERE request_key='original-confirm'").fetchone()[0])
 
     def test_active_round_and_unresolved_remote_outcome_block_merge_and_delete(self):
         with database.get_db_connection() as conn:
@@ -104,6 +112,8 @@ class AttendanceLifecycleTests(unittest.TestCase):
             rid=self.seed(conn);self.binding(conn,rid)
             conn.execute('UPDATE login_attendance_rounds SET is_current=0 WHERE id=?',(rid,))
             active=self.seed(conn,state='running',key='active-while-delete');conn.commit()
+            conn.execute("INSERT INTO smart_attendance_course_links(class_offering_id,owner_teacher_id,state,context_fingerprint,updated_at) VALUES(?,?,'matched','original-scope','2026-11-12')",
+                         (self.f.source_id,self.f.teacher_id))
             lifecycle.prepare_deletion(conn,self.f.source_id,self.user)
             conn.execute('DELETE FROM class_offerings WHERE id=?',(self.f.source_id,));conn.commit()
             final=attendance.load_round(conn,rid,self.user)
@@ -114,6 +124,7 @@ class AttendanceLifecycleTests(unittest.TestCase):
             binding=conn.execute("SELECT * FROM smart_attendance_write_bindings WHERE id='b'").fetchone()
             self.assertIsNone(binding['class_offering_id']);self.assertIsNone(binding['session_id'])
             self.assertEqual('paused',binding['state'])
+            self.assertEqual(0,conn.execute('SELECT COUNT(*) FROM smart_attendance_course_links WHERE class_offering_id=?',(self.f.source_id,)).fetchone()[0])
 
     def test_school_appeal_blocks_merge_and_deletion_preserves_cancelled_audit(self):
         with database.get_db_connection() as conn:

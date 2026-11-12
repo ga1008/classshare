@@ -38,6 +38,7 @@ STRATEGY_ASSIGNMENT_COEXIST = "assignment_coexist"
 STRATEGY_GRADE_PUBLICATIONS = "grade_publications"  # 保留快照，迁入目标版本序列
 STRATEGY_KEEP_BILLING_SCOPE = "keep_billing_scope"  # 账单范围不随课堂归并变化
 STRATEGY_BEHAVIOR_RECEIPTS = "immutable_behavior_receipts"
+STRATEGY_IMMUTABLE_RECEIPTS = "immutable_request_receipts"
 STRATEGY_COLLECTION_OBSERVATIONS = "immutable_collection_observations"
 STRATEGY_SCOPE_REVIEW = "scope_review"  # 读者/参与者范围尚无安全迁移规则，预检阻断
 STRATEGY_SCHEDULE_REVIEW = "schedule_review"  # 教务课次身份不可按本地序号猜测重绑
@@ -119,6 +120,8 @@ def _rules() -> dict[str, MergeRule]:
     # Lesson mappings are cached assertions of the original classroom scope.
     # Preserve them in the merge snapshot, never remap by local lesson order.
     rules["smart_attendance_session_links"] = MergeRule(STRATEGY_KEEP_TARGET)
+    rules["smart_attendance_course_links"] = MergeRule(STRATEGY_KEEP_TARGET)
+    rules["smart_attendance_alignment_requests"] = MergeRule(STRATEGY_IMMUTABLE_RECEIPTS)
     rules["approval_requests"] = MergeRule(STRATEGY_REPOINT)
     rules["class_offering_sessions"] = MergeRule(STRATEGY_SESSION_STRUCTURE)
     rules["class_offering_class_links"] = MergeRule(STRATEGY_LINKS, offering_column="offering_id")
@@ -885,7 +888,7 @@ def execute_offering_merge(
         if not _table_exists(conn, table):
             continue
         column = rule.offering_column
-        if rule.strategy == STRATEGY_BEHAVIOR_RECEIPTS:
+        if rule.strategy in (STRATEGY_BEHAVIOR_RECEIPTS, STRATEGY_IMMUTABLE_RECEIPTS):
             # Tombstones have no offering FK. Their original scope participates
             # in the immutable client batch key throughout the retry horizon.
             summary[f"{table}.receipt_scope_preserved"] = _count_rows(conn, table, column, source_ids)

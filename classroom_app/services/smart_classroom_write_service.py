@@ -103,13 +103,15 @@ def result_fingerprint(ctx):
                   "class": int(ctx["class_offering_id"]), "session": int(ctx["session_id"]), "students": targets})
 
 
-def compare_students(targets, baseline, remote):
+def compare_students(targets, baseline, remote, *, school_authoritative=False):
     result = []
     for target in targets:
         number, desired = target["student_number"], target["target_status"]
         old, actual = baseline.get(number), remote.get(number)
         state, reason = "needs_teacher_action", "请在学校官方端处理后回读核对。"
-        if desired is None: state, reason = "blocked", "本地结果待确认，不能推成远端缺课。"
+        if school_authoritative and number not in remote:
+            state, reason = "not_enrolled", "学校本次课名单无此学生；本地记录保留，不新增或改写学校学生。"
+        elif desired is None: state, reason = "blocked", "本地结果待确认，不能推成远端缺课。"
         elif actual is None: state, reason = "unmapped", "远端名单没有唯一匹配学生。"
         elif actual not in REMOTE_STATUSES: state, reason = "blocked", "远端包含尚未支持的状态，保留原值。"
         elif actual == desired: state, reason = "confirmed", "本次读取的学生状态一致。"

@@ -35,6 +35,125 @@ async function open(page: Page, role = 'teacher', expanded = true) { await page.
 const json = (route: Route, value: any, status = 200) => route.fulfill({ status, json: value });
 async function choose(page:Page,dialog:any,label:string,option:string){const control=dialog.getByRole('combobox',{name:label,exact:true});if(await control.evaluate((n:Element)=>n.tagName==='SELECT'))await control.selectOption({label:option});else{await control.click();await page.getByRole('option',{name:option,exact:true}).click();await expect(page.getByRole('option',{name:option,exact:true})).not.toBeVisible();}}
 
+function alignmentWorkflow(stage='course') {
+  const localCourse={course_name:'计算机网络原理',course_code:'E030054B1',academic_year:'2026-2027',academic_term:1,student_count:42,session_count:32,total_hours:64,credits:4};
+  const localSession={session_date:'2026-11-09',week:11,day_of_week:1,sections:[1,2],order_index:17};
+  const roster={local_count:42,remote_count:43,matched_count:41,local_only_count:1,remote_only_count:2,difference_count:3,majority:true};
+  const courseCandidates=[{id:'course-good',label:'计算机网络原理 · 计科2606',eligible:true,reasons:['相同名单占多数，差异 3 人可正常对齐。'],evidence:{roster,method:'roster'},target:{...localCourse,student_count:43}},
+    {id:'course-other',label:'计算机网络原理 · 计科2607',eligible:false,reasons:['课程相同，但本班名单不对应。'],evidence:{roster:{...roster,matched_count:1,difference_count:83,majority:false}},target:{...localCourse,student_count:43}}];
+  const sessionCandidates=[{id:'lesson-a',label:'11月9日 第1、2节',eligible:true,reasons:['与本地日期、星期、节次一致。'],evidence:{method:'schedule'},target:{...localSession,remote_checkin_id:'school-a'}},
+    {id:'lesson-b',label:'11月9日 第3、4节',eligible:true,reasons:['同日有多次课堂，请核对节次。'],evidence:{method:'schedule'},target:{...localSession,sections:[3,4],order_index:18,remote_checkin_id:'school-b'}}];
+  return {binding:{state:stage==='matched'?'matched':'unmatched',revision:stage==='matched'?6:5,diagnostics:[],target:stage==='matched'?{...localCourse,...localSession}:null},plan:null,can_sync:stage==='matched',
+    alignment:{needs_review:stage!=='matched',course:{state:stage==='course'?'review':'matched',revision:stage==='course'?7:8,local:localCourse,selected_id:stage==='course'?null:'course-good',candidates:courseCandidates,message:'核对真实课程与学校名单'},session:{state:stage==='course'?'unmatched':stage==='matched'?'matched':'review',revision:5,local:localSession,selected_id:stage==='matched'?'lesson-a':null,candidates:stage==='course'?[]:sessionCandidates,message:'同日有两次课堂，需要确认本课节次'}}};
+}
+
+test('LQ alignment gates pushes by a real binding and preserves settlement requirements',async({page})=>{
+  let view:any={...alignmentWorkflow(),can_sync:true};const current={...round(2),state:'published'};
+  await fixture(page,async(route,url)=>url.endsWith('/external/workflow')?json(route,view):json(route,{session,policy:current.policy,round:current}),'teacher','',undefined,true);
+  await open(page,'teacher',false);const d=page.getByRole('dialog',{name:'自动点名',exact:true}),align=d.getByRole('button',{name:'对齐课次',exact:true}),push=d.getByRole('button',{name:'同步与推送',exact:true});
+  await expect(align).toHaveAttribute('data-lq-action-tone','warning');await expect(d.getByText('未对齐',{exact:true})).toBeVisible();await expect(push).toBeDisabled();await expect(push).toHaveAttribute('aria-disabled','true');
+  view=alignmentWorkflow('matched');current.state='running';await page.evaluate(()=>(window as any).attendance.refresh());await expect(align).toHaveAttribute('data-lq-action-tone','success');await expect(push).toBeDisabled();
+  current.state='published';await page.evaluate(()=>(window as any).attendance.refresh());await expect(push).toBeEnabled();await expect(push).toHaveAttribute('data-lq-disabled','false');
+});
+
+test('LQ alignment reviews course then lesson cards and submits only server candidate identities',async({page})=>{
+  let view=alignmentWorkflow();const calls:any[]=[];const current={...round(2),state:'published'};
+  const errors=await fixture(page,async(route,url,body)=>{
+    if(url.endsWith('/external/workflow'))return json(route,view);
+    if(url.endsWith('/external/confirm')){calls.push(body);view=alignmentWorkflow(body.scope==='course'?'session':'matched');return json(route,view);}
+    return json(route,{session,policy:current.policy,round:current});
+  },'teacher','',undefined,true);
+  await open(page,'teacher',false);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await d.getByRole('button',{name:'存疑',exact:true}).click();const review=page.getByRole('dialog',{name:'存疑课次核对',exact:true});
+  await expect(review.getByText('E030054B1',{exact:true}).first()).toBeVisible();await expect(review.getByText('64 学时 · 4 学分',{exact:true}).first()).toBeVisible();await expect(review.getByText('差异 3 人（仅本地 1 人，仅学校 2 人）',{exact:true})).toBeVisible();
+  await expect(review.getByRole('button',{name:'2 · 课次',exact:true})).toBeDisabled();await expect(review.getByRole('button',{name:'确认课程',exact:true})).toBeDisabled();await expect(review.getByRole('button',{name:'选择课程：计算机网络原理 · 计科2607',exact:true})).toBeDisabled();
+  await review.getByRole('button',{name:'选择课程：计算机网络原理 · 计科2606',exact:true}).click();await review.getByRole('button',{name:'确认课程',exact:true}).click();
+  await expect(review.getByRole('heading',{name:'本地课次',exact:true})).toBeVisible();await expect(review.getByText('第 11 周',{exact:true}).first()).toBeVisible();await expect(review.getByText('星期一',{exact:true}).first()).toBeVisible();await expect(review.getByText('第 17 次课',{exact:true}).first()).toBeVisible();
+  await review.getByRole('button',{name:'选择课次：11月9日 第1、2节',exact:true}).click();await review.getByRole('button',{name:'确认课次',exact:true}).click();await expect(review).not.toBeVisible();await expect(d.getByRole('button',{name:'对齐课次',exact:true})).toBeFocused();await expect(d.getByRole('button',{name:'同步与推送',exact:true})).toBeEnabled();
+  expect(calls).toHaveLength(2);expect(calls[0]).toMatchObject({scope:'course',candidate_id:'course-good',expected_course_revision:7,expected_binding_revision:5});expect(calls[1]).toMatchObject({scope:'session',candidate_id:'lesson-a',expected_course_revision:8,expected_binding_revision:5});expect(Object.keys(calls[0]).sort()).toEqual(['candidate_id','expected_binding_revision','expected_course_revision','idempotency_key','scope']);expect(errors).toEqual([]);
+});
+
+test('LQ alignment retains selection and idempotency after uncertain response or revision conflict',async({page})=>{
+  const view=alignmentWorkflow('session'),keys:string[]=[];const current={...round(2),state:'published'};
+  const errors=await fixture(page,async(route,url,body)=>{
+    if(url.endsWith('/external/workflow'))return json(route,view);
+    if(url.endsWith('/external/confirm')){keys.push(body.idempotency_key);if(keys.length===1)return route.abort('failed');return json(route,{detail:'学校课次已变化，请重新对齐；本地记录完整保留。'},409);}
+    return json(route,{session,policy:current.policy,round:current});
+  },'teacher','',undefined,true);
+  await open(page,'teacher',false);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await d.getByRole('button',{name:'存疑',exact:true}).click();const review=page.getByRole('dialog',{name:'存疑课次核对',exact:true}),choice=review.getByRole('button',{name:'选择课次：11月9日 第1、2节',exact:true}),save=review.getByRole('button',{name:'确认课次',exact:true});
+  await choice.click();await save.click();await expect(review.getByRole('alert')).toBeVisible();await expect(choice).toHaveAttribute('aria-pressed','true');await choice.click();await save.click();await expect(review.getByRole('alert')).toContainText('请重新对齐');await expect(choice).toHaveAttribute('aria-pressed','true');expect(keys[0]).toBe(keys[1]);
+  await page.keyboard.press('Escape');await expect(review).not.toBeVisible();await expect(d.getByRole('button',{name:'存疑',exact:true})).toBeFocused();expect(errors).toEqual([]);
+});
+
+test('LQ alignment persisted account codes expose the correct recovery and missing lesson metadata stays reviewable',async({page})=>{
+  const view:any=alignmentWorkflow('session');view.alignment.course.error_code='missing_credential';view.alignment.session.local=null;const current={...round(2),state:'published'};
+  const errors=await fixture(page,async(route,url)=>url.endsWith('/external/workflow')?json(route,view):json(route,{session,policy:current.policy,round:current}),'teacher','',undefined,true);
+  await open(page,'teacher',false);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await expect(d.getByRole('button',{name:'配置智慧课堂账号'})).toBeVisible();await expect(d.getByRole('link',{name:'完成学校验证码'})).not.toBeVisible();
+  view.alignment.course.error_code='captcha_required';await page.evaluate(()=>(window as any).attendance.refresh());await expect(d.getByRole('button',{name:'配置智慧课堂账号'})).not.toBeVisible();await expect(d.getByRole('link',{name:'完成学校验证码'})).toBeVisible();
+  await d.getByRole('button',{name:'存疑',exact:true}).click();const review=page.getByRole('dialog',{name:'存疑课次核对',exact:true});await expect(review.getByRole('heading',{name:'本地课次',exact:true})).toBeVisible();await expect(review.getByText('未提供',{exact:true}).first()).toBeVisible();await review.getByRole('button',{name:'暂不确认',exact:true}).click();await expect(review).not.toBeVisible();expect(errors).toEqual([]);
+});
+
+test('LQ alignment missing candidates show the persisted detailed cause without blocking local recording',async({page})=>{
+  const view:any=alignmentWorkflow();view.alignment.needs_review=false;view.alignment.course.state='unmatched';view.alignment.course.candidates=[];view.alignment.course.message='学校当前学期为2025-2026，本地为2026-2027；请核对学校课表后重新对齐。';view.message='课程尚未对齐；本地记录不受影响。';
+  const errors=await fixture(page,async(route,url)=>url.endsWith('/external/workflow')?json(route,view):json(route,{session,policy:{revision:0,networks:['192.0.2.0/24']},window:{starts_at_ms:Date.parse('2026-11-09T08:30:00+08:00'),ends_at_ms:Date.parse('2026-11-09T10:00:00+08:00')},round:null}),'teacher','',undefined,true);
+  await open(page,'teacher',false);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await expect(d.getByText(view.alignment.course.message,{exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'存疑',exact:true})).not.toBeVisible();await expect(d.getByRole('button',{name:'开始记录',exact:true})).toBeEnabled();await expect(d.getByRole('button',{name:'同步与推送',exact:true})).toBeDisabled();expect(errors).toEqual([]);
+});
+
+test('LQ alignment busy confirmation blocks dismiss and duplicates then allows cancellation',async({page})=>{
+  let release!:()=>void;const wait=new Promise<void>(resolve=>release=resolve);let calls=0;const current={...round(2),state:'published'};
+  await fixture(page,async(route,url)=>{
+    if(url.endsWith('/external/workflow'))return json(route,alignmentWorkflow('session'));
+    if(url.endsWith('/external/confirm')){calls++;await wait;return json(route,{detail:'本课同步任务正在处理，请稍后重试'},409);}
+    return json(route,{session,policy:current.policy,round:current});
+  },'teacher','',undefined,true);
+  try{await open(page,'teacher',false);await page.getByRole('button',{name:'存疑',exact:true}).click();const review=page.getByRole('dialog',{name:'存疑课次核对',exact:true});await review.getByRole('button',{name:'选择课次：11月9日 第1、2节',exact:true}).click();await review.getByRole('button',{name:'确认课次',exact:true}).click();await expect(review.getByRole('button',{name:'确认课次',exact:true})).toBeDisabled();await expect(review.getByRole('button',{name:'重新对齐',exact:true})).toBeDisabled();await page.keyboard.press('Escape');await expect(review).toBeVisible();expect(calls).toBe(1);release();await expect(review.getByRole('alert')).toContainText('正在处理');await review.getByRole('button',{name:'暂不确认',exact:true}).click();await expect(review).not.toBeVisible();}finally{release();}
+});
+
+test('LQ alignment refresh discards vanished candidates and never silently confirms a replacement',async({page})=>{
+  let view:any=alignmentWorkflow('session'),confirmCalls=0;const current={...round(2),state:'published'};
+  await fixture(page,async(route,url)=>{
+    if(url.endsWith('/external/workflow'))return json(route,view);
+    if(url.endsWith('/external/match')){view=alignmentWorkflow('session');view.alignment.session.candidates=[{...view.alignment.session.candidates[0],id:'new-lesson'}];return json(route,view);}
+    if(url.endsWith('/external/confirm')){confirmCalls++;return json(route,view);}
+    return json(route,{session,policy:current.policy,round:current});
+  },'teacher','',undefined,true);
+  await open(page,'teacher',false);await page.getByRole('button',{name:'存疑',exact:true}).click();const review=page.getByRole('dialog',{name:'存疑课次核对',exact:true});await review.getByRole('button',{name:'选择课次：11月9日 第1、2节',exact:true}).click();await review.getByRole('button',{name:'重新对齐',exact:true}).click();await expect(review.getByRole('button',{name:'确认课次',exact:true})).toBeDisabled();await expect(review.getByRole('button',{name:'选择课次：11月9日 第1、2节',exact:true})).toHaveAttribute('aria-pressed','false');await review.getByRole('button',{name:'暂不确认',exact:true}).click();expect(confirmCalls).toBe(0);
+});
+
+for(const stale of [false,true])test(`LQ alignment ${stale?'stale':'expired'} persisted candidates stay readable but cannot be confirmed`,async({page})=>{
+  let view:any=alignmentWorkflow('session'),confirmCalls=0;const current={...round(2),state:'published'};
+  view.alignment.session.selected_id='lesson-a';if(stale)view.alignment.session.state='stale';else view.alignment.session.expires_at_ms=1;
+  const errors=await fixture(page,async(route,url)=>{
+    if(url.endsWith('/external/workflow'))return json(route,view);
+    if(url.endsWith('/external/match')){view=alignmentWorkflow('session');return json(route,view);}
+    if(url.endsWith('/external/confirm')){confirmCalls++;return json(route,view);}
+    return json(route,{session,policy:current.policy,round:current});
+  },'teacher','',undefined,true);
+  await open(page,'teacher',false);await page.getByRole('button',{name:'存疑',exact:true}).click();const review=page.getByRole('dialog',{name:'存疑课次核对',exact:true}),choice=review.getByRole('button',{name:'选择课次：11月9日 第1、2节',exact:true});
+  await expect(review.getByRole('status')).toContainText(stale?'信息已变化，请重新对齐':'候选已过期，请重新对齐');await expect(choice).toBeVisible();await expect(choice).toBeDisabled();await expect(review.getByRole('button',{name:'确认课次',exact:true})).toBeDisabled();
+  await review.getByRole('button',{name:'重新对齐',exact:true}).click();await expect(choice).toBeEnabled();await choice.click();await expect(review.getByRole('button',{name:'确认课次',exact:true})).toBeEnabled();expect(confirmCalls).toBe(0);expect(errors).toEqual([]);
+});
+
+test('LQ alignment rechecks candidate expiry at confirmation without a polling timer',async({page})=>{
+  await page.clock.setFixedTime(new Date('2026-11-12T01:00:00Z'));const view:any=alignmentWorkflow('session');view.alignment.session.expires_at_ms=Date.parse('2026-11-12T01:01:00Z');let confirmCalls=0;const current={...round(2),state:'published'};
+  const errors=await fixture(page,async(route,url)=>{if(url.endsWith('/external/workflow'))return json(route,view);if(url.endsWith('/external/confirm')){confirmCalls++;return json(route,view);}return json(route,{session,policy:current.policy,round:current});},'teacher','',undefined,true);
+  await open(page,'teacher',false);await page.getByRole('button',{name:'存疑',exact:true}).click();const review=page.getByRole('dialog',{name:'存疑课次核对',exact:true});await review.getByRole('button',{name:'选择课次：11月9日 第1、2节',exact:true}).click();await expect(review.getByRole('button',{name:'确认课次',exact:true})).toBeEnabled();await page.clock.setFixedTime(new Date('2026-11-12T01:02:00Z'));await review.getByRole('button',{name:'确认课次',exact:true}).click();await expect(review.getByRole('status')).toContainText('候选已过期，请重新对齐');await expect(review.getByRole('button',{name:'确认课次',exact:true})).toBeDisabled();await expect(review.getByRole('button',{name:'重新对齐',exact:true})).toBeEnabled();expect(confirmCalls).toBe(0);expect(errors).toEqual([]);
+});
+
+for(const dark of [false,true])for(const width of [390,1440])test(`LQ alignment ${dark?'dark':'light'} ${width}px uses readable comparison cards`,async({page})=>{
+  await page.setViewportSize({width,height:980});const current={...round(2),state:'published'};let view=alignmentWorkflow();
+  const errors=await fixture(page,async(route,url)=>url.endsWith('/external/workflow')?json(route,view):json(route,{session,policy:current.policy,round:current}),'teacher','',undefined,true);
+  if(dark)await page.evaluate(()=>{document.documentElement.dataset.appearance='dark';});await open(page,'teacher',false);const d=page.getByRole('dialog',{name:'自动点名',exact:true});
+  const tones:any={};const readTone=async(tone:string)=>d.getByRole('button',{name:'对齐课次',exact:true}).evaluate((node,expectedTone)=>{const style=getComputedStyle(node),probe=document.createElement('span');probe.style.color=`hsl(var(--ls-tone-${expectedTone}-fg))`;node.append(probe);const expectedColor=getComputedStyle(probe).color;probe.remove();return {color:style.color,background:style.backgroundImage,expectedColor};},tone);
+  tones.warning=await readTone('warning');tones.disabled=await d.getByRole('button',{name:'同步与推送',exact:true}).evaluate(n=>({background:getComputedStyle(n).backgroundImage,color:getComputedStyle(n).color}));
+  if(builtManifest){expect(tones.warning.color).toBe(tones.warning.expectedColor);expect(tones.warning.background).toContain('linear-gradient');expect(tones.disabled.background).toBe('none');}
+  await page.screenshot({path:`.codex-temp/evidence/attendance-alignment-20261112/main-unmatched-${dark?'dark':'light'}-${width}.png`});
+  await d.getByRole('button',{name:'存疑',exact:true}).click();const review=page.getByRole('dialog',{name:'存疑课次核对',exact:true});await expect(review.getByRole('button',{name:'选择课程：计算机网络原理 · 计科2606',exact:true})).toBeVisible();expect(await review.evaluate(n=>n.scrollWidth<=n.clientWidth+1)).toBe(true);
+  const columns=await review.locator('.la-alignment-column').evaluateAll(nodes=>nodes.map(n=>({x:n.getBoundingClientRect().x,y:n.getBoundingClientRect().y})));expect(width>640?columns[1].x>columns[0].x:columns[1].y>columns[0].y).toBe(true);
+  await page.screenshot({path:`.codex-temp/evidence/attendance-alignment-20261112/alignment-${dark?'dark':'light'}-${width}.png`});await review.getByRole('button',{name:'暂不确认',exact:true}).click();await expect(review).not.toBeVisible();view=alignmentWorkflow('matched');await page.evaluate(()=>(window as any).attendance.refresh());tones.success=await readTone('success');
+  if(builtManifest){expect(tones.success.color).toBe(tones.success.expectedColor);expect(tones.success.background).not.toBe(tones.warning.background);expect(tones.success.color).not.toBe(tones.warning.color);}
+  await expect(d.getByRole('button',{name:'同步与推送',exact:true})).toBeEnabled();await page.screenshot({path:`.codex-temp/evidence/attendance-alignment-20261112/main-matched-${dark?'dark':'light'}-${width}.png`});fs.writeFileSync(`.codex-temp/evidence/attendance-alignment-20261112/tones-${dark?'dark':'light'}-${width}.json`,JSON.stringify({graph:builtManifest?.revision||null,...tones},null,2));expect(errors).toEqual([]);
+});
+
 test('LQ streamlined attendance keeps unmatched recording local, then binds and submits a durable sync with stable retry key',async({page})=>{
   let current:any=null, matched=false, submitted=0;const calls:any[]=[];
   const workflow=()=>({binding:{state:matched?'matched':'unmatched',revision:matched?2:0,target:matched?{course_name:'合成课程',teaching_class_name:'合成班',session_date:'2026-11-09',section_text:'2、3节'}:null,message:matched?'已对应学校课次':'未找到同日期课次，本地点名不受影响',diagnostics:matched?[]:['学校课表尚未同步本次调课，请稍后重试。'],needs_location:false},can_sync:matched&&current?.state==='published',plan:submitted>1?{state:'pending',progress:{percent:10,completed:0,total:2,stage:'reading_remote'},message:'后台开始读取学校记录'}:null});
@@ -52,11 +171,11 @@ test('LQ streamlined attendance keeps unmatched recording local, then binds and 
   await expect(d.getByLabel('开始时间（北京时间）')).toHaveValue('2026-11-09T08:30');
   await expect(d.getByLabel('结束时间（北京时间）')).toHaveValue('2026-11-09T10:00');
   await expect(d.getByRole('button',{name:'同步与推送',exact:true})).toBeDisabled();
-  await d.getByRole('button',{name:'同步课次',exact:true}).click();await expect(d.getByText('未找到同日期课次，本地点名不受影响')).toBeVisible();
+  await d.getByRole('button',{name:'对齐课次',exact:true}).click();await expect(d.getByText('未找到同日期课次，本地点名不受影响')).toBeVisible();
   await d.getByRole('button',{name:'开始记录',exact:true}).click();await expect(d.locator('[data-student-id]')).toHaveCount(2);
   expect(calls.find(x=>x.url.endsWith('/sessions/12/rounds')).body).toMatchObject({networks:['192.0.2.0/24'],policy_revision:4,starts_at:'2026-11-09T08:30:00+08:00',ends_at:'2026-11-09T10:00:00+08:00'});
-  current.state='published';await page.evaluate(()=>(window as any).attendance.refresh());await d.getByRole('button',{name:'同步课次',exact:true}).click();
-  await expect(d.getByText('课次已对应',{exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'同步与推送',exact:true})).toBeEnabled();
+  current.state='published';await page.evaluate(()=>(window as any).attendance.refresh());await d.getByRole('button',{name:'对齐课次',exact:true}).click();
+  await expect(d.getByText('已对齐',{exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'同步与推送',exact:true})).toBeEnabled();
   await d.getByRole('button',{name:'同步与推送',exact:true}).click();await expect(d.getByRole('alert')).toContainText('合成网络短暂故障');
   await d.getByRole('button',{name:'同步与推送',exact:true}).click();await expect(d.getByRole('progressbar')).toHaveAttribute('value','10');
   const syncCalls=calls.filter(x=>x.url.endsWith('/external/sync'));expect(syncCalls[0].body).toEqual(syncCalls[1].body);expect(syncCalls[0].body.expected_binding_revision).toBe(2);
@@ -84,21 +203,37 @@ test('LQ school account errors keep recording available and only missing credent
     return json(route,{detail:'unexpected '+url},500);
   },'teacher','',undefined,true);
   await open(page,'teacher',false);const d=page.getByRole('dialog',{name:'自动点名',exact:true});
-  await d.getByRole('button',{name:'同步课次',exact:true}).click();await expect(d.getByRole('button',{name:'配置智慧课堂账号'})).toBeVisible();await expect(d.getByRole('button',{name:'开始记录',exact:true})).toBeEnabled();
-  code='captcha_required';await d.getByRole('button',{name:'同步课次',exact:true}).click();await expect(d.getByRole('button',{name:'配置智慧课堂账号'})).not.toBeVisible();await expect(d.getByRole('link',{name:'完成学校验证码'})).toHaveAttribute('href','https://edu.gxufl.edu.cn/login');
-  code='needs_teacher_reauth';await d.getByRole('button',{name:'同步课次',exact:true}).click();await expect(d.getByRole('link',{name:'完成学校验证码'})).not.toBeVisible();await expect(d.getByRole('button',{name:'配置智慧课堂账号'})).not.toBeVisible();await expect(d.getByRole('button',{name:'开始记录',exact:true})).toBeEnabled();expect(errors).toEqual([]);
+  await d.getByRole('button',{name:'对齐课次',exact:true}).click();await expect(d.getByRole('button',{name:'配置智慧课堂账号'})).toBeVisible();await expect(d.getByRole('button',{name:'开始记录',exact:true})).toBeEnabled();
+  code='captcha_required';await d.getByRole('button',{name:'对齐课次',exact:true}).click();await expect(d.getByRole('button',{name:'配置智慧课堂账号'})).not.toBeVisible();await expect(d.getByRole('link',{name:'完成学校验证码'})).toHaveAttribute('href','https://edu.gxufl.edu.cn/login');
+  code='needs_teacher_reauth';await d.getByRole('button',{name:'对齐课次',exact:true}).click();await expect(d.getByRole('link',{name:'完成学校验证码'})).not.toBeVisible();await expect(d.getByRole('button',{name:'配置智慧课堂账号'})).not.toBeVisible();await expect(d.getByRole('button',{name:'开始记录',exact:true})).toBeEnabled();expect(errors).toEqual([]);
 });
 
-test('LQ new school checkin requests location only on sync and denial never sends a remote command',async({page})=>{
+test('LQ new school checkin requests location only after dispatch preflight and denial never queues a remote command',async({page})=>{
   const current={...round(2),state:'published'};let syncRequests=0;
   await page.addInitScript(()=>Object.defineProperty(navigator,'geolocation',{value:{getCurrentPosition:(_success:any,fail:any)=>fail({code:1})},configurable:true}));
   const errors=await fixture(page,async(route,url)=>{
     if(url.endsWith('/sessions/12'))return json(route,{session,policy:current.policy,round:current});
     if(url.endsWith('/external/workflow'))return json(route,{binding:{state:'matched',revision:1,needs_location:true,target:{course_name:'合成课程'},diagnostics:[]},can_sync:true,plan:null});
-    if(url.endsWith('/external/sync')){syncRequests++;return json(route,{},202);}
+    if(url.endsWith('/external/sync')){syncRequests++;return json(route,{detail:{code:'location_required',message:'本次课尚无学校点名，请获取当前位置后继续'}},409);}
     return json(route,{detail:'unexpected '+url},500);
   },'teacher','',undefined,true);
-  await open(page,'teacher',false);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await d.getByRole('button',{name:'同步与推送',exact:true}).click();await expect(d.getByRole('alert')).toContainText('允许浏览器定位后可再次同步');expect(syncRequests).toBe(0);await expect(d.locator('[data-student-id]')).toHaveCount(2);expect(errors).toEqual([]);
+  await open(page,'teacher',false);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await d.getByRole('button',{name:'同步与推送',exact:true}).click();await expect(d.getByRole('alert')).toContainText('允许浏览器定位后可再次同步');expect(syncRequests).toBe(1);await expect(d.locator('[data-student-id]')).toHaveCount(2);expect(errors).toEqual([]);
+});
+
+test('LQ dispatch fresh remote record bypasses a stale location hint',async({page})=>{
+  const current={...round(2),state:'published'};let syncCalls=0;
+  await page.addInitScript(()=>{(window as any).geoCalls=0;Object.defineProperty(navigator,'geolocation',{value:{getCurrentPosition:()=>{(window as any).geoCalls++;throw new Error('Unexpected location request');}},configurable:true});});
+  const state={binding:{state:'matched',revision:4,needs_location:true,diagnostics:[]},can_sync:true,plan:null};
+  const errors=await fixture(page,async(route,url,body)=>{if(url.endsWith('/sessions/12'))return json(route,{session,policy:current.policy,round:current});if(url.endsWith('/external/workflow'))return json(route,state);if(url.endsWith('/external/sync')){syncCalls++;expect(body.location).toBeUndefined();return json(route,{...state,can_sync:false,plan:{state:'pending',progress:{percent:5,stage:'reading_remote'}}},202);}return json(route,{},500);},'teacher','',undefined,true);
+  await open(page,'teacher',false);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await d.getByRole('button',{name:'同步与推送',exact:true}).click();await expect(d.getByRole('progressbar')).toHaveAttribute('value','5');expect(syncCalls).toBe(1);expect(await page.evaluate(()=>(window as any).geoCalls)).toBe(0);expect(errors).toEqual([]);
+});
+
+for(const rejected of [false,true])test(`LQ dispatch location handshake ${rejected?'stops after one retry':'keeps one intent through acceptance'}`,async({page})=>{
+  const current={...round(2),state:'published'},calls:any[]=[];const state={binding:{state:'matched',revision:4,needs_location:false,diagnostics:[]},can_sync:true,plan:null};
+  await page.addInitScript(()=>{(window as any).geoCalls=0;Object.defineProperty(navigator,'geolocation',{value:{getCurrentPosition:(success:any)=>{(window as any).geoCalls++;success({coords:{latitude:22.3,longitude:108.4},timestamp:1794435600000});}},configurable:true});});
+  const errors=await fixture(page,async(route,url,body)=>{if(url.endsWith('/sessions/12'))return json(route,{session,policy:current.policy,round:current});if(url.endsWith('/external/workflow'))return json(route,state);if(url.endsWith('/external/sync')){calls.push(body);if(calls.length===1||rejected)return json(route,{detail:{code:'location_required',message:'本次位置需要重新核验，请稍后重试'}},409);return json(route,{...state,can_sync:false,plan:{state:'pending',progress:{percent:5,stage:'reading_remote'}}},202);}return json(route,{},500);},'teacher','',undefined,true);
+  await open(page,'teacher',false);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await d.getByRole('button',{name:'同步与推送',exact:true}).click();if(rejected)await expect(d.getByRole('alert')).toContainText('位置需要重新核验');else await expect(d.getByRole('progressbar')).toHaveAttribute('value','5');
+  expect(calls).toHaveLength(2);expect(calls[0].location).toBeUndefined();expect(calls[1]).toMatchObject({idempotency_key:calls[0].idempotency_key,expected_binding_revision:4,location:{latitude:22.3,longitude:108.4,captured_at_ms:1794435600000}});expect(await page.evaluate(()=>(window as any).geoCalls)).toBe(1);expect(errors).toEqual([]);
 });
 
 test('LQ delayed school refresh cannot unlock sync while a local revision is being recalculated',async({page})=>{
@@ -112,7 +247,7 @@ test('LQ delayed school refresh cannot unlock sync while a local revision is bei
   },'teacher','',undefined,true);
   try {
     await open(page);const d=page.getByRole('dialog',{name:'自动点名',exact:true});await d.getByRole('button',{name:'重新核算',exact:true}).click();await expect.poll(()=>recalculating).toBe(true);
-    releaseWorkflow();await expect(d.getByText('课次已对应',{exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'同步课次',exact:true})).toBeDisabled();await expect(d.getByRole('button',{name:'同步与推送',exact:true})).toBeDisabled();
+    releaseWorkflow();await expect(d.getByText('已对齐',{exact:true})).toBeVisible();await expect(d.getByRole('button',{name:'对齐课次',exact:true})).toBeDisabled();await expect(d.getByRole('button',{name:'同步与推送',exact:true})).toBeDisabled();
     releaseRecalculation();await expect(d.getByRole('button',{name:'同步与推送',exact:true})).toBeEnabled();expect(errors).toEqual([]);
   } finally {releaseWorkflow();releaseRecalculation();}
 });
@@ -319,7 +454,7 @@ test('LQ historical integer-zero round is read-only and teacher appeal drafts su
     return json(route,{detail:'unexpected'},500);
   });
   await open(page); const dialog=page.getByRole('dialog',{name:'自动点名',exact:true}); await expect(dialog.locator('[data-student-id]')).toHaveCount(2);
-  await expect(dialog.getByRole('button',{name:'同步课次',exact:true})).not.toBeVisible();
+  await expect(dialog.getByRole('button',{name:'对齐课次',exact:true})).not.toBeVisible();
   await expect(dialog.getByRole('button',{name:'结束本地点名',exact:true})).toHaveCount(0); await expect(dialog.getByRole('button',{name:'重新核算',exact:true})).toHaveCount(0);
   await dialog.getByRole('button',{name:'全班',exact:true}).click(); await expect(dialog.getByRole('button',{name:'应用到已选学生'})).toBeDisabled();
   current.is_current=1; await dialog.getByRole('button',{name:'刷新记录',exact:true}).click();

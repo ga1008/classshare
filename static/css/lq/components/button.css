@@ -201,6 +201,23 @@
     --lq-control-color: hsl(var(--lq-control-ink, var(--ls-ink))); color: var(--lq-control-color);
     --lq-control-border: hsl(var(--ls-primary)); border-color: var(--lq-control-border);
 }
+/* Explicit status-bearing actions retain native Button semantics. This slot
+   is opt-in so existing soft actions and filter Chips keep their palette. */
+.lq-btn--soft:where([data-lq-action-tone="warning"]) {
+    --lq-action-soft: var(--ls-tone-warning-soft);
+    --lq-action-fg: var(--ls-tone-warning-fg);
+}
+.lq-btn--soft:where([data-lq-action-tone="success"]) {
+    --lq-action-soft: var(--ls-tone-success-soft);
+    --lq-action-fg: var(--ls-tone-success-fg);
+}
+.lq-btn--soft:where([data-lq-action-tone="warning"], [data-lq-action-tone="success"]) {
+    --lq-control-background: linear-gradient(hsl(var(--lq-action-soft)), hsl(var(--lq-action-soft))), hsl(var(--ls-glass-fill-control)); background: var(--lq-control-background);
+    --lq-control-color: hsl(var(--lq-action-fg)); color: var(--lq-control-color);
+    --lq-control-border: hsl(var(--lq-action-fg) / .3); border-color: var(--lq-control-border);
+    --lq-ctrl-glow-color: var(--lq-action-soft);
+    --lq-ctrl-edge: var(--lq-action-fg) / .5;
+}
 /* Ghost keeps no fill at rest -- a ghost with a resting fill is no longer the
    quiet variant, and transparent is further from opaque than any glass level.
    Its interactive surfaces below use the control fill. */

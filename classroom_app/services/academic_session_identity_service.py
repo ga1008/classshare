@@ -87,5 +87,8 @@ def reconcile_existing_academic_sessions(conn, *, offering: dict, occurrences: l
             cancelled += 1
     if unknown_coverage:
         warnings.append('正式课表含变更或新增位置；已保留原课次身份，请同步教务课表及申请以精确对齐，未按日期重排教学内容。')
+    if updated or cancelled:
+        from .smart_classroom_alignment_jobs import signal_offering_alignment
+        signal_offering_alignment(conn, oid)
     return {'updated_count': updated, 'preserved_count': cancelled, 'warnings': warnings,
             'unresolved_slot_count': len({n for n, _ in unknown_coverage})}

@@ -1334,6 +1334,7 @@
           {
             "path": "static/js/student_login.js",
             "sha256": "1600ab48fad7d73e55e1e95743cd30bd103124f04d5157eb094c1a3239b2c995",
+            "hashMode": "text-lf",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-10-26 保持登录复核：表单新增共享 partials/login_remember.html，LQ 分支使用 lq_checkbox 组件（标签读卡片场景墨色、help 行读配对 muted 墨色，经 aria-describedby 关联）；脚本仅增加本浏览器勾选偏好（localStorage，只存偏好）。明/暗场景下保持登录文字与字段标签逐值一致；centered 组件 27 项与声明式契约 4 项浏览器测试、centered SSR 与 auth fallback、保持登录 19 项通过。",
             "tests": [
               "tests/test_lq_centered.py",
@@ -1346,6 +1347,7 @@
           {
             "path": "static/js/teacher_login.js",
             "sha256": "e00b184da8fcdba26e91cfffd3cb645ba3706b66bb65307d5dd4b414b940e3d7",
+            "hashMode": "text-lf",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-10-26 保持登录复核：表单新增共享 partials/login_remember.html，LQ 分支使用 lq_checkbox 组件（标签读卡片场景墨色、help 行读配对 muted 墨色，经 aria-describedby 关联）；脚本仅增加本浏览器勾选偏好（localStorage，只存偏好）。明/暗场景下保持登录文字与字段标签逐值一致；centered 组件 27 项与声明式契约 4 项浏览器测试、centered SSR 与 auth fallback、保持登录 19 项通过。",
             "tests": [
               "tests/test_lq_centered.py",
@@ -21450,6 +21452,7 @@
           {
             "path": "static/js/cultivation_identity.js",
             "sha256": "4da5361526e0c2e1cfa57f3a017051153f897dc08a4bc99acbd73ceab759c4c0",
+            "hashMode": "text-lf",
             "scope": "仅 ensureTopbarChip 单一浮层关闭所有者：原 click/Esc/toggle 同一幂等释放，捕获外部 pointerdown 兼容 WebKit 触控，无迟注册 timer；保留场景、登录交棒、修为业务与其他弹层呈现。 2026-09-27 显式组件复核：仅在既有构造点接入按钮与 raised popover、reveal surface；核对原 click/Escape/外点关闭、计时、反馈/保存与登录交棒代码未改。report-card SSR 5 项通过；既有实站场景门禁保留，本轮不将静态审查写成实站场景验收。 2026-10-08 动效合同复审：欢迎展示仅将进退交给共享 fade presence，阅读停留、预载/场景交接、跳过和仅一次 onDone 原职责保留；退出完成后移除内容，不再由 320ms 猜测 CSS 时长。",
             "tests": [
               "tests/test_lq_report_card_pilot.py",

@@ -119,10 +119,14 @@ def archive_for_merge(conn, target_id, source_ids, teacher_id):
     messages=blockers(conn,[target_id,*source_ids],merging=True)
     if messages:raise HTTPException(409,'；'.join(messages))
     user={'role':'teacher','id':teacher_id}
+    if _exists(conn,'smart_attendance_course_links'):
+        conn.execute("UPDATE smart_attendance_course_links SET state='stale',revision=revision+1,"
+                     "message=? WHERE class_offering_id=?",
+                     ('课堂合班后名单范围已变化，请重新对齐课程与课次。', target_id))
     if _exists(conn,'smart_attendance_session_links'):
         conn.execute("UPDATE smart_attendance_session_links SET state='stale',revision=revision+1,"
                      "message=? WHERE class_offering_id=?",
-                     ('课堂合班后名单范围已变化，请重新同步课次。', target_id))
+                     ('课堂合班后名单范围已变化，请重新对齐课次。', target_id))
     _archive_smart_appeals(conn,source_ids,target_id=target_id,user=user)
     marks=','.join('?' for _ in source_ids)
     rows=conn.execute(f"SELECT * FROM login_attendance_rounds WHERE class_offering_id IN ({marks}) ORDER BY id",tuple(source_ids)).fetchall()
@@ -146,6 +150,8 @@ def prepare_deletion(conn, offering_id, user):
     attendance.require_teacher(conn,offering_id,user,lock=True)
     messages=blockers(conn,[offering_id],merging=False)
     if messages:raise HTTPException(409,'；'.join(messages))
+    if _exists(conn,'smart_attendance_course_links'):
+        conn.execute('DELETE FROM smart_attendance_course_links WHERE class_offering_id=?',(offering_id,))
     if _exists(conn,'smart_attendance_session_links'):
         conn.execute('DELETE FROM smart_attendance_session_links WHERE class_offering_id=?',(offering_id,))
     _archive_smart_appeals(conn,[offering_id],user=user)

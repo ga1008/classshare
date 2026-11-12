@@ -23,6 +23,7 @@ from classroom_app.services import smart_classroom_workflow_service as flow
 from classroom_app.services import smart_classroom_write_service as ledger
 from classroom_app.services import smart_classroom_auto_sync_service as auto
 from classroom_app.services import smart_classroom_miniapp_adapter as mini
+from classroom_app.services import smart_classroom_alignment_service as alignment
 
 
 class WorkflowRouterTests(unittest.TestCase):
@@ -42,7 +43,7 @@ class WorkflowRouterTests(unittest.TestCase):
             CREATE TABLE classroom_retake_students(class_offering_id INTEGER,student_id INTEGER,status TEXT);
             INSERT INTO teachers(id,name,email,hashed_password,is_active) VALUES(7,'Teacher','teacher@example.test','synthetic',1),(8,'Other','other@example.test','synthetic',1);
             INSERT INTO classes(id,name,created_by_teacher_id) VALUES(1,'Synthetic class',7);
-            INSERT INTO courses(id,name,academic_course_code,created_by_teacher_id) VALUES(1,'Synthetic course','E1',7);
+            INSERT INTO courses(id,name,academic_course_code,created_by_teacher_id,credits,total_hours) VALUES(1,'Synthetic course','E1',7,2,2);
             INSERT INTO class_offerings(id,class_id,course_id,teacher_id,semester) VALUES(10,1,1,7,'2026-2027学年第1学期');
             INSERT INTO class_offering_sessions(id,class_offering_id,order_index,title,session_date,weekday,week_index,academic_section_text,academic_course_code)
               VALUES(21,10,1,'Synthetic lesson','2026-11-09',0,11,'2-3','E1');
@@ -54,7 +55,7 @@ class WorkflowRouterTests(unittest.TestCase):
         self.remote = {"S1": "UNCHECKED", "S2": "CHECKED"}
         self.record = {"id": "remote", "teacherScheduleId": "schedule", "isStop": True, "year": "2026-2027", "semester": 1,
                        "courseId": "E1", "claId": "class", "week": 11, "dayOfWeek": 1, "section": 2, "createTime": "2026-11-09 08:30:00", "updateTime": "2035-01-01 08:00:00"}
-        for module in (routes, flow, ledger, auto):
+        for module in (routes, flow, ledger, auto, alignment):
             self.enterContext(patch.object(module, "get_db_connection", self.database))
         self.enterContext(patch.object(ledger, "get_configured_db_engine", return_value="sqlite"))
         self.account = self.enterContext(patch.object(ledger, "load_teacher_smart_classroom_access_method", side_effect=lambda *args: self.access))
@@ -63,7 +64,7 @@ class WorkflowRouterTests(unittest.TestCase):
         self.enterContext(patch.object(auto, "_grant", Mock()))
         self.enterContext(patch.object(auto, "schedule_due_auto_sync", Mock()))
         self.enterContext(patch.object(flow, "_ai_assist", AsyncMock(return_value={"status": "unavailable", "decision": None})))
-        self.enterContext(patch.object(ledger.source_adapter, "fetch_source_schedules", AsyncMock(return_value=[{"id": "schedule", "courseId": "E1", "course": "Synthetic course", "claId": "class", "claName": "Synthetic class"}])))
+        self.groups = self.enterContext(patch.object(ledger.source_adapter, "fetch_source_schedules", AsyncMock(return_value=[{"id": "schedule", "courseId": "E1", "course": "Synthetic course", "claId": "class", "claName": "Synthetic class", 'credits':2,'total_hours':2}])))
         self.enterContext(patch.object(mini, "list_schedules", AsyncMock(return_value={"year": "2026-2027", "semester": 1,
             "items": [{"id": "schedule", "courseCode": "E1", "sections": "2-3", "xqj": 1, "weeks": [11]}]})))
         self.enterContext(patch.object(mini, "read_slot", AsyncMock(side_effect=self.read_slot)))
@@ -144,7 +145,7 @@ class WorkflowRouterTests(unittest.TestCase):
         self.user = {"id": 7, "role": "teacher"}
         self.access = None
         missing = self.client.post(self.base + "/match", headers=self.headers, json={})
-        self.assertEqual("missing_credential", missing.json()["detail"]["code"])
+        self.assertEqual("missing_credential", missing.json()["alignment"]["course"]["error_code"])
         self.seed_round()
         guarded = self.client.post("/api/classrooms/10/login-attendance/rounds/31/external/sync", headers=self.headers,
             json={"idempotency_key": "unmatched-click", "expected_binding_revision": 1})

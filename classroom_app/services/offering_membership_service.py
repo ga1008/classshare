@@ -451,6 +451,9 @@ def replace_offering_class_links(
         (resolved_primary, is_combined, combined_names, int(offering_id), int(teacher_id)),
     )
 
+    from .smart_classroom_alignment_jobs import signal_offering_alignment
+    signal_offering_alignment(conn, int(offering_id))
+
     return {
         "offering_id": int(offering_id),
         "class_ids": normalized_ids,

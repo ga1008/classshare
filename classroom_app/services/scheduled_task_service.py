@@ -69,6 +69,7 @@ ELASTIC_TASK_KINDS = (
     "material_search_index", "gongwen_incremental_sync", "gongwen_parse_pending",
     "gongwen_follow_scan", "gongwen_follow_rescan", "cultivation_weekly_snapshot",
     "cultivation_weekly_report", "cultivation_score_event_archive",
+    "smart_classroom_align_offering", "smart_classroom_alignment_bootstrap",
 )
 
 

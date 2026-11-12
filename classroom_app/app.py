@@ -241,8 +241,10 @@ async def startup_event():
     init_database()
     presence_service.start_presence_runtime()
     from .services.login_attendance_jobs import ensure_tasks as ensure_login_attendance_tasks
+    from .services.smart_classroom_alignment_jobs import ensure_tasks as ensure_smart_classroom_alignment_tasks
     with get_db_connection() as attendance_conn:
         ensure_login_attendance_tasks(attendance_conn)
+        ensure_smart_classroom_alignment_tasks(attendance_conn)
         attendance_conn.commit()
     from .services.life_tip_service import warm_life_tip_runtime
 

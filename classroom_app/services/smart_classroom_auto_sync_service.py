@@ -73,8 +73,11 @@ def get_auto_sync(conn, user, round_id):
 def _validate_context_source(ctx, source):
     if (str(ctx.get("year")), str(ctx.get("term"))) != (str(source.get("academic_year")), str(source.get("academic_term"))):
         raise HTTPException(409, "所选授课班学期与本地课次不一致。")
-    alias_verified = source.get("course_match_evidence") == "name_and_roster" and source.get("local_course_code") == ctx.get("course_code")
-    if not ctx.get("course_code") or (str(ctx["course_code"]).upper() != str(source.get("course_code", "")).upper() and not alias_verified):
+    alias_verified = source.get("course_match_evidence") in {"name_and_roster", "verified_course_alignment"} and source.get("local_course_code") == ctx.get("course_code")
+    if source.get("course_match_evidence") == "verified_course_alignment":
+        codes = source.get("local_course_codes") or [source.get("local_course_code")]
+        alias_verified = ctx.get("course_code") in codes and source.get("local_course_name") == ctx.get("course_name")
+    if (not ctx.get("course_code") and not alias_verified) or (str(ctx.get("course_code", "")).upper() != str(source.get("course_code", "")).upper() and not alias_verified):
         raise HTTPException(409, "所选课程代码与本地课次不一致。")
     if not ctx.get("week_index") or not mini.sections(ctx.get("section_text")):
         raise HTTPException(409, "本地课次缺少可靠的教学周或节次，请先维护课表。")
@@ -88,13 +91,62 @@ def _validate_context_source(ctx, source):
 
 def _validate_slot_context(ctx, source, slot):
     _validate_context_source(ctx, source)
-    if (str(slot.get("local_round_id")), str(slot.get("source_id")), str(slot.get("session_date")), int(slot.get("week", 0)),
-            int(slot.get("day_of_week", 0)), tuple(slot.get("sections", []))) != (
+    # A teacher may explicitly bind a rescheduled school lesson. Its remote
+    # slot stays intact; the sealed local identity must still match this round.
+    # _assert_alignment separately verifies the live server-owned binding.
+    identity = slot
+    if source.get("course_match_evidence") == "verified_course_alignment":
+        identity = slot.get("local_session_identity") or {}
+        if slot.get("alignment_method") not in {"exact_slot", "manual"}:
+            raise HTTPException(409, "课次对齐依据无效，请重新对齐。")
+    if (str(slot.get("local_round_id")), str(slot.get("source_id")), str(identity.get("session_date")), int(identity.get("week", 0)),
+            int(identity.get("day_of_week", 0)), tuple(identity.get("sections", []))) != (
             str(ctx["round_id"]), str(source["remote_schedule_id"]), str(ctx["session_date"]), int(ctx["week_index"]),
             date.fromisoformat(ctx["session_date"]).isoweekday(), mini.sections(ctx["section_text"])):
         raise HTTPException(409, "真实排课选项已过期或不属于本地课次。")
     if slot.get("external_account_key") != source["external_account_key"]:
         raise HTTPException(409, "真实排课选项属于其他智慧课堂账号。")
+
+
+def _assert_alignment(conn, user, plan):
+    source, slot = json.loads(plan["source_json"]), json.loads(plan["slot_json"])
+    if source.get("course_match_evidence") != "verified_course_alignment":
+        return
+    from .smart_classroom_workflow_service import assert_current_alignment
+    try:
+        assert_current_alignment(conn, user, plan["class_offering_id"], plan["session_id"], source, slot,
+                                 json.loads(plan["intent_json"]).get("binding_revision"))
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            raise
+        message = exc.detail.get("message") if isinstance(exc.detail, dict) else str(exc.detail)
+        raise HTTPException(409, {"code": "alignment_changed", "message": message}) from exc
+
+
+def _guard_remote_roster(user, plan, ctx, remote):
+    """School membership controls which local records may be sent, never vice versa."""
+    source = json.loads(plan["source_json"])
+    if source.get("course_match_evidence") != "verified_course_alignment":
+        return
+    from .smart_classroom_alignment import roster_evidence
+    evidence = roster_evidence((s["student_number"] for s in ctx["students"]), remote)
+    manual_roster = (source.get("course_alignment_method") == "manual" and evidence["majority"] and
+                     source.get("remote_roster_fingerprint") == ledger._hash(sorted(remote)))
+    if evidence["accepted"] or manual_roster:
+        return
+    message = "学校名单已变化，双方共有学生或人数差异不再符合已确认范围。请重新对齐课次；本地记录完整保留。"
+    with get_db_connection() as conn:
+        _, fresh = _plan(conn, user, plan["local_round_id"], lock=True)
+        if fresh and fresh["revision"] == plan["revision"]:
+            changed = conn.execute("UPDATE smart_attendance_course_links SET state='stale',revision=revision+1,message=?,updated_at=? "
+                "WHERE class_offering_id=? AND owner_teacher_id=? AND revision=? AND state='matched'",
+                (message, _now(), plan["class_offering_id"], user["id"], source.get("course_link_revision")))
+            if changed.rowcount:
+                conn.execute("UPDATE smart_attendance_session_links SET state='stale',revision=revision+1,message=?,updated_at=? "
+                    "WHERE class_offering_id=? AND owner_teacher_id=? AND course_link_revision=?",
+                    (message, _now(), plan["class_offering_id"], user["id"], source.get("course_link_revision")))
+        conn.commit()
+    raise HTTPException(409, {"code": "alignment_changed", "message": message})
 
 
 def _schedule_rows(payload):
@@ -402,6 +454,8 @@ def _fence(user, plan, *, sending=False, expected_fingerprint=None):
         intent = json.loads(fresh["intent_json"])
         if sending and intent.get("manual_dispatch") and _fingerprint(ctx, fresh) != intent.get("authorized_fingerprint"):
             raise HTTPException(409, "本地结果已更新，请点击同步与推送以提交新版本。")
+        if sending:
+            _assert_alignment(conn, user, fresh)
         if expected_fingerprint and (ctx["state"] != "published" or _fingerprint(ctx, fresh) != expected_fingerprint):
             raise HTTPException(409, "本地点名结果已变化，旧版本停止发送。")
         return ctx, fresh
@@ -438,6 +492,7 @@ async def _prepare_remote(client, user, plan, ctx):
     source, slot = json.loads(plan["source_json"]), json.loads(plan["slot_json"])
     _validate_slot_context(ctx, source, slot)
     snap = await mini.read_slot(client, slot, source, plan["remote_checkin_id"])
+    _guard_remote_roster(user, plan, ctx, snap["students"])
     original_record = dict(snap["record"] or {})
     dispatch_intent = json.loads(plan["intent_json"])
     if dispatch_intent.get("manual_dispatch"):
@@ -497,6 +552,7 @@ async def _prepare_remote(client, user, plan, ctx):
         _plan_state(plan, "waiting_local_end", "已绑定正确的学校点名，等待本地点名结束。")
         return None
     if snap["record"].get("isStop") is not True:
+        _guard_remote_roster(user, plan, ctx, snap["students"])
         _fence(user, plan, sending=True)
         intent = json.loads(plan["intent_json"])
         if intent.get("operation") == "stop" and intent.get("auth_rejected_lifecycle") == "stop":
@@ -517,6 +573,13 @@ async def _prepare_remote(client, user, plan, ctx):
         intent.pop("auth_rejected_lifecycle", None)
         intent.update(operation="stop", verified=True)
         _plan_state(plan, "pending", intent_json=_json(intent))
+    if dispatch_intent.get("manual_dispatch") and not original_record:
+        # A newly created school round did not exist during the first import.
+        # Persist its verified roster before AI comparison or any student write.
+        from .smart_classroom_workflow_service import persist_remote_snapshot
+        with get_db_connection() as conn:
+            persist_remote_snapshot(conn, user, ctx, source, snap)
+            conn.commit()
     if ctx["state"] != "published":
         _plan_state(plan, "waiting_settlement", "学校点名已结束，等待本地迟到事件归并和最终结果发布。")
         return None
@@ -535,6 +598,7 @@ def _new_run(user, plan, ctx, snapshot):
         binding = dict(conn.execute("SELECT * FROM smart_attendance_write_bindings WHERE id=?", (plan["binding_id"],)).fetchone())
         if binding["state"] != "active" or binding["credential_generation"] != plan["credential_generation"]:
             raise HTTPException(409, "远端绑定或凭据已变化。")
+        _assert_alignment(conn, user, fresh)
         last = conn.execute("SELECT * FROM smart_attendance_sync_runs WHERE id=?", (fresh["last_run_id"],)).fetchone() if fresh["last_run_id"] else None
         if last and ledger._unknown_submission(conn, dict(last)):
             return dict(last)
@@ -555,7 +619,8 @@ def _new_run(user, plan, ctx, snapshot):
             # This explicit dispatch authorizes a fresh remote snapshot; later
             # changes are still protected by the per-operation baseline fence.
             baseline = dict(snapshot["students"])
-        comparisons = ledger.compare_students(targets, baseline, snapshot["students"])
+        school_authoritative = json.loads(plan["source_json"]).get("course_match_evidence") == "verified_course_alignment"
+        comparisons = ledger.compare_students(targets, baseline, snapshot["students"], school_authoritative=school_authoritative)
         run_id, now = _id(), _now()
         conn.execute("""INSERT INTO smart_attendance_sync_runs(id,binding_id,owner_teacher_id,local_round_id,
             local_revision,context_fingerprint,credential_generation,binding_revision,target_json,baseline_json,state,request_key,created_at,updated_at)
@@ -592,8 +657,11 @@ def _run_finish(plan, run, *, waiting=False):
             run_state, state, message = "outcome_unknown", "outcome_unknown", "部分请求结果未知；先回读核对，未重复提交。"
         elif "pending" in states:
             run_state, state, message = "pending", "running", "正在分批提交并回读确认本地已发布结果。"
-        elif states == {"confirmed"}:
-            run_state, state, message = "confirmed", "confirmed", "本地名单中所有学生的目标状态均已逐人回读一致。"
+        elif states and states <= {"confirmed", "not_enrolled"}:
+            skipped = sum(r["state"] == "not_enrolled" for r in rows)
+            run_state, state, message = "confirmed", "confirmed", "双方共有学生的目标状态均已逐人回读一致；学校独有学生保持原状。"
+            if skipped:
+                message += f" {skipped} 名仅在本地的学生保留本地记录，未向学校新增学生。"
         elif "conflict" in states:
             run_state, state, message = "conflict", "conflict", "远端存在独立修改，已保留学校原状态，请核对差异。"
         else:
@@ -672,6 +740,7 @@ def _submission_intent(user, plan, run, op):
             raise HTTPException(409, "本地结果、轮次或授权已变化，旧版本停止发送。")
         if not binding or binding["state"] != "active" or binding["revision"] != run["binding_revision"] or binding["credential_generation"] != run["credential_generation"]:
             raise HTTPException(409, "绑定已变化，旧版本停止发送。")
+        _assert_alignment(conn, user, fresh)
         changed = conn.execute("UPDATE smart_attendance_sync_operations SET state='outcome_unknown',reason=?,updated_at=? WHERE id=? AND state='pending'",
                                ("提交意图已保存，等待学校回读。", _now(), op["id"]))
         if changed.rowcount != 1:
@@ -688,6 +757,8 @@ async def _write_batch(client, user, plan, run, snapshot):
     # AI comparison and queue handoff may take seconds. Read again before the
     # first mutation so independent school edits become conflicts, not writes.
     remote = await mini.read_records(client, plan["remote_checkin_id"])
+    ctx, _ = _fence(user, plan, sending=True, expected_fingerprint=run["context_fingerprint"])
+    _guard_remote_roster(user, plan, ctx, remote)
     with get_db_connection() as conn:
         operations = [dict(r) for r in conn.execute("SELECT * FROM smart_attendance_sync_operations WHERE run_id=? ORDER BY student_id", (run["id"],)).fetchall()]
     submitted = 0
@@ -699,6 +770,10 @@ async def _write_batch(client, user, plan, run, snapshot):
         if submitted >= BATCH_SIZE:
             break
         actual, desired = remote.get(op["student_number"]), op["target_status"]
+        if actual is None and source.get("course_match_evidence") == "verified_course_alignment":
+            _op_state(run["id"], op["student_number"], "not_enrolled", None,
+                      "学校名单已移除此学生，尚未向其发送；保留本地记录。")
+            continue
         if actual == desired:
             _op_state(run["id"], op["student_number"], "confirmed", actual, "学校回读状态已一致，无需重复提交。")
             continue
@@ -720,6 +795,7 @@ async def _write_batch(client, user, plan, run, snapshot):
             _op_state(run["id"], op["student_number"], "outcome_unknown", actual, "学校已响应但回读未确认目标状态，停止后续提交。")
             break
         _op_state(run["id"], op["student_number"], "confirmed", actual, "提交后完整名单回读已确认该学生状态。")
+        _guard_remote_roster(user, plan, ctx, remote)
     # Confirm that a concurrent official restart did not silently replace the
     # scoped round; never report another round as the success of this one.
     await mini.read_slot(client, slot, source, plan["remote_checkin_id"])
@@ -835,6 +911,8 @@ async def process_auto_sync(teacher_id, round_id):
             state, message = "failed", "该学校账号持续繁忙，已停止自动重试；请稍后由教师重试。"
         elif pending_unknown or lifecycle_unknown:
             state, message = "outcome_unknown", "请求可能已提交，已保留意图日志；请回读核对，未重复发送。"
+        elif code == "alignment_changed":
+            state, message = "conflict", detail.get("message") or "课程或课次对齐已变化，请重新对齐后推送；本地记录保留。"
         else:
             state, message = "failed", "同步暂未完成，原有考勤保留；请检查课次绑定或学校服务后重试。"
         if fresh and fresh["enabled"]:

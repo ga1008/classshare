@@ -45,6 +45,8 @@ Jinja使用 `lq_btn/lq_chip/lq_badge/lq_avatar/lq_spinner/lq_progress`，Python�
 
 文本/属性一律转义，连输入的Markup对象也视为普通文本；禁止任意HTML/SVG旁路。attrs只允许明确属性及必要aria-/data-，拒绝事件字符串、style和未知结构；组件定义的role/type/状态优先，透传不能破坏语义。URL允许http/https/mailto/tel或无scheme相对链接，拒绝控制字符、反斜杠、网络路径及未知协议。确禁用button在SSR即native disabled；aria-disabled解释入口由统一增强器阻止键鼠执行，不能仅设pointer-events:none。
 
+状态相关操作可使用 Button `variant='soft'`，通过 `attrs` 显式传入 `data-lq-action-tone='warning'|'success'`。该槽位消费共享语义色及统一交互，不改变未使用它的按钮。例：对齐课次未完成用 warning，已完成用 success；依赖操作仍以 native disabled 禁用。它是动作按钮，不能用 filter Chip 模拟并删除 `aria-pressed`。禁用、忙碌和 forced-colors 仍由共享 Button 控制。
+
 P1 tone先支持primary/success/warning/danger/info/neutral，均复用S1色对。P4业务状态仍输出注册名data-tone，并经统一映射提供data-tone-level；不创建第二套状态机。Avatar六桶亦复用这六套soft/fg色对。默认字体/材质仅作用lq组件，保留旧页S1兼容边界。
 
 图标由 `tools/ui/generate_lq_icons.mjs` 从现有安装的Lucide有限allowlist生成 `icons.generated.js` / `icons.generated.html`，不手抄第二套路经。宏`lq_icon(name)`和原生工厂共用37图标/8别名登记；未知名回退问号圆圈。SVG统一currentColor、aria-hidden、focusable=false；按钮提供名称。生成器`--check`验证源码未过时。

@@ -12,6 +12,7 @@ from tests.test_smart_classroom_auto_sync_engine import AutoEngineTests
 from classroom_app.services import smart_classroom_auto_sync_service as auto
 from classroom_app.services import smart_classroom_write_service as ledger
 from classroom_app.services import smart_classroom_miniapp_adapter as mini
+from classroom_app.services import smart_classroom_alignment_service as alignment
 
 
 class WorkflowTests(AutoEngineTests):
@@ -24,16 +25,26 @@ class WorkflowTests(AutoEngineTests):
         self.ctx.update(course_name="合成课程", ended_at_ms=2000000000000, closed=False)
         self.access["platform_code"] = "gxufl_smart_classroom"
         self.patch(workflow, "get_db_connection", self.database)
+        self.patch(alignment, "get_db_connection", self.database)
+        self.patch(alignment, 'offering_alignment_context', self.alignment_context)
+        self.patch(workflow.local, 'require_teacher', Mock())
         self.patch(workflow, "_lesson", lambda *args, **kwargs: copy.deepcopy(self.ctx))
         self.patch(workflow, "open_authenticated_smart_classroom_client", self.authenticated)
         self.patch(workflow.local, "_roster", Mock(return_value=[{"student_id_number": "001"}, {"student_id_number": "002"}]))
         self.ai = self.patch(workflow, "_ai_assist", AsyncMock(return_value={"status": "unavailable", "decision": None}))
         self.persist = self.patch(workflow, "persist_remote_snapshot", Mock())
         self.patch(auto, "_grant", Mock())
-        self.group = {"id": "schedule", "courseId": "SYNTHETIC", "course": "合成课程", "claId": "class", "claName": "合成班"}
+        self.group = {"id": "schedule", "courseId": "SYNTHETIC", "course": "合成课程", "claId": "class", "claName": "合成班", 'credits': 2, 'total_hours': 2}
         self.patch(ledger.source_adapter, "fetch_source_schedules", AsyncMock(return_value=[self.group]))
         self.patch(mini, "list_schedules", AsyncMock(return_value={"year": "2026-2027", "semester": 1,
             "items": [{"id": "schedule", "courseCode": "SYNTHETIC", "sections": "2-3", "xqj": 1, "weeks": [11]}]}))
+
+    def alignment_context(self, conn, user, offering_id):
+        numbers = {r['student_id_number'] for r in workflow.local._roster(conn, offering_id)}
+        course = {'course_name': self.ctx['course_name'], 'course_code': self.ctx['course_code'], 'academic_year': self.ctx['year'], 'academic_term': self.ctx['term'], 'student_count': len(numbers), 'session_count': 1, 'credits': 2, 'total_hours': 2}
+        session = {'id': 2, 'session_date': self.ctx['session_date'], 'week': self.ctx['week_index'], 'day_of_week': 1, 'sections': [2,3], 'order_index': 1}
+        fp = ledger._hash({'course': course, 'numbers': sorted(numbers)})
+        return {'course':course,'sessions':[session],'contexts':{2:copy.deepcopy(self.ctx)},'numbers':numbers,'access':self.access,'account_error':None,'course_fingerprint':fp,'fingerprint':ledger._hash([fp,session])}
 
     def patch(self, module, name, value):
         self.enterContext(patch.object(module, name, value))
@@ -62,18 +73,20 @@ class WorkflowTests(AutoEngineTests):
 
     async def test_course_code_alias_requires_complete_roster(self):
         self.ctx["course_code"] = "LOCAL-ALIAS"
+        self.ai.side_effect = lambda task, facts: {'status':'assisted','decision':facts['allowed_decisions'][1]}
         result = await self.bind_lesson()
         self.assertEqual("matched", result["binding"]["state"])
         source = json.loads(self.conn.execute("SELECT source_json FROM smart_attendance_session_links").fetchone()[0])
-        self.assertEqual("name_and_roster", source["course_match_evidence"])
+        self.assertEqual("verified_course_alignment", source["course_match_evidence"])
         auto._validate_context_source(self.ctx, source)
         source["local_course_code"] = "different"
+        source['local_course_codes'] = ['different']
         with self.assertRaises(HTTPException):
             auto._validate_context_source(self.ctx, source)
 
     async def test_ai_alias_is_only_candidate_then_actual_roster_is_verified(self):
         self.ctx.update(course_code="LOCAL-ALIAS", course_name="另一写法")
-        self.ai.return_value = {"status": "assisted", "decision": "0"}
+        self.ai.side_effect = lambda task, facts: {'status':'assisted','decision':facts['allowed_decisions'][1]}
         result = await self.bind_lesson()
         self.assertEqual("matched", result["binding"]["state"])
         self.assertEqual(1, self.ai.call_count)

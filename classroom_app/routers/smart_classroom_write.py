@@ -1,5 +1,6 @@
 """Teacher-owned school synchronization with explicit authorization and readback."""
 import asyncio
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -75,6 +76,14 @@ class WorkflowSync(Strict):
     location:Location|None=None
 
 
+class AlignmentConfirmation(Strict):
+    scope:Literal['course','session']
+    candidate_id:str=Field(min_length=1,max_length=100)
+    expected_course_revision:int=Field(ge=0)
+    expected_binding_revision:int=Field(ge=0)
+    idempotency_key:str=Field(min_length=8,max_length=100)
+
+
 @session_router.get("/workflow")
 def workflow(offering_id:int,session_id:int,user:dict=Depends(get_current_teacher)):
     with get_db_connection() as conn:
@@ -87,13 +96,16 @@ async def match_lesson(offering_id:int,session_id:int,request:Request,user:dict=
     return await _call(asyncio.wait_for(workflow_service.match_lesson(user,offering_id,session_id),timeout=90))
 
 
-@router.post("/sync",status_code=202)
-def sync_workflow(offering_id:int,round_id:int,payload:WorkflowSync,request:Request,user:dict=Depends(get_current_teacher)):
+@session_router.post('/confirm')
+async def confirm_alignment(offering_id:int,session_id:int,payload:AlignmentConfirmation,request:Request,user:dict=Depends(get_current_teacher)):
     require_same_origin(request)
-    with get_db_connection() as conn:
-        result=workflow_service.enqueue_sync(conn,user,offering_id,round_id,payload.model_dump(exclude_none=True))
-        conn.commit()
-        return result
+    return await _call(asyncio.wait_for(workflow_service.confirm_alignment(user,offering_id,session_id,payload.model_dump()),timeout=90))
+
+
+@router.post("/sync",status_code=202)
+async def sync_workflow(offering_id:int,round_id:int,payload:WorkflowSync,request:Request,user:dict=Depends(get_current_teacher)):
+    require_same_origin(request)
+    return await _call(asyncio.wait_for(workflow_service.dispatch_sync(user,offering_id,round_id,payload.model_dump(exclude_none=True)),timeout=90))
 
 
 def _context(offering_id,round_id,user,request=None):

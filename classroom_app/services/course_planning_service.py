@@ -335,6 +335,8 @@ def replace_offering_sessions(
         cursor = conn.execute(f"DELETE FROM class_offering_sessions WHERE {where_sql}", where_params)
         removed_count = int(cursor.rowcount or 0)
     if not sessions:
+        from .smart_classroom_alignment_jobs import signal_offering_alignment
+        signal_offering_alignment(conn, int(offering_id))
         return {"removed_count": removed_count, "upserted_count": 0, "preserved_count": removed_count if preserve_removed else 0}
 
     conn.executemany(
@@ -441,6 +443,8 @@ def replace_offering_sessions(
             for item in sessions
         ],
     )
+    from .smart_classroom_alignment_jobs import signal_offering_alignment
+    signal_offering_alignment(conn, int(offering_id))
     return {
         "removed_count": removed_count,
         "upserted_count": len(sessions),

@@ -115,6 +115,8 @@ async def fetch_source_schedules(client: httpx.AsyncClient, year: Any, term: Any
         items.append({key: row.get(key) for key in (
             "id", "year", "semester", "course", "courseId", "claId", "claName",
             "chooseCourseNo", "kbId", "fullTitle", "fullTitle2", "sections", "week", "xqj", "stuNo",
+            "total_hours", "courseTotalHours", "kczxs", "course_total_hours_text", "totalHours", "zxs", "total_hours_text",
+            "credits", "credit", "xf",
         )})
     return items
 

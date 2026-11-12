@@ -761,6 +761,9 @@ def _publish(conn, teacher_id: int, semester_id: int, snapshot: dict, token: str
            lessons_json=excluded.lessons_json,warnings_json=excluded.warnings_json,covered_offering_ids_json=excluded.covered_offering_ids_json""",
         (teacher_id, semester_id, revision, stamp, token, _json(snapshot), _json(list(history.values())), _json(lessons), _json(warnings), _json(covered)),
     )
+    from .smart_classroom_alignment_jobs import signal_offering_alignment
+    for offering_id in sorted(set(covered)):
+        signal_offering_alignment(conn, int(offering_id))
     return {"semester_id": semester_id, "revision": revision, "official_count": sum(row["counts_towards_total"] for row in lessons),
             "predicted_count": sum(not row["counts_towards_total"] for row in lessons), "request_count": len(requests),
             "updated_session_ids": sorted(changed_sessions), "cancelled_session_ids": sorted(cancelled_sessions), "warnings": warnings}

@@ -98,6 +98,98 @@ class AutoEngineTests(unittest.IsolatedAsyncioTestCase):
     def plan(self):
         return dict(self.conn.execute("SELECT * FROM smart_attendance_auto_sync").fetchone())
 
+    def aligned_class(self, local_count=42, *, local_only=0, remote_only=0, manual=False):
+        from classroom_app.services import smart_classroom_workflow_service as workflow
+        self.ctx['course_name'] = 'Synthetic course'
+        self.ctx['students'] = [{'student_id': i, 'student_number': f'{i:03}', 'status': 'PRESENT', 'revision': 1}
+                                for i in range(1, local_count + 1)]
+        self.remote = {f'{i:03}': 'CHECKED' for i in range(1, local_count - local_only + 1)}
+        self.remote.update({f'extra-{i}': 'STUDY_TOUR' for i in range(remote_only)})
+        self.source.update(course_match_evidence='verified_course_alignment', local_course_code='SYNTHETIC',
+                           local_course_name=self.ctx['course_name'], course_link_revision=1,
+                           course_alignment_method='manual' if manual else 'deterministic',
+                           remote_roster_fingerprint=ledger._hash(sorted(self.remote)))
+        self.slot.update(alignment_method='exact_slot', local_session_identity={
+            'session_date': self.ctx['session_date'], 'week': 11, 'day_of_week': 1, 'sections': [2, 3], 'order_index': 1})
+        self.conn.execute("UPDATE smart_attendance_auto_sync SET source_json=?,slot_json=?,intent_json=?",
+                          (json.dumps(self.source), json.dumps(self.slot), json.dumps({'binding_revision': 1})))
+        self.conn.execute("INSERT INTO smart_attendance_course_links(class_offering_id,owner_teacher_id,state,context_fingerprint,updated_at) VALUES(1,1,'matched','synthetic','now')")
+        self.conn.execute("INSERT INTO smart_attendance_session_links(session_id,class_offering_id,owner_teacher_id,state,context_fingerprint,course_link_revision,updated_at) VALUES(2,1,1,'matched','synthetic',1,'now')")
+        self.conn.commit()
+        # Binding identity itself has integration tests against the full local
+        # schema. Here the real outbox, diffing and IO recovery remain active.
+        self.alignment_guard = patch.object(workflow, 'assert_current_alignment', return_value={}).start()
+
+    async def test_school_roster_withdrawn_student_is_benign_and_local_record_survives(self):
+        self.aligned_class(local_only=1)
+        self.ctx['students'][-1].update(status='ABSENT', manual_confirmed=0)
+        self.remote['001'] = 'UNCHECKED'
+        self.assertEqual('confirmed', (await auto.process_auto_sync(1, 'local'))['state'])
+        self.assertEqual([('001', 'CHECKED')], self.writes)
+        self.assertNotIn('042', self.remote)
+        row = self.conn.execute("SELECT state,reason FROM smart_attendance_sync_operations WHERE student_number='042'").fetchone()
+        self.assertEqual('not_enrolled', row['state'])
+        self.assertEqual(42, len(self.ctx['students']))
+        self.assertEqual('ABSENT', self.ctx['students'][-1]['status'])
+
+    async def test_school_roster_new_remote_student_keeps_original_state(self):
+        self.aligned_class(local_count=41, remote_only=1)
+        self.assertEqual('confirmed', (await auto.process_auto_sync(1, 'local'))['state'])
+        self.assertEqual('STUDY_TOUR', self.remote['extra-0'])
+        self.assertEqual([], self.writes)
+
+    async def test_symmetric_difference_four_allowed_five_invalidates_alignment(self):
+        self.aligned_class(local_only=2, remote_only=2)
+        self.assertEqual('confirmed', (await auto.process_auto_sync(1, 'local'))['state'])
+        self.remote['extra-2'] = 'UNCHECKED'
+        self.assertEqual('conflict', (await auto.process_auto_sync(1, 'local'))['state'])
+        self.assertEqual('stale', self.conn.execute('SELECT state FROM smart_attendance_course_links').fetchone()[0])
+        self.assertEqual('stale', self.conn.execute('SELECT state FROM smart_attendance_session_links').fetchone()[0])
+        self.assertEqual([], self.writes)
+
+    async def test_manually_confirmed_larger_roster_difference_requires_same_remote_roster(self):
+        self.aligned_class(local_only=5, manual=True)
+        self.assertEqual('confirmed', (await auto.process_auto_sync(1, 'local'))['state'])
+        self.remote['extra-new'] = 'UNCHECKED'
+        self.assertEqual('conflict', (await auto.process_auto_sync(1, 'local'))['state'])
+        self.assertEqual([], self.writes)
+
+    async def test_school_roster_change_after_read_prevents_student_mutation(self):
+        self.aligned_class()
+        self.remote['001'] = 'UNCHECKED'
+        async def drift(*args):
+            self.no_transaction()
+            for i in range(35, 43):
+                self.remote.pop(f'{i:03}', None)
+            return copy.deepcopy(self.remote)
+        mini.read_records.side_effect = drift
+        self.assertEqual('conflict', (await auto.process_auto_sync(1, 'local'))['state'])
+        self.assertEqual([], self.writes)
+        self.assertEqual('UNCHECKED', self.remote['001'])
+
+    async def test_changed_alignment_stops_writes_but_unknown_readback_can_finish(self):
+        self.aligned_class()
+        self.remote['001'] = 'UNCHECKED'
+        self.fail_after_write = True
+        self.assertEqual('outcome_unknown', (await auto.process_auto_sync(1, 'local'))['state'])
+        self.fail_after_write = False
+        self.alignment_guard.side_effect = HTTPException(409, 'binding changed')
+        await auto.process_auto_sync(1, 'local')
+        self.assertEqual([('001', 'CHECKED')], self.writes)
+        self.assertEqual('confirmed', self.conn.execute("SELECT state FROM smart_attendance_sync_operations WHERE student_number='001'").fetchone()[0])
+
+    async def test_changed_binding_is_rechecked_immediately_before_submission(self):
+        self.aligned_class()
+        self.remote['001'] = 'UNCHECKED'
+        original = auto._submission_intent
+        def concurrently_changed(*args):
+            self.alignment_guard.side_effect = HTTPException(409, 'binding changed')
+            return original(*args)
+        with patch.object(auto, '_submission_intent', side_effect=concurrently_changed):
+            self.assertEqual('conflict', (await auto.process_auto_sync(1, 'local'))['state'])
+        self.assertEqual([], self.writes)
+        self.assertEqual('UNCHECKED', self.remote['001'])
+
     async def test_published_only_partial_and_external_extras_preserved(self):
         result = await auto.process_auto_sync(1, "local")
         self.assertEqual("partial", result["state"])
@@ -228,6 +320,45 @@ class AutoEngineTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(1, starts.await_count)
             self.assertEqual(1, stops.await_count)
             self.assertEqual([("001", "CHECKED")], self.writes)
+
+    async def test_new_school_round_imports_before_ai_and_student_updates(self):
+        from classroom_app.services import smart_classroom_workflow_service as workflow
+        self.aligned_class(local_count=3)
+        self.record = None
+        self.remote['001'] = 'UNCHECKED'
+        events = []
+        intent = {'manual_dispatch': True, 'authorized_fingerprint': ledger.result_fingerprint(self.ctx),
+                  'binding_revision': 1, 'allow_create': True,
+                  'location': {'latitude': 22, 'longitude': 108, 'captured_at_ms': time.time() * 1000}}
+        self.conn.execute('UPDATE smart_attendance_auto_sync SET remote_checkin_id=NULL,intent_json=?', (json.dumps(intent),))
+        self.conn.commit()
+        async def history(*args):
+            self.no_transaction()
+            return [copy.deepcopy(self.record)] if self.record else []
+        async def start(*args):
+            self.no_transaction()
+            self.record = {'id': 'created', 'teacherScheduleId': 'schedule', 'isStop': False}
+            return copy.deepcopy(self.record)
+        async def stop(*args):
+            self.no_transaction()
+            self.record['isStop'] = True
+        def persist(*args):
+            self.assertTrue(args[-1]['record']['isStop'])
+            events.append('import')
+        async def ai(*args):
+            self.no_transaction()
+            self.assertIn('import', events)
+            events.append('ai')
+            return {'status': 'unavailable', 'decision': None}
+        async def change(*args):
+            self.assertEqual(['import', 'ai'], events)
+            return await self.change_student(*args)
+        with patch.object(mini, 'read_history', AsyncMock(side_effect=history)), patch.object(mini, 'start_checkin', AsyncMock(side_effect=start)), \
+                patch.object(mini, 'stop_checkin', AsyncMock(side_effect=stop)), patch.object(workflow, 'persist_remote_snapshot', side_effect=persist), \
+                patch.object(workflow, '_ai_assist', AsyncMock(side_effect=ai)), patch.object(mini, 'change_student', AsyncMock(side_effect=change)):
+            self.assertEqual('confirmed', (await auto.process_auto_sync(1, 'local'))['state'])
+        self.assertEqual([('001', 'CHECKED')], self.writes)
+        self.assertEqual(['import', 'ai', 'import'], events)
 
 
 class MiniAdapterTests(unittest.IsolatedAsyncioTestCase):

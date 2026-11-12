@@ -73,9 +73,9 @@
     "title": "Button 按钮",
     "layer": "component",
     "summary": "所有操作入口：`lq-btn` + 变体 + 尺寸 + 可选图标/徽标/加载态；原生 button/a 语义与 type、form、href 保留。",
-    "params": "`label, variant(prominent|glass|soft|ghost|destructive|link), size(sm|md|lg), icon, href, type, disabled, aria_disabled, loading, badge, attrs`；纯图标按钮必须给 aria-label。",
+    "params": "`label, variant(prominent|glass|soft|ghost|destructive|link), size(sm|md|lg), icon, href, type, disabled, aria_disabled, loading, badge, attrs`；纯图标按钮必须给 aria-label。soft 操作按钮可显式透传 `data-lq-action-tone=warning|success` 表示需要处理/已完成状态；未使用槽位的消费者保持原配色。",
     "states": "default / hover / focus-visible / active 按压 / disabled（native）/ aria-disabled / loading（保留名称，防重复提交）。",
-    "rules": "禁止 div 模拟按钮；颜色只来自变体不传任意色；固定宽度长标签用 overflow-label。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。",
+    "rules": "禁止 div 模拟按钮；颜色只来自变体及显式语义槽位，不传任意色；固定宽度长标签用 overflow-label。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。2026-11-12 对齐课次使用 soft 的 warning/success 槽位，动作保持原生 Button，不借用 filter Chip 的 toggle 语义；共享禁用/忙碌/强制颜色配方继续生效。",
     "entries": {
       "react": [
         "LqButton"

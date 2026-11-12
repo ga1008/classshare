@@ -27,6 +27,16 @@
 .la-workflow-heading>.la-actions { margin-inline-start:auto; }
 .la-binding-target,.la-guidance,.la-school-workflow p { margin:0; overflow-wrap:anywhere; }
 .la-school-workflow .lq-progress { width:100%; }
+.la-alignment { display:grid; gap:1rem; min-width:0; }
+.la-alignment p,.la-alignment h3 { margin:0; overflow-wrap:anywhere; }
+.la-alignment-comparison { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:1rem; align-items:start; }
+.la-alignment-column,.la-alignment-candidate { display:grid; gap:.65rem; min-width:0; }
+.la-alignment-column:first-child { position:sticky; top:0; }
+.la-alignment-card { display:grid; justify-content:stretch; align-items:start; gap:.75rem; width:100%; min-width:0; padding:1rem; text-align:start; white-space:normal; }
+.la-alignment-facts { display:grid; gap:.55rem; width:100%; margin:0; font-weight:400; }
+.la-alignment-facts>div,.la-alignment-facts>span { display:grid; grid-template-columns:6.5rem minmax(0,1fr); gap:.6rem; }
+.la-alignment-facts dt,.la-alignment-facts dd,.la-alignment-facts>span>span { margin:0; overflow-wrap:anywhere; }
+.la-alignment-evidence { display:grid; gap:.3rem; padding-inline:.25rem; font-size:.9rem; }
 .la-config .la-form { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .la-config .la-form>.lq-field:first-child,.la-config-help { grid-column:1/-1; }
 .la-batch>.la-actions { padding-block:.5rem; }
@@ -44,4 +54,5 @@
 .lad-session-body .lq-progress { width:100%; }
 .lad-workspace .lq-card__head,.lad-workspace .lq-card__copy { min-width:0; overflow-wrap:anywhere; }
 @media(max-width:800px) { .la-content { grid-template-columns:1fr; } .la-detail { position:static; } .la-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:640px) { .la-alignment-comparison { grid-template-columns:minmax(0,1fr); } .la-alignment-card { padding:.75rem; } .la-alignment-column:first-child { position:static; } }
 @media(max-width:480px) { .la-students { grid-template-columns:repeat(2,minmax(0,1fr)); } .la-student-open { padding:.7rem; } .lad-list,.la-config .la-form { grid-template-columns:1fr; } .la-actions>.lq-btn { min-height:2.75rem; } .la-workflow-heading>.la-actions { margin-inline-start:0; width:100%; } }
