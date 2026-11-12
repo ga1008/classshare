@@ -70,7 +70,7 @@ export async function settleEntranceAnimations(page: Page): Promise<void> {
 export function readS3Rows<T = Record<string, unknown>>(sql: string, parameters: unknown[] = []): T[] {
   const fixture = readS3Fixture();
   if (!/^\s*SELECT\b/i.test(sql)) throw new Error('S3 observation requires SELECT');
-  const python = path.resolve(process.platform === 'win32' ? 'venv/Scripts/python.exe' : 'venv/bin/python');
+  const python = path.resolve(process.env.P03_PYTHON_EXECUTABLE || (process.platform === 'win32' ? 'venv/Scripts/python.exe' : 'venv/bin/python'));
   if (!fs.existsSync(python)) throw new Error('Use the project Python runtime');
   const code = `import json, sqlite3, sys\nfrom pathlib import Path\nwith sqlite3.connect(Path(sys.argv[1]).as_uri()+'?mode=ro', uri=True) as conn:\n conn.row_factory=sqlite3.Row\n print(json.dumps([dict(row) for row in conn.execute(sys.argv[2],json.loads(sys.argv[3]))],ensure_ascii=True))`;
   return JSON.parse(execFileSync(python, ['-c', code, fixture.databasePath, sql, JSON.stringify(parameters)], { encoding: 'utf8' }));

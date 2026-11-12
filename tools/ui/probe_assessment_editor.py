@@ -160,6 +160,7 @@ def main() -> int:
         cache = owned / 'tmp'
         cache.mkdir()
         env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHON_DOTENV_DISABLED='1',
+                   P03_PYTHON_EXECUTABLE=sys.executable,
                    P03_RUNTIME_ROOT=str(runtime), LQ_S3_PORT=str(port), ASSESSMENT_EVIDENCE=str(evidence),
                    TEMP=str(cache), TMP=str(cache), TMPDIR=str(cache))
         with (evidence / 'seed.log').open('w', encoding='utf-8') as log:

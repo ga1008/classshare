@@ -49,6 +49,7 @@ class AssessmentProbeLifecycleTests(unittest.TestCase):
 
         def spawn(command, **kwargs):
             is_server = 'tests/e2e/scripts/serve_ui_v3.py' in command
+            self.assertEqual(kwargs['env']['P03_PYTHON_EXECUTABLE'], probe.sys.executable)
             runtime = Path(kwargs['env']['P03_RUNTIME_ROOT'])
             if 'tests/e2e/scripts/prepare_ui_v3_runtime.py' in command:
                 (runtime / 'db').mkdir(parents=True)
