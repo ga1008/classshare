@@ -5474,6 +5474,10 @@
       "hits": 2
      },
      {
+      "path": "static/js/login_attendance_settlement.js",
+      "hits": 2
+     },
+     {
       "path": "static/js/manage_blog_review.js",
       "hits": 2
      },
@@ -5495,10 +5499,6 @@
      },
      {
       "path": "static/js/attendance_dashboard.js",
-      "hits": 1
-     },
-     {
-      "path": "static/js/login_attendance_settlement.js",
       "hits": 1
      },
      {

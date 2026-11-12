@@ -22,6 +22,8 @@ REASON_LABELS = {
     "no_access_evidence": "暂未收到可信接入记录", "outside_cohort_tolerance": "时间偏离需教师核对",
     "boundary_sensitive": "群体边界需教师核对", "collection_pending": "采集记录仍在处理",
     "later_access_cohort_matched": "后续课堂网络接入与全班活动时间相符",
+    'server_access_observed':'实际记录时段内已收到服务器认证接入',
+    'server_learning_received':'实际记录时段内已收到并处理本课堂学习记录',
 }
 
 
@@ -71,8 +73,9 @@ def load_policy(conn, offering_id):
     row = conn.execute("SELECT * FROM login_attendance_policies WHERE class_offering_id=?", (offering_id,)).fetchone()
     result = dict(row) if row else {"class_offering_id": offering_id, "revision": 0, "closed_at_ms": None,
                                   "before_minutes": 10, "after_minutes": 10, "appeal_days": 7,
-                                  "teacher_reference_ms": None, "networks_json": "[]"}
+                                  "teacher_reference_ms": None, "networks_json": "[]", "enforce_network": False}
     result["networks"] = _load(result.pop("networks_json"), [])
+    result['enforce_network'] = bool(result.get('enforce_network', False))
     return result
 
 
@@ -82,18 +85,22 @@ def save_policy(conn, offering_id, user, payload):
     if int(payload.get("revision", -1)) != old["revision"]:
         raise HTTPException(409, "设置已变化，请刷新后重试。")
     try:
-        networks = rules.normalize_networks(payload.get("networks", old["networks"]))
+        enforce_network = payload.get('enforce_network', old['enforce_network'])
+        if not isinstance(enforce_network, bool):
+            raise ValueError('请选择是否限定教室 IP 网段。')
+        supplied = payload.get('networks', old['networks'])
+        networks = rules.normalize_networks(supplied) if supplied or enforce_network else []
         before, after = int(payload.get("before_minutes", old["before_minutes"])), int(payload.get("after_minutes", old["after_minutes"]))
         appeal_days = int(payload.get("appeal_days", old["appeal_days"]))
         if not 0 <= before <= 20 or not 0 <= after <= 20 or not 1 <= appeal_days <= 30:
             raise ValueError("宽容时间须在 0—20 分钟，申诉期限须在 1—30 天。")
     except (TypeError, ValueError) as exc:
         raise HTTPException(422, str(exc)) from exc
-    conn.execute("INSERT INTO login_attendance_policies(class_offering_id,revision,networks_json,before_minutes,after_minutes,"
-                 "appeal_days,updated_by,updated_at_ms) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(class_offering_id) DO UPDATE SET "
-                 "revision=excluded.revision,networks_json=excluded.networks_json,before_minutes=excluded.before_minutes,"
+    conn.execute("INSERT INTO login_attendance_policies(class_offering_id,revision,networks_json,enforce_network,before_minutes,after_minutes,"
+                 "appeal_days,updated_by,updated_at_ms) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(class_offering_id) DO UPDATE SET "
+                 "revision=excluded.revision,networks_json=excluded.networks_json,enforce_network=excluded.enforce_network,before_minutes=excluded.before_minutes,"
                  "after_minutes=excluded.after_minutes,appeal_days=excluded.appeal_days,updated_by=excluded.updated_by,updated_at_ms=excluded.updated_at_ms",
-                 (offering_id, old["revision"] + 1, _json(networks), before, after, appeal_days, user["id"], now_ms()))
+                 (offering_id, old["revision"] + 1, _json(networks), int(enforce_network), before, after, appeal_days, user["id"], now_ms()))
     return load_policy(conn, offering_id)
 
 
@@ -169,19 +176,16 @@ def create_round(conn, offering_id, session_id, user, payload, *, timestamp=None
     if policy_revision is not None and policy_revision != policy["revision"]:
         raise HTTPException(409, "教室网络设置已被更新，请核对最新设置后开始记录。")
     try:
-        period = rules.resolve_session_window(session, explicit_start=payload.get("starts_at"), explicit_end=payload.get("ends_at"))
-        networks = rules.normalize_networks(payload.get("networks") or policy["networks"])
-        reference = rules.to_ms(payload["teacher_reference_at"]) if payload.get("teacher_reference_at") else None
+        period = rules.actual_session_window(session, timestamp=now, duration_minutes=payload.get('duration_minutes'),
+            explicit_start=payload.get('starts_at'), explicit_end=payload.get('ends_at'))
+        enforce_network = payload.get('enforce_network', policy['enforce_network'])
+        if not isinstance(enforce_network, bool):
+            raise ValueError('请选择是否限定教室 IP 网段。')
+        supplied = payload.get('networks', policy['networks'])
+        networks = rules.normalize_networks(supplied) if supplied or enforce_network else []
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, str(exc)) from exc
-    if now >= period["ends_at_ms"]:
-        raise HTTPException(409, "本次课已结束，请使用历史补核，不能重开实时点名。")
-    if period["starts_at_ms"] - now > 24 * 3600_000:
-        raise HTTPException(422, "只能预约未来 24 小时内的课次。")
-    window_start = period["starts_at_ms"] - policy["before_minutes"] * 60_000
-    window_end = period["ends_at_ms"] + policy["after_minutes"] * 60_000
-    if reference is not None and not window_start <= reference < window_end:
-        raise HTTPException(422, "教师时间参考必须在本次课窗口内。")
+    window_start, window_end = period['starts_at_ms'], period['ends_at_ms']
     previous = conn.execute("SELECT * FROM login_attendance_rounds WHERE session_id=? AND is_current=1 AND state<>'void'",
                             (session_id,)).fetchone()
     if previous:
@@ -199,9 +203,10 @@ def create_round(conn, offering_id, session_id, user, payload, *, timestamp=None
     # Starting confirms this network for subsequent lessons. Keep this in the
     # same classroom-locked transaction as the round; retries return above.
     # Legacy clients may seed an empty policy, but cannot overwrite a newer one.
-    if networks != policy["networks"] and (policy_revision is not None or not policy["networks"]):
-        policy = save_policy(conn, offering_id, user, {**policy, "networks": networks})
-    policy.update({"networks": networks, "teacher_reference_ms": reference, "algorithm_version": ALGORITHM_VERSION})
+    if (networks != policy['networks'] or enforce_network != policy['enforce_network']) and (policy_revision is not None or not policy['networks']):
+        policy = save_policy(conn, offering_id, user, {**policy, 'networks':networks, 'enforce_network':enforce_network})
+    policy.update({'networks':networks, 'enforce_network':enforce_network, 'teacher_reference_ms':None,
+                   'algorithm_version':rules.ACTUAL_WINDOW_VERSION, 'time_source':'server_actual'})
     context = {**_context(conn, offering, session), **period}
     round_id = execute_insert_returning_id(conn,
         "INSERT INTO login_attendance_rounds(class_offering_id,session_id,teacher_id,request_key,state,starts_at_ms,ends_at_ms,"
@@ -275,8 +280,9 @@ def collect_evaluation(conn, row, *, timestamp):
         return None
     ids = [r["student_id"] for r in records]
     placeholders = ",".join("?" for _ in ids)
+    observation_clock = 'received_at_ms' if policy.get('algorithm_version') == rules.ACTUAL_WINDOW_VERSION else 'observed_at_ms'
     observations = [dict(x) for x in conn.execute(
-        f"SELECT * FROM login_attendance_access WHERE student_id IN ({placeholders}) AND observed_at_ms>=? AND observed_at_ms<? ORDER BY observed_at_ms,event_key",
+        f"SELECT * FROM login_attendance_access WHERE student_id IN ({placeholders}) AND {observation_clock}>=? AND {observation_clock}<? ORDER BY {observation_clock},event_key",
         (*ids, row["window_start_ms"], end_ms)).fetchall()]
     roster = [{"id":r["student_id"],"name":r["name"],"student_id_number":r["student_number"],"class_name":r["class_name"],
                "confirmed_retake":r["confirmed_retake"]} for r in records]
@@ -293,11 +299,23 @@ def collect_evaluation(conn, row, *, timestamp):
     receipt_counts = {int(sid):{} for sid in ids}
     for receipt in receipt_rows:
         receipt_counts[int(receipt["user_pk"])][receipt["state"]]=int(receipt["n"])
-    activity = build_classroom_activity_evidence(conn, row["class_offering_id"], rules.display_time(row["window_start_ms"]),
-                                                rules.display_time(end_ms), roster_rows=roster)
+    activity = build_classroom_activity_evidence(conn, row["class_offering_id"],
+        datetime.fromtimestamp(row['window_start_ms']/1000,rules.SHANGHAI),
+        datetime.fromtimestamp(end_ms/1000,rules.SHANGHAI), roster_rows=roster)
+    applied_receipts = {}
+    if policy.get('algorithm_version') == rules.ACTUAL_WINDOW_VERSION and not policy.get('enforce_network', True):
+        # Only the authenticated server receipt time authorizes attendance.
+        # Browser coverage may describe learning duration, never move a visit
+        # into this window; pending/quarantined/replayed-outside receipts do not vote.
+        clause, args = _window_clause('received_at', datetime.fromtimestamp(row['window_start_ms']/1000,rules.SHANGHAI),
+                                     datetime.fromtimestamp(end_ms/1000,rules.SHANGHAI))
+        applied_receipts = {int(r['user_pk']):rules.to_ms(r['received_at']) for r in conn.execute(
+            f"SELECT user_pk,MAX(REPLACE(received_at,' ','T')) AS received_at FROM behavior_write_inbox "
+            f"WHERE class_offering_id=? AND user_role='student' AND state='applied' AND user_pk IN ({placeholders}) AND {clause} GROUP BY user_pk",
+            (row['class_offering_id'],*ids,*args)).fetchall()}
     return {'round':dict(row), 'timestamp':now, 'end_ms':end_ms, 'policy':policy, 'records':records,
             'observations':observations, 'receipt_rows':[dict(r) for r in receipt_rows],
-            'receipt_counts':receipt_counts, 'activity':activity}
+            'receipt_counts':receipt_counts, 'activity':activity, 'applied_receipts':applied_receipts}
 
 
 def compute_evaluation(prepared):
@@ -305,8 +323,12 @@ def compute_evaluation(prepared):
     row, now, end_ms = prepared['round'], prepared['timestamp'], prepared['end_ms']
     policy, records, observations = prepared['policy'], prepared['records'], prepared['observations']
     receipt_rows, receipt_counts, activity = prepared['receipt_rows'], prepared['receipt_counts'], prepared['activity']
-    calculation = rules.evaluate_roster(records, observations, start_ms=row['window_start_ms'], end_ms=end_ms,
-        networks=policy['networks'], teacher_reference_ms=policy.get('teacher_reference_ms'))
+    if policy.get('algorithm_version') == rules.ACTUAL_WINDOW_VERSION:
+        calculation = rules.evaluate_actual_roster(records, observations, start_ms=row['window_start_ms'], end_ms=end_ms,
+            networks=policy['networks'], enforce_network=policy.get('enforce_network',True), applied_receipts=prepared.get('applied_receipts'))
+    else:
+        calculation = rules.evaluate_roster(records, observations, start_ms=row['window_start_ms'], end_ms=end_ms,
+            networks=policy['networks'], teacher_reference_ms=policy.get('teacher_reference_ms'))
     network_evidence = {}
     for event in observations:
         sid=event['student_id']
@@ -363,11 +385,11 @@ def apply_evaluation(conn, row, result):
         candidate = calculation["results"][record["student_id"]]
         facts = by_student[record["student_id"]]
         evidence = {"login":facts["login"], "classroom_access":facts["classroom_access"], "learning":facts["learning"],
-                    "collection":facts["collection"], "network_source":"teacher_confirmed_network", "reason_code":candidate["reason_code"],
+                    "collection":facts["collection"], "network_source":"teacher_confirmed_network" if _load(row['policy_json']).get('enforce_network',True) else 'not_required', "reason_code":candidate["reason_code"],
                     "network_access":network_evidence.get(record["student_id"],{"distinct_ips":[],"source_types":[],"observation_count":0}),
                     "matching_seen_ms":candidate["matching_seen_ms"]}
         status = record["status"]
-        if not record["manual_confirmed"] and finalized:
+        if not record["manual_confirmed"] and (finalized or calculation['version'] == rules.ACTUAL_WINDOW_VERSION):
             # Preserve published positive facts; later uncertainty creates a
             # visible suggestion, never an automatic absence or downgrade.
             status = "PRESENT" if candidate["suggestion"] == "PRESENT" or status == "PRESENT" else "PENDING"
@@ -392,7 +414,7 @@ def apply_evaluation(conn, row, result):
     if not row["evaluated_at_ms"] or row["state"]!=state or finalized:
         conn.execute("INSERT INTO login_attendance_evaluations(round_id,evaluated_at_ms,algorithm_version,input_hash,baseline_json,watermark_json,results_json) "
                      "VALUES(?,?,?,?,?,?,?) ON CONFLICT(round_id,input_hash) DO NOTHING",
-                     (round_id,now,ALGORITHM_VERSION,fingerprint,_json(baseline),_json(watermark),_json(outputs)))
+                     (round_id,now,calculation['version'],fingerprint,_json(baseline),_json(watermark),_json(outputs)))
     conn.execute("UPDATE login_attendance_rounds SET state=?,baseline_json=?,watermark_json=?,evaluated_at_ms=?,next_evaluation_ms=?,"
                  "revision=revision+?,ended_at_ms=COALESCE(ended_at_ms,?) WHERE id=?",
                  (state,_json(baseline),_json(watermark),now,now+(120_000 if finalized else 15_000),int(state!=row["state"] or bool(newly_present)),
@@ -502,6 +524,10 @@ def _public_record(record, *, teacher=False):
     if teacher:
         result["reason"] = record["reason"]
         result["evidence"] = facts
+        first, last = record.get('first_seen_ms'), record.get('last_seen_ms')
+        result['metrics'] = {'access_span_seconds':max(0,last-first)//1000 if first is not None and last is not None else None,
+            'learning_seconds':facts.get('learning',{}).get('measured_seconds'),
+            'access_observation_count':facts.get('network_access',{}).get('observation_count',0)}
     else:
         result["message"] = "教师已确认" if record["manual_confirmed"] else ("已确认到课" if record["status"]=="PRESENT" else "结束后可提交申诉，请等待教师核对")
         result["participation"] = {"measured_seconds": facts.get("learning",{}).get("measured_seconds"),
@@ -523,10 +549,13 @@ def round_view(conn, round_id, user):
                    "summary":{"total":len(records),"expected":sum(r["expected"] for r in records),"exempt":sum(not r["expected"] for r in records),
                               "counts":dict(counts),"expected_counts":dict(Counter(r["status"] for r in records if r["expected"])),
                               "provisionally_present":sum(r["suggestion"]=="PRESENT" and r["expected"] for r in records)},
-                   "collection_health":collection_health()})
+                   "collection_health":collection_health(), 'server_now_ms':now_ms(),
+                   'actual_started_at_ms':row['starts_at_ms'] if _load(row['context_json']).get('time_source') == 'server_actual' else None,
+                   'actual_ends_at_ms':row['ends_at_ms'] if _load(row['context_json']).get('time_source') == 'server_actual' else None})
     from .login_attendance_settlement_service import round_status
     settlement=round_status(conn,row)
-    result.update(settlement=settlement['task'],settlement_gate=settlement['gate'])
+    result.update(settlement=settlement['task'],settlement_gate=settlement['gate'],processing=settlement['processing'],
+                  needs_rule_upgrade=settlement['needs_rule_upgrade'])
     return result
 
 
@@ -553,14 +582,15 @@ def session_view(conn, offering_id, session_id, user):
     offering = require_teacher(conn,offering_id,user)
     session = _session(conn,offering_id,session_id)
     current = conn.execute("SELECT id FROM login_attendance_rounds WHERE session_id=? ORDER BY is_current DESC,id DESC LIMIT 1",(session_id,)).fetchone()
-    result = {"session":session,"policy":load_policy(conn,offering_id),"round":round_view(conn,current["id"],user) if current else None}
+    result = {"session":session,"policy":load_policy(conn,offering_id),"round":round_view(conn,current["id"],user) if current else None,
+              'server_now_ms':now_ms(), 'default_duration_minutes':rules.default_duration_minutes(session)}
     result["context"] = _context(conn, offering, session)
     try:
         result["window"] = rules.resolve_session_window(session)
         result["window_error"] = None
     except (ValueError, TypeError):
         result["window"] = None
-        result["window_error"] = "课表尚无明确起止时间，请核对并填写本课开始、结束时间。"
+        result["window_error"] = "课表尚无明确时长，已提供 90 分钟默认值，可按实际课堂调整。"
     return result
 
 

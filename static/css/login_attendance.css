@@ -2,6 +2,7 @@
 .la-workspace { display:grid; gap:1rem; min-width:0; }
 .la-heading { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1rem; }
 .la-heading h3,.la-heading p { margin:0; }
+.la-clock { flex-basis:100%; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .la-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem; }
 .la-summary .lq-card { padding:.75rem 1rem; }
 .la-summary .lq-card__title { font-size:.9rem; }
@@ -20,6 +21,8 @@
 .la-student-identity { display:flex; flex-direction:column; align-items:flex-start; gap:.2rem; min-width:0; }
 .la-student-identity strong { font-size:1.05rem; }
 .la-student-reason { text-align:start; white-space:normal; overflow-wrap:anywhere; font-weight:400; }
+.la-student-metrics { display:grid; gap:.2rem; text-align:start; white-space:normal; overflow-wrap:anywhere; font-weight:400; }
+.la-metric-help { margin:0; overflow-wrap:anywhere; }
 .la-student-select { margin:0 .8rem .6rem; }
 .la-student-select[hidden],.la-workspace [hidden] { display:none; }
 .la-record-edit,.la-school-workflow,.la-sync-progress { display:grid; gap:.65rem; min-width:0; }
@@ -42,6 +45,7 @@
 .la-alignment-evidence { display:grid; gap:.3rem; padding-inline:.25rem; font-size:.9rem; }
 .la-config .la-form { grid-template-columns:repeat(2,minmax(0,1fr)); }
 .la-config .la-form>.lq-field:first-child,.la-config-help { grid-column:1/-1; }
+.la-network-fields { grid-column:1/-1; min-width:0; }
 .la-batch>.la-actions { padding-block:.5rem; }
 .la-student-body { display:grid; gap:.5rem; }
 .la-student-body p,.la-facts p { margin:0; overflow-wrap:anywhere; }

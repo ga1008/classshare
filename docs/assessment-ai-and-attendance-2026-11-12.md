@@ -22,6 +22,8 @@
 
 新增 `login_attendance_settlement_runs`、`smart_attendance_student_corrections` 及 `login_attendance_rounds.settlement_generation`，复用原 schema 入口。增量演练也按生产依赖顺序覆盖这些入口；发布须使用匹配备份、两次增量与两次完整启动的原生 PostgreSQL 证明。
 
+联合发布还纳入 [服务器时间与可选 IP 限定](attendance-network-timing-2026-11-12.md)：按教师实际开始记录的服务器时间逐人核对出勤，不再等待全班多数人形成基准；新增网络限定开关、上课时长、结束处理进度及学生筛选排序。`login_attendance_policies.enforce_network` 默认关闭，历史轮次保留原规则与人工结论；仅在教师显式确认后按新规则重算。
+
 学生首页在学习快照尚未生成时显示“生成中”，避免空分数格式化导致登录后 500。隔离测试及浏览器验收工具记录所有权、进程退出和清理结果；报告写入失败不推断其他临时目录可以删除。
 
 ## 验收边界

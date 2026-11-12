@@ -91,7 +91,20 @@ def _gate(conn, row, task, *, timestamp=None):
 
 def round_status(conn, row):
     task = _latest(conn, row['id'])
-    return {'task':_public(task), 'gate':_gate(conn,row,task), 'round_revision':row['revision']}
+    now = local.now_ms()
+    if task and task['state'] in UNPUBLISHED:
+        processing = {'stage':task['stage'], 'message':task['message']}
+    elif row['state'] == 'settling':
+        waiting = now < row['settle_at_ms']
+        processing = {'stage':'waiting_receipts' if waiting else 'queued',
+                      'message':'正在等待已提交记录完成处理。' if waiting else '已结束等待，排队由后台核算。',
+                      'wait_until_ms':row['settle_at_ms'], 'remaining_ms':max(0,row['settle_at_ms']-now)}
+    else:
+        processing = {'stage':{'published':'completed','running':'recording','scheduled':'scheduled','void':'void'}.get(row['state'],row['state']),
+                      'message':'已结算，可查看每位同学的出勤情况。' if row['state']=='published' else '记录中，按服务器实际时间采集。'}
+    return {'task':_public(task), 'gate':_gate(conn,row,task,timestamp=now), 'round_revision':row['revision'],
+            'server_now_ms':now, 'processing':processing,
+            'needs_rule_upgrade':local._load(row['policy_json']).get('algorithm_version') != local.rules.ACTUAL_WINDOW_VERSION}
 
 
 def status(conn, user, offering_id, round_id):
@@ -143,6 +156,14 @@ def request_settlement(conn, user, offering_id, round_id, payload, *, timestamp=
         raise _error('restart_confirmation_required','当前结算或等待需要确认中断后重算，请先查看最新状态。')
     from .login_attendance_settlement_guard import settlement_school_guard
     settlement_school_guard(conn,round_id)
+    if payload.get('adopt_current_rules') and local._load(row['policy_json']).get('algorithm_version') != local.rules.ACTUAL_WINDOW_VERSION:
+        before_policy = local._load(row['policy_json'])
+        policy = {**before_policy, 'algorithm_version':local.rules.ACTUAL_WINDOW_VERSION,
+                  'enforce_network':bool(before_policy.get('enforce_network',True))}
+        conn.execute('UPDATE login_attendance_rounds SET policy_json=? WHERE id=?',(local._json(policy),round_id))
+        local._audit(conn,round_id,'attendance_rules_upgraded',user,before={'policy':before_policy},after={'policy':policy},
+                     reason='教师明确确认按当前规则重新核算；保留原时段、原 IP 限定和人工更正。')
+        row = local.load_round(conn,round_id)
     previous_state = row['state']
     if task and task['state'] in UNPUBLISHED:
         conn.execute("UPDATE login_attendance_settlement_runs SET state='superseded',stage='superseded',revision=revision+1,worker_token='',message=?,updated_at_ms=? WHERE id=?",

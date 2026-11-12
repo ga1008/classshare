@@ -1,16 +1,16 @@
 {
   "acceptance": "pending",
   "summary": {
-    "files": 607,
+    "files": 608,
     "htmlTemplates": 209,
-    "entries": 5775,
+    "entries": 5776,
     "byKind": {
       "toolbar": 138,
       "surface": 797,
       "choice": 219,
       "button": 2272,
       "field": 786,
-      "status": 61,
+      "status": 62,
       "unknown": 846,
       "menu": 38,
       "layer": 137,
@@ -28,19 +28,19 @@
       "dynamic-html-sink": 695,
       "js-html-candidate": 1389,
       "create-element": 199,
-      "component-factory-call": 213,
+      "component-factory-call": 214,
       "react-jsx": 158,
       "python-generated-jinja-html": 25
     },
     "byCanonicalContract": {
-      "not-declared": 1931,
+      "not-declared": 1932,
       "canonical-declared-pending": 3749,
       "declared-missing-canonical": 6,
       "canonical-resolution-pending": 8,
       "adapter-call-pending-runtime": 81
     },
     "byProvenance": {
-      "shared-component-call": 814,
+      "shared-component-call": 815,
       "lq-marked-native": 139,
       "component-declared": 3762,
       "runtime-output-unknown": 695,
@@ -51,7 +51,7 @@
       "external-icon-content-slot": 28
     },
     "byStatus": {
-      "pending": 4929,
+      "pending": 4930,
       "unknown": 846
     },
     "largestFiles": [

@@ -17,9 +17,14 @@ def handle_scan(payload):
         return {"enabled":False}
     stamp = attendance.now_ms()
     with get_db_connection() as conn:
-        rows=conn.execute("SELECT id FROM login_attendance_rounds WHERE is_current=1 AND class_offering_id IS NOT NULL AND next_evaluation_ms<=? "
-            "AND (state IN ('scheduled','running','settling') OR (state='published' AND created_at_ms>=?)) "
-            "ORDER BY next_evaluation_ms,id LIMIT 12",(stamp,stamp-7*86400_000)).fetchall()
+        # Durable/manual settlements have their own worker and must not occupy
+        # the bounded ordinary scan forever (especially a failed generation
+        # awaiting teacher review). evaluate_round still rechecks under locks.
+        rows=conn.execute("SELECT r.id FROM login_attendance_rounds r WHERE r.is_current=1 AND r.class_offering_id IS NOT NULL AND r.next_evaluation_ms<=? "
+            "AND (r.state IN ('scheduled','running','settling') OR (r.state='published' AND r.created_at_ms>=?)) "
+            "AND NOT EXISTS (SELECT 1 FROM login_attendance_settlement_runs s WHERE s.round_id=r.id "
+            "AND s.generation=r.settlement_generation AND s.state IN ('queued','running','failed')) "
+            "ORDER BY r.next_evaluation_ms,r.id LIMIT 12",(stamp,stamp-7*86400_000)).fetchall()
     completed, failures = [], []
     for row in rows:
         try:

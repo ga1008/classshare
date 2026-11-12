@@ -36,6 +36,7 @@ class SettlementRequest(BaseModel):
     idempotency_key: str = Field(min_length=8,max_length=100)
     expected_round_revision: int = Field(ge=1,strict=True)
     restart: bool = Field(default=False,strict=True)
+    adopt_current_rules: bool = Field(default=False,strict=True)
     expected_task_id: str | None = Field(default=None,min_length=1,max_length=64)
     expected_task_generation: int | None = Field(default=None,ge=1,strict=True)
 
@@ -44,6 +45,8 @@ class CreateRound(BaseModel):
     request_key: str = Field(min_length=8, max_length=100)
     policy_revision: int | None = Field(default=None, ge=0)
     networks: list[str] | None = Field(default=None, max_length=16)
+    enforce_network: bool | None = Field(default=None, strict=True)
+    duration_minutes: int | None = Field(default=None, ge=1, le=240, strict=True)
     starts_at: datetime | None = None
     ends_at: datetime | None = None
     teacher_reference_at: datetime | None = None
@@ -69,7 +72,8 @@ class Appeal(BaseModel):
 
 
 class Policy(Revision):
-    networks: list[str] = Field(min_length=1, max_length=16)
+    networks: list[str] = Field(default_factory=list, max_length=16)
+    enforce_network: bool = Field(default=False, strict=True)
     before_minutes: int = Field(default=10, ge=0, le=20)
     after_minutes: int = Field(default=10, ge=0, le=20)
     appeal_days: int = Field(default=7, ge=1, le=30)
@@ -142,6 +146,7 @@ def session(offering_id: int, session_id: int, request: Request, user: dict=Depe
     with get_db_connection() as conn:
         result=service.session_view(conn,offering_id,session_id,user)
         result["teacher_network"]=client_network(request)
+        result['teacher_network']['suggested_cidr']=service.rules.suggested_network(result['teacher_network']['ip'])
         return result
 
 
@@ -150,8 +155,10 @@ def create(offering_id: int, session_id: int, body: CreateRound, request: Reques
     _origin(request)
     with get_db_connection() as conn:
         payload=body.model_dump(mode="json", exclude_none=True)
-        if not payload.get("networks") and not service.load_policy(conn,offering_id)["networks"]:
-            payload["networks"]=[client_network(request)["ip"]]
+        policy=service.load_policy(conn,offering_id)
+        if payload.get('enforce_network',policy['enforce_network']) and 'networks' not in payload and not policy['networks']:
+            suggestion=service.rules.suggested_network(client_network(request)['ip'])
+            payload['networks']=[suggestion] if suggestion else []
         result=service.create_round(conn,offering_id,session_id,user,payload)
         conn.commit()
         return result

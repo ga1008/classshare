@@ -1593,13 +1593,13 @@
 - `templates/wanderers/home.html` ×3
 - `frontend/src/components/action-entry.tsx` ×2
 - `static/js/knowledge_tree/chrome.js` ×2
+- `static/js/login_attendance_settlement.js` ×2
 - `static/js/manage_blog_review.js` ×2
 - `static/js/message_center.js` ×2
 - `static/js/profile.js` ×2
 - `static/js/social/social_dom.js` ×2
 - `static/js/wanderer_world_views.js` ×2
 - `static/js/attendance_dashboard.js` ×1
-- `static/js/login_attendance_settlement.js` ×1
 - `static/js/login_attendance_sync.js` ×1
 - `static/js/session_knowledge_tree_manager.js` ×1
 - `static/js/social/friends_discover.js` ×1

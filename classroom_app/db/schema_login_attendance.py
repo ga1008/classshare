@@ -11,7 +11,7 @@ TABLES = (
 )
 
 REQUIRED_COLUMNS = {
-    "login_attendance_policies": tuple("class_offering_id revision closed_at_ms networks_json before_minutes after_minutes appeal_days teacher_reference_ms updated_by updated_at_ms".split()),
+    "login_attendance_policies": tuple("class_offering_id revision closed_at_ms networks_json enforce_network before_minutes after_minutes appeal_days teacher_reference_ms updated_by updated_at_ms".split()),
     "login_attendance_rounds": tuple("id class_offering_id session_id teacher_id request_key state is_current revision settlement_generation starts_at_ms ends_at_ms window_start_ms window_end_ms settle_at_ms created_at_ms ended_at_ms evaluated_at_ms next_evaluation_ms policy_json context_json baseline_json watermark_json supersedes_id void_reason".split()),
     "login_attendance_settlement_runs": tuple("id round_id owner_teacher_id generation revision request_key request_hash state stage completed total cutoff_ms scope_json worker_token message created_at_ms updated_at_ms".split()),
     "login_attendance_records": tuple("id round_id student_id student_number name class_name expected confirmed_retake status suggestion quality manual_confirmed revision first_seen_ms last_seen_ms deviation_ms evidence_json reason decided_by decided_at_ms updated_at_ms".split()),
@@ -29,7 +29,8 @@ def ensure_login_attendance_schema(conn, *, engine=None):
         """CREATE TABLE IF NOT EXISTS login_attendance_policies (
             class_offering_id BIGINT PRIMARY KEY REFERENCES class_offerings(id) ON DELETE CASCADE,
             revision INTEGER NOT NULL DEFAULT 1, closed_at_ms BIGINT,
-            networks_json TEXT NOT NULL DEFAULT '[]', before_minutes INTEGER NOT NULL DEFAULT 10,
+            networks_json TEXT NOT NULL DEFAULT '[]', enforce_network INTEGER NOT NULL DEFAULT 0,
+            before_minutes INTEGER NOT NULL DEFAULT 10,
             after_minutes INTEGER NOT NULL DEFAULT 10, appeal_days INTEGER NOT NULL DEFAULT 7,
             teacher_reference_ms BIGINT, updated_by BIGINT, updated_at_ms BIGINT NOT NULL
         )""",
@@ -107,6 +108,7 @@ def ensure_login_attendance_schema(conn, *, engine=None):
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_history ON login_attendance_rounds(class_offering_id,created_at_ms,id)",
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_student ON login_attendance_records(student_id,round_id)",
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_access_window ON login_attendance_access(student_id,observed_at_ms)",
+        "CREATE INDEX IF NOT EXISTS idx_login_attendance_access_received ON login_attendance_access(student_id,received_at_ms)",
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_access_cleanup ON login_attendance_access(received_at_ms)",
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_attention ON login_attendance_attention(teacher_id,resolved_at_ms,acknowledged_at_ms,created_at_ms)",
     )
@@ -118,3 +120,9 @@ def ensure_login_attendance_schema(conn, *, engine=None):
         columns = {r[1] for r in conn.execute('PRAGMA table_info(login_attendance_rounds)').fetchall()}
     if 'settlement_generation' not in columns:
         conn.execute('ALTER TABLE login_attendance_rounds ADD COLUMN settlement_generation INTEGER NOT NULL DEFAULT 0')
+    if engine == 'postgres':
+        policy_columns = {r['column_name'] for r in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='login_attendance_policies'").fetchall()}
+    else:
+        policy_columns = {r[1] for r in conn.execute('PRAGMA table_info(login_attendance_policies)').fetchall()}
+    if 'enforce_network' not in policy_columns:
+        conn.execute('ALTER TABLE login_attendance_policies ADD COLUMN enforce_network INTEGER NOT NULL DEFAULT 0')

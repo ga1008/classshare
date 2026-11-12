@@ -51,8 +51,9 @@ class LoginAttendanceServiceTests(unittest.TestCase):
     def observe(self,students=(1,2,3,4,5)):
         for sid in students:
             record_access(self.conn,student_id=sid,ip_address=f'192.0.2.{sid}',source='authenticated_request',
-                          observed_at_ms=self.start_ms+sid*1000)
+                          observed_at_ms=self.start_ms+60_000+sid*1000)
         self.conn.commit()
+        self.mock_now.return_value=self.start_ms+120_000
 
     def evaluate(self,rnd,final=False):
         stamp=rnd['settle_at_ms'] if final else self.start_ms+120_000
@@ -65,7 +66,7 @@ class LoginAttendanceServiceTests(unittest.TestCase):
         rnd=self.create();self.observe()
         live=self.evaluate(rnd)
         self.assertEqual(5,live['summary']['provisionally_present'])
-        self.assertTrue(all(r['status']=='PENDING' for r in live['records']))
+        self.assertEqual(5,live['summary']['expected_counts']['PRESENT'])
         final=self.evaluate(rnd,True)
         self.assertEqual('published',final['state'])
         self.assertEqual(5,final['summary']['expected_counts']['PRESENT'])
