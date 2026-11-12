@@ -1,0 +1,124 @@
+{
+  "status": "verified_and_deployed",
+  "release": "20261112-161400-4b9d89528f69",
+  "verified_at_utc": "2026-11-12T08:19:13.593233+00:00",
+  "url": "https://guardianangel.net.cn",
+  "source_commit": "49c331284aac57a3ac1e2f70bb2aeca005d37a43",
+  "git_code_pushed_refs": [
+    "origin/dev",
+    "origin/codex/attendance-alignment-20261112"
+  ],
+  "image": "sha256:686e8cbda6e8a452a995ccac776d0f182153c15103374bf88bce415af2188c4d",
+  "static_graph": "0a63fd7424609fe4241796b28c9fd64f20f5d73e772fba14e9854a7a931f5b73",
+  "sealed_source_files": 40,
+  "validation": {
+    "school_backend_passed": 189,
+    "local_attendance_run": 118,
+    "local_attendance_passed": 115,
+    "local_attendance_conditional_skipped": 3,
+    "native_postgres_business_checks_passed": 53,
+    "frontend_unit_passed": 834,
+    "formal_browser_checks_passed": 47,
+    "real_page_synthetic_checkpoints_passed": 9,
+    "public_checks_passed": 52,
+    "public_resource_hashes_verified": 14,
+    "migration_source_files_verified": 102,
+    "migration_baseline_tables": 393,
+    "migration_baseline_rows": 868565,
+    "migration_incremental_passes": 2,
+    "migration_clean_restore_full_startup_passes": 2,
+    "schema_required_tables_present": 209,
+    "schema_failed_indexes": 0,
+    "schema_skipped_steps": 0,
+    "lq_blockers": 0,
+    "lq_existing_warnings": 3677,
+    "source_inventory_files": 603,
+    "source_inventory_entries": 5751,
+    "source_inventory_runtime_acceptance": "pending"
+  },
+  "production_alignment": {
+    "courses_matched": 3,
+    "sessions_matched": 89,
+    "sessions_review": 1,
+    "new_background_tasks_done": 3,
+    "original_done_tasks_preserved": true,
+    "review_reason": {
+      "local": "2026-11-12 Thursday sections 8-9",
+      "school": "2026-11-13 Friday sections 2-3",
+      "order_index": 18
+    },
+    "school_attendance_test_writes": 0
+  },
+  "preservation": {
+    "postgres_container": true,
+    "data_directory_identity": true,
+    "environment_except_release": true,
+    "dependency_images": true,
+    "explicit_material_rows": true,
+    "representative_attachment_paths_bytes_sha256": true,
+    "fixed_manual_decisions_rounds_and_projection_metadata": true,
+    "changed_source_host_and_image_file_count": 40,
+    "old_database_content": "covered_by_matching_native_rehearsal_and_cutover_backup; not a live full-table equality claim"
+  },
+  "background_failed_counts": {
+    "attendance_export": 0,
+    "attendance_parse": 0,
+    "ai_grading": 451,
+    "material_ai_import": 1,
+    "session_material_generation": 0,
+    "private_message_ai_reply": 0,
+    "email_outbox": 591,
+    "blog_news_crawler": 8,
+    "agent_task": 4,
+    "scheduled_task": 28,
+    "behavior_write_pipeline": 0
+  },
+  "background_counter_observation": {
+    "additional_grading_review_required": 2,
+    "execution_successful": 2,
+    "classification": "completed_successfully_but_requires_teacher_review",
+    "risk_reason_codes": [
+      "low_confidence",
+      "evidence_conflict"
+    ],
+    "interruption_or_retry_failure_observed": false,
+    "recovery_or_mutation_performed": false
+  },
+  "backup_directory": "/var/backups/lanshare-attendance-alignment-20261112-161400-4b9d89528f69",
+  "backups": {
+    "code-20261112-161452.tgz": {
+      "bytes": 268208184,
+      "mode": "0o600"
+    },
+    "db-cutover-20261112-161452.sql.gz": {
+      "bytes": 159792886,
+      "mode": "0o600"
+    }
+  },
+  "scope": [
+    "Production verification used read-only school requests and authorized course/lesson alignment jobs.",
+    "School rollcall creation, ending and student-status writes were validated with isolated synthetic external I/O.",
+    "Token expiration and captcha recovery were exercised synthetically; the valid production session was not forcibly expired.",
+    "Production fixed attendance/material/attachment samples were compared; no live whole-database equality or global capacity claim.",
+    "Other background-domain failure counters are reported separately; attendance and alignment tasks had no failures in final verification."
+  ],
+  "evidence_sha256": {
+    ".codex-temp/evidence/attendance-alignment-drift-20261112/release-source.json": "95797c4ea4fd22f9506acc466207f9db7784ae1c0890bf2a17d0be97705e407c",
+    ".codex-temp/evidence/attendance-alignment-drift-20261112/release-stage-3.log": "8d4fb8a6c9df407854793471cb548d90f57502679626a77cfb302f609c54b5ed",
+    ".codex-temp/evidence/attendance-alignment-drift-20261112/production-before.json": "e078583bf4be4842ec9e69a07e7a0e69a2edc8582d18504bfebbd47ff1131475",
+    ".codex-temp/evidence/attendance-alignment-drift-20261112/production-after.json": "0648c8d6c49604c314e36fc5abca3146f471f0209eb4bbc4dc9b67def7e1de1f",
+    ".codex-temp/evidence/attendance-alignment-drift-20261112/public-final.json": "349d7810c74bb88b969a4563cc9b809163071cb067c06bb315a82dba8fe88120",
+    ".codex-temp/evidence/attendance-alignment-drift-20261112/final-alignment-preserved.json": "22a86e9969722615ab889f0f664065c862c9aa04e29a2ab30b256613b2f266a8",
+    ".codex-temp/evidence/attendance-alignment-drift-20261112/health-after.json": "b8b029edf609acf96b755590a78b249384757cf7eeb7dd6dcd27730fa720f177",
+    ".codex-temp/evidence/attendance-alignment-drift-20261112/backup-metadata.json": "e3a78d86362959d62933e85fa07a82a94b3546eb2419e0dcbc0ebfd76288681b",
+    ".codex-temp/evidence/attendance-alignment-drift-20261112/native-validation.json": "82f03c4f2df7d6b97a1864e25e974598b6f05ccc1fb4445566a0aee54da54f48",
+    ".codex-temp/evidence/attendance-alignment-drift-20261112/grading-failure-observation.json": "4be089ffea60396cfab43cbb6136874f77c968972aa8e92b25cc7b2590bf03a6",
+    ".codex-temp/evidence/attendance-alignment-20261112/native-migration-c150zctp/native-report.json": "f1e78bef1902f560743dd73fcc521c61c422082f67d22abac1063e641717ff55",
+    ".codex-temp/evidence/attendance-alignment-20261112/alignment-native-pg-4n2h8r0r/result.json": "6ce1a01a58724d5cfed705f81780cdc18b8692d84f8209cb1bfe4ddca6999752",
+    ".codex-temp/evidence/attendance-alignment-20261112/alignment-native-pg-4n2h8r0r/cleanup.json": "7e009f5e7f7cdc30facadc39d989ae4642094a2ed3ccbb30c89f948af956a938",
+    ".codex-temp/evidence/attendance-alignment-20261112/ui-production-final-provenance.json": "c0f85446fc660baaec906bfb64b47872bb34146d23827a97ffc0ba5ca43a8fa1",
+    ".codex-temp/evidence/attendance-alignment-20261112/real-alignment-report.json": "5fd7320023cff65463974bf4815052c105e9aa9319b40c03b7d1a7ccc3a0db45",
+    ".codex-temp/evidence/attendance-alignment-decision-20261112/reviewed-alignment-requeue-executed.json": "86678a731e9ab20da7df88ed64590ddf450ea3ba09b1bd4337a5c3c421e87db0",
+    ".codex-temp/evidence/attendance-alignment-decision-20261112/live-alignment-session-review.json": "e0bd5a0ddacc78a72d0978ca84b7084a4dae1aa09d28122829262fbd6be2379b"
+  }
+}
