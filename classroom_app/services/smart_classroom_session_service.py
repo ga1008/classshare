@@ -1,9 +1,9 @@
 """One encrypted school session per external account, shared by all workers.
 
-School login invalidates every older token. Normal reads therefore bootstrap
-only an absent cache; a 401 never triggers request replay or blind login.
-Only a bounded, persisted classroom grant or an explicit teacher verification
-may recover. No transaction is held over network I/O.
+Saved, verified credentials recover expired sessions automatically. The database
+lease coalesces concurrent workers, and repeated failures have a persisted
+cooldown. Callers decide whether a rejected operation is safe to replay; school
+writes must always be read back first. No transaction spans network I/O.
 """
 from __future__ import annotations
 
@@ -30,9 +30,12 @@ class SmartClassroomSessionError(ValueError):
         self.code = code
         self.verification_result: dict[str, Any] | None = None
         super().__init__(message or {
-            "needs_teacher_reauth": "智慧课堂会话已失效，请教师重新授权；系统已暂停自动登录，避免与微信小程序互相挤下线。",
+            "needs_teacher_reauth": "智慧课堂会话正在自动恢复；连续失效时会短暂等待后重试，本地点名不受影响。",
             "session_busy": "智慧课堂账号正在建立会话，请稍后重试。",
             "credential_changed": "智慧课堂账号配置已变更或停用，请重新确认当前账号与课堂同步授权。",
+            "session_refreshed": "智慧课堂会话已自动恢复，正在回读上次操作结果后继续同步。",
+            "captcha_required": "智慧课堂要求完成验证码验证，当前登录接口未提供可自动提交的验证码挑战；请在学校登录页完成验证后重试，本地记录已保留。",
+            "credential_invalid": "智慧课堂未接受已保存的账号密码，请检查账号配置。",
         }.get(code, "智慧课堂会话暂不可用，请教师重新验证账号。"))
 
 
@@ -77,10 +80,10 @@ def _validate_saved_access(conn, access: dict[str, Any]):
 
 
 def grant_background_login(conn, access: dict[str, Any], scope: str, *, expires_at_ms: int) -> dict[str, Any]:
-    """Called only from a teacher's explicit classroom authorization transaction.
+    """Retain legacy classroom authorization receipts for audit compatibility.
 
-    Repeating the same scope never replenishes a consumed recovery. A fresh
-    teacher reauthorization refreshes the session explicitly with force_reauth.
+    Session recovery now uses verified saved credentials and the account lease;
+    these receipts do not gate token recovery or authorize school mutations.
     """
     _validate_saved_access(conn, access)
     scope = str(scope or "").strip()
@@ -122,9 +125,11 @@ def mark_session_unauthorized(session: SchoolSession):
     now = _now_ms()
     with get_db_connection() as conn:
         conn.execute("""UPDATE smart_classroom_sessions SET state='needs_teacher_reauth',token_encrypted='',
-            error_code='unauthorized',next_login_at_ms=?,updated_at_ms=?
+            error_code='unauthorized',next_login_at_ms=CASE
+                WHEN recovery_used>0 AND last_login_ms>? THEN last_login_ms+? ELSE 0 END,updated_at_ms=?
             WHERE external_account_key=? AND token_version=? AND state='active'""",
-            (now + RECOVERY_COOLDOWN_MS, now, session.external_account_key, session.token_version))
+            (now - RECOVERY_COOLDOWN_MS, RECOVERY_COOLDOWN_MS, now,
+             session.external_account_key, session.token_version))
         conn.commit()
 
 
@@ -154,17 +159,12 @@ def _claim_or_load(access, *, login_scope, allow_login, force_reauth, owner):
                 conn.commit()
                 return SchoolSession(key, int(row["token_version"]), token)
         recovery = row["state"] != "empty" or bool(row["login_owner"])
-        grant = None
         if not force_reauth and recovery:
-            if (not allow_login or not login_scope or int(row["recovery_used"]) >= 1
-                    or int(row["next_login_at_ms"]) > now):
+            if not allow_login:
                 raise SmartClassroomSessionError("needs_teacher_reauth")
-            grant = conn.execute("""SELECT id FROM smart_classroom_session_grants
-                WHERE external_account_key=? AND credential_id=? AND credential_generation=? AND scope_key=?
-                AND expires_at_ms>? AND recovery_count<1""",
-                (key, int(access["credential_id"]), access["credential_generation"], str(login_scope), now)).fetchone()
-            if grant is None:
-                raise SmartClassroomSessionError("needs_teacher_reauth")
+            if int(row["next_login_at_ms"]) > now:
+                code = row["error_code"] if row["error_code"] in {"captcha_required", "credential_invalid"} else "needs_teacher_reauth"
+                raise SmartClassroomSessionError(code)
         claimed = conn.execute("""UPDATE smart_classroom_sessions
             SET login_owner=?,login_until_ms=?,state='needs_teacher_reauth',token_encrypted='',
                 secret_fingerprint=?,error_code='login_pending',recovery_used=?,updated_at_ms=?
@@ -175,19 +175,13 @@ def _claim_or_load(access, *, login_scope, allow_login, force_reauth, owner):
         if not claimed:
             conn.commit()
             return None
-        if grant is not None:
-            used = conn.execute("UPDATE smart_classroom_session_grants SET recovery_count=recovery_count+1 "
-                                "WHERE id=? AND recovery_count<1 AND expires_at_ms>?", (grant["id"], now)).rowcount
-            if not used:
-                conn.rollback()
-                raise SmartClassroomSessionError("needs_teacher_reauth")
         conn.commit()
         return owner
 
 
 async def acquire_session(
     access: dict[str, Any], login: Callable[[], Awaitable[tuple[dict[str, Any], str]]], *,
-    login_scope: str | None = None, allow_login: bool = False, force_reauth: bool = False,
+    login_scope: str | None = None, allow_login: bool = True, force_reauth: bool = False,
 ) -> SchoolSession:
     owner = uuid.uuid4().hex
     claim = None
@@ -206,7 +200,8 @@ async def acquire_session(
     try:
         result, token = await login()
         if result.get("status") != "verified" or not token:
-            error = SmartClassroomSessionError("needs_teacher_reauth", str(result.get("message") or "智慧课堂登录未通过。"))
+            code = str(result.get("error_code") or "needs_teacher_reauth")
+            error = SmartClassroomSessionError(code, str(result.get("message") or "智慧课堂登录未通过。"))
             error.verification_result = result
             raise error
         with get_db_connection() as conn:
@@ -221,13 +216,14 @@ async def acquire_session(
             version = conn.execute("SELECT token_version FROM smart_classroom_sessions WHERE external_account_key=?", (key,)).fetchone()["token_version"]
             conn.commit()
         return SchoolSession(key, int(version), token, result)
-    except BaseException:
+    except BaseException as exc:
         # A timeout/cancellation may have already replaced the school's token.
         # Persist uncertainty; never treat that as a fresh-cache bootstrap.
         with get_db_connection() as conn:
             now = _now_ms()
             conn.execute("""UPDATE smart_classroom_sessions SET state='needs_teacher_reauth',token_encrypted='',
-                login_owner='',login_until_ms=0,error_code='login_failed',next_login_at_ms=?,updated_at_ms=?
-                WHERE external_account_key=? AND login_owner=?""", (now + RECOVERY_COOLDOWN_MS, now, key, owner))
+                login_owner='',login_until_ms=0,error_code=?,next_login_at_ms=?,updated_at_ms=?
+                WHERE external_account_key=? AND login_owner=?""",
+                (getattr(exc, "code", "login_failed"), now + RECOVERY_COOLDOWN_MS, now, key, owner))
             conn.commit()
         raise

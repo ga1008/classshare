@@ -324,7 +324,20 @@ function fillCredentialForm(item) {
     refs.username.value = item.username || '';
     refs.password.value = '';
     renderProfile();
+    updatePasswordRequirement();
     refs.password?.focus({ preventScroll: true });
+}
+
+function savedAccountMatches() {
+    const username = (refs.username?.value || '').replace(/\s+/g, '');
+    return state.credentials.some(item => item.username === username && item.platform_code === refs.platformSelect?.value && item.has_password);
+}
+
+function updatePasswordRequirement() {
+    if (!refs.password) return;
+    const saved = savedAccountMatches();
+    refs.password.required = !saved;
+    refs.password.placeholder = saved ? '留空使用已保存密码；填写可更新密码' : '首次配置请输入密码，保存时自动验证';
 }
 
 function renderCredentials() {
@@ -373,6 +386,7 @@ async function refreshCredentials() {
         const result = await apiFetch('/api/manage/system/smart-classroom-credentials');
         state.credentials = result.credentials || [];
         renderCredentials();
+        updatePasswordRequirement();
         await refreshCapabilities();
     } catch (error) {
         showMessage(error.message || '刷新智慧课堂对接状态失败。', 'error');
@@ -386,7 +400,7 @@ async function saveCredential(event) {
     const formData = new FormData(refs.form);
     const payload = Object.fromEntries(formData.entries());
     payload.enabled = true;
-    if (!payload.username || !payload.password) {
+    if (!payload.username || (!payload.password && !savedAccountMatches())) {
         showMessage('请填写智慧课堂账号和密码。', 'warning');
         return;
     }
@@ -401,6 +415,7 @@ async function saveCredential(event) {
         state.credentials = result.credentials || [];
         refs.password.value = '';
         renderCredentials();
+        updatePasswordRequirement();
         renderAutoSync(result.auto_sync);
         await refreshCapabilities();
         showMessage(result.message || '智慧课堂账号已保存，并已尝试自动同步点名记录。', 'success');
@@ -540,6 +555,8 @@ async function probeSmartRequest(button) {
 
 refs.form?.addEventListener('submit', saveCredential);
 refs.platformSelect?.addEventListener('change', renderProfile);
+refs.platformSelect?.addEventListener('change', updatePasswordRequirement);
+refs.username?.addEventListener('input', updatePasswordRequirement);
 refs.refreshBtn?.addEventListener('click', refreshCredentials);
 refs.accountManageBtn?.addEventListener('click', (event) => openAccountModal(event.currentTarget));
 refs.accountModalClose?.addEventListener('click', closeAccountModal);
@@ -580,5 +597,6 @@ refs.list?.addEventListener('click', (event) => {
 
 renderProfile();
 renderCredentials();
+updatePasswordRequirement();
 renderAutoSync(null);
 refreshCapabilities();

@@ -60,6 +60,8 @@ def resolve_session_window(session, *, explicit_start=None, explicit_end=None):
     date = str(session.get("session_date") or "")[:10]
     datetime.strptime(date, "%Y-%m-%d")
     source = "academic_time"
+    if bool(explicit_start) != bool(explicit_end):
+        raise ValueError("请同时填写本课开始与结束时间。")
     if explicit_start and explicit_end:
         start, end = to_ms(explicit_start), to_ms(explicit_end)
         source = "teacher_confirmed"

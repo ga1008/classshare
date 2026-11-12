@@ -91,7 +91,9 @@ def validate_view(payload, slot, source, expected_checkin_id=None):
             raise AttendanceSourceError("missing_round_id", "远端点名缺少标识。")
     if expected_checkin_id and (not record or str(record["id"]) != str(expected_checkin_id)):
         raise AttendanceSourceError("round_replaced", "学校官方端已删除或重新发起点名，原绑定已暂停。")
-    return {"record": record, "students": student_map(payload.get("stuList")),
+    students = student_map(payload.get("stuList"))
+    return {"record": record, "students": students,
+            "student_names": {str(r["no"]).strip(): str(r.get("name") or "") for r in payload["stuList"]},
             "can_checkin": payload.get("isCanCheckin") is True, "schedule": schedule}
 
 

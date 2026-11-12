@@ -9,6 +9,121 @@ import { createAmbientPoll } from './ambient_poll.js';
 import { getLayerSystem } from './lq/layer.js';
 
 const el = (tag, text) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = String(text); return n; };
+
+/** One owner for the lesson binding and the teacher-triggered durable sync. */
+export function createAttendanceWorkflow({ host, base, sessionId, getRound, getLayer, isLocalBusy = () => false }) {
+    const sessionBase = `${base}/sessions/${sessionId}/external`, endpoint = `${sessionBase}/workflow`;
+    let value = null, disposed = false, pending = false, refreshing = null, serial = 0, syncKey = crypto.randomUUID(), keyRevision = null;
+    const requests = new Set();
+    const heading = el('div'); heading.className = 'la-workflow-heading';
+    const title = el('strong', '智慧课堂');
+    const badge = el('span');
+    const controls = el('div'); controls.className = 'la-actions';
+    const message = el('p', '正在读取课次对应情况…'); message.setAttribute('role', 'status');
+    const target = el('p'); target.className = 'la-binding-target';
+    const progress = el('div'); progress.className = 'la-sync-progress'; progress.setAttribute('aria-live', 'polite');
+    const diagnostics = el('details'); diagnostics.className = 'lq-collapsible';
+    const detailsTitle = el('summary', '查看核对说明'); detailsTitle.className = 'lq-collapsible__summary';
+    const detailBody = el('div'); detailBody.className = 'lq-collapsible__content la-form'; diagnostics.append(detailsTitle, detailBody);
+    const match = createDomainButton({ label: '同步课次', variant: 'glass', size: 'sm' });
+    const sync = createDomainButton({ label: '同步与推送', variant: 'prominent', size: 'sm' });
+    const account = createDomainButton({ label: '配置智慧课堂账号', variant: 'glass', size: 'sm' }); account.hidden = true;
+    const verification = createComponent('button', { label: '完成学校验证码', href: 'https://edu.gxufl.edu.cn/login', variant: 'glass', size: 'sm', attrs: { target: '_blank', rel: 'noopener noreferrer' } }); verification.hidden = true;
+    account.addEventListener('click', () => window.open('/manage/academic/smart-classroom', '_blank', 'noopener'));
+    controls.append(match, sync, account, verification); heading.append(title, badge, controls); host.append(heading, target, message, progress, diagnostics);
+    host.classList.add('lq-surface'); host.dataset.lqComponent = 'surface'; host.dataset.lqPadding = 'md';
+    const labels = { pending: '已排队', running: '正在同步', confirmed: '同步完成', partial: '部分完成', conflict: '需核对差异', outcome_unknown: '正在确认发送结果', needs_teacher_reauth: '登录验证待完成', captcha_required: '学校验证码待完成', credential_invalid: '学校账号验证未通过', awaiting_push: '本地结果已更新，待再次推送', paused: '已暂停', failed: '同步未完成', waiting_local_end: '等待下课', waiting_settlement: '等待本地结算', void: '任务已作废' };
+    const stageLabels = { reading: '读取智慧课堂记录', reading_remote: '读取智慧课堂记录', comparing: '比对本地与学校记录', importing: '同步学校记录', starting: '开启学校点名', ending: '结束学校点名', pushing: '推送学生状态', readback: '回读确认学生状态', completed: '同步完成' };
+    function gate() { const round = getRound(), historical = Boolean(round && round.is_current !== undefined && !round.is_current), locked = pending || isLocalBusy() || historical; host.hidden = historical; match.disabled = locked; sync.disabled = locked || !value?.can_sync || round?.state !== 'published' || !round?.is_current; host.setAttribute('aria-busy', String(pending)); }
+    function render() {
+        if (disposed) return;
+        const binding = value?.binding, plan = value?.plan, round = getRound();
+        const matched = binding?.state === 'matched';
+        badge.replaceChildren(createComponent('chip', { label: matched ? '课次已对应' : '课次待对应', tone: matched ? 'success' : 'warning', kind: 'status' }));
+        const destination = binding?.target || {};
+        target.textContent = matched ? [destination.course_name, destination.teaching_class_name, destination.session_date, destination.section_text || (destination.section ? `${destination.section} 节` : '')].filter(Boolean).join(' · ') : '本地课次与学校课次对应后，才能向智慧课堂同步。';
+        target.hidden = !matched;
+        message.setAttribute('role', 'status');
+        message.textContent = value?.message || binding?.message || (!round ? '先核对网络与时间并开始记录。同步课次不会开启学校点名。' : round.state === 'published' ? '核对学生卡片后，点击同步与推送。' : '下课自动结算后，同步与推送按钮会亮起。');
+        const issues = binding?.diagnostics || [];
+        detailBody.replaceChildren();
+        for (const issue of issues) detailBody.append(el('p', typeof issue === 'string' ? issue : issue.message || issue.reason || issue.label || JSON.stringify(issue)));
+        if (!matched && issues.length) detailBody.append(el('p', '未能对应课次时，学校端操作会停止；本地记录会完整保留，课次对应后可再次同步。'));
+        if (plan?.comparison) detailBody.append(el('p', typeof plan.comparison === 'string' ? plan.comparison : plan.comparison.message || plan.comparison.reason || '已按记录更新时间与出勤证据完成比对。'));
+        account.hidden = !(value?.credentials_required || binding?.credentials_required || value?.code === 'missing_credential');
+        verification.hidden = value?.code !== 'captcha_required' && plan?.state !== 'captcha_required';
+        progress.replaceChildren();
+        if (plan) {
+            const p = plan.progress || {}, complete = plan.state === 'confirmed';
+            const percent = p.percent != null && Number.isFinite(Number(p.percent)) ? Math.max(0, Math.min(100, Number(p.percent))) : (complete ? 100 : null);
+            const label = stageLabels[p.stage] || labels[plan.state] || '正在处理同步任务';
+            progress.append(createComponent('progress', { label: `${label} · 处理进度`, value: percent, max: 100 }), el('p', `${label}${p.total ? ` · 已处理 ${p.completed || 0} / ${p.total} 人` : ''}${percent == null ? '' : ` · 处理进度 ${Math.round(percent)}%`}`));
+            if (plan.message) progress.append(el('p', plan.message));
+            if (!complete) progress.append(el('small', '任务与已确认结果已保存，可关闭浮窗；重新打开可查看进度。'));
+            const operations = plan.last_run?.operations || [];
+            if (operations.length) {
+                const confirmed = operations.filter(item => item.state === 'confirmed').length, protectedCount = operations.filter(item => item.state === 'protected').length;
+                const remaining = operations.filter(item => !['confirmed', 'skipped', 'protected', 'superseded'].includes(item.state)).length;
+                progress.append(el('p', `已回读确认 ${confirmed} 人 · 保留特殊状态 ${protectedCount} 人 · 仍需核对 ${remaining} 人`));
+            }
+            const unconfirmed = operations.filter(item => !['confirmed', 'skipped', 'superseded'].includes(item.state));
+            for (const item of unconfirmed.slice(0, 30)) detailBody.append(el('p', `${item.student_number || '学生待对应'}：${item.reason || item.state || '等待确认'}`));
+        }
+        diagnostics.hidden = !detailBody.childNodes.length;
+        gate();
+    }
+    async function call(url, options = {}, timeoutMs = 45000) {
+        const controller = new AbortController(); requests.add(controller);
+        const deadline = window.setTimeout(() => controller.abort(), timeoutMs);
+        try { return await apiFetch(url, { silent: true, ...options, signal: controller.signal }); }
+        catch (error) { if (error.name === 'AbortError') throw new Error('请求暂未完成。本地记录和已提交任务会保留，可刷新后继续。'); throw error; }
+        finally { window.clearTimeout(deadline); requests.delete(controller); }
+    }
+    function showError(error) {
+        if (disposed) return;
+        message.textContent = error.message || '智慧课堂暂时无法连接，本地点名不受影响。'; message.setAttribute('role', 'alert');
+        const detail = error.data?.detail || error.details || {};
+        account.hidden = !(detail.code === 'missing_credential' || detail.requires_credentials || error.code === 'missing_credential');
+        verification.hidden = !(detail.code === 'captcha_required' || error.code === 'captcha_required');
+    }
+    async function refresh() {
+        if (disposed || pending || isLocalBusy()) return;
+        if (refreshing) return refreshing;
+        const ticket = serial;
+        refreshing = call(endpoint).then(result => { if (!disposed && ticket === serial) { value = result; render(); } }).catch(error => { if (ticket === serial) showError(error); throw error; }).finally(() => { refreshing = null; });
+        return refreshing;
+    }
+    async function act(fn) {
+        if (disposed || pending || isLocalBusy()) return;
+        pending = true; serial++; gate();
+        try { const result = await fn(); if (!disposed) { value = result; render(); } }
+        catch (error) { showError(error); }
+        finally { pending = false; if (!disposed) gate(); }
+    }
+    match.addEventListener('click', () => act(async () => { message.textContent = '正在读取课表并自动核对课程、日期、节次与教学班，首次核对可能需要约一分钟；本地记录不受影响。'; return call(`${sessionBase}/match`, { method: 'POST', body: {} }, 95000); }));
+    sync.addEventListener('click', () => act(async () => {
+        const round = getRound(); if (!round || !value?.can_sync || value?.binding?.state !== 'matched') throw new Error('课次尚未对应，已保留本地点名。请先点击同步课次。');
+        const revision = `${round.id}:${round.revision}:${value.binding.revision}`;
+        if (keyRevision !== revision) { keyRevision = revision; syncKey = crypto.randomUUID(); }
+        const payload = { idempotency_key: syncKey, expected_binding_revision: value.binding.revision };
+        if (value.binding.needs_location) {
+            message.textContent = '学校首次开启点名需要本次教室位置，正在获取…';
+            if (!navigator.geolocation) throw new Error('学校首次点名需要教室位置，当前浏览器不支持定位。本地点名已保留。');
+            const location = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, () => reject(new Error('未取得学校点名所需的位置。允许浏览器定位后可再次同步，本地记录不受影响。')), { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }));
+            if (disposed) return null;
+            payload.location = { latitude: location.coords.latitude, longitude: location.coords.longitude, captured_at_ms: location.timestamp };
+        }
+        message.textContent = '正在提交同步任务：先读取学校点名，再比对并推送需要更新的学生。';
+        const result = await call(`${base}/rounds/${round.id}/external/sync`, { method: 'POST', body: payload });
+        // A received acceptance finishes this intent. Only uncertain/failed
+        // requests reuse the key; a later explicit sync needs a new receipt.
+        syncKey = crypto.randomUUID();
+        return result;
+    }));
+    const poll = createAmbientPoll(refresh, { intervalMs: 4000, timeoutMs: 47000, active: () => !disposed && !pending && !document.hidden && getLayerSystem(document).top() === getLayer() && ['pending', 'reading', 'comparing', 'running', 'waiting_local_end', 'waiting_settlement'].includes(value?.plan?.state) }); poll.start(4000);
+    return { refresh, update: gate, destroy() { if (disposed) return; disposed = true; serial++; poll.dispose(); requests.forEach(controller => controller.abort()); } };
+}
+
 export function openAttendanceSync({ base, round, trigger, parentLayer, readOnly = false, onClose }) {
     const canBind = ['ended', 'closed', 'finalized', 'published', 'settling', 'settled', 'completed'].includes(round.state);
     let closed = false, busy = false, sources = [], checkins = [], binding = null, preview = null, run = null, generation = 0;

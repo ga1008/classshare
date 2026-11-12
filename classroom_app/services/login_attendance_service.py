@@ -165,6 +165,9 @@ def create_round(conn, offering_id, session_id, user, payload, *, timestamp=None
     policy = load_policy(conn, offering_id)
     if policy.get("closed_at_ms"):
         raise HTTPException(409, "课程已结课，仅可更正历史考勤。")
+    policy_revision = payload.get("policy_revision")
+    if policy_revision is not None and policy_revision != policy["revision"]:
+        raise HTTPException(409, "教室网络设置已被更新，请核对最新设置后开始记录。")
     try:
         period = rules.resolve_session_window(session, explicit_start=payload.get("starts_at"), explicit_end=payload.get("ends_at"))
         networks = rules.normalize_networks(payload.get("networks") or policy["networks"])
@@ -191,6 +194,11 @@ def create_round(conn, offering_id, session_id, user, payload, *, timestamp=None
     roster = _roster(conn, offering_id)
     if not roster:
         raise HTTPException(409, "课堂暂无有效学生名单。")
+    # Starting confirms this network for subsequent lessons. Keep this in the
+    # same classroom-locked transaction as the round; retries return above.
+    # Legacy clients may seed an empty policy, but cannot overwrite a newer one.
+    if networks != policy["networks"] and (policy_revision is not None or not policy["networks"]):
+        policy = save_policy(conn, offering_id, user, {**policy, "networks": networks})
     policy.update({"networks": networks, "teacher_reference_ms": reference, "algorithm_version": ALGORITHM_VERSION})
     context = {**_context(conn, offering, session), **period}
     round_id = execute_insert_returning_id(conn,
@@ -489,10 +497,17 @@ def history(conn,offering_id,user,*,before_id=None,limit=50):
 
 
 def session_view(conn, offering_id, session_id, user):
-    require_teacher(conn,offering_id,user)
+    offering = require_teacher(conn,offering_id,user)
     session = _session(conn,offering_id,session_id)
     current = conn.execute("SELECT id FROM login_attendance_rounds WHERE session_id=? ORDER BY is_current DESC,id DESC LIMIT 1",(session_id,)).fetchone()
     result = {"session":session,"policy":load_policy(conn,offering_id),"round":round_view(conn,current["id"],user) if current else None}
+    result["context"] = _context(conn, offering, session)
+    try:
+        result["window"] = rules.resolve_session_window(session)
+        result["window_error"] = None
+    except (ValueError, TypeError):
+        result["window"] = None
+        result["window_error"] = "课表尚无明确起止时间，请核对并填写本课开始、结束时间。"
     return result
 
 
@@ -542,8 +557,9 @@ def load_attendance_sync_context(conn, user, round_id):
         raise HTTPException(409,"只能同步当前有效点名轮次。")
     context = _load(row["context_json"])
     return {**context,"round_id":row["id"],"revision":row["revision"],"state":row["state"],
+            "ended_at_ms":row["ended_at_ms"],"evaluated_at_ms":row["evaluated_at_ms"],
             "closed":bool(load_policy(conn,row["class_offering_id"]).get("closed_at_ms")),"voided":False,
-            "students":[{k:r[k] for k in ("student_id","student_number","status","revision","manual_confirmed","expected")}
+            "students":[{k:r[k] for k in ("student_id","student_number","name","status","revision","manual_confirmed","expected","updated_at_ms","decided_at_ms")}
                         for r in _records(conn,round_id) if r["expected"] or r["manual_confirmed"]],
             "exempt_students":[r["student_id"] for r in _records(conn,round_id) if not r["expected"] and not r["manual_confirmed"]]}
 

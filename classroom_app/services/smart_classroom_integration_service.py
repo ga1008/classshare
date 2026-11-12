@@ -31,6 +31,59 @@ from .smart_classroom_session_service import (
 
 SMART_CLASSROOM_HTTP_TIMEOUT_SECONDS = 18.0
 
+# Exact verified queries only. A POST is not assumed to be replay-safe merely
+# because its caller is a reader. Mutations always return to their durable job.
+SMART_SESSION_READ_OPERATIONS = frozenset({
+    ("GET", "/api/user/getUserInfo"),
+    ("POST", "/api/teaching/checkinCourse/teacherScheduleList"),
+    ("POST", "/api/teaching/checkinCourse/page"),
+    ("POST", "/api/teaching/checkinCourse/checkinRecord"),
+    *( ("POST", "/api/teaching/teacherSchedule/" + suffix)
+       for suffix in ("list", "view", "viewCheckinCoursesRecords", "viewCheckinCoursesCount") ),
+})
+
+
+def _session_unauthorized(response: httpx.Response) -> bool:
+    if response.status_code == 401:
+        return True
+    # Some school versions encode a 401 in an otherwise successful JSON body.
+    if response.status_code == 200 and "json" in response.headers.get("content-type", "").lower():
+        try:
+            payload = response.json()
+        except (ValueError, httpx.ResponseNotRead):
+            return False
+        return isinstance(payload, dict) and any(payload.get(k) in (401, "401") for k in ("errNo", "code", "status"))
+    return False
+
+
+class SmartClassroomAuthenticatedClient(httpx.AsyncClient):
+    """One bounded read replay after shared, generation-fenced token recovery."""
+
+    school_session = None
+    recover_school_session = None
+
+    async def send(self, request, **kwargs):
+        session = self.school_session
+        if session is not None:
+            request.headers["Authorization"] = session.token
+        response = await super().send(request, **kwargs)
+        if session is None or not _session_unauthorized(response):
+            return response
+        mark_session_unauthorized(session)
+        await response.aclose()
+        recovered = await self.recover_school_session()
+        self.school_session = recovered
+        self.headers["Authorization"] = recovered.token
+        if (request.method, request.url.path) not in SMART_SESSION_READ_OPERATIONS:
+            raise SmartClassroomSessionError("session_refreshed")
+        request.headers["Authorization"] = recovered.token
+        response = await super().send(request, **kwargs)
+        if _session_unauthorized(response):
+            mark_session_unauthorized(recovered)
+            await response.aclose()
+            raise SmartClassroomSessionError("needs_teacher_reauth")
+        return response
+
 
 def smart_classroom_tls_context() -> ssl.SSLContext:
     """Use the system trust store or an explicitly maintained CA bundle.
@@ -312,7 +365,15 @@ async def _login_smart_classroom_client(
     err_no = payload.get("errNo")
     token = str(payload.get("token") or "").strip()
     if err_no not in (0, "0") or not token:
-        return _failure_result(profile, STATUS_FAILED, "智慧课堂账号或密码校验失败。", elapsed_ms=elapsed_ms), ""
+        # The verified password endpoint has no captcha field or challenge
+        # submission contract. Distinguish a real challenge from bad credentials;
+        # never fabricate a captcha or loop on the password while it is required.
+        message = " ".join(str(payload.get(k) or "") for k in ("message", "msg", "errMsg")).lower()
+        challenged = (any(payload.get(k) for k in ("captchaRequired", "needCaptcha", "captcha", "captchaId"))
+                      or "验证码" in message or "captcha" in message)
+        code = "captcha_required" if challenged else "credential_invalid"
+        failure = _failure_result(profile, STATUS_FAILED, str(SmartClassroomSessionError(code)), elapsed_ms=elapsed_ms)
+        return {**failure, "error_code": code}, ""
 
     if payload.get("isTeacher") is False:
         return (
@@ -377,7 +438,7 @@ async def open_authenticated_smart_classroom_client(
     *,
     api: str = "pc",
     login_scope: str | None = None,
-    allow_login: bool = False,
+    allow_login: bool = True,
     force_reauth: bool = False,
 ) -> AsyncIterator[tuple[httpx.AsyncClient, SmartClassroomProfile, dict[str, Any]]]:
     profile = get_smart_classroom_profile(access_payload.get("platform_code") or "gxufl_smart_classroom")
@@ -391,7 +452,7 @@ async def open_authenticated_smart_classroom_client(
         profile = replace(profile, api_base_url="https://edu-api.gxufl.com/api")
 
     timeout = httpx.Timeout(SMART_CLASSROOM_HTTP_TIMEOUT_SECONDS, connect=8.0)
-    client = httpx.AsyncClient(
+    client = SmartClassroomAuthenticatedClient(
         base_url=profile.api_base_url,
         timeout=timeout,
         headers=_smart_headers(profile),
@@ -401,20 +462,23 @@ async def open_authenticated_smart_classroom_client(
     )
     try:
         async def login():
-            return await _login_smart_classroom_client(client, profile, username=username, password=password)
+            # Separate raw client prevents recursive authentication while a
+            # request on the data client is recovering its token.
+            async with httpx.AsyncClient(
+                base_url=profile.api_base_url, timeout=timeout, headers=_smart_headers(profile),
+                transport=SmartClassroomMiniTransport() if api == "mini" else SmartClassroomTransport(),
+                trust_env=False, follow_redirects=False,
+            ) as login_client:
+                return await _login_smart_classroom_client(login_client, profile, username=username, password=password)
 
         session = await acquire_session(
             access_payload, login, login_scope=login_scope, allow_login=allow_login, force_reauth=force_reauth,
         )
         client.headers["Authorization"] = session.token
-
-        async def check_authorization(response):
-            if response.status_code == 401:
-                mark_session_unauthorized(session)
-                await response.aclose()
-                raise SmartClassroomSessionError("needs_teacher_reauth")
-
-        client.event_hooks["response"].append(check_authorization)
+        client.school_session = session
+        async def recover():
+            return await acquire_session(access_payload, login, login_scope=login_scope, allow_login=allow_login)
+        client.recover_school_session = recover
         login_result = session.login_result or _success_result(profile, username=username)
         yield client, profile, login_result
     finally:
@@ -595,6 +659,17 @@ def update_smart_classroom_credential_verification_status(
     if verification.get("error_code") == "session_busy":
         # A duplicate verification must not revoke the first in-flight login.
         return serialize_smart_classroom_credential(previous)
+    if previous["last_status"] == STATUS_VERIFIED and (
+        verification.get("status") == STATUS_UNAVAILABLE or
+        verification.get("error_code") in {"captcha_required", "needs_teacher_reauth"}
+    ):
+        # A transient challenge/network failure does not erase saved credentials
+        # or change their generation and strand every bound classroom job.
+        conn.execute("UPDATE teacher_smart_classroom_credentials SET last_status_at=?,last_error=? "
+                     "WHERE id=? AND teacher_id=?",
+                     (str(verification.get("checked_at") or _now_iso()),
+                      str(verification.get("message") or "")[:500], int(credential_id), int(teacher_id)))
+        return serialize_smart_classroom_credential(get_teacher_smart_classroom_credential(conn, teacher_id, credential_id))
     now = _now_iso()
     status = str(verification.get("status") or STATUS_UNCHECKED)
     checked_at = str(verification.get("checked_at") or now)

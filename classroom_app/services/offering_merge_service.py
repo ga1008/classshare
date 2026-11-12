@@ -116,6 +116,9 @@ def _rules() -> dict[str, MergeRule]:
     rules["smart_attendance_write_bindings"] = MergeRule(STRATEGY_ATTENDANCE_HISTORY)
     rules["smart_attendance_auto_sync"] = MergeRule(STRATEGY_ATTENDANCE_HISTORY)
     rules["login_attendance_policies"] = MergeRule(STRATEGY_KEEP_TARGET)
+    # Lesson mappings are cached assertions of the original classroom scope.
+    # Preserve them in the merge snapshot, never remap by local lesson order.
+    rules["smart_attendance_session_links"] = MergeRule(STRATEGY_KEEP_TARGET)
     rules["approval_requests"] = MergeRule(STRATEGY_REPOINT)
     rules["class_offering_sessions"] = MergeRule(STRATEGY_SESSION_STRUCTURE)
     rules["class_offering_class_links"] = MergeRule(STRATEGY_LINKS, offering_column="offering_id")

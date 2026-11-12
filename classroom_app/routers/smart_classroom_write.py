@@ -10,6 +10,7 @@ from ..dependencies import get_current_teacher
 from ..services import smart_classroom_write_service as service
 from ..services import smart_classroom_attendance_adapter as adapter
 from ..services import smart_classroom_auto_sync_service as auto_sync
+from ..services import smart_classroom_workflow_service as workflow_service
 from ..services.smart_classroom_session_service import SmartClassroomSessionError
 from ..services.attendance_report_service import sign_attendance_source_option, _decode_option
 from ..services.trusted_network_service import require_same_origin
@@ -19,6 +20,7 @@ def _private_response(response:Response):
 
 
 router=APIRouter(prefix="/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external",tags=["login_attendance_external"],dependencies=[Depends(_private_response)])
+session_router=APIRouter(prefix="/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/external",tags=["login_attendance_external"],dependencies=[Depends(_private_response)])
 
 
 class Strict(BaseModel):
@@ -65,6 +67,33 @@ class AutoSyncCreate(Source):
     location:Location|None=None
     expected_revision:int|None=Field(default=None,ge=1)
     idempotency_key:str=Field(min_length=1,max_length=160)
+
+
+class WorkflowSync(Strict):
+    idempotency_key:str=Field(min_length=8,max_length=100)
+    expected_binding_revision:int=Field(ge=1)
+    location:Location|None=None
+
+
+@session_router.get("/workflow")
+def workflow(offering_id:int,session_id:int,user:dict=Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        return workflow_service.workflow(conn,user,offering_id,session_id)
+
+
+@session_router.post("/match")
+async def match_lesson(offering_id:int,session_id:int,request:Request,user:dict=Depends(get_current_teacher)):
+    require_same_origin(request)
+    return await _call(asyncio.wait_for(workflow_service.match_lesson(user,offering_id,session_id),timeout=90))
+
+
+@router.post("/sync",status_code=202)
+def sync_workflow(offering_id:int,round_id:int,payload:WorkflowSync,request:Request,user:dict=Depends(get_current_teacher)):
+    require_same_origin(request)
+    with get_db_connection() as conn:
+        result=workflow_service.enqueue_sync(conn,user,offering_id,round_id,payload.model_dump(exclude_none=True))
+        conn.commit()
+        return result
 
 
 def _context(offering_id,round_id,user,request=None):

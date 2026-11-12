@@ -22,7 +22,11 @@ from .smart_classroom_integration_service import open_authenticated_smart_classr
 TASK_KIND = "smart_attendance_auto_sync"
 BATCH_SIZE = 20
 _now, _json, _id = ledger._now, ledger._json, ledger._id
-HOLD_STATES = {"paused", "void", "outcome_unknown", "needs_teacher_reauth", "conflict", "failed"}
+HOLD_STATES = {"paused", "void", "outcome_unknown", "needs_teacher_reauth", "captcha_required", "credential_invalid", "awaiting_push", "conflict", "failed"}
+
+
+def _fingerprint(ctx, plan):
+    return ledger.result_fingerprint(ctx) if json.loads(plan["intent_json"]).get("manual_dispatch") else ledger.context_fingerprint(ctx)
 
 
 def _lifecycle_unknown(plan):
@@ -50,19 +54,27 @@ def get_auto_sync(conn, user, round_id):
     if plan:
         public = {k: plan[k] for k in ("revision", "state", "message", "remote_checkin_id", "binding_id", "updated_at")}
         public.update(enabled=bool(plan["enabled"]), target=_target(json.loads(plan["source_json"]), json.loads(plan["slot_json"])), last_run=None)
+        intent = json.loads(plan["intent_json"])
+        public["comparison"] = intent.get("comparison")
         if plan["last_run_id"]:
             run = conn.execute("SELECT id,binding_id,state,revision,message,verified_at,created_at,updated_at FROM smart_attendance_sync_runs WHERE id=?", (plan["last_run_id"],)).fetchone()
             if run:
                 public["last_run"] = dict(run)
                 public["last_run"]["operations"] = [dict(r) for r in conn.execute("SELECT student_id,student_number,baseline_status,target_status,remote_status,state,reason FROM smart_attendance_sync_operations WHERE run_id=? ORDER BY student_id", (run["id"],)).fetchall()]
                 public["last_run"].update(confirmation_scope="matched_local_students_only", full_remote_round_confirmed=False)
+        operations = (public.get("last_run") or {}).get("operations", [])
+        completed = sum(o["state"] not in {"pending", "outcome_unknown"} for o in operations)
+        terminal = plan["state"] in {"confirmed", "partial", "conflict"}
+        percent = 100 if terminal else min(95, 30 + int(60 * completed / max(1, len(operations)))) if operations else {"reading": 10, "comparing": 25, "running": 30}.get(plan["state"], 0)
+        public["progress"] = {"percent": percent, "completed": completed, "total": len(operations), "stage": plan["state"]}
     return {"plan": public, "capabilities": ledger.capabilities()}
 
 
 def _validate_context_source(ctx, source):
     if (str(ctx.get("year")), str(ctx.get("term"))) != (str(source.get("academic_year")), str(source.get("academic_term"))):
         raise HTTPException(409, "所选授课班学期与本地课次不一致。")
-    if not ctx.get("course_code") or str(ctx["course_code"]).upper() != str(source.get("course_code", "")).upper():
+    alias_verified = source.get("course_match_evidence") == "name_and_roster" and source.get("local_course_code") == ctx.get("course_code")
+    if not ctx.get("course_code") or (str(ctx["course_code"]).upper() != str(source.get("course_code", "")).upper() and not alias_verified):
         raise HTTPException(409, "所选课程代码与本地课次不一致。")
     if not ctx.get("week_index") or not mini.sections(ctx.get("section_text")):
         raise HTTPException(409, "本地课次缺少可靠的教学周或节次，请先维护课表。")
@@ -315,9 +327,15 @@ def schedule_due_auto_sync(conn, round_id, *, force=False, delay=0):
         # must not keep polling a permanently ambiguous school operation.
         return
     changed_result = False
+    intent = json.loads(plan["intent_json"])
+    if intent.get("manual_dispatch") and not unknown and local and local["state"] == "published":
+        ctx = ledger.load_local_context(conn, {"role": "teacher", "id": plan["owner_teacher_id"]}, str(round_id))
+        if _fingerprint(ctx, plan) != intent.get("authorized_fingerprint"):
+            conn.execute("UPDATE smart_attendance_auto_sync SET enabled=0,state='awaiting_push',message=?,updated_at=? WHERE local_round_id=?", ("本地结果已更新，请点击同步与推送以提交新版本。", _now(), str(round_id)))
+            return
     if not force and not invalid and local["state"] == "published" and plan["last_context_fingerprint"]:
         ctx = ledger.load_local_context(conn, {"role": "teacher", "id": plan["owner_teacher_id"]}, str(round_id))
-        changed_result = ledger.context_fingerprint(ctx) != plan["last_context_fingerprint"]
+        changed_result = _fingerprint(ctx, plan) != plan["last_context_fingerprint"]
         if not changed_result and plan["state"] in {"confirmed", "partial", "conflict"}:
             return
     if not force and not invalid and ((plan["state"] == "waiting_local_end" and local["state"] in {"scheduled", "running"}) or
@@ -381,7 +399,10 @@ def _fence(user, plan, *, sending=False, expected_fingerprint=None):
             raise HTTPException(409, "同步授权已变化，已停止新的发送。")
         if sending and (not fresh["enabled"] or not ctx.get("is_current", True) or ctx["state"] == "void"):
             raise HTTPException(409, "本轮同步已停用，已停止新的发送。")
-        if expected_fingerprint and (ctx["state"] != "published" or ledger.context_fingerprint(ctx) != expected_fingerprint):
+        intent = json.loads(fresh["intent_json"])
+        if sending and intent.get("manual_dispatch") and _fingerprint(ctx, fresh) != intent.get("authorized_fingerprint"):
+            raise HTTPException(409, "本地结果已更新，请点击同步与推送以提交新版本。")
+        if expected_fingerprint and (ctx["state"] != "published" or _fingerprint(ctx, fresh) != expected_fingerprint):
             raise HTTPException(409, "本地点名结果已变化，旧版本停止发送。")
         return ctx, fresh
 
@@ -417,8 +438,27 @@ async def _prepare_remote(client, user, plan, ctx):
     source, slot = json.loads(plan["source_json"]), json.loads(plan["slot_json"])
     _validate_slot_context(ctx, source, slot)
     snap = await mini.read_slot(client, slot, source, plan["remote_checkin_id"])
+    original_record = dict(snap["record"] or {})
+    dispatch_intent = json.loads(plan["intent_json"])
+    if dispatch_intent.get("manual_dispatch"):
+        if "comparison_record" not in dispatch_intent:
+            dispatch_intent.update(comparison_record=original_record, new_remote_round=not bool(snap["record"]))
+            _plan_state(plan, "reading", "正在读取学校本次课记录。", intent_json=_json(dispatch_intent))
+        original_record = dispatch_intent["comparison_record"]
+    if dispatch_intent.get("manual_dispatch") and snap["record"]:
+        from .smart_classroom_workflow_service import persist_remote_snapshot
+        _plan_state(plan, "reading", "正在同步学校本次课点名记录到本地。")
+        with get_db_connection() as conn:
+            persist_remote_snapshot(conn, user, ctx, source, snap)
+            conn.commit()
     if not snap["record"]:
         intent = json.loads(plan["intent_json"])
+        if intent.get("operation") == "start" and intent.get("auth_rejected_lifecycle") == "start":
+            history = await mini.read_history(client, slot["schedule_id"])
+            if sorted(str(r["id"]) for r in history) == sorted(intent.get("before_ids", [])):
+                intent.pop("operation", None)
+                intent.pop("auth_rejected_lifecycle", None)
+                _plan_state(plan, "pending", "登录已恢复，回读确认尚未创建学校点名。", intent_json=_json(intent))
         if intent.get("operation") == "start":
             _plan_state(plan, "outcome_unknown", "学校开始点名的结果未知，请在官方端核实并选择确切轮次；不会重复创建。")
             return None
@@ -459,20 +499,29 @@ async def _prepare_remote(client, user, plan, ctx):
     if snap["record"].get("isStop") is not True:
         _fence(user, plan, sending=True)
         intent = json.loads(plan["intent_json"])
+        if intent.get("operation") == "stop" and intent.get("auth_rejected_lifecycle") == "stop":
+            intent.pop("operation", None)
+            intent.pop("auth_rejected_lifecycle", None)
+            _plan_state(plan, "pending", "登录已恢复，回读确认学校点名仍在进行。", intent_json=_json(intent))
         if intent.get("operation") == "stop":
             _plan_state(plan, "outcome_unknown", "学校结束点名尚未确认，请在官方端结束后回读；不会重复发送。")
             return None
-        _plan_state(plan, "outcome_unknown", "正在结束学校点名并回读确认。", intent_json=_json({"operation": "stop", "submitted_at": _now()}))
+        intent.update(operation="stop", submitted_at=_now(), verified=False)
+        _plan_state(plan, "outcome_unknown", "正在结束学校点名并回读确认。", intent_json=_json(intent))
         await mini.stop_checkin(client, plan["remote_checkin_id"])
         snap = await mini.read_slot(client, slot, source, plan["remote_checkin_id"])
         if snap["record"].get("isStop") is not True:
             raise HTTPException(409, "学校尚未确认点名结束，未发送学生改签。")
     intent = json.loads(plan["intent_json"])
     if intent.get("operation") == "stop" or snap["record"].get("isStop") is True:
-        _plan_state(plan, "pending", intent_json=_json({"operation": "stop", "verified": True}))
+        intent.pop("auth_rejected_lifecycle", None)
+        intent.update(operation="stop", verified=True)
+        _plan_state(plan, "pending", intent_json=_json(intent))
     if ctx["state"] != "published":
         _plan_state(plan, "waiting_settlement", "学校点名已结束，等待本地迟到事件归并和最终结果发布。")
         return None
+    snap["comparison_record"] = original_record
+    snap["new_remote_round"] = dispatch_intent.get("new_remote_round", False)
     return snap
 
 
@@ -480,8 +529,8 @@ def _new_run(user, plan, ctx, snapshot):
     """A new local revision inherits the last confirmed remote baseline."""
     with get_db_connection() as conn:
         fresh_ctx, fresh = _plan(conn, user, plan["local_round_id"], lock=True)
-        fingerprint = ledger.context_fingerprint(ctx)
-        if not fresh["enabled"] or fresh["revision"] != plan["revision"] or fresh_ctx["state"] != "published" or ledger.context_fingerprint(fresh_ctx) != fingerprint:
+        fingerprint = _fingerprint(ctx, plan)
+        if not fresh["enabled"] or fresh["revision"] != plan["revision"] or fresh_ctx["state"] != "published" or _fingerprint(fresh_ctx, fresh) != fingerprint:
             raise HTTPException(409, "本地最终结果或同步授权已变化。")
         binding = dict(conn.execute("SELECT * FROM smart_attendance_write_bindings WHERE id=?", (plan["binding_id"],)).fetchone())
         if binding["state"] != "active" or binding["credential_generation"] != plan["credential_generation"]:
@@ -489,7 +538,8 @@ def _new_run(user, plan, ctx, snapshot):
         last = conn.execute("SELECT * FROM smart_attendance_sync_runs WHERE id=?", (fresh["last_run_id"],)).fetchone() if fresh["last_run_id"] else None
         if last and ledger._unknown_submission(conn, dict(last)):
             return dict(last)
-        if last and last["context_fingerprint"] == fingerprint:
+        manual = json.loads(plan["intent_json"]).get("manual_dispatch")
+        if last and last["context_fingerprint"] == fingerprint and (not manual or last["request_key"].endswith(":" + str(plan["revision"]))):
             return dict(last)
         baseline = json.loads(binding["remote_snapshot_json"])["students"]
         if last:
@@ -498,13 +548,20 @@ def _new_run(user, plan, ctx, snapshot):
                     baseline[op["student_number"]] = op["remote_status"]
             conn.execute("UPDATE smart_attendance_sync_runs SET state='superseded',revision=revision+1,updated_at=? WHERE id=? AND state NOT IN ('confirmed','outcome_unknown')", (_now(), last["id"]))
         targets = ledger._targets(ctx)
+        intent = json.loads(plan["intent_json"])
+        if intent.get("manual_dispatch"):
+            from .smart_classroom_workflow_service import comparison_targets
+            targets, _ = comparison_targets(ctx, {**snapshot, "record": snapshot.get("comparison_record", snapshot["record"])})
+            # This explicit dispatch authorizes a fresh remote snapshot; later
+            # changes are still protected by the per-operation baseline fence.
+            baseline = dict(snapshot["students"])
         comparisons = ledger.compare_students(targets, baseline, snapshot["students"])
         run_id, now = _id(), _now()
         conn.execute("""INSERT INTO smart_attendance_sync_runs(id,binding_id,owner_teacher_id,local_round_id,
             local_revision,context_fingerprint,credential_generation,binding_revision,target_json,baseline_json,state,request_key,created_at,updated_at)
             VALUES(?,?,?,?,?,?,?,?,?,?,'pending',?,?,?)""", (run_id, binding["id"], user["id"], plan["local_round_id"],
             ctx["revision"], fingerprint, plan["credential_generation"], binding["revision"], _json(targets),
-            _json({"record": snapshot["record"], "students": baseline}), "auto:" + plan["local_round_id"] + ":" + fingerprint, now, now))
+            _json({"record": snapshot["record"], "students": baseline}), "auto:" + plan["local_round_id"] + ":" + fingerprint + (":" + str(plan["revision"]) if intent.get("manual_dispatch") else ""), now, now))
         for item in comparisons:
             state = "pending" if item["state"] == "needs_teacher_action" else item["state"]
             conn.execute("""INSERT INTO smart_attendance_sync_operations(id,run_id,student_id,student_number,target_revision,
@@ -567,13 +624,21 @@ async def _reconcile_unknown(client, user, plan, run):
     remote = await mini.read_records(client, plan["remote_checkin_id"])
     with get_db_connection() as conn:
         operations = [dict(r) for r in conn.execute("SELECT * FROM smart_attendance_sync_operations WHERE run_id=? AND state='outcome_unknown'", (run["id"],)).fetchall()]
+    intent = json.loads(plan["intent_json"])
     for op in operations:
         actual = remote.get(op["student_number"])
         if actual == op["target_status"]:
             _op_state(run["id"], op["student_number"], "confirmed", actual, "恢复后回读确认先前请求已生效。")
+        elif intent.get("auth_rejected_operation_id") == op["id"] and actual == op["baseline_status"]:
+            _op_state(run["id"], op["student_number"], "pending", actual, "过期会话已自动恢复，回读确认原状态未变，将继续提交。")
         else:
             _op_state(run["id"], op["student_number"], "outcome_unknown", actual,
                       "先前请求可能已提交，当前结果尚不能确认；请在官方端核实，系统不会盲目重发。")
+    if intent.pop("auth_rejected_operation_id", None):
+        with get_db_connection() as conn:
+            conn.execute("UPDATE smart_attendance_auto_sync SET intent_json=? WHERE local_round_id=? AND revision=?", (_json(intent), plan["local_round_id"], plan["revision"]))
+            conn.commit()
+        plan["intent_json"] = _json(intent)
     return _run_finish(plan, run, waiting=True)
 
 
@@ -603,7 +668,7 @@ def _submission_intent(user, plan, run, op):
         ctx, fresh = _plan(conn, user, plan["local_round_id"], lock=True)
         ledger._account_access(conn, user["id"], plan["external_account_key"], plan["credential_generation"])
         binding = conn.execute("SELECT state,revision,credential_generation FROM smart_attendance_write_bindings WHERE id=?", (run["binding_id"],)).fetchone()
-        if not fresh or not fresh["enabled"] or fresh["revision"] != plan["revision"] or ctx["state"] != "published" or ledger.context_fingerprint(ctx) != run["context_fingerprint"]:
+        if not fresh or not fresh["enabled"] or fresh["revision"] != plan["revision"] or ctx["state"] != "published" or _fingerprint(ctx, fresh) != run["context_fingerprint"]:
             raise HTTPException(409, "本地结果、轮次或授权已变化，旧版本停止发送。")
         if not binding or binding["state"] != "active" or binding["revision"] != run["binding_revision"] or binding["credential_generation"] != run["credential_generation"]:
             raise HTTPException(409, "绑定已变化，旧版本停止发送。")
@@ -619,7 +684,10 @@ def _submission_intent(user, plan, run, op):
 
 async def _write_batch(client, user, plan, run, snapshot):
     source, slot = json.loads(plan["source_json"]), json.loads(plan["slot_json"])
-    remote = snapshot["students"]
+    leave_corrections = {t["student_number"] for t in json.loads(run["target_json"]) if t.get("allow_protected_override")}
+    # AI comparison and queue handoff may take seconds. Read again before the
+    # first mutation so independent school edits become conflicts, not writes.
+    remote = await mini.read_records(client, plan["remote_checkin_id"])
     with get_db_connection() as conn:
         operations = [dict(r) for r in conn.execute("SELECT * FROM smart_attendance_sync_operations WHERE run_id=? ORDER BY student_id", (run["id"],)).fetchall()]
     submitted = 0
@@ -637,7 +705,7 @@ async def _write_batch(client, user, plan, run, snapshot):
         if actual is None or actual not in mini.STATUSES or desired is None:
             _op_state(run["id"], op["student_number"], "blocked", actual, "身份或结果无法可靠确认，保留学校原状态。")
             continue
-        if actual in ledger.PROTECTED_STATUSES:
+        if actual in ledger.PROTECTED_STATUSES and not (op["student_number"] in leave_corrections and actual in {"SICK_LEAVE", "PERSONAL_LEAVE"}):
             _op_state(run["id"], op["student_number"], "protected", actual, "学校已设置请假或特殊状态，保留原值。")
             continue
         if actual != op["baseline_status"]:
@@ -693,8 +761,29 @@ async def process_auto_sync(teacher_id, round_id):
                 ctx, plan = _fence(user, plan, sending=True)
                 if ctx["state"] != "published":
                     return {"state": "waiting_settlement"}
+                intent = json.loads(plan["intent_json"])
+                if intent.get("manual_dispatch") and not (last and last["context_fingerprint"] == _fingerprint(ctx, plan) and str(last["request_key"]).endswith(":" + str(plan["revision"]))):
+                    from .smart_classroom_workflow_service import comparison_targets, _ai_assist
+                    _, comparison = comparison_targets(ctx, {**snapshot, "record": snapshot.get("comparison_record", snapshot["record"])})
+                    _plan_state(plan, "comparing", "学校记录已同步，正在按修改时间和出勤证据比对。")
+                    allowed = ["local_newer", "remote_newer", "mixed", "unknown"]
+                    comparison["ai"] = await _ai_assist("依据给出的逐人可靠时间比较计数判定版本方向。local_newer/remote_newer只有对应计数且无另一方向与unknown时成立；多种并存选mixed；全unknown选unknown。远端较新或不明时只补出勤。", {"counts": comparison["counts"], "remote_updated_at_ms": comparison["remote_updated_at_ms"], "allowed_decisions": allowed})
+                    present_modes = {k for k in ("local_newer", "remote_newer", "unknown") if comparison["counts"].get(k)}
+                    expected_decision = next(iter(present_modes)) if len(present_modes) == 1 else "mixed"
+                    if comparison["ai"]["status"] == "assisted" and comparison["ai"]["decision"] != expected_decision:
+                        comparison["ai"] = {"status": "evidence_fallback", "decision": expected_decision}
+                    intent["comparison"] = comparison
+                    _plan_state(plan, "running", "已完成比对，正在逐人推送并回读。", intent_json=_json(intent))
+                    ctx, plan = _fence(user, plan, sending=True)
                 run = _new_run(user, plan, ctx, snapshot)
-                return await _write_batch(client, user, plan, run, snapshot)
+                result = await _write_batch(client, user, plan, run, snapshot)
+                if intent.get("manual_dispatch") and result["state"] in {"confirmed", "partial", "conflict"}:
+                    from .smart_classroom_workflow_service import persist_remote_snapshot
+                    final_snapshot = await mini.read_slot(client, json.loads(plan["slot_json"]), json.loads(plan["source_json"]), plan["remote_checkin_id"])
+                    with get_db_connection() as conn:
+                        persist_remote_snapshot(conn, user, ctx, json.loads(plan["source_json"]), final_snapshot)
+                        conn.commit()
+                return result
     except Exception as exc:
         # Safe, bounded recovery: scheduler may retry a read, never an unlogged
         # mutation. Do not expose upstream secrets or personal error payloads.
@@ -708,16 +797,32 @@ async def process_auto_sync(teacher_id, round_id):
             pending_unknown = bool(run and ledger._unknown_submission(conn, dict(run)))
             intent = json.loads(fresh["intent_json"]) if fresh else {}
             lifecycle_unknown = bool(fresh and fresh["state"] == "outcome_unknown" and intent.get("operation") in {"start", "stop"})
-            if fresh and fresh["enabled"] and fresh_ctx["state"] == "published" and run and not pending_unknown and ledger.context_fingerprint(fresh_ctx) != run["context_fingerprint"]:
+            if fresh and fresh["enabled"] and intent.get("manual_dispatch") and fresh_ctx["state"] == "published" and not pending_unknown and _fingerprint(fresh_ctx, fresh) != intent.get("authorized_fingerprint"):
+                conn.execute("UPDATE smart_attendance_auto_sync SET enabled=0,state='awaiting_push',message=?,updated_at=? WHERE local_round_id=?", ("本地结果已更新，请点击同步与推送以提交新版本。", _now(), str(round_id)))
+                conn.commit()
+                return {"state": "awaiting_push"}
+            if fresh and fresh["enabled"] and fresh_ctx["state"] == "published" and run and not pending_unknown and _fingerprint(fresh_ctx, fresh) != run["context_fingerprint"]:
                 conn.execute("UPDATE smart_attendance_auto_sync SET state='pending',message=?,updated_at=? WHERE local_round_id=?", ("本地结果已更新，将按最新发布版本继续。", _now(), str(round_id)))
                 schedule_due_auto_sync(conn, round_id, force=True, delay=2)
                 conn.commit()
                 return {"state": "pending"}
-        if code in {"needs_teacher_reauth", "credential_changed", "authentication_required"}:
+        if code == "session_refreshed" and fresh and fresh["enabled"]:
+            with get_db_connection() as conn:
+                if pending_unknown and run:
+                    rejected = conn.execute("SELECT id FROM smart_attendance_sync_operations WHERE run_id=? AND state='outcome_unknown' ORDER BY updated_at DESC LIMIT 1", (run["id"],)).fetchone()
+                    if rejected:
+                        intent["auth_rejected_operation_id"] = rejected["id"]
+                elif lifecycle_unknown:
+                    intent["auth_rejected_lifecycle"] = intent["operation"]
+                conn.execute("UPDATE smart_attendance_auto_sync SET intent_json=?,message=?,updated_at=? WHERE local_round_id=? AND revision=?", (_json(intent), "会话已自动更新，正在回读并继续同步。", _now(), str(round_id), plan["revision"]))
+                schedule_due_auto_sync(conn, round_id, force=True, delay=2)
+                conn.commit()
+            return {"state": "outcome_unknown"}
+        if code in {"captcha_required", "credential_invalid"}:
+            state, message = code, "学校要求验证码验证，请完成学校登录验证后重试；本地点名和同步进度已保留。" if code == "captcha_required" else "学校账号密码验证失败，请更新账号密码；本地点名和同步进度已保留。"
+        elif code in {"credential_changed", "authentication_required"}:
             state, message = "needs_teacher_reauth", "学校会话或凭据已变化，请教师重新授权；已提交请求先回读，不会自动重放。"
-        elif pending_unknown or lifecycle_unknown:
-            state, message = "outcome_unknown", "请求可能已提交，已保留意图日志；请回读核对，未重复发送。"
-        elif getattr(exc, "status_code", None) == 429 or code == "session_busy":
+        elif getattr(exc, "status_code", None) == 429 or code in {"session_busy", "needs_teacher_reauth"}:
             with get_db_connection() as conn:
                 _, retry_plan = _plan(conn, user, round_id, lock=True)
                 retry_intent = json.loads(retry_plan["intent_json"])
@@ -725,9 +830,11 @@ async def process_auto_sync(teacher_id, round_id):
                 if retry_plan["enabled"] and retry_plan["revision"] == plan["revision"] and attempts < 2:
                     retry_intent["busy_retries"] = attempts + 1
                     conn.execute("UPDATE smart_attendance_auto_sync SET intent_json=? WHERE local_round_id=?", (_json(retry_intent), str(round_id)))
-                    schedule_due_auto_sync(conn, round_id, force=True, delay=15 * (attempts + 1)); conn.commit()
+                    schedule_due_auto_sync(conn, round_id, force=True, delay=65 * (attempts + 1)); conn.commit()
                     return {"state": "pending"}
             state, message = "failed", "该学校账号持续繁忙，已停止自动重试；请稍后由教师重试。"
+        elif pending_unknown or lifecycle_unknown:
+            state, message = "outcome_unknown", "请求可能已提交，已保留意图日志；请回读核对，未重复发送。"
         else:
             state, message = "failed", "同步暂未完成，原有考勤保留；请检查课次绑定或学校服务后重试。"
         if fresh and fresh["enabled"]:

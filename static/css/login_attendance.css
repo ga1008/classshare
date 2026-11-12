@@ -3,18 +3,37 @@
 .la-heading { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1rem; }
 .la-heading h3,.la-heading p { margin:0; }
 .la-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:.75rem; }
+.la-summary .lq-card { padding:.75rem 1rem; }
+.la-summary .lq-card__title { font-size:.9rem; }
+.la-summary .lq-card__value { font-size:1.65rem; margin:0; }
+.la-summary .lq-card__body,.la-summary .lq-card__foot { display:none; }
 .la-stat { font-size:1.7rem; font-variant-numeric:tabular-nums; }
 .la-actions,.la-filters,.la-bulk-fields { display:flex; flex-wrap:wrap; align-items:center; gap:.65rem; }
 .la-filters>.lq-field { flex:1 1 12rem; }
 .la-bulk-fields>.lq-field { flex:1 1 12rem; }
-.la-content { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(17rem,1fr); gap:1rem; align-items:start; }
+.la-content { display:grid; grid-template-columns:minmax(0,1fr); gap:1rem; align-items:start; }
 .la-list-pane,.la-detail,.la-form { display:grid; gap:.85rem; min-width:0; }
 .la-form[hidden] { display:none; }
-.la-students { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; }
+.la-students { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,13rem),1fr)); gap:.65rem; }
+.la-student-card { display:grid; min-width:0; align-content:start; }
+.la-student-open { display:flex; flex-direction:column; align-items:flex-start; gap:.55rem; width:100%; text-align:start; padding:1rem; }
+.la-student-identity { display:flex; flex-direction:column; align-items:flex-start; gap:.2rem; min-width:0; }
+.la-student-identity strong { font-size:1.05rem; }
+.la-student-reason { text-align:start; white-space:normal; overflow-wrap:anywhere; font-weight:400; }
+.la-student-select { margin:0 .8rem .6rem; }
+.la-student-select[hidden],.la-workspace [hidden] { display:none; }
+.la-record-edit,.la-school-workflow,.la-sync-progress { display:grid; gap:.65rem; min-width:0; }
+.la-workflow-heading { display:flex; align-items:center; flex-wrap:wrap; gap:.65rem; }
+.la-workflow-heading>.la-actions { margin-inline-start:auto; }
+.la-binding-target,.la-guidance,.la-school-workflow p { margin:0; overflow-wrap:anywhere; }
+.la-school-workflow .lq-progress { width:100%; }
+.la-config .la-form { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.la-config .la-form>.lq-field:first-child,.la-config-help { grid-column:1/-1; }
+.la-batch>.la-actions { padding-block:.5rem; }
 .la-student-body { display:grid; gap:.5rem; }
 .la-student-body p,.la-facts p { margin:0; overflow-wrap:anywhere; }
 .la-notice:empty { display:none; }
-.la-detail { position:sticky; top:0; overflow-wrap:anywhere; }
+.la-detail { overflow-wrap:anywhere; }
 .la-dialog .lq-dialog__body { min-height:0; overflow:auto; }
 .la-dialog .lq-table { width:100%; }
 .la-dialog .lq-table td { overflow-wrap:anywhere; }
@@ -25,4 +44,4 @@
 .lad-session-body .lq-progress { width:100%; }
 .lad-workspace .lq-card__head,.lad-workspace .lq-card__copy { min-width:0; overflow-wrap:anywhere; }
 @media(max-width:800px) { .la-content { grid-template-columns:1fr; } .la-detail { position:static; } .la-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media(max-width:480px) { .la-students,.lad-list { grid-template-columns:1fr; } .la-actions>.lq-btn { min-height:2.75rem; } }
+@media(max-width:480px) { .la-students { grid-template-columns:repeat(2,minmax(0,1fr)); } .la-student-open { padding:.7rem; } .lad-list,.la-config .la-form { grid-template-columns:1fr; } .la-actions>.lq-btn { min-height:2.75rem; } .la-workflow-heading>.la-actions { margin-inline-start:0; width:100%; } }

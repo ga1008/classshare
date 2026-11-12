@@ -18,11 +18,11 @@ from classroom_app.services import smart_classroom_session_service as sessions
 
 class SchoolSessionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.folder = tempfile.TemporaryDirectory()
-        self.addCleanup(self.folder.cleanup)
-        self.path = Path(self.folder.name) / "synthetic.sqlite"
+        self.path = Path(self.enterContext(tempfile.TemporaryDirectory())) / "synthetic.sqlite"
         self.logins = 0
         self.unauthorized = False
+        self.expired_tokens = set()
+        self.login_failure = None
         self.requests = []
         with self.connection() as conn:
             conn.execute("""CREATE TABLE teacher_smart_classroom_credentials(
@@ -60,19 +60,22 @@ class SchoolSessionTests(unittest.IsolatedAsyncioTestCase):
         if request.url.path == "/api/login":
             self.logins += 1
             await asyncio.sleep(.01)
+            if self.login_failure:
+                return httpx.Response(200, json=self.login_failure)
             return httpx.Response(200, json={"errNo": 0, "token": f"synthetic-token-{self.logins}", "isTeacher": True})
         if request.url.path == "/api/user/getUserInfo":
             return httpx.Response(200, json={"name": "synthetic", "token": "must-not-escape"})
-        return httpx.Response(401 if self.unauthorized else 200, json={"ok": not self.unauthorized})
+        unauthorized = self.unauthorized or request.headers.get("Authorization") in self.expired_tokens
+        return httpx.Response(401 if unauthorized else 200, json={"ok": not unauthorized})
 
     async def read(self, access=None, **kwargs):
         async with auth.open_authenticated_smart_classroom_client(access or self.access, **kwargs) as (client, _, result):
-            response = await client.post("/synthetic-read")
+            response = await client.post("/teaching/teacherSchedule/list")
             return response.status_code, result
 
     def expire_cooldown(self):
         with self.connection() as conn:
-            conn.execute("UPDATE smart_classroom_sessions SET next_login_at_ms=0")
+            conn.execute("UPDATE smart_classroom_sessions SET next_login_at_ms=0,last_login_ms=0")
             conn.commit()
 
     async def test_parallel_requests_and_other_teacher_share_one_login(self):
@@ -87,49 +90,111 @@ class SchoolSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("must-not-escape", json.dumps(results))
         self.assertTrue(all(r.headers.get("Tenant-Id") == "1" for r in self.requests))
 
-    async def test_401_is_persistent_and_does_not_replay_or_relogin(self):
+    async def test_expired_read_recovers_and_replays_without_per_lesson_grant(self):
         await self.read()
-        self.unauthorized = True
-        with self.assertRaises(sessions.SmartClassroomSessionError) as error:
-            await self.read()
-        self.assertEqual("needs_teacher_reauth", error.exception.code)
-        self.unauthorized = False
-        for _ in range(2):
-            with self.assertRaises(sessions.SmartClassroomSessionError):
-                await self.read()
-        self.assertEqual(1, self.logins)
-        self.assertEqual(2, sum(r.url.path == "/api/synthetic-read" for r in self.requests))
+        self.expired_tokens.add("synthetic-token-1")
+        self.assertEqual(200, (await self.read())[0])
+        self.assertEqual(2, self.logins)
+        self.assertEqual(3, sum(r.url.path == "/api/teaching/teacherSchedule/list" for r in self.requests))
         with self.connection() as conn:
             state = sessions.session_public_status(conn, self.access)
-        self.assertEqual("needs_teacher_reauth", state["state"])
+        self.assertEqual("active", state["state"])
         self.assertNotIn("token", json.dumps(state))
 
-    async def test_scoped_recovery_is_bounded_and_cooldown_persisted(self):
+    async def test_repeated_unauthorized_is_bounded_and_recovers_after_cooldown(self):
+        await self.read()
+        self.unauthorized = True
+        with self.assertRaises(sessions.SmartClassroomSessionError):
+            await self.read()
+        with self.assertRaises(sessions.SmartClassroomSessionError):
+            await self.read()
+        self.assertEqual(2, self.logins)
+        self.unauthorized = False
+        self.expire_cooldown()
+        self.assertEqual(200, (await self.read())[0])
+        self.assertEqual(3, self.logins)
+
+    async def test_concurrent_expiry_coalesces_one_recovery(self):
+        await self.read()
+        self.expired_tokens.add("synthetic-token-1")
+        results = await asyncio.gather(self.read(), self.read(), self.read(api="mini"))
+        self.assertEqual([200] * 3, [value[0] for value in results])
+        self.assertEqual(2, self.logins)
+
+    async def test_same_client_delayed_replay_401_cannot_revoke_newer_token(self):
+        replay_started, release_replay = asyncio.Event(), asyncio.Event()
+        original = self.request
+        async def interleaved(request):
+            token = request.headers.get("Authorization")
+            if request.url.path.endswith("/list") and token == "synthetic-token-1":
+                return httpx.Response(401)
+            if request.url.path.endswith("/list") and token == "synthetic-token-2":
+                replay_started.set()
+                await release_replay.wait()
+                return httpx.Response(401)
+            if request.url.path.endswith("/view") and token == "synthetic-token-2":
+                return httpx.Response(401)
+            return await original(request)
+        self.patch(auth, "SmartClassroomTransport", lambda: httpx.MockTransport(interleaved))
+        async with auth.open_authenticated_smart_classroom_client(self.access) as (client, _, _):
+            delayed = asyncio.create_task(client.post("/teaching/teacherSchedule/list"))
+            try:
+                await asyncio.wait_for(replay_started.wait(), timeout=2)
+                # Advance the persisted recovery window; a concurrent request
+                # now legitimately obtains token 3 while token 2 is in flight.
+                self.expire_cooldown()
+                self.assertEqual(200, (await client.post("/teaching/teacherSchedule/view")).status_code)
+                release_replay.set()
+                with self.assertRaises(sessions.SmartClassroomSessionError):
+                    await delayed
+                with self.connection() as conn:
+                    self.assertEqual("active", sessions.session_public_status(conn, self.access)["state"])
+                self.assertEqual(200, (await client.post("/teaching/teacherSchedule/view")).status_code)
+                self.assertEqual(3, self.logins)
+            finally:
+                release_replay.set()
+                await asyncio.gather(delayed, return_exceptions=True)
+
+    async def test_write_401_recovers_but_never_replays_mutation(self):
+        await self.read()
+        self.expired_tokens.add("synthetic-token-1")
+        path = "/teaching/teacherSchedule/changeStuStatus"
+        async with auth.open_authenticated_smart_classroom_client(self.access, api="mini") as (client, _, _):
+            with self.assertRaises(sessions.SmartClassroomSessionError) as error:
+                await client.post(path, data={"synthetic": "only"})
+            self.assertEqual("session_refreshed", error.exception.code)
+        self.assertEqual(1, sum(r.url.path == "/api" + path for r in self.requests))
+        self.assertEqual(2, self.logins)
+        self.assertEqual(200, (await self.read())[0])
+
+    async def test_captcha_is_distinct_and_does_not_hammer_saved_password(self):
+        self.login_failure = {"errNo": 1, "msg": "请输入验证码 token=must-not-escape"}
+        for _ in range(2):
+            with self.assertRaises(sessions.SmartClassroomSessionError) as error:
+                await self.read()
+            self.assertEqual("captcha_required", error.exception.code)
+            self.assertNotIn("must-not-escape", str(error.exception))
+        self.assertEqual(1, self.logins)
+
+    async def test_transient_verification_keeps_saved_credential_generation(self):
         await self.read()
         with self.connection() as conn:
-            sessions.grant_background_login(conn, self.access, "lesson:synthetic", expires_at_ms=int(time.time()*1000)+300000)
+            auth.update_smart_classroom_credential_verification_status(conn, 1, self.access["credential_id"], {
+                "status": "failed", "error_code": "captcha_required", "message": "需要验证码"})
             conn.commit()
-        self.unauthorized = True
-        with self.assertRaises(sessions.SmartClassroomSessionError):
-            await self.read()
-        self.unauthorized = False
-        with self.assertRaises(sessions.SmartClassroomSessionError):
-            await self.read(login_scope="lesson:synthetic", allow_login=True)
-        self.assertEqual(1, self.logins)
-        self.expire_cooldown()
-        await self.read(login_scope="lesson:synthetic", allow_login=True)
-        self.assertEqual(2, self.logins)
-        self.unauthorized = True
-        with self.assertRaises(sessions.SmartClassroomSessionError):
-            await self.read()
-        self.unauthorized = False
-        self.expire_cooldown()
-        # A different classroom or teacher sharing the account cannot reset the global budget.
-        with self.connection() as conn:
-            sessions.grant_background_login(conn, self.access, "lesson:other", expires_at_ms=int(time.time()*1000)+300000)
-            conn.commit()
-        with self.assertRaises(sessions.SmartClassroomSessionError):
-            await self.read(login_scope="lesson:other", allow_login=True)
+            current = auth.load_teacher_smart_classroom_access_method(conn, 1)
+        self.assertEqual(self.access["credential_generation"], current["credential_generation"])
+        self.assertEqual(200, (await self.read(current))[0])
+
+    async def test_json_unauthorized_is_recovered_but_other_errors_are_not(self):
+        await self.read()
+        original = self.request
+        async def json_expiry(request):
+            if request.url.path.endswith("/list") and request.headers.get("Authorization") == "synthetic-token-1":
+                return httpx.Response(200, json={"errNo": "401"})
+            return await original(request)
+        self.patch(auth, "SmartClassroomTransport", lambda: httpx.MockTransport(json_expiry))
+        self.assertEqual(200, (await self.read())[0])
         self.assertEqual(2, self.logins)
 
     async def test_verify_save_reuses_fresh_token_and_revokes_old_generation(self):
@@ -165,14 +230,11 @@ class SchoolSessionTests(unittest.IsolatedAsyncioTestCase):
             sessions.grant_background_login(conn, self.access, "lesson:synthetic", expires_at_ms=int(time.time()*1000)+300000)
             conn.commit()
         current = self.save_teacher(1)
-        self.unauthorized = True
+        self.expired_tokens.add("synthetic-token-1")
+        await self.read(current, login_scope="lesson:synthetic", allow_login=True)
+        self.assertEqual(2, self.logins)
         with self.assertRaises(sessions.SmartClassroomSessionError):
-            await self.read(current)
-        self.unauthorized = False
-        self.expire_cooldown()
-        with self.assertRaises(sessions.SmartClassroomSessionError):
-            await self.read(current, login_scope="lesson:synthetic", allow_login=True)
-        self.assertEqual(1, self.logins)
+            await self.read(self.access)
         with self.connection() as conn:
             self.assertEqual(0, conn.execute("SELECT count(*) FROM smart_classroom_session_grants").fetchone()[0])
 

@@ -25,6 +25,7 @@ from .smart_classroom_integration_service import (
     load_teacher_smart_classroom_access_method,
     open_authenticated_smart_classroom_client,
 )
+from .smart_classroom_session_service import SmartClassroomSessionError
 
 PLATFORM_CODE = "gxufl_smart_classroom"
 SOURCE_PREFIX = "/teaching/checkinCourse"
@@ -126,8 +127,11 @@ async def list_attendance_source_options(teacher_id: int, year: Any, term: Any) 
             items = await fetch_source_schedules(client, year, term)
     except AttendanceSourceError:
         raise
-    except (httpx.HTTPError, ValueError) as exc:
-        raise AttendanceSourceError("authentication_required", "无法使用智慧课堂账号，请前往设置重新验证。") from exc
+    except SmartClassroomSessionError as exc:
+        raise AttendanceSourceError(exc.code, str(exc), retry_after=60 if exc.code in {
+            "session_busy", "needs_teacher_reauth", "session_refreshed"} else None) from exc
+    except httpx.HTTPError as exc:
+        raise AttendanceSourceError("source_unavailable", "智慧课堂连接暂时不可用，稍后可重试；本地点名继续记录。", retry_after=60) from exc
     return {
         "external_account_key": external_account_key(access), "credential_id": access.get("credential_id"),
         "platform_code": profile.platform_code, "school_code": "gxufl", "year": year, "term": term,

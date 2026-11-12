@@ -92,6 +92,17 @@ def context_fingerprint(ctx):
                   "class": int(ctx["class_offering_id"]), "session": int(ctx["session_id"]), "students": _targets(ctx)})
 
 
+def result_fingerprint(ctx):
+    """Teacher dispatch fences decisions, not later refreshes of raw evidence."""
+    students = {r["student_number"]: r for r in ctx.get("students", [])}
+    targets = [{**{k: v for k, v in item.items() if k != "revision"},
+                "manual_confirmed": bool(students[item["student_number"]].get("manual_confirmed")),
+                "decided_at_ms": students[item["student_number"]].get("decided_at_ms")}
+               for item in _targets(ctx)]
+    return _hash({"round": str(ctx["round_id"]), "revision": int(ctx["revision"]), "state": ctx["state"],
+                  "class": int(ctx["class_offering_id"]), "session": int(ctx["session_id"]), "students": targets})
+
+
 def compare_students(targets, baseline, remote):
     result = []
     for target in targets:
@@ -102,7 +113,7 @@ def compare_students(targets, baseline, remote):
         elif actual is None: state, reason = "unmapped", "远端名单没有唯一匹配学生。"
         elif actual not in REMOTE_STATUSES: state, reason = "blocked", "远端包含尚未支持的状态，保留原值。"
         elif actual == desired: state, reason = "confirmed", "本次读取的学生状态一致。"
-        elif actual in PROTECTED_STATUSES: state, reason = "protected", "保留远端请假或特殊状态，须教师在官方端逐项核实。"
+        elif actual in PROTECTED_STATUSES and not (target.get("allow_protected_override") and actual in {"SICK_LEAVE", "PERSONAL_LEAVE"}): state, reason = "protected", "保留远端请假或特殊状态；普通请假仅由时间更新的教师明确更正覆盖。"
         elif actual != old: state, reason = "conflict", "远端状态已变化，保留外部修改。"
         result.append({**target, "baseline_status": old, "remote_status": actual, "state": state, "reason": reason})
     return result
@@ -110,7 +121,9 @@ def compare_students(targets, baseline, remote):
 
 def _account_access(conn, teacher_id, expected_key=None, expected_generation=None):
     access = load_teacher_smart_classroom_access_method(conn, int(teacher_id))
-    if not access or (expected_key and source_adapter.external_account_key(access) != expected_key):
+    if not access:
+        raise HTTPException(409, {"code": "missing_credential", "message": "请先配置智慧课堂账号密码，保存后会自动验证；本地点名不受影响。"})
+    if expected_key and source_adapter.external_account_key(access) != expected_key:
         raise HTTPException(409, {"code": "needs_teacher_reauth", "message": "请使用原智慧课堂账号重新验证后核对；旧任务未被当作未执行。"})
     if expected_generation and access["credential_generation"] != expected_generation:
         raise HTTPException(409, {"code": "credential_changed", "message": "智慧课堂凭据已变化，请重新确认绑定。"})

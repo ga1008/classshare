@@ -63,6 +63,9 @@ class AttendanceLifecycleTests(unittest.TestCase):
         with database.get_db_connection() as conn:
             old=self.seed(conn,current=0,key='superseded-original')
             rid=self.seed(conn);self.binding(conn,rid)
+            conn.execute("INSERT INTO smart_attendance_session_links(session_id,class_offering_id,owner_teacher_id,"
+                         "state,context_fingerprint,updated_at) VALUES(?,?,?,'matched','original-scope','2026-11-12')",
+                         (self.f.source_session,self.f.source_id,self.f.teacher_id))
             conn.commit()
             self.f._execute(conn);conn.commit()
             row=attendance.load_round(conn,rid,self.user)
@@ -82,6 +85,8 @@ class AttendanceLifecycleTests(unittest.TestCase):
             self.assertEqual(self.f.target_id,binding['class_offering_id'])
             self.assertEqual('paused',conn.execute("SELECT state FROM smart_attendance_sync_runs WHERE id='run'").fetchone()[0])
             self.assertIsNone(conn.execute('SELECT id FROM class_offerings WHERE id=?',(self.f.source_id,)).fetchone())
+            self.assertEqual(0,conn.execute('SELECT COUNT(*) FROM smart_attendance_session_links WHERE session_id=?',
+                                          (self.f.source_session,)).fetchone()[0])
 
     def test_active_round_and_unresolved_remote_outcome_block_merge_and_delete(self):
         with database.get_db_connection() as conn:

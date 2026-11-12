@@ -10,6 +10,7 @@ import { enhanceDropdowns } from './lq/dropdown.js';
 import { createTable } from './lq/tables.js';
 import { createAmbientPoll } from './ambient_poll.js';
 import { ATTENDANCE_STATES } from './login_attendance_states.js';
+import { createAttendanceWorkflow } from './login_attendance_sync.js';
 export { resolveAttendanceLink } from './login_attendance_link.js';
 export { ATTENDANCE_STATES } from './login_attendance_states.js';
 const ROUND_LABELS = { scheduled: '待开始', running: '进行中', settling: '等待补报结算', published: '已结束', void: '已作废' };
@@ -24,6 +25,7 @@ const chip = (text, tone = 'neutral') => createComponent('chip', { label: String
 const button = (label, action, variant = 'glass') => { const n = createDomainButton({ label, variant, size: 'sm' }); n.addEventListener('click', action); return n; };
 const request = (url, options = {}) => apiFetch(url, { silent: true, ...options });
 const safeId = value => /^[1-9]\d*$/.test(String(value || '')) && Number.isSafeInteger(Number(value)) ? Number(value) : null;
+const localTimeInput = value => value ? new Date(Number(value) + 8 * 3600000).toISOString().slice(0, 16) : '';
 
 export function openLoginAttendance({ classOfferingId, session, userRole, trigger, attendanceId, studentId, appealId, historyOnly = false }) {
     const offering = safeId(classOfferingId), lesson = safeId(session?.id);
@@ -41,6 +43,8 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     let latestLessonRoundId = null;
     const appealDrafts = new Map();
     let detailDropdowns = [];
+    let detailHandle = null, detailDirty = false, detailBusy = false, workflow;
+    const recordDrafts = new Map();
     const isCurrent = () => round && (round.is_current === undefined || Boolean(round.is_current));
     const canEdit = () => round && (round.can_edit === undefined ? isCurrent() && round.state !== 'void' : Boolean(round.can_edit));
     const shell = node('div', 'la-workspace');
@@ -49,13 +53,19 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     const summary = node('div', 'la-summary');
     const stateCounts = node('div','la-actions'); stateCounts.setAttribute('aria-label','六种签到状态人数');
     const actions = node('div', 'la-actions');
+    const secondary = node('details', 'lq-collapsible la-secondary');
+    secondary.append(node('summary', 'lq-collapsible__summary', '记录与更多操作'));
+    const secondaryActions = node('div', 'lq-collapsible__content la-actions'); secondary.append(secondaryActions);
+    const guidance = node('p', 'la-guidance');
+    guidance.setAttribute('aria-live', 'polite');
+    const workflowHost = node('section', 'la-school-workflow');
     const content = node('div', 'la-content');
     const listPane = node('section', 'la-list-pane');
     const detail = node('section', 'la-detail'); detail.setAttribute('aria-label', teacher ? '学生签到详情' : '我的签到详情');
     const grid = node('div', 'la-students');
     const pager = node('div', 'la-actions');
     const config = node('details', 'lq-collapsible la-config');
-    config.append(node('summary', 'lq-collapsible__summary', '教室网络与本课时段'));
+    config.append(node('summary', 'lq-collapsible__summary', '课前核对 · 教室网络与上课时间'));
     const configBody = node('div', 'lq-collapsible__content la-form'); config.append(configBody);
     const fields = {};
     function field(kind, label, value = '', extra = {}) {
@@ -81,13 +91,14 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     appendField(bulkFields, 'status', 'select', '批量改为', 'PRESENT', { options: ATTENDANCE_STATES.map(([value, label]) => ({ value, label })) });
     appendField(bulkFields, 'reason', 'textarea', '修改理由', '', { rows: 2, required: true, maxLength: 1000 });
     const apply = button('应用到已选学生', applySelected, 'prominent'); bulkFields.append(apply); bulk.append(bulkFields);
-    listPane.append(searchbar, selections, bulk, grid, pager);
-    content.append(listPane, detail);
-    shell.append(heading, notice, summary, stateCounts, actions, config, content);
+    const batch = node('details', 'lq-collapsible la-batch'); batch.append(node('summary', 'lq-collapsible__summary', '批量修改出勤状态'), selections);
+    listPane.append(searchbar, batch, bulk, grid, pager);
+    content.append(listPane); if (!teacher) content.append(detail);
+    shell.append(heading, guidance, notice, workflowHost, config, actions, summary, stateCounts, content, secondary);
     const cancelRequests = new Set();
     const disabledBeforeBusy = new WeakMap();
     const setNotice = (text = '', error = false) => { notice.textContent = text; notice.setAttribute('role', error ? 'alert' : 'status'); };
-    const setBusy = value => { busy = value; shell.setAttribute('aria-busy', String(value)); shell.querySelectorAll('button').forEach(n => { if (value) { if (!disabledBeforeBusy.has(n)) disabledBeforeBusy.set(n, n.disabled); n.disabled = true; } else if (disabledBeforeBusy.has(n)) { n.disabled = disabledBeforeBusy.get(n) || n.dataset.laDisabled === 'true'; disabledBeforeBusy.delete(n); } }); };
+    const setBusy = value => { busy = value; shell.setAttribute('aria-busy', String(value)); shell.querySelectorAll('button').forEach(n => { if (value) { if (!disabledBeforeBusy.has(n)) disabledBeforeBusy.set(n, n.disabled); n.disabled = true; } else if (disabledBeforeBusy.has(n)) { n.disabled = disabledBeforeBusy.get(n) || n.dataset.laDisabled === 'true'; disabledBeforeBusy.delete(n); } }); workflow?.update(); };
     function fail(error) { if (!closed) setNotice(error.status === 409 ? `内容已变化，选择与理由已保留。${error.message || '请核对最新结果后重试。'}` : error.message || '读取失败，请重试。', true); }
     async function call(path, options = {}) {
         const controller = new AbortController(); cancelRequests.add(controller);
@@ -115,15 +126,20 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         const rows = filtered(); page = Math.min(page, Math.max(0, Math.ceil(rows.length / 40) - 1));
         grid.replaceChildren();
         for (const row of rows.slice(page * 40, page * 40 + 40)) {
-            const inner = node('div', 'la-student-body');
+            const card = node('article', 'la-student-card lq-surface'); card.dataset.lqComponent = 'surface'; card.dataset.lqPadding = 'none'; card.dataset.studentId = String(row.student_id);
+            const show = createDomainButton({ className: 'la-student-open', kind: 'choice', variant: 'ghost', attrs: { 'aria-label': `${row.name}，${statusLabel(row.status)}，查看签到详情`, 'aria-haspopup': 'dialog' } });
+            show.dataset.lqShape = 'surface';
+            const identity = node('span', 'la-student-identity'); identity.append(node('strong', '', row.name), node('small', '', row.student_number || ''));
             const choose = field('checkbox', `选择 ${row.name}`, String(row.student_id), { checked: selected.has(row.student_id) });
             choose.control.addEventListener('change', () => { if (choose.control.checked) selected.set(row.student_id, row.revision); else selected.delete(row.student_id); paintSelection(); card.dataset.lqSelected = String(choose.control.checked); });
             const state = chip(row.status_label || statusLabel(row.status), row.status === 'PRESENT' ? 'success' : row.status === 'PENDING' ? 'warning' : 'neutral');
-            inner.append(choose.wrapper, state, node('p', '', row.reason || '等待核对接入记录'), node('small', '', `首次接入：${time(row.first_seen_ms)}`));
-            if (row.expected === false || row.expected === 0) inner.append(chip('免考勤'));
-            if (row.confirmed_retake) inner.append(chip('重修'));
-            const show = button('查看详情', () => showDetail(row.student_id), 'ghost');
-            const card = createContent('card', { title: row.name, meta: row.student_number || '', attrs: { 'data-student-id': String(row.student_id) } }, { body: [inner], actions: [show] });
+            show.append(identity, state);
+            if (row.expected === false || row.expected === 0) show.append(chip('免考勤'));
+            if (row.confirmed_retake) show.append(chip('重修'));
+            show.append(node('small', 'la-student-reason', row.reason || '等待核对接入记录'));
+            show.addEventListener('click', () => showDetail(row.student_id, show));
+            choose.wrapper.classList.add('la-student-select'); choose.wrapper.hidden = !batch.open;
+            card.append(show, choose.wrapper);
             card.dataset.lqSelected = String(selected.has(row.student_id)); grid.append(card);
         }
         if (!rows.length) grid.append(createContent('empty', { title: '没有匹配的学生', body: '可切换筛选或搜索条件。' }));
@@ -131,6 +147,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         pager.firstChild.disabled = page <= 0; pager.lastChild.disabled = (page + 1) * 40 >= rows.length;
         paintSelection();
     }
+    batch.addEventListener('toggle', () => grid.querySelectorAll('.la-student-select').forEach(n => n.hidden = !batch.open));
     function paintSelection() {
         count.textContent = `已选择 ${selected.size} 人`;
         bulk.hidden = selected.size === 0;
@@ -166,52 +183,55 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         } else { data = result; round = result.round; if (studentId && result.student_id !== Number(studentId)) throw new Error('此签到链接不属于当前账号。'); if (attendanceId && round?.id !== Number(attendanceId)) throw new Error('指定点名已变更，请从本人课次记录核对。'); }
         paint();
         if (!preserveNotice) setNotice('');
-        if (focusedStudent && teacher) await showDetail(focusedStudent);
+        if (focusedStudent && teacher && !detailDirty) await showDetail(focusedStudent);
+        workflow?.refresh().catch(() => {});
     }
     function paint() {
         // Preserve the nested layer's trigger, focus and configuration draft
         // if a parent request that started earlier completes behind it.
-        if (externalOpen) return;
+        if (externalOpen || detailHandle) return;
         const context = historyOnly ? round?.context || {} : session || {};
         const originalClasses = [...new Set((round?.records||[]).map(r=>r.class_name).filter(Boolean))];
         const classLabel = context.class_name || context.teaching_class_name || (historyOnly ? originalClasses.slice(0,8).join('、') + (originalClasses.length>8?` 等 ${originalClasses.length} 个班`:'') : '');
         heading.replaceChildren(node('h3', '', context.detail_title || context.session_title || context.title || context.course_name || '历史点名'), node('p', '', `${context.session_date || ''} ${context.academic_section_text || context.section_text || ''} ${classLabel} · 北京时间`), chip(ROUND_LABELS[round?.state] || '尚未开启'));
         if (!teacher) { paintStudent(); return; }
+        const readyToStart = !historyOnly && (!round || (round.state === 'void' && latestLessonRoundId === round.id));
+        guidance.textContent = historyOnly ? '已保存的历史点名。选择学生查看证据与历次记录。' : readyToStart ? '核对网络与时间后开始记录；下课自动结束。课次暂未对应也可以先完成本地点名。' : ['running', 'scheduled'].includes(round?.state) ? `正在自动记录课堂接入，预计 ${time(round.ends_at_ms)} 结束。关闭浮窗或离开页面后，后台仍继续记录。` : round?.state === 'settling' ? '本地点名已结束，后台正在收齐补报并结算。完成后即可同步与推送。' : '点名结果已生成。点击学生卡片查看详情或改签，确认后点击同步与推送。';
         const counts = round?.summary?.counts || {};
         summary.replaceChildren(...[['出勤', counts.PRESENT || 0], ['待确认', counts.PENDING || 0], ['应到', round?.summary?.expected ?? '—'], ['免考勤', round?.summary?.exempt ?? 0]].map(([label, value]) => createContent('card', { title: label, variant: 'stat', value })));
         stateCounts.replaceChildren(...ATTENDANCE_STATES.map(([key,label])=>chip(`${label} ${counts[key]||0} 人`,key==='PRESENT'?'success':'neutral')));
-        actions.replaceChildren(button('刷新记录', () => load().catch(fail)), button('学期签到统计', openDashboard), button('历史点名', async event => { const trigger=event.currentTarget; trigger.disabled=true; try { const mod=await import('./login_attendance_history.js'); if(!closed && trigger.isConnected) mod.openAttendanceHistory({classOfferingId:offering,trigger,parentLayer:handle}); } catch(error){fail(error);} finally{if(trigger.isConnected)trigger.disabled=busy;} }), button('账号与同步设置', () => { window.open('/manage/academic/smart-classroom', '_blank', 'noopener'); }, 'ghost'));
-        if (!historyOnly && (!round || (round.state === 'void' && latestLessonRoundId === round.id))) actions.prepend(button('开启本地点名', createRound, 'prominent'));
+        actions.replaceChildren(); secondaryActions.replaceChildren(button('刷新记录', () => load().catch(fail)), button('学期签到统计', openDashboard), button('历史点名', async event => { const trigger=event.currentTarget; trigger.disabled=true; try { const mod=await import('./login_attendance_history.js'); if(!closed && trigger.isConnected) mod.openAttendanceHistory({classOfferingId:offering,trigger,parentLayer:handle}); } catch(error){fail(error);} finally{if(trigger.isConnected)trigger.disabled=busy;} }));
+        if (readyToStart) { const start = button('开始记录', createRound, 'prominent'); start.disabled = Boolean(data?.policy?.closed_at_ms); start.dataset.laDisabled = String(start.disabled); actions.append(start); }
         if (isCurrent() && ['running', 'scheduled'].includes(round?.state)) actions.append(button('结束本地点名', endRound));
-        if (isCurrent() && round.state !== 'void') actions.append(button('重新核算', () => mutate(async () => { round = await call(`/rounds/${round.id}/recalculate`, { method: 'POST', body: { revision: round.revision } }); paint(); setNotice('已读取最新核算结果。'); })), button('作废本轮', voidRound, 'destructive'));
-        if (round) actions.append(button(isCurrent() && round.state !== 'void' ? '智慧课堂核对' : '查看学校同步记录', event => showExternal(event).catch(fail)));
-        if (data?.policy?.closed_at_ms) { actions.querySelectorAll('button').forEach(n => { if (n.textContent.includes('开启')) { n.disabled = true; n.dataset.laDisabled = 'true'; } }); }
+        if (isCurrent() && round.state !== 'void') secondaryActions.append(button('重新核算', () => mutate(async () => { round = await call(`/rounds/${round.id}/recalculate`, { method: 'POST', body: { revision: round.revision } }); paint(); setNotice('已读取最新核算结果。'); })), button('作废本轮', voidRound, 'destructive'));
+        if (round) secondaryActions.append(button(historyOnly || !isCurrent() || round.state === 'void' ? '查看学校同步记录' : '高级核对与历史任务', event => showExternal(event).catch(fail)));
         if (!formInitialized && data?.policy) {
             appendField(configBody, 'networks', 'textarea', '本课教室 IP 或网段（每行一个）', (data.policy.networks?.length ? data.policy.networks : [data.teacher_network?.ip].filter(Boolean)).join('\n'), { rows: 2 });
-            appendField(configBody, 'networkConfirmed', 'checkbox', '我已核对以上为本次课堂使用的网络', 'yes', { checked: false });
-            appendField(configBody, 'starts', 'input', '自定义开始时间（课表无法识别时填写，北京时间）', '', { type: 'datetime-local' });
-            appendField(configBody, 'ends', 'input', '自定义结束时间（同上）', '', { type: 'datetime-local' });
-            configBody.append(button('保存为本课堂网络', savePolicy)); formInitialized = true;
+            appendField(configBody, 'starts', 'input', '开始时间（北京时间）', localTimeInput(data.window?.starts_at_ms || round?.starts_at_ms), { type: 'datetime-local', required: true });
+            appendField(configBody, 'ends', 'input', '结束时间（北京时间）', localTimeInput(data.window?.ends_at_ms || round?.ends_at_ms), { type: 'datetime-local', required: true });
+            configBody.append(node('p', 'la-config-help', data.window_error || '开始记录即确认本次网络与时间；网络会记住供下次使用，下课后自动结束并计算出勤。')); formInitialized = true;
         }
-        if (round) { config.open = false; paintGrid(); if (!focusedStudent) detail.replaceChildren(node('p', '', `本地点名${ROUND_LABELS[round.state] || ''}。选一位同学查看本次与前几次记录。`), node('p', '', `结束时间：${time(round.ended_at_ms || round.ends_at_ms)}；数据截止：${time(round.watermark?.observed_through_ms)}`)); }
-        else { config.open = true; grid.replaceChildren(); detail.replaceChildren(node('p', '', '本课尚未开启自动点名。先核对教室网络；听讲或使用 IDE 不要求持续点击。')); }
+        config.hidden = historyOnly || !readyToStart;
+        if (readyToStart) config.open = true;
+        content.hidden = !round; summary.hidden = !round; stateCounts.hidden = !round;
+        if (round) paintGrid(); else grid.replaceChildren();
+        workflow?.update();
         paintSelection();
         if (busy) setBusy(true);
     }
     function networks() {
-        if (!fields.networkConfirmed?.checked) throw new Error('请先核对并确认本次课堂网络。');
         const values = fields.networks.value.split(/[\n,，]/).map(s => s.trim()).filter(Boolean);
         if (!values.length) throw new Error('请填写已确认的教室 IP 或网段。');
         return values;
     }
     async function createRound() { await mutate(async () => {
-        const body = { request_key: createKey, networks: networks() };
+        if (!fields.starts.reportValidity() || !fields.ends.reportValidity()) return;
+        const body = { request_key: createKey, networks: networks(), policy_revision: data.policy.revision };
         if (round?.id && round.state !== 'void' && isCurrent()) body.supersedes_id = round.id;
         if (fields.starts.value) body.starts_at = `${fields.starts.value}:00+08:00`;
         if (fields.ends.value) body.ends_at = `${fields.ends.value}:00+08:00`;
-        round = await call(`/sessions/${lesson}/rounds`, { method: 'POST', body }); attendanceId = round.id; latestLessonRoundId = round.id; dirty = false; createKey = crypto.randomUUID(); paint(); setNotice('本地点名已开启；关闭页面不会取消后台定时结束。');
+        round = await call(`/sessions/${lesson}/rounds`, { method: 'POST', body }); if (round.policy) data.policy = round.policy; attendanceId = round.id; latestLessonRoundId = round.id; dirty = false; createKey = crypto.randomUUID(); paint(); workflow?.refresh().catch(() => {}); setNotice('');
     }); }
-    async function savePolicy() { await mutate(async () => { data.policy = await call('/policy', { method: 'PUT', body: { ...data.policy, revision: data.policy.revision, networks: networks() } }); dirty = false; setNotice('课堂网络设置已保存。'); }); }
     async function endRound() {
         if (!await confirmDialog({ title: '结束本地点名？', message: '将停止本次实时接入认定并等待补报结算；未确认者不会自动变成缺课。', confirmLabel: '结束本地点名' }, { parentLayer: handle })) return;
         await mutate(async () => { round = await call(`/rounds/${round.id}/end`, { method: 'POST', body: { revision: round.revision } }); paint(); setNotice('本地点名已结束，补报结算由后台继续完成。'); });
@@ -229,19 +249,49 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         if(network){box.append(node('p','',`平台接入 IP（本轮时间窗）：首次 ${network.first_ip||'暂无'}；末次 ${network.last_ip||'暂无'}。`),node('p','',`接入佐证：${network.observation_count??0} 条；已记录 ${network.distinct_ips?.length??0} 个 IP。`));if(network.distinct_ips?.length)box.append(node('p','',network.distinct_ips.slice(0,16).join('、')));}
         return box;
     }
-    async function showDetail(id) {
+    async function showDetail(id, detailTrigger) {
         focusedStudent = Number(id); const generation = ++detailEpoch;
+        if (!detailHandle) {
+            detail.replaceChildren(node('p', '', '正在读取签到详情…'));
+            const release = () => { detailEpoch++; focusedStudent = null; detailHandle = null; detailDirty = false; detailDropdowns.forEach(d => d.destroy()); detailDropdowns = []; recordDrafts.delete(Number(id)); if (!closed) { paint(); queueMicrotask(() => { if (!closed && getLayerSystem(document).top() === handle) grid.querySelector(`[data-student-id="${Number(id)}"] .la-student-open`)?.focus({ preventScroll: true }); }); } };
+            detailHandle = openDialog({ title: '学生签到详情', body: detail, size: 'lg' }, { trigger: detailTrigger || handle.root.querySelector('button'), parentLayer: handle,
+                beforeClose: async () => !busy && !detailBusy && (!detailDirty || await confirmDialog({ title: '放弃本次改签草稿？', message: '已保存的签到状态不受影响。', confirmLabel: '放弃修改', danger: true }, { parentLayer: detailHandle })), onClose: release, onDestroy: release });
+            detailHandle.root.classList.add('la-dialog');
+        }
         try {
             const value = await call(`/rounds/${round.id}/students/${id}`);
             if (closed || generation !== detailEpoch) return;
             detailDropdowns.forEach(d => d.destroy()); detailDropdowns = [];
-            detail.replaceChildren(node('h3', '', `${value.record.name} · 本次签到`), recordFacts(value.record));
+            detail.replaceChildren(node('h3', '', `${value.record.name} · 本次签到`));
+            if (canEdit()) {
+                const draft = recordDrafts.get(Number(id)) || { status: value.record.status === 'PENDING' ? 'PRESENT' : value.record.status, reason: '' };
+                const edit = node('section', 'la-record-edit');
+                const state = field('select', '出勤状态', draft.status, { options: ATTENDANCE_STATES.map(([value, label]) => ({ value, label })) });
+                const reason = field('textarea', '改签理由', draft.reason, { rows: 2, required: true, maxLength: 1000 });
+                const feedback = node('p', 'la-notice'); feedback.setAttribute('role', 'status');
+                const retain = () => { recordDrafts.set(Number(id), { status: state.control.value, reason: reason.control.value }); detailDirty = true; };
+                state.control.addEventListener('change', retain); reason.control.addEventListener('input', retain);
+                const save = button('保存出勤状态', async () => {
+                    if (busy || detailBusy || !reason.control.reportValidity()) return;
+                    detailBusy = true; save.disabled = true; state.control.disabled = reason.control.disabled = true; feedback.setAttribute('role', 'status'); feedback.textContent = '正在保存…';
+                    try {
+                        const response = await call(`/rounds/${round.id}/records`, { method: 'PATCH', body: { records: [{ student_id: Number(id), revision: value.record.revision, status: state.control.value }], reason: reason.control.value.trim() } });
+                        const result = response.results?.find(r => Number(r.student_id) === Number(id));
+                        if (!result || result.result !== 'updated') throw new Error('该学生记录已变化，草稿已保留。请重新读取最新记录后再确认。');
+                        round = response.round; recordDrafts.delete(Number(id)); detailDirty = false;
+                        document.dispatchEvent(new CustomEvent('classroom:attendance-changed')); await showDetail(id); workflow?.refresh().catch(() => {});
+                    } catch (error) { feedback.textContent = error.message || '未能保存，草稿已保留。'; feedback.setAttribute('role', 'alert'); }
+                    finally { detailBusy = false; if (save.isConnected) { save.disabled = false; state.control.disabled = reason.control.disabled = false; } }
+                }, 'prominent');
+                edit.append(state.wrapper, reason.wrapper, save, feedback, button('重新读取最新记录', () => showDetail(id), 'ghost')); detail.append(edit); detailDropdowns.push(...enhanceDropdowns(edit));
+            }
+            detail.append(recordFacts(value.record));
             const targetAppeal = appealId && Number(id) === Number(studentId) ? appealId : value.pending_appeal?.id;
             if (targetAppeal) await paintAppeal(value.record, generation, targetAppeal);
             detail.append(node('h4', '', '前几次同课程记录'));
             for (const row of value.history || []) { const previous = node('details', 'lq-collapsible'); previous.append(node('summary', 'lq-collapsible__summary', `${row.context?.session_date || ''} ${row.context?.session_title || ''} · ${row.status_label || statusLabel(row.status)}`), recordFacts(row)); detail.append(previous); }
             if (!value.history?.length) detail.append(node('p', '', '暂无此前记录。'));
-        } catch (error) { if (generation === detailEpoch) fail(error); }
+        } catch (error) { if (generation === detailEpoch) { const message = node('p', 'la-notice', error.message || '读取失败，请重试。'); message.setAttribute('role', 'alert'); detail.append(message, button('重试读取详情', () => showDetail(id))); } }
     }
     async function paintAppeal(record, generation, targetAppeal) {
         const value = await call(`/api/approvals/${targetAppeal}`); appealData = value.request || value;
@@ -276,14 +326,15 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     async function showExternal(event) { const trigger=event.currentTarget; trigger.disabled=true; try { externalCleanup?.(); const mod = await import('./login_attendance_sync.js'); if (!closed && trigger.isConnected) { externalOpen = true; externalCleanup = mod.openAttendanceSync({ base: `${base}/rounds/${round.id}/external`, round, trigger, parentLayer: handle, readOnly: historyOnly || !isCurrent() || round.state === 'void', onClose: () => { externalOpen = false; externalCleanup = null; } }); } } catch(error) { externalOpen = false; throw error; } finally {if(trigger.isConnected)trigger.disabled=busy;} }
     fields.search.addEventListener('input', () => { page = 0; paintGrid(); }); fields.filter.addEventListener('change', () => { page = 0; paintGrid(); });
     shell.addEventListener('input', event => { if (!event.target.matches('input[type="search"]')) dirty = true; });
-    listPane.hidden = !teacher; config.hidden = !teacher || historyOnly;
+    listPane.hidden = !teacher; config.hidden = !teacher || historyOnly; workflowHost.hidden = !teacher || historyOnly; secondary.hidden = !teacher;
     let dropdowns = [];
     let poll;
-    function cleanup() { if (closed) return; closed = true; epoch++; detailEpoch++; poll?.dispose(); dropdowns.forEach(d => d.destroy()); detailDropdowns.forEach(d => d.destroy()); externalCleanup?.(); cancelRequests.forEach(c => c.abort()); active.delete(key); }
+    function cleanup() { if (closed) return; closed = true; epoch++; detailEpoch++; poll?.dispose(); workflow?.destroy(); detailHandle?.destroy(); dropdowns.forEach(d => d.destroy()); detailDropdowns.forEach(d => d.destroy()); externalCleanup?.(); cancelRequests.forEach(c => c.abort()); active.delete(key); }
     const parent = getLayerSystem(document).top();
     handle = openDialog({ title: teacher ? (historyOnly ? '历史点名详情' : '自动点名') : '我的签到', body: shell, size: 'xl' }, { trigger, ...(parent?.root.contains(trigger) ? { parentLayer: parent } : {}),
         beforeClose: async () => !busy && (!dirty || await confirmDialog({ title: '关闭并放弃未提交内容？', message: '已保存的签到记录不会受影响。', confirmLabel: '关闭', danger: true }, { parentLayer: handle })), onClose: cleanup, onDestroy: cleanup });
     handle.root.classList.add('la-dialog');
+    if (teacher && !historyOnly) workflow = createAttendanceWorkflow({ host: workflowHost, base, sessionId: lesson, getRound: () => round, getLayer: () => handle, isLocalBusy: () => busy || detailBusy });
     dropdowns = enhanceDropdowns(shell);
     const controller = { handle, refresh: load, destroy: () => handle.destroy() }; active.set(key, controller);
     poll = createAmbientPoll(async signal => { if (!busy && !dirty) { try { await load({ preserveNotice: true, signal }); } catch (error) { fail(error); throw error; } } }, { intervalMs: 15000, active: () => !closed && !historyOnly && !document.hidden && getLayerSystem(document).top() === handle && !busy && !dirty });

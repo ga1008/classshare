@@ -878,6 +878,7 @@ app.include_router(login_attendance.attention_router)
 app.include_router(login_attendance.archive_router)
 app.include_router(smart_attendance_appeals.router)
 app.include_router(smart_classroom_write.router)
+app.include_router(smart_classroom_write.session_router)
 from .routers import attendance_reports
 app.include_router(attendance_reports.router)
 app.include_router(signatures.router)

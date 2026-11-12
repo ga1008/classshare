@@ -101,7 +101,7 @@
                 <div class="smart-classroom-account-grid">
                     <section class="smart-classroom-account-form">
                         <h3>智慧课堂账号</h3>
-                        <p class="smart-classroom-help">已保存密码按安全策略掩码显示；如需修改，请重新填写密码并验证保存。</p>
+                        <p class="smart-classroom-help">账号只需配置一次，保存时自动验证，后续登录过期会在后台恢复。同一账号密码留空可继续使用已保存密码。</p>
                         {% if _smart_lq_enabled %}
                         {% set _smart_platform_options = [] %}
                         {% for profile in smart_classroom_profiles %}{% set _ = _smart_platform_options.append({'value': profile.platform_code, 'label': profile.platform_name}) %}{% endfor %}

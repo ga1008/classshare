@@ -32,6 +32,7 @@ class Revision(BaseModel):
 
 class CreateRound(BaseModel):
     request_key: str = Field(min_length=8, max_length=100)
+    policy_revision: int | None = Field(default=None, ge=0)
     networks: list[str] | None = Field(default=None, max_length=16)
     starts_at: datetime | None = None
     ends_at: datetime | None = None

@@ -354,7 +354,10 @@ async def api_save_smart_classroom_credential(request: Request, user: dict = Dep
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     if not verification.get("ok"):
-        raise HTTPException(status_code=400, detail=verification.get("message") or "智慧课堂账号校验失败。")
+        raise HTTPException(status_code=400, detail={
+            "message": verification.get("message") or "智慧课堂账号校验失败。",
+            "code": verification.get("error_code") or "credential_invalid",
+        })
 
     with get_db_connection() as conn:
         try:

@@ -1,6 +1,20 @@
 """One explicit, durable school-sync authorization for each local round."""
 
 SMART_CLASSROOM_AUTO_SYNC_TABLES = {
+    "smart_attendance_workflow_requests": """CREATE TABLE IF NOT EXISTS smart_attendance_workflow_requests (
+        owner_teacher_id BIGINT NOT NULL, request_key TEXT NOT NULL, local_round_id TEXT NOT NULL,
+        context_fingerprint TEXT NOT NULL, binding_revision INTEGER NOT NULL, created_at TEXT NOT NULL,
+        PRIMARY KEY(owner_teacher_id,request_key)
+    )""",
+    "smart_attendance_session_links": """CREATE TABLE IF NOT EXISTS smart_attendance_session_links (
+        session_id BIGINT PRIMARY KEY REFERENCES class_offering_sessions(id) ON DELETE CASCADE,
+        class_offering_id BIGINT NOT NULL REFERENCES class_offerings(id) ON DELETE CASCADE,
+        owner_teacher_id BIGINT NOT NULL, revision INTEGER NOT NULL DEFAULT 1,
+        state TEXT NOT NULL, context_fingerprint TEXT NOT NULL,
+        source_json TEXT NOT NULL DEFAULT '{}', slot_json TEXT NOT NULL DEFAULT '{}',
+        diagnostics_json TEXT NOT NULL DEFAULT '[]', message TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL
+    )""",
     "smart_attendance_auto_sync": """CREATE TABLE IF NOT EXISTS smart_attendance_auto_sync (
         local_round_id TEXT PRIMARY KEY, owner_teacher_id BIGINT NOT NULL,
         class_offering_id BIGINT REFERENCES class_offerings(id) ON DELETE SET NULL,
@@ -18,6 +32,8 @@ SMART_CLASSROOM_AUTO_SYNC_TABLES = {
     )""",
 }
 SMART_CLASSROOM_AUTO_SYNC_REQUIRED_COLUMNS = {
+    "smart_attendance_workflow_requests": tuple("owner_teacher_id request_key local_round_id context_fingerprint binding_revision created_at".split()),
+    "smart_attendance_session_links": tuple("session_id class_offering_id owner_teacher_id revision state context_fingerprint source_json slot_json diagnostics_json message updated_at".split()),
     "smart_attendance_auto_sync": (
         "local_round_id", "owner_teacher_id", "class_offering_id", "session_id",
         "external_account_key", "credential_generation", "source_json", "slot_json",
@@ -33,3 +49,4 @@ def ensure_smart_classroom_auto_sync_schema(conn, *, engine=None):
         conn.execute(ddl)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_smart_auto_sync_enabled ON "
                  "smart_attendance_auto_sync(enabled,state,updated_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_smart_session_links_offering ON smart_attendance_session_links(class_offering_id)")
