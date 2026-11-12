@@ -3,8 +3,11 @@
 The audit (docs/wanderer-voice-audit-2026-11-01.md §10.1) wants a hard stop for
 the most obvious assistant patterns even when the prompt is ignored. This
 module only changes expression: it removes summary/teaching framing, numbered
-list markers, extra hedges, and an optional advice ending. It never invents
-facts, changes a stance, or makes a model call.
+list markers, extra hedges, and an optional advice ending, plus the
+natural-voice fixes for livestream-style fixed openings and excessive
+exclamation/emoji density. It never invents facts, changes a stance, or makes a
+model call. A pure emoji reply is a legal action and is never flagged; when a
+repair empties the text, the caller's existing skip path handles it.
 """
 from __future__ import annotations
 
@@ -33,6 +36,23 @@ HEDGE_WORDS = ("不过", "其实", "确实")
 _TEACHING_PREFIX = re.compile(r"^(?:补充一点|补充一下)[：:]\s*")
 _SEQUENCE = re.compile(r"(?m)^\s*(?:首先|其次|最后|一是|二是|三是)[，,、：:]?\s*")
 _LIST_LINE = re.compile(r"(?m)^\s*\d{1,2}[.、)]\s*")
+
+# --- Natural-voice guards: fixed livestream-style openings, exclamation and
+# emoji density. These are deterministic, high-confidence expression fixes;
+# they never delete substantive words or invent facts.
+# A fixed opening only counts at the very start of a message, followed by
+# punctuation/whitespace, so the same word used mid-sentence is left alone.
+_OPENING_WORDS = ("家人们", "集美们", "老铁们", "宝子们", "铁子们", "兄弟们", "老铁", "宝子")
+_OPENING_RE = re.compile(
+    r"^\s*(?:" + "|".join(_OPENING_WORDS) + r")\s*[！!，,~～\s]*"
+)
+# Single emoji glyph plus an optional variation selector / joining char. The
+# arrow block is intentionally excluded so ordinary arrows are not treated as
+# emoji (mirrors the range used in wanderer_text_style._LEADING_EMOJI).
+_EMOJI_CHAR = re.compile(r"[\U0001F000-\U0001FAFF☀-➿⬀-⯿⌀-⏿][️‍]?")
+_EXCLAMATION_RUN = re.compile(r"[！!]{2,}")
+EXCLAMATION_MAX = 3
+EMOJI_MAX = 3
 
 
 @dataclass(frozen=True)
@@ -69,6 +89,45 @@ def _is_advice_sentence(sentence: object) -> bool:
     return any(pattern.match(body) for pattern in _ADVICE_PATTERNS)
 
 
+def _has_fixed_opening(raw: str) -> bool:
+    return bool(_OPENING_RE.match(raw))
+
+
+def _strip_fixed_opening(value: str) -> str:
+    return _OPENING_RE.sub("", value, count=1)
+
+
+def _emoji_matches(raw: str) -> list[re.Match]:
+    return list(_EMOJI_CHAR.finditer(raw))
+
+
+def _has_text_without_emoji(raw: str) -> bool:
+    """True when the message carries real words besides emoji/whitespace."""
+    return bool(_EMOJI_CHAR.sub("", raw).strip())
+
+
+def _normalize_exclamation(value: str) -> str:
+    """Collapse repeated exclamation marks, then cap the total per message."""
+    value = _EXCLAMATION_RUN.sub("！", value)
+    marks = [m.start() for m in re.finditer(r"[！!]", value)]
+    if len(marks) <= EXCLAMATION_MAX:
+        return value
+    keep = set(marks[:EXCLAMATION_MAX])
+    return "".join(ch for index, ch in enumerate(value)
+                   if index not in marks or index in keep)
+
+
+def _normalize_emoji(value: str) -> str:
+    """Keep only the first emoji when a text message carries too many."""
+    matches = _emoji_matches(value)
+    if len(matches) <= EMOJI_MAX:
+        return value
+    drop_spans = set()
+    for match in matches[1:]:
+        drop_spans.update(range(match.start(), match.end()))
+    return "".join(ch for index, ch in enumerate(value) if index not in drop_spans)
+
+
 def lint(text: object, *, channel: str = "", persona: dict | None = None) -> list[Violation]:
     """High-confidence assistant-pattern violations; never edits the text."""
     raw = str(text or "")
@@ -98,6 +157,13 @@ def lint(text: object, *, channel: str = "", persona: dict | None = None) -> lis
         add("hedge", "medium", "不过", "keep at most one hedge")
     if has_platform_meta(raw):
         add("meta", "high", "", "replace platform vocabulary")
+    if _has_fixed_opening(raw):
+        add("opening", "high", _OPENING_RE.match(raw).group(0), "remove the fixed opening")
+    if len(re.findall(r"[！!]", _EXCLAMATION_RUN.sub("！", raw))) > EXCLAMATION_MAX:
+        add("exclamation", "medium", "！", "reduce exclamation marks")
+    # A pure emoji reply is a legal action; only text messages with excessive emoji count.
+    if _has_text_without_emoji(raw) and len(_emoji_matches(raw)) > EMOJI_MAX:
+        add("emoji_density", "medium", "", "reduce emoji count")
     return found
 
 
@@ -129,6 +195,12 @@ def repair(text: object, violations: Iterable[Violation], *, channel: str = "",
             value = value.replace("不过", "但", 1)
     if "meta" in rules:
         value = strip_platform_meta(value)
+    if "opening" in rules:
+        value = _strip_fixed_opening(value)
+    if "exclamation" in rules:
+        value = _normalize_exclamation(value)
+    if "emoji_density" in rules:
+        value = _normalize_emoji(value)
     value = re.sub(r"[ \t]{2,}", " ", value)
     value = re.sub(r"\n{3,}", "\n\n", value).strip()
     return value or raw

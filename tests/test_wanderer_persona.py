@@ -16,6 +16,8 @@ from classroom_app.services.wanderer_identity_service import (
 from classroom_app.services.wanderer_persona_seeds import (
     SEED_BY_SLUG,
     WANDERER_SEEDS,
+    apply_seed_persona_refresh,
+    plan_seed_persona_refresh,
     render_persona_prompt,
     render_persona_prompt_v1,
     seed_wanderers,
@@ -87,6 +89,54 @@ class PersonaUpgradeTest(WandererDbTestCase):
             row = conn.execute("SELECT persona_prompt FROM wanderer_agents WHERE slug = 'atai'").fetchone()
         self.assertNotIn("atai", upgraded)
         self.assertEqual(row["persona_prompt"], edited)
+
+    def test_legacy_persona_outside_whitelist_is_refreshed(self):
+        with self.connect() as conn:
+            legacy = "【遗留旧人格】家人们！这是一个更老的自动渲染版本，不会匹配哈希白名单。"
+            conn.execute("UPDATE wanderer_agents SET persona_prompt = ?, persona_version = 1, "
+                         "persona_updated_at = NULL, origin = 'seed' WHERE slug = 'lele'", (legacy,))
+            conn.commit()
+            # The strict whitelist upgrade silently skips this legacy row.
+            self.assertNotIn("lele", upgrade_seed_personas(conn))
+            plan = plan_seed_persona_refresh(conn)
+            item = next((entry for entry in plan if entry["slug"] == "lele"), None)
+            self.assertIsNotNone(item)
+            self.assertEqual(item["old_prompt"], legacy)
+            self.assertNotEqual(item["new_prompt"], legacy)
+            refreshed = apply_seed_persona_refresh(conn, plan)
+            conn.commit()
+            row = conn.execute("SELECT persona_prompt, persona_version FROM wanderer_agents "
+                               "WHERE slug = 'lele'").fetchone()
+        self.assertIn("lele", refreshed)
+        self.assertEqual(row["persona_version"], 2)
+        self.assertNotIn("家人们", row["persona_prompt"])
+
+    def test_refresh_never_plans_human_edited_or_current_rows(self):
+        with self.connect() as conn:
+            # A fresh seed library is already current: nothing pending.
+            self.assertEqual(plan_seed_persona_refresh(conn), [])
+            edited = "管理员写的人格，不要动。"
+            conn.execute("UPDATE wanderer_agents SET persona_prompt = ?, "
+                         "persona_updated_at = '2026-11-01T00:00:00' WHERE slug = 'lele'", (edited,))
+            conn.commit()
+            self.assertNotIn("lele", [entry["slug"] for entry in plan_seed_persona_refresh(conn)])
+
+    def test_backup_old_prompt_supports_rollback(self):
+        with self.connect() as conn:
+            legacy = "【遗留旧人格】家人们！备份里必须保留这段旧文本以便回滚。"
+            conn.execute("UPDATE wanderer_agents SET persona_prompt = ?, persona_updated_at = NULL "
+                         "WHERE slug = 'lele'", (legacy,))
+            conn.commit()
+            plan = plan_seed_persona_refresh(conn)
+            apply_seed_persona_refresh(conn, plan)
+            conn.commit()
+            # Simulate an operator rolling the prompt text back from the backup.
+            item = next(entry for entry in plan if entry["slug"] == "lele")
+            conn.execute("UPDATE wanderer_agents SET persona_prompt = ? WHERE id = ?",
+                         (item["old_prompt"], item["id"]))
+            conn.commit()
+            restored = conn.execute("SELECT persona_prompt FROM wanderer_agents WHERE slug = 'lele'").fetchone()[0]
+        self.assertEqual(restored, legacy)
 
 
 class WandererSeedingTest(WandererDbTestCase):

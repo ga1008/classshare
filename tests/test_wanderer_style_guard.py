@@ -62,6 +62,30 @@ class StyleGuardTest(unittest.TestCase):
         self.assertEqual(result.text, text)
         self.assertFalse(result.repaired)
 
+    def test_fixed_opening_is_removed_but_inline_word_is_kept(self):
+        result = guard_text("家人们！在在在～一大早就在肝作业也太猛了吧🥳", channel="dm")
+        self.assertNotIn("家人们", result.text)
+        self.assertTrue(result.text.startswith("在在在"))
+        self.assertTrue(result.repaired)
+        # The same word mid-sentence is not an opening and must survive.
+        inline = guard_text("他喊了句家人们就跑了。", channel="dm")
+        self.assertEqual(inline.text, "他喊了句家人们就跑了。")
+        self.assertFalse(inline.repaired)
+
+    def test_exclamation_marks_are_collapsed_and_capped(self):
+        result = guard_text("太离谱了！！！我真的会谢！！这也！太！强！", channel="dm")
+        self.assertNotIn("！！", result.text)
+        self.assertLessEqual(result.text.count("！"), 3)
+        self.assertIn("太离谱了", result.text)
+
+    def test_emoji_density_is_reduced_but_pure_emoji_reply_survives(self):
+        result = guard_text("今天好开心啊🥳✨💖🎉一起去吃饭吧", channel="dm")
+        self.assertEqual(result.text.count("🥳"), 1)
+        self.assertNotIn("✨", result.text)
+        pure = guard_text("🥳🥳🥳🥳", channel="dm")
+        self.assertEqual(pure.text, "🥳🥳🥳🥳")
+        self.assertFalse(pure.repaired)
+
     def test_guard_parts_collects_rules(self):
         parts, rules, repaired = guard_parts(["我来总结一下：这章不错。", "我先走了。"], channel="comment")
         self.assertTrue(repaired)

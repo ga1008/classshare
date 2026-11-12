@@ -1090,6 +1090,80 @@ def upgrade_seed_personas(conn: Any) -> list[str]:
     return upgraded
 
 
+def plan_seed_persona_refresh(conn: Any) -> list[dict[str, Any]]:
+    """Plan a refresh for untouched seed personas that are not the current version.
+
+    Unlike :func:`upgrade_seed_personas`, this does not require a hash whitelist,
+    so older legacy renderings (which the strict whitelist silently skips) are
+    included. It is still strictly read-only and only considers rows that are
+    ``origin = 'seed'`` and have no ``persona_updated_at`` (never human-edited).
+    Each item carries the full old prompt so the caller can back it up / roll back.
+    """
+    rows = conn.execute(
+        "SELECT id, slug, persona_prompt, persona_updated_at, origin FROM wanderer_agents "
+        "WHERE origin = 'seed'"
+    ).fetchall()
+    plan: list[dict[str, Any]] = []
+    for row in rows:
+        row_id = row["id"] if hasattr(row, "keys") else row[0]
+        slug = str(row["slug"] if hasattr(row, "keys") else row[1])
+        current_prompt = str(row["persona_prompt"] if hasattr(row, "keys") else row[2])
+        updated_at = row["persona_updated_at"] if hasattr(row, "keys") else row[3]
+        seed = SEED_BY_SLUG.get(slug)
+        if seed is None or updated_at:
+            continue  # unknown seed or human-edited: never touch
+        prepared = _prepared_seed(seed)
+        new_prompt = str(prepared["persona_prompt"])
+        if persona_text_hash(current_prompt) == persona_text_hash(new_prompt):
+            continue  # already current
+        plan.append({
+            "id": row_id,
+            "slug": slug,
+            "old_prompt": current_prompt,
+            "new_prompt": new_prompt,
+            "old_hash": persona_text_hash(current_prompt),
+            "persona_version": PERSONA_VERSION,
+            "persona_source": prepared["persona_source"],
+            "persona_source_hash": str(prepared["persona_source_hash"]),
+        })
+    return plan
+
+
+def apply_seed_persona_refresh(conn: Any, plan: list[dict[str, Any]] | None = None) -> list[str]:
+    """Apply a refresh plan, re-verifying each row is still untouched before writing.
+
+    The caller owns the transaction (commit/rollback). Returns the refreshed slugs.
+    """
+    from ..time_utils import local_iso
+    from .wanderer_identity_service import invalidate_wanderer_cache
+
+    if plan is None:
+        plan = plan_seed_persona_refresh(conn)
+    refreshed: list[str] = []
+    for item in plan:
+        row = conn.execute(
+            "SELECT persona_updated_at, origin FROM wanderer_agents WHERE id = ?",
+            (item["id"],),
+        ).fetchone()
+        if row is None:
+            continue
+        updated_at = row["persona_updated_at"] if hasattr(row, "keys") else row[0]
+        origin = row["origin"] if hasattr(row, "keys") else row[1]
+        if updated_at or origin != "seed":
+            continue  # changed since planning: do not touch
+        conn.execute(
+            "UPDATE wanderer_agents SET persona_prompt = ?, persona_version = ?, persona_source_hash = ?, "
+            "persona_source_json = ?, updated_at = ? WHERE id = ?",
+            (item["new_prompt"], item["persona_version"], item["persona_source_hash"],
+             json.dumps(item["persona_source"], ensure_ascii=False, sort_keys=True),
+             local_iso(), item["id"]),
+        )
+        refreshed.append(str(item["slug"]))
+    if refreshed:
+        invalidate_wanderer_cache()
+    return refreshed
+
+
 def seed_wanderers(conn: Any) -> dict[str, Any]:
     """Ensure the placeholder class, 20 student rows and agents with no learned knowledge.
 

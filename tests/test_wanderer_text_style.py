@@ -91,6 +91,14 @@ class PublicTextPromptTest(WandererDbTestCase):
         self.assertIn(GROUP_ECHO_RULES, group)
         self.assertNotIn(GROUP_ECHO_RULES, dm)
 
+    def test_natural_voice_constraint_is_in_public_prompt(self):
+        with self.connect() as conn:
+            wanderer = self.wanderer(conn, "atai")
+            prompt = build_system_prompt(conn, wanderer, scene={"kind": "好友私聊"},
+                                         thread_key="social:friend:2")
+        self.assertIn("不用固定开场招呼", prompt)
+        self.assertIn("以本原则为准", prompt)
+
 
 class AntiAiRulesInPromptTest(WandererDbTestCase):
     def test_rules_precede_the_persona_block(self):

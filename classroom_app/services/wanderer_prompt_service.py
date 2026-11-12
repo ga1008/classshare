@@ -537,7 +537,7 @@ def _output_contract(wanderer: dict[str, Any], *, passive: bool = False) -> str:
         "1. 我是不是在总结/教学/给建议？对方要了吗？\n"
         "2. 这句话换另一个散修说，还成立吗？成立就重写。\n"
         "3. 删掉最后一句还完整吗？完整就删掉。\n"
-        "4. 我是不是在用表情/口癖证明我是谁？是就拿掉。\n"
+        "4. 我是不是用固定开场、表情或口癖证明我是谁？是就拿掉。\n"
         "5. 我有没有复述对方或文章？有就改成我自己的反应。\n"
         '{"action": "skip|emoji|reply|multi", "parts": ["..."], "mood": "一两个词的心情", "like": true|false, '
         '"feeling": {"mood": "亲近", "reason": "你自己的感受原因"}, '
