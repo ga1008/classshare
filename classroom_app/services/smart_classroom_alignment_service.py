@@ -172,9 +172,18 @@ async def _read_candidates(context, session_id=None, selected_session=None):
                 sample = next((s for s in occurrences if preferred and all(s[k] == preferred[k] for k in ('week', 'day_of_week', 'sections'))), occurrences[0])
                 slot = {'kind': 'smart_attendance_slot', 'source_id': source['remote_schedule_id'], 'external_account_key': account, **sample}
                 key = (sample['schedule_id'], sample['week'], sample['day_of_week'], tuple(sample['sections']), source['remote_class_id'])
-                if key not in snapshots:
-                    snapshots[key] = await mini.read_slot(client, slot, source)
-                snap = snapshots[key]
+                read_error = None
+                try:
+                    if key not in snapshots:
+                        snapshots[key] = await mini.read_alignment_slot(client, slot, source)
+                    snap = snapshots[key]
+                except ledger.source_adapter.AttendanceSourceError as exc:
+                    if exc.code not in {'slot_identity_changed','slot_section_changed','round_identity_changed','invalid_slot','invalid_roster','duplicate_student','missing_round_id'}:
+                        raise
+                    # A malformed/unrelated course must not abort discovery of
+                    # all other classes. Keep an ineligible diagnostic card.
+                    read_error = {'code':exc.code,'message':str(exc)}
+                    snap = {'record':None,'students':{},'can_checkin':False}
                 roster = rules.roster_evidence(context['numbers'], snap['students'])
                 metadata = rules.course_metadata({**(snap.get('schedule') or {}), **{k: v for k, v in group.items() if v is not None}})
                 target = {'course_name': source['course_name'], 'course_code': source['course_code'],
@@ -183,17 +192,26 @@ async def _read_candidates(context, session_id=None, selected_session=None):
                           'session_count': len(occurrences) if complete else None, **metadata}
                 cid = _candidate_id('course', [source['external_account_key'], source['academic_year'], source['academic_term'], source['remote_class_id'], source['remote_schedule_id']])
                 reasons = [f"名单交集 {roster['matched_count']} 人，双向未对齐 {roster['difference_count']} 人；学校名单为准。"]
+                if read_error:
+                    reasons = ['学校候选未通过身份核对：' + read_error['message']]
+                elif snap.get('alignment_note'):
+                    reasons.append(snap['alignment_note'])
                 if not roster['majority']:
                     reasons.append('名单交集未超过双方人数的一半，不能认定同一教学班。')
                 if not all(target.get(k) for k in ('session_count', 'total_hours', 'credits')):
                     reasons.append('学校课次数、学时或学分证据不完整。')
                 candidates.append({'id': cid, 'label': source['course_name'] + ' · ' + source['teaching_class_name'],
                                    'eligible': roster['majority'], 'target': target, 'reasons': reasons,
-                                   'evidence': {'roster': roster, 'roster_fingerprint': ledger._hash(sorted(snap['students'])), 'method': 'deterministic' if rules.deterministic_course(info, target, roster) else 'review'},
+                                   'evidence': {'roster': roster, 'roster_fingerprint': ledger._hash(sorted(snap['students'])), 'read_error': read_error, 'method': 'deterministic' if rules.deterministic_course(info, target, roster) else 'review'},
                                    '_source': source, '_occurrences': occurrences, '_sample': sample, '_snapshot': snap,
                                    '_roster_fingerprint': ledger._hash(sorted(snap['students']))})
     deterministic = [c for c in candidates if c['evidence']['method'] == 'deterministic']
+    unresolved_same_course = any(c['evidence'].get('read_error') and
+        (str(c['target']['course_code']).casefold() == str(info['course_code']).casefold() or flow._name(c['target']['course_name']) == flow._name(info['course_name'])) for c in candidates)
     ai = {'status': 'not_needed', 'decision': deterministic[0]['id'] if len(deterministic) == 1 else None}
+    if unresolved_same_course:
+        ai = {'status':'unavailable','decision':None,'reason':'另有同课程候选未完成学校身份核对，请查看候选说明。'}
+        return candidates, ai
     if not deterministic:
         allowed = [c for c in candidates if c['evidence']['roster']['accepted']]
         if allowed:

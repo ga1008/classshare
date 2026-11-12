@@ -68,6 +68,7 @@ class WorkflowRouterTests(unittest.TestCase):
         self.enterContext(patch.object(mini, "list_schedules", AsyncMock(return_value={"year": "2026-2027", "semester": 1,
             "items": [{"id": "schedule", "courseCode": "E1", "sections": "2-3", "xqj": 1, "weeks": [11]}]})))
         self.enterContext(patch.object(mini, "read_slot", AsyncMock(side_effect=self.read_slot)))
+        self.enterContext(patch.object(mini, 'read_alignment_slot', mini.read_slot))
         self.enterContext(patch.object(mini, "read_records", AsyncMock(side_effect=lambda *args: copy.deepcopy(self.remote))))
         self.enterContext(patch.object(mini, "change_student", AsyncMock(side_effect=self.change)))
         app = FastAPI()

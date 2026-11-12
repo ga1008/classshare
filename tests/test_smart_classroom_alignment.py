@@ -10,6 +10,7 @@ from classroom_app.services import smart_classroom_alignment as rules
 from classroom_app.services import smart_classroom_alignment_service as alignment
 from classroom_app.services import smart_classroom_workflow_service as flow
 from classroom_app.services import smart_classroom_miniapp_adapter as mini
+from classroom_app.services.smart_classroom_attendance_adapter import AttendanceSourceError
 from tests.test_smart_classroom_workflow_router import WorkflowRouterTests
 
 
@@ -68,6 +69,33 @@ class AlignmentIntegrationTests(WorkflowRouterTests):
         evidence = state['alignment']['course']['candidates'][0]['evidence']
         self.assertEqual(4,evidence['roster']['difference_count'])
         self.assertEqual('deterministic',evidence['method'])
+        flow._ai_assist.assert_not_awaited()
+
+    def test_unrelated_bad_school_candidate_is_isolated_as_diagnostic_card(self):
+        self.groups.return_value.insert(0,{'id':'other-row','courseId':'OTHER','course':'Unrelated synthetic course','claId':'other-class','claName':'Other class','credits':2,'total_hours':2})
+        mini.list_schedules.return_value['items'].append({'id':'other-row','courseCode':'OTHER','sections':'2-3','xqj':1,'weeks':[11]})
+        async def discover(*args):
+            if args[2]['course_code']=='OTHER':
+                raise AttendanceSourceError('round_identity_changed','学校返回的名单不属于所选教学班。')
+            return await self.read_slot(*args)
+        with patch.object(mini,'read_alignment_slot',AsyncMock(side_effect=discover)):
+            state=self.match()
+        self.assertEqual('matched',state['binding']['state'])
+        invalid=next(c for c in state['alignment']['course']['candidates'] if c['target']['course_code']=='OTHER')
+        self.assertFalse(invalid['eligible'])
+        self.assertEqual('round_identity_changed',invalid['evidence']['read_error']['code'])
+
+    def test_unreadable_same_named_candidate_cannot_create_false_unique_match(self):
+        self.groups.return_value.insert(0,{'id':'other-row','courseId':'OTHER','course':'Synthetic course','claId':'other-class','claName':'Other class','credits':2,'total_hours':2})
+        mini.list_schedules.return_value['items'].append({'id':'other-row','courseCode':'OTHER','sections':'2-3','xqj':1,'weeks':[11]})
+        async def discover(*args):
+            if args[2]['course_code']=='OTHER':
+                raise AttendanceSourceError('round_identity_changed','学校返回的名单不属于所选教学班。')
+            return await self.read_slot(*args)
+        with patch.object(mini,'read_alignment_slot',AsyncMock(side_effect=discover)):
+            state=self.match()
+        self.assertEqual('review',state['alignment']['course']['state'])
+        self.assertFalse(state['can_sync'])
         flow._ai_assist.assert_not_awaited()
 
     def test_large_difference_needs_explicit_course_confirmation_and_receipt(self):

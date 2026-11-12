@@ -100,7 +100,63 @@ def validate_view(payload, slot, source, expected_checkin_id=None):
 async def read_slot(client, slot, source, expected_checkin_id=None):
     payload = await _post(client, "view", {"id": slot["schedule_id"], "week": slot["week"],
                         "dayOfWeek": slot["day_of_week"], "section": slot["section"]})
-    return validate_view(payload, slot, source, expected_checkin_id)
+    try:
+        return validate_view(payload, slot, source, expected_checkin_id)
+    except AttendanceSourceError as exc:
+        if exc.code != 'round_identity_changed':
+            raise
+        # Some official timetable rows return an older internal schedule id on
+        # their checkin. Only that id mismatch is eligible for proof by the
+        # requested row's own history; every other scope dimension stays exact.
+        snapshot = validate_view({**payload, 'checkinCourse': None}, slot, source)
+        record = payload.get('checkinCourse') or {}
+        scope = {'week': slot['week'], 'dayOfWeek': slot['day_of_week'], 'section': slot['section'],
+                 'year': source['academic_year'], 'semester': source['academic_term'],
+                 'courseId': source['course_code'], 'claId': source['remote_class_id']}
+        if not record.get('id') or str(record.get('teacherScheduleId')) == str(slot['schedule_id']) or any(str(record.get(k)) != str(v) for k,v in scope.items()):
+            raise exc
+        if expected_checkin_id is not None and str(record['id']) != str(expected_checkin_id):
+            raise AttendanceSourceError('round_replaced', '学校官方端已删除或重新发起点名，原绑定已暂停。') from exc
+        history = await read_history(client, slot['schedule_id'])
+        candidates = [r for r in history if all(str(r.get(k)) == str(v) for k,v in scope.items())]
+        if len(candidates) != 1 or str(candidates[0].get('id')) != str(record['id']) or str(candidates[0].get('teacherScheduleId')) != str(record.get('teacherScheduleId')):
+            raise AttendanceSourceError('round_identity_changed', '学校排课历史未唯一证明本轮点名归属，已停止同步。') from exc
+        snapshot.update(record=record, students=await read_records(client, record['id']), can_checkin=False,
+                        record_scope_evidence={'kind':'requested_schedule_history','schedule_id':str(slot['schedule_id']),
+                                               'remote_checkin_id':str(record['id']), 'record_schedule_id':str(record['teacherScheduleId'])})
+        return snapshot
+
+
+def validate_alignment_view(payload, slot, source):
+    """Read-only course roster discovery, separate from exact-round authority.
+
+    Validate the queried timetable and teaching group. A view's different
+    rollcall is discarded, so it cannot authorize a create/stop/student write.
+    """
+    if not isinstance(payload, dict):
+        raise AttendanceSourceError('invalid_slot', '智慧课堂课次信息不完整。')
+    snapshot = validate_view({**payload, 'checkinCourse': None}, slot, source)
+    record = payload.get('checkinCourse')
+    if not record:
+        return snapshot
+    group = {'year':source['academic_year'], 'semester':source['academic_term'],
+             'courseId':source['course_code'], 'claId':source['remote_class_id']}
+    if not isinstance(record,dict) or any(str(record.get(k)) != str(v) for k,v in group.items()):
+        raise AttendanceSourceError('round_identity_changed', '学校返回的名单不属于所选学期课程或教学班，未用于对齐。')
+    try:
+        return validate_view(payload, slot, source)
+    except AttendanceSourceError as exc:
+        if exc.code != 'round_identity_changed':
+            raise
+        snapshot.update(record=None, can_checkin=False,
+                        alignment_note='学校名单已核对；返回点名的排课标识或课次不同，已排除该点名，推送时须重新精确核实。')
+        return snapshot
+
+
+async def read_alignment_slot(client, slot, source):
+    payload = await _post(client, 'view', {'id':slot['schedule_id'], 'week':slot['week'],
+                                         'dayOfWeek':slot['day_of_week'], 'section':slot['section']})
+    return validate_alignment_view(payload, slot, source)
 
 
 async def read_records(client, checkin_id):

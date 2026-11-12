@@ -30,6 +30,7 @@ class WorkflowTests(AutoEngineTests):
         self.patch(workflow.local, 'require_teacher', Mock())
         self.patch(workflow, "_lesson", lambda *args, **kwargs: copy.deepcopy(self.ctx))
         self.patch(workflow, "open_authenticated_smart_classroom_client", self.authenticated)
+        self.patch(mini, 'read_alignment_slot', mini.read_slot)
         self.patch(workflow.local, "_roster", Mock(return_value=[{"student_id_number": "001"}, {"student_id_number": "002"}]))
         self.ai = self.patch(workflow, "_ai_assist", AsyncMock(return_value={"status": "unavailable", "decision": None}))
         self.persist = self.patch(workflow, "persist_remote_snapshot", Mock())
