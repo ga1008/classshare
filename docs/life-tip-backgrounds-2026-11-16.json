@@ -1,6 +1,6 @@
 {
   "batch_id": "2026-11-16",
-  "status": "visual_review_passed",
+  "status": "completed",
   "before": 332,
   "after": 334,
   "generation_calls": 2,
@@ -48,9 +48,18 @@
       ],
       "visual_review": {
         "full_image": "passed",
-        "center_crop_390x844": "passed; 主体上方可识别，中下部安静，待实际页面叠字最终验证",
+        "center_crop_390x844": "passed; 本批师生桌面和390×844手机实际页面共四场景已审阅，主体可辨，提示与来源可读，按钮和文字无裁切；沿用现有页面材质。",
         "comparison_file": ".codex-temp\\life-tip-weekly-20261116\\day-comparison.jpg",
-        "reviewed_at": "2026-11-16T05:06:30+08:00"
+        "reviewed_at": "2026-11-16T05:06:30+08:00",
+        "actual_page_display": {
+          "passed": true,
+          "scenarios": 4,
+          "viewports": [
+            "1440x900",
+            "390x844"
+          ],
+          "evidence": ".codex-temp/life-tip-weekly-20261116/qa-visual-review.json"
+        }
       }
     },
     {
@@ -95,9 +104,18 @@
       ],
       "visual_review": {
         "full_image": "passed",
-        "center_crop_390x844": "passed; 主体上方可识别，中下部安静，待实际页面叠字最终验证",
+        "center_crop_390x844": "passed; 本批师生桌面和390×844手机实际页面共四场景已审阅，主体可辨，提示与来源可读，按钮和文字无裁切；沿用现有页面材质。",
         "comparison_file": ".codex-temp\\life-tip-weekly-20261116\\night-comparison.jpg",
-        "reviewed_at": "2026-11-16T05:06:30+08:00"
+        "reviewed_at": "2026-11-16T05:06:30+08:00",
+        "actual_page_display": {
+          "passed": true,
+          "scenarios": 4,
+          "viewports": [
+            "1440x900",
+            "390x844"
+          ],
+          "evidence": ".codex-temp/life-tip-weekly-20261116/qa-visual-review.json"
+        }
       }
     }
   ],
@@ -126,9 +144,48 @@
     "coverage_gap": "仅找到7批可用周更图，第8批及11/02记录未找到；早期完整提示词缺失，已复核全图库332张及手动4张，缺失文本不宣称去重。",
     "pair_difference": "日间云上海拔高台斜俯望宫阙和日轮，对照夜间现代校园低机位斜仰望攀岩折面；主体、布景、机位、尺度、材质和光源均不同。"
   },
-  "pending": [
-    "validation",
-    "release",
-    "push"
-  ]
+  "pending": [],
+  "completed_at": "2026-11-16T05:31:41.447389+08:00",
+  "validation": {
+    "isolated_tests": 35,
+    "browser_scenarios": 4,
+    "screenshots_reviewed": 8,
+    "browser_errors": 0,
+    "old_manifest_image_files_preserved": 664,
+    "all_historical_image_hashes_preserved": 676,
+    "all_images_decoded": 680,
+    "public_new_image_hashes_verified": 4,
+    "formal_graph": "9f56e0373437f00f7544ff0d685855322a8074a82ca429e094efe5c418438a8c",
+    "platform_acceptance": "pending",
+    "scope": "Splash content and four role/viewport scenarios only; not full-platform acceptance."
+  },
+  "deployment": {
+    "release_id": "20261116-051734-9e03bafe0149",
+    "source_commit": "06584904c67e619758f229fe7ace865f64f0e276",
+    "root_content_commit": "8a47fb582563c6807bfac98d8839512dfa2b68ab",
+    "content_remote_commit_verified": "06584904c67e619758f229fe7ace865f64f0e276",
+    "code_backup": "/tmp/lanshare-deploy-backups/code-20261116-051810.tgz",
+    "cutover_backup": "/tmp/lanshare-deploy-backups/db-cutover-20261116-051810.sql.gz",
+    "archive_sha256": "9e03bafe01492c47f262cc81ebd773c6d818f14e98033a330659402f69144e88",
+    "archive_files_verified": 4347,
+    "native_gate_status": "ok",
+    "native_gate_file": "E:\\CodexTemp\\lanshare-deploy-20261116-051734\\native-migration-validation.json",
+    "rehearsal_backup_sha256": "0b4c6f0db2250e8115ce5182e729ebcb5fb78ec8cd8e6bd9b8ba8be969485a26",
+    "health_status": "ok",
+    "cache_window_checked_at": "2026-11-15T21:31:26.275658+00:00",
+    "actual_backup_integrity": {
+      "/tmp/lanshare-deploy-backups/code-20261116-051810.tgz": {
+        "bytes": 269150386,
+        "mode": "0o600",
+        "sha256": "884f82d5316c72186b2407f99566d7aa551855ac49f3c2624d98b7e776a44559",
+        "gzip_integrity": "ok"
+      },
+      "/tmp/lanshare-deploy-backups/db-cutover-20261116-051810.sql.gz": {
+        "bytes": 207377377,
+        "mode": "0o600",
+        "sha256": "0e7ffc977cb4275fd291b19c44ab41f7e22448d77c36ba3eaaea4023a3ed6bc2",
+        "gzip_integrity": "ok"
+      }
+    }
+  }
 }
