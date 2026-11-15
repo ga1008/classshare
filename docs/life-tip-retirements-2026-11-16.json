@@ -1,0 +1,244 @@
+{
+  "checked_at": "2026-11-16",
+  "original_documents_re_read": 14,
+  "active_competition_tips_reviewed": 33,
+  "expired_competition_tips": 13,
+  "other_expired_current_deadline_tips": 5,
+  "retirements": [
+    {
+      "id": 37501,
+      "document_id": 2106,
+      "valid_until": "2026-06-18T17:00:00+08:00",
+      "source_file_sha256": "6071d0b315bc1796415e481d3eff494d89e97373cd3e0ea3ab33e7eda05569cf",
+      "evidence_pages": [
+        2,
+        3
+      ],
+      "reason": "该届征文电子版提交方式；原文投稿截止2026年6月18日17:00，已过期。"
+    },
+    {
+      "id": 37502,
+      "document_id": 2106,
+      "valid_until": "2026-06-22T23:59:59+08:00",
+      "source_file_sha256": "6071d0b315bc1796415e481d3eff494d89e97373cd3e0ea3ab33e7eda05569cf",
+      "evidence_pages": [
+        2
+      ],
+      "reason": "该届征文评审6月19日至22日，已结束；本条包含该届时间，不能当作新的征集提醒。"
+    },
+    {
+      "id": 37503,
+      "document_id": 2106,
+      "valid_until": "2026-06-18T17:00:00+08:00",
+      "source_file_sha256": "6071d0b315bc1796415e481d3eff494d89e97373cd3e0ea3ab33e7eda05569cf",
+      "evidence_pages": [
+        2,
+        3
+      ],
+      "reason": "该届征文专用排版与投递要求；原文投稿截止2026年6月18日17:00，已过期。"
+    },
+    {
+      "id": 37504,
+      "document_id": 2106,
+      "valid_until": "2026-06-30T23:59:59+08:00",
+      "source_file_sha256": "6071d0b315bc1796415e481d3eff494d89e97373cd3e0ea3ab33e7eda05569cf",
+      "evidence_pages": [
+        2
+      ],
+      "reason": "该届征文集中展示6月23日至30日，已结束。"
+    },
+    {
+      "id": 37511,
+      "document_id": 2104,
+      "valid_until": "2026-06-17T17:00:00+08:00",
+      "source_file_sha256": "c213d8d4a22fe59451b5de432258eaa93d5eb465333a878ec969df549fee4cc1",
+      "evidence_pages": [
+        1,
+        3
+      ],
+      "reason": "该届书法作品征集截止6月17日17:00，逾期不受理。"
+    },
+    {
+      "id": 37513,
+      "document_id": 2104,
+      "valid_until": "2026-06-17T17:00:00+08:00",
+      "source_file_sha256": "c213d8d4a22fe59451b5de432258eaa93d5eb465333a878ec969df549fee4cc1",
+      "evidence_pages": [
+        1,
+        3
+      ],
+      "reason": "该届书法投稿笔类和标签要求，依附已截止的6月17日征集窗口。"
+    },
+    {
+      "id": 37514,
+      "document_id": 2104,
+      "valid_until": "2026-06-26T23:59:59+08:00",
+      "source_file_sha256": "c213d8d4a22fe59451b5de432258eaa93d5eb465333a878ec969df549fee4cc1",
+      "evidence_pages": [
+        1
+      ],
+      "reason": "该届书法评分说明，原文评审6月18日至23日、公示6月24日至26日，赛事阶段已结束。"
+    },
+    {
+      "id": 37731,
+      "document_id": 48,
+      "valid_until": "2026-05-28T23:59:00+08:00",
+      "source_file_sha256": "a219d6c1bafaf8b8e27c7bf2d40a1d86800e2b5269521ecb374dfb0c49c61480",
+      "evidence_pages": [
+        2,
+        3
+      ],
+      "reason": "该届演讲比赛视频规格，原文提交截止5月28日23:59，不能作为当前报名要求。"
+    },
+    {
+      "id": 37732,
+      "document_id": 48,
+      "valid_until": "2026-05-28T23:59:00+08:00",
+      "source_file_sha256": "a219d6c1bafaf8b8e27c7bf2d40a1d86800e2b5269521ecb374dfb0c49c61480",
+      "evidence_pages": [
+        2,
+        3
+      ],
+      "reason": "该届演讲视频匿名性要求，原文该届提交截止5月28日23:59，不外推为所有赛事规则。"
+    },
+    {
+      "id": 39404,
+      "document_id": 10,
+      "valid_until": "2026-06-08T23:59:59+08:00",
+      "source_file_sha256": "8a348a683d6c84b3c8a5adc4507e3c467d1d5b19304bcb97a09313fe30fc6039",
+      "evidence_pages": [
+        1
+      ],
+      "reason": "获奖名单异议公示窗口为6月4日至8日，已结束；不复制名单。"
+    },
+    {
+      "id": 39410,
+      "document_id": 5,
+      "valid_until": "2026-06-22T17:00:00+08:00",
+      "source_file_sha256": "0711a4a857a5eb5196c0a802721fa0b82960db804b8236a38c398bba117eb3a5",
+      "evidence_pages": [
+        2
+      ],
+      "reason": "该届红歌视频参赛与组队范围，原文作品报送截止6月22日17时，已过期。"
+    },
+    {
+      "id": 39411,
+      "document_id": 5,
+      "valid_until": "2026-06-22T17:00:00+08:00",
+      "source_file_sha256": "0711a4a857a5eb5196c0a802721fa0b82960db804b8236a38c398bba117eb3a5",
+      "evidence_pages": [
+        2,
+        3
+      ],
+      "reason": "该届红歌视频每队至少报1件作品的投稿要求，报送截止6月22日17时已过。"
+    },
+    {
+      "id": 39414,
+      "document_id": 5,
+      "valid_until": "2026-06-22T17:00:00+08:00",
+      "source_file_sha256": "0711a4a857a5eb5196c0a802721fa0b82960db804b8236a38c398bba117eb3a5",
+      "evidence_pages": [
+        2
+      ],
+      "reason": "该届红歌视频投稿规格，原文报送截止6月22日17时，已过期。"
+    },
+    {
+      "id": 51140,
+      "document_id": 30986,
+      "valid_until": "2026-11-06T00:00:00+08:00",
+      "source_file_sha256": "d4dbca8b819e44725f8ce4d930b0029dc5787ff218fd7ed6c8e5292c27215809",
+      "evidence_pages": [
+        3
+      ],
+      "reason": "2027届毕业论文选题应于11月6日前完成；本条催办窗口已过，不删除后续11月30日开题提醒。"
+    },
+    {
+      "id": 73156,
+      "document_id": 35985,
+      "valid_until": "2026-11-13T00:00:00+08:00",
+      "source_file_sha256": "8139b696f588fb69017fba2796fd7c41b2f1c92ec859a9880ed986863d9034b5",
+      "evidence_pages": [
+        2
+      ],
+      "reason": "原文教学计划执行自查材料11月13日前报送，窗口已过。"
+    },
+    {
+      "id": 73157,
+      "document_id": 35985,
+      "valid_until": "2026-11-13T00:00:00+08:00",
+      "source_file_sha256": "8139b696f588fb69017fba2796fd7c41b2f1c92ec859a9880ed986863d9034b5",
+      "evidence_pages": [
+        2
+      ],
+      "reason": "原文逐班教学计划自查表11月13日前报送，窗口已过。"
+    },
+    {
+      "id": 82672,
+      "document_id": 38685,
+      "valid_until": "2026-11-09T23:59:59+08:00",
+      "source_file_sha256": "d094f45e139d468a8b88af3625607a33716cf2986ff25f7dacf2a5d1bfcb0b4b",
+      "evidence_pages": [
+        1
+      ],
+      "reason": "原文第二批退多缴学杂费反馈表11月9日晚前报送，不能继续提示本批办理；不复制个人名单或银行卡。"
+    },
+    {
+      "id": 82680,
+      "document_id": 39135,
+      "valid_until": "2026-11-14T17:50:00+08:00",
+      "source_file_sha256": "3f29e2156097c07818f5e2fd2a84e5c27a7f06fc1413f0ed1bc94aa6c752db24",
+      "evidence_pages": [
+        1
+      ],
+      "reason": "运动会停课仅限11月13日全天、11月14日8:30至17:50，现已结束；不得继续泛化停课提醒。"
+    }
+  ],
+  "retained": [
+    {
+      "tip_ids": [
+        15334,
+        15335,
+        15336,
+        15337,
+        36595,
+        36596,
+        36597,
+        36598,
+        36599,
+        36620,
+        36621,
+        36622,
+        36623,
+        36624
+      ],
+      "reason": "原文奖励办法和2026-2027竞赛目录，没有本次核验已到期的办理窗口；保留其原学校范围，不扩大公开。"
+    },
+    {
+      "tip_ids": [
+        37528
+      ],
+      "reason": "原创与权利要求仍属常青，未陈列报名开放或截止，不因来源比赛结束例行删除。"
+    },
+    {
+      "tip_ids": [
+        51135,
+        51136,
+        51137,
+        51138,
+        51139
+      ],
+      "reason": "原文该届学习成果赛12月4日报送截止，当前未过期，保留原范围，报名资格不外推。"
+    },
+    {
+      "tip_ids": [
+        51141
+      ],
+      "reason": "原文11月30日前开题窗口未过期；不因选题截止已过而删除后续阶段。"
+    }
+  ],
+  "scope_limit": "重点复核全量33条有效竞赛公文提示、上周标记的11月13日两条及最新11月公文期限；未声称清空所有历史公文过期内容。",
+  "projected_effective_counts_if_no_concurrent_change": {
+    "student": 1596,
+    "teacher": 91
+  }
+}

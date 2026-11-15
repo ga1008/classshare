@@ -2963,6 +2963,37 @@
       ],
       "luma": 158,
       "tone": "light"
+    },
+    {
+      "file": "xianxia-sunny-sun-palace-ridge-20261116-d34567b3.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "思考",
+        "专注",
+        "学习",
+        "成长"
+      ],
+      "luma": 164,
+      "tone": "light"
+    },
+    {
+      "file": "xueye-night-climbing-studio-20261116-a5e188fc.webp",
+      "categories": [
+        "身心权益",
+        "学业规则",
+        "教学相长"
+      ],
+      "tags": [
+        "专注",
+        "成长",
+        "学习"
+      ],
+      "luma": 110,
+      "tone": "dark"
     }
   ]
 }

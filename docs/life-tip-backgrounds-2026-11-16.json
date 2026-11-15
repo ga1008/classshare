@@ -1,0 +1,134 @@
+{
+  "batch_id": "2026-11-16",
+  "status": "visual_review_passed",
+  "before": 332,
+  "after": 334,
+  "generation_calls": 2,
+  "added": [
+    {
+      "file": "xianxia-sunny-sun-palace-ridge-20261116-d34567b3.webp",
+      "categories": [
+        "人生大实话",
+        "身心权益",
+        "教学相长"
+      ],
+      "tags": [
+        "思考",
+        "专注",
+        "学习",
+        "成长"
+      ],
+      "luma": 164,
+      "tone": "light",
+      "key": "day",
+      "theme": "金乌日阙·高台侧望层阶",
+      "nearest_history": "xianxia-moon-palace-night-20261011-a294acc3.webp",
+      "design_differences": [
+        "沿外侧长廊平视改为从独立高台俯看错层白玉台基与斜向宫殿侧立面，取消横向柱廊及中央桥",
+        "冷月夜云海改为清晨薄云柔化的单一淡金日轮，朱红木构侧面受光，玉阶形成冷暖相间的层次"
+      ],
+      "prompt": "16:9宽幅横图，东方玄幻修仙天境，电影级写实环境概念画面。唯一奇观为云海上宏伟朱红宫阙与后方一轮淡金日轮共同形成的金乌日阙，庄严、清朗而宁静。镜头位于与主殿分离的较高白玉观景台，55mm镜头，向左前方斜俯看巨殿的侧立面与错层台基，不沿长廊拍摄，不采用中央直桥通往宫门的中轴构图。宫殿屋脊和日轮置于上方中央，宽阔侧墙及屋檐向右方延伸出画面；日轮被薄云自然柔化，色泽浅金，有轮廓而不过曝，不是火球。下方靠近相机的短弧形石栏由左下向中央下部转折，云海隔开观景台与远殿。主殿下的层层玉台从中央上部向右下方错落展开，正常尺寸的小门、阶沿栏杆与极少宫灯连续缩小，形成可信透视与巨构尺度；无人。画面中间高度约45%到65%以开阔浅灰蓝云谷为主，让宫殿上部和下部观景台仍在手机中央竖裁切内。近景只有栏外薄雾，中景积云有明亮云顶与灰蓝阴影，远景低对比天空自然淡化。汉白玉有矿物细纹，暗朱红木梁承重可信，斗拱整齐，深灰瓦面与少量暗金收边，绝非全金宫殿。晴朗晨间，后方柔和日光照亮侧檐边缘，右上天空的散射光让木构暗部清楚，石栏投下柔软斜影；月白、云蓝、旧朱红与克制淡金，保持真实石木材质和空气透视。桌面与390×844手机背景cover适配，中心竖幅上部可识别日轮与殿脊，下部可识别栏台，中间文字区域低细节低局部反差，不画遮罩或文字框。只一个太阳，不出现月亮、额外天体、神鸟、飞剑、法阵、战争、人物特写、霓虹、密集宫殿、全局橙色滤镜、烧焦黑影、弯曲承重柱、融化建筑、断檐、棉花团云、浓雾遮住主体、过曝、卡通、塑料石材、西式城堡、现代楼宇。无文字、铭文、标牌、UI、logo、水印。",
+      "normalized_prompt_sha256": "322f3a5022c895c7e0bbe723e16c8df46e28ad38549c9c214825709a0bf46c83",
+      "source": "C:\\Users\\AngelWei\\.codex\\generated_images\\01a09ace-1e17-7ee1-b115-6fe59e1f51c2\\exec-3e11193c-c791-4dfa-94dc-a2987c187e63.png",
+      "generated_dimensions": [
+        1672,
+        941
+      ],
+      "source_crop_box": null,
+      "width": 1600,
+      "height": 900,
+      "bytes": 97464,
+      "quality": 78,
+      "sha256": "d34567b338fda9d5b5d7e7c6263178462066c3e8163686f9102ce5e633b7874c",
+      "frost": "static\\img\\life_tips\\frost\\xianxia-sunny-sun-palace-ridge-20261116-d34567b3.webp",
+      "frost_sha256": "9f1581745c598ef8fc95f99cae6f8783cefa402208864cb5126d40582754e0c1",
+      "actual_differences": [
+        "实际取消旧图左侧长柱廊，改为独立弧栏前景、跨云谷远望右侧错层殿台；中央手机裁切仍见殿脊、层阶与弧栏。",
+        "实际由冷月与深蓝云海改为淡金日轮、朱红殿身和浅灰蓝云谷，中心光线柔和；不是仅换色，同步改变空间组织。"
+      ],
+      "visual_review": {
+        "full_image": "passed",
+        "center_crop_390x844": "passed; 主体上方可识别，中下部安静，待实际页面叠字最终验证",
+        "comparison_file": ".codex-temp\\life-tip-weekly-20261116\\day-comparison.jpg",
+        "reviewed_at": "2026-11-16T05:06:30+08:00"
+      }
+    },
+    {
+      "file": "xueye-night-climbing-studio-20261116-a5e188fc.webp",
+      "categories": [
+        "身心权益",
+        "学业规则",
+        "教学相长"
+      ],
+      "tags": [
+        "专注",
+        "成长",
+        "学习"
+      ],
+      "luma": 110,
+      "tone": "dark",
+      "key": "night",
+      "theme": "校园攀岩训练室·低视点斜望折面",
+      "nearest_history": "jiangxuejin-fencing-hall09-12881baf.webp",
+      "design_differences": [
+        "空旷平直击剑大厅改为上部具有明确凹凸折面的抱石训练墙及下部一体软垫，空间与运动主体改变",
+        "沿墙平视改为从垫面边缘低机位斜向仰望，均匀壁洗灯与高窗冷夜光共同塑形，取消戏剧化单束聚光"
+      ],
+      "prompt": "16:9宽幅横图，真实建筑摄影质感，大学校园夜间开放的室内抱石训练室，安静、健康、有探索与循序练习的意味。唯一主景是一面有两处大折面的低高度抱石墙，岩壁为温润浅灰和青灰色哑光木质面板，少量中等大小的浅赭、雾蓝岩点分散成清楚路线，不构成文字或符号。相机位于软垫边缘约70厘米高，32mm镜头，从左前方斜向右后方轻微仰望，远墙在画面上部中央形成可以识别的凹凸体积，不是正面平视的对称大厅。覆盖全场的厚实一体软垫占画面下半部，颜色为灰蓝与暖灰，接缝很少、中心中段平整安静，无桌子、电脑、讲台、办公室摆件。墙顶安全范围明确，没有高空绳索或悬挂人物；无人。左上方一列低亮度均匀壁洗灯照出岩壁折面的柔和明暗，右侧高窗露出清澈蓝调夜空与少量校园树影，冷蓝环境光和温和的中性暖白灯光平衡，室内可辨认而不过亮，暗部不死黑，地垫表面真实细微织物纹理。窗框与墙脚向右后方连续缩小，有清楚连贯的空间透视。手机390×844中央竖裁切上部仍保留岩壁转折与几个岩点，下部是垫面与自然纵深，中间提示文字区域以低细节低局部反差的垫面和墙脚阴影留白；宽桌面构图完整开阔。只是虚构校园环境，不指向某真实学校。不要人物、文字、数字路线标识、校名、海报、标牌、logo、水印、UI、文字框、暗色遮罩、卡通、塑料反光、刺眼灯带、紫色霓虹、浓雾、极端鱼眼、悬浮结构、混乱透视、拥挤小岩点或密集彩色墙面。",
+      "normalized_prompt_sha256": "75f92d50fb364769ce5628f0606f8ae41f1d6991d789449e8aab5bffa8ce934f",
+      "source": "C:\\Users\\AngelWei\\.codex\\generated_images\\01a09ace-1e17-7ee1-b115-6fe59e1f51c2\\exec-aee3d7b0-508a-4cc6-afaa-8bd1674ba48c.png",
+      "generated_dimensions": [
+        1672,
+        941
+      ],
+      "source_crop_box": null,
+      "width": 1600,
+      "height": 900,
+      "bytes": 92328,
+      "quality": 78,
+      "sha256": "a5e188fc48d4482ac450d9962dbd314d04f5382812575367b9ec1a8cb7c2dbcd",
+      "frost": "static\\img\\life_tips\\frost\\xueye-night-climbing-studio-20261116-a5e188fc.webp",
+      "frost_sha256": "d5f0968cc55872d92af1ebd5d0e81b1fb31c663cd0419d9d33a391fd1d38006b",
+      "actual_differences": [
+        "实际从击剑器具与平直暗墙改为大块凹凸抱石墙和整面软垫，手机中央可明确辨认岩壁折线和岩点。",
+        "低机位斜向仰望与均匀暖壁洗灯、右侧蓝夜窗共同形成明暗体积；相比旧图暗墙平视，空间和光影均变化。"
+      ],
+      "visual_review": {
+        "full_image": "passed",
+        "center_crop_390x844": "passed; 主体上方可识别，中下部安静，待实际页面叠字最终验证",
+        "comparison_file": ".codex-temp\\life-tip-weekly-20261116\\night-comparison.jpg",
+        "reviewed_at": "2026-11-16T05:06:30+08:00"
+      }
+    }
+  ],
+  "history_review": {
+    "gallery_images": 332,
+    "weekly_batches": [
+      "2026-09-14",
+      "2026-09-28",
+      "2026-10-05",
+      "2026-10-12",
+      "2026-10-19",
+      "2026-10-26",
+      "2026-11-09"
+    ],
+    "manual_preview_included": "2026-10-11 four images",
+    "available_full_prompts": 14,
+    "available_unique_full_prompts": 12,
+    "full_prompt_files": [
+      ".codex-temp\\life-tip-weekly-20261109\\image-designs.json",
+      "docs\\life-tip-backgrounds-2026-10-11.json",
+      "docs\\life-tip-backgrounds-2026-10-12.json",
+      "docs\\life-tip-backgrounds-2026-10-19.json",
+      "docs\\life-tip-backgrounds-2026-10-26.json",
+      "docs\\life-tip-backgrounds-2026-11-09.json"
+    ],
+    "coverage_gap": "仅找到7批可用周更图，第8批及11/02记录未找到；早期完整提示词缺失，已复核全图库332张及手动4张，缺失文本不宣称去重。",
+    "pair_difference": "日间云上海拔高台斜俯望宫阙和日轮，对照夜间现代校园低机位斜仰望攀岩折面；主体、布景、机位、尺度、材质和光源均不同。"
+  },
+  "pending": [
+    "validation",
+    "release",
+    "push"
+  ]
+}
