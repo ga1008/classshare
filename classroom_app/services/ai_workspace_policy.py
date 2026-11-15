@@ -77,6 +77,8 @@ def ensure_ai_workspace_access(conn, user, request, *, page_path='', extra_conte
     # assigned to this student's class also blocks calls made from another tab.
     from .offering_membership_service import offering_student_where
 
+    # Windows retain text IDs; migrated assignment/submission IDs are bigint.
+    # Cast the parent value, preserving window indexes and nonnumeric legacy IDs.
     rows = conn.execute(f"""
         SELECT a.*, s.assignment_id AS ai_submission_assignment_id, s.status AS ai_submission_status,
                s.is_absence_score AS ai_absence_score, s.resubmission_allowed AS ai_resubmission_allowed,
@@ -85,7 +87,7 @@ def ensure_ai_workspace_access(conn, user, request, *, page_path='', extra_conte
         JOIN class_offerings co ON co.id=a.class_offering_id
         JOIN students st ON st.id=? AND {offering_student_where(offering_alias='co', student_alias='st')}
         LEFT JOIN submissions s ON s.assignment_id=a.id AND s.student_pk_id=st.id
-        LEFT JOIN assignment_student_windows w ON w.assignment_id=a.id AND w.student_pk_id=st.id AND w.status='active'
+        LEFT JOIN assignment_student_windows w ON w.assignment_id=CAST(a.id AS TEXT) AND w.student_pk_id=st.id AND w.status='active'
         WHERE a.exam_paper_id IS NOT NULL AND a.exam_paper_id<>''
           AND a.availability_mode<>'permanent' AND a.status<>'new'
           AND (a.status<>'closed' OR COALESCE(s.resubmission_allowed,0)=1 OR w.assignment_id IS NOT NULL)
