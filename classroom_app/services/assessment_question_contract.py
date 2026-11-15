@@ -40,6 +40,24 @@ def normalize_question_type(raw_type: Any) -> str:
     raise ValueError(f"不支持的题型：{raw_type!s}。请使用单选、多选、判断、填空、简答、分析、程序或综合题。")
 
 
+def numbered_blanks(question: dict[str, Any]) -> list[dict[str, Any]]:
+    """Recognize the whole numbered schema, never a subset of legacy metadata."""
+    raw_blanks = question.get("blanks")
+    if question.get("type") != "text" or not isinstance(raw_blanks, list) or not raw_blanks:
+        return []
+    result = []
+    seen = set()
+    for blank in raw_blanks:
+        if not isinstance(blank, dict):
+            return []
+        blank_id = str(blank.get("id", "")).strip()
+        if not re.fullmatch(r"[1-9][0-9]*", blank_id) or blank_id in seen:
+            return []
+        seen.add(blank_id)
+        result.append({**blank, "id": blank_id})
+    return result
+
+
 def normalize_numbered_blanks(question: dict[str, Any], *, require_complete: bool = False) -> dict[str, Any]:
     """Normalize explicit numbered blanks, retaining empty positions in drafts.
 
@@ -47,6 +65,10 @@ def normalize_numbered_blanks(question: dict[str, Any], *, require_complete: boo
     projection used by older grading/export consumers. No blank count is fixed.
     """
     if question.get("type") != "text" or "blanks" not in question:
+        return question
+    if not require_complete and not numbered_blanks(question):
+        # Historical imports retained arbitrary extension fields named blanks.
+        # Only an explicit complete numbered shape opts into the new contract.
         return question
     raw_blanks = question["blanks"]
     if not isinstance(raw_blanks, list):
@@ -84,8 +106,8 @@ def normalize_numbered_blanks(question: dict[str, Any], *, require_complete: boo
 
 def numbered_blank_answer_text(question: dict[str, Any], answer: Any) -> str:
     """Preserve answer positions in human-readable rubric/export text."""
-    blanks = question.get("blanks")
-    if isinstance(blanks, list) and isinstance(answer, list):
+    blanks = numbered_blanks({"type": "text", **question})
+    if blanks and isinstance(answer, list):
         return "；".join(
             f"（{blank.get('id', index + 1)}）{answer[index] if index < len(answer) and answer[index] is not None else ''}"
             for index, blank in enumerate(blanks) if isinstance(blank, dict)
@@ -95,10 +117,10 @@ def numbered_blank_answer_text(question: dict[str, Any], answer: Any) -> str:
 
 def numbered_blank_questions(exam_data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {
-        str(question.get("id") or ""): question
+        str(question.get("id") or ""): {**question, "blanks": blanks}
         for page in exam_data.get("pages", []) or [] if isinstance(page, dict)
         for question in page.get("questions", []) or [] if isinstance(question, dict)
-        if question.get("type") == "text" and isinstance(question.get("blanks"), list) and question["blanks"]
+        if (blanks := numbered_blanks(question))
     }
 
 

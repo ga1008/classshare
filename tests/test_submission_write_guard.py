@@ -43,7 +43,11 @@ class SubmissionMutationGuardTests(unittest.TestCase):
                     conn.execute(statement)
             for field in ("stored_path", "file_ext", "file_hash"):
                 conn.execute(f"ALTER TABLE submission_files ADD COLUMN {field} TEXT")
-            conn.execute("CREATE TABLE submission_drafts(id INTEGER PRIMARY KEY, assignment_id TEXT, student_pk_id INTEGER)")
+            identity = "BIGSERIAL" if self.engine == "postgres" else "INTEGER"
+            conn.execute(f"CREATE TABLE submission_drafts(id {identity} PRIMARY KEY, assignment_id TEXT, student_pk_id INTEGER, "
+                         "answers_json TEXT,current_page INTEGER,client_updated_at TEXT,server_updated_at TEXT,server_version INTEGER,status TEXT)")
+            conn.execute("CREATE TABLE submission_draft_files(id INTEGER PRIMARY KEY,draft_id INTEGER,question_id TEXT,kind TEXT,"
+                         "original_filename TEXT,relative_path TEXT,stored_path TEXT,mime_type TEXT,file_size INTEGER,file_ext TEXT,file_hash TEXT,created_at TEXT)")
             for field, field_type in (("availability_mode", "TEXT"), ("starts_at", "TEXT"), ("duration_minutes", "INTEGER"), ("auto_close", "INTEGER")):
                 conn.execute(f"ALTER TABLE assignments ADD COLUMN {field} {field_type}")
         self.stack = ExitStack()
@@ -290,7 +294,9 @@ class SubmissionMutationGuardTests(unittest.TestCase):
             payload = drafts.get_assignment_draft("1", user={"id": 1})
         serialized = AssignmentDraftResponse.model_validate(payload).model_dump(exclude_unset=True)
         self.assertEqual(submission_write_version(current), serialized["submission_version"])
-        self.assertFalse(serialized["exists"])
+        self.assertTrue(serialized["exists"])
+        self.assertEqual(current.get("answers_json") or "", serialized["answers_json"])
+        self.assertEqual("2026-09-09T10:00:01", serialized["server_updated_at"])
 
 
 @unittest.skipUnless(os.environ.get("MP_PHASE1_POSTGRES_TEACHER_DSN"), "Requires an explicit isolated PostgreSQL cluster")

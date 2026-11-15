@@ -18,8 +18,33 @@ export function normalizeQuestionType(type) {
     return ALIASES[value] || value;
 }
 export function questionBlanks(question) {
-    return normalizeQuestionType(question?.type) === 'text' && Array.isArray(question?.blanks)
-        ? question.blanks.filter(blank => blank && blank.id != null) : [];
+    if (normalizeQuestionType(question?.type) !== 'text' || !Array.isArray(question?.blanks) || !question.blanks.length) return [];
+    const seen = new Set(), blanks = [];
+    for (const blank of question.blanks) {
+        if (!blank || typeof blank !== 'object' || Array.isArray(blank)) return [];
+        const id = String(blank.id ?? '').trim();
+        if (!/^[1-9]\d*$/.test(id) || seen.has(id)) return [];
+        seen.add(id); blanks.push({ ...blank, id });
+    }
+    return blanks;
+}
+
+/** Read historical answer lists or dictionaries without changing stored data.
+ * Dictionary keys own the question identity; answer arrays, blank IDs and
+ * attachment metadata remain intact. Invalid list entries cannot abort peers.
+ */
+export function parseAnswerRecords(raw) {
+    let data;
+    try { data = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return []; }
+    if (!data || typeof data !== 'object') return [];
+    const answers = !Array.isArray(data) && Object.prototype.hasOwnProperty.call(data, 'answers') ? data.answers : data;
+    if (Array.isArray(answers)) return answers.filter(item => item && typeof item === 'object' && !Array.isArray(item)
+        && ['question_id', 'question', 'answer', 'content', 'text', 'attachments'].some(key => Object.prototype.hasOwnProperty.call(item, key)));
+    if (!answers || typeof answers !== 'object') return [];
+    return Object.entries(answers).map(([key, value]) => ({
+        ...(value && typeof value === 'object' && !Array.isArray(value) ? value : { answer: value }),
+        question_id: key, question: key,
+    }));
 }
 export function blankAnswerValues(question, value, blankIds) {
     const blanks = questionBlanks(question);

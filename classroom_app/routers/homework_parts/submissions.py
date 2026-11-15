@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import ExitStack
 from .common import *
 from ...services.assessment_appeal_service import cancel_pending_appeals_for_answer
 
@@ -649,7 +650,9 @@ async def teacher_withdraw_submissions(
         return_submissions_for_resubmission,
     )
 
-    with get_db_connection() as conn:
+    from ...services.submission_draft_seed_service import seed_resubmission_draft
+
+    with ExitStack() as seed_cleanup, get_db_connection() as conn:
         close_overdue_assignments(conn)
         conn.commit()
         assignment = _get_assignment_for_teacher(conn, assignment_id, int(user["id"]))
@@ -703,7 +706,8 @@ async def teacher_withdraw_submissions(
         reason = str(data.get("reason") or "").strip() or None
         from ...services.resubmission_expiry_service import schedule_resubmission_expiry, snapshot_before_return
 
-        previous_by_id = {int(row["id"]): snapshot_before_return(row) for row in targets}
+        previous_by_id = {int(row["id"]): snapshot_before_return(row, conn=conn) for row in targets}
+        original_by_id = {int(row["id"]): row for row in targets}
         target_ids = return_submissions_for_resubmission(
             conn,
             assignment=assignment,
@@ -715,10 +719,14 @@ async def teacher_withdraw_submissions(
         # An unused window must not leave the answer returned forever: when it
         # lapses the original submission (or absence placeholder) stands again.
         for target_id in target_ids:
+            returned = dict(conn.execute("SELECT * FROM submissions WHERE id=?", (int(target_id),)).fetchone())
+            seed_resubmission_draft(conn, assignment=assignment, submission=returned,
+                                    previous_submission=original_by_id[int(target_id)], rollback_cleanup=seed_cleanup)
             schedule_resubmission_expiry(conn, submission_id=int(target_id), due_at=resubmission_due_at,
                                          previous=previous_by_id.get(int(target_id), {}), origin="teacher_return")
         conn.execute("SELECT 1")
         conn.commit()
+        seed_cleanup.pop_all()
 
     if assignment.get("class_offering_id"):
         try:

@@ -1,3 +1,5 @@
+from contextlib import ExitStack
+
 from .common import *
 from ...services.submission_file_safety import (
     submission_download_media_type,
@@ -17,7 +19,7 @@ router = APIRouter()
     response_model_exclude_unset=True,
 )
 def get_assignment_draft(assignment_id: str, user: dict = Depends(get_current_student)):
-    with get_db_connection() as conn:
+    with ExitStack() as seed_cleanup, get_db_connection() as conn:
         close_overdue_assignments(conn)
         conn.commit()
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
@@ -30,6 +32,30 @@ def get_assignment_draft(assignment_id: str, user: dict = Depends(get_current_st
             student_id=int(user["id"]),
         )
         draft = _load_submission_draft(conn, assignment_id, int(user["id"]))
+        if draft is None and draft_submission and draft_submission.get("resubmission_allowed"):
+            # Older teacher returns did not seed a draft. Recover on an
+            # authorized read, once, under the same lock as submit and expiry.
+            # An intentionally empty current-round draft is still authoritative.
+            from ...services.submission_draft_seed_service import seed_resubmission_draft
+
+            begin_immediate_transaction(conn)
+            lock_submission_writer(conn, assignment_id, int(user["id"]))
+            fresh_assignment = conn.execute("SELECT * FROM assignments WHERE id=?", (assignment_id,)).fetchone()
+            if not fresh_assignment:
+                raise HTTPException(404, "Assignment not found")
+            assignment = enrich_assignment_runtime_view(fresh_assignment)
+            current_submission = _ensure_student_can_save_assignment_draft(
+                conn, assignment=assignment, student_id=int(user["id"]),
+            )
+            verify_submission_write(current_submission, draft_submission, actor_role="student")
+            draft = _load_submission_draft(conn, assignment_id, int(user["id"]))
+            if draft is None:
+                seed_resubmission_draft(conn, assignment=assignment, submission=current_submission,
+                                        rollback_cleanup=seed_cleanup, prefer_returned_at=True)
+                draft = _load_submission_draft(conn, assignment_id, int(user["id"]))
+            draft_submission = current_submission
+            conn.commit()
+            seed_cleanup.pop_all()
         return {**_serialize_submission_draft(conn, draft, assignment_id),
                 "submission_version": submission_write_version(draft_submission)}
 

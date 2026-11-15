@@ -14,8 +14,8 @@ final, and re-recording it would mix twice); they are re-graded instead.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Mapping
 
 from .late_submission_policy import parse_iso_like_datetime
@@ -29,7 +29,20 @@ _SNAPSHOT_FIELDS = (
 )
 
 
-def snapshot_before_return(submission: Mapping[str, Any]) -> dict[str, Any]:
+def snapshot_before_return(submission: Mapping[str, Any], *, conn=None) -> dict[str, Any]:
+    # Extending an already returned answer must retain the original grade/absence
+    # fallback, not snapshot the cleared fields of the open editing window.
+    if conn is not None and submission.get("resubmission_allowed") and submission.get("returned_at"):
+        row = conn.execute("SELECT payload_json FROM scheduled_tasks WHERE dedupe_key=? LIMIT 1",
+                           (f"resubmission-expiry:{int(submission['id'])}",)).fetchone()
+        if row:
+            try:
+                payload = json.loads(row["payload_json"] or "{}")
+            except (TypeError, ValueError):
+                payload = {}
+            if (isinstance(payload, dict) and payload.get("returned_at") == submission.get("returned_at")
+                    and isinstance(payload.get("previous"), dict)):
+                return {field: payload["previous"].get(field) for field in _SNAPSHOT_FIELDS}
     return {field: submission.get(field) for field in _SNAPSHOT_FIELDS}
 
 
@@ -81,13 +94,10 @@ def _delete_round_draft(conn, assignment_id: Any, student_pk_id: int) -> None:
                          (str(assignment_id), int(student_pk_id))).fetchone()
     if not draft:
         return
-    for row in conn.execute("SELECT stored_path FROM submission_draft_files WHERE draft_id = ?", (int(draft["id"]),)).fetchall():
-        path = Path(str(row["stored_path"] or ""))
-        if str(path) and path.is_file():
-            try:
-                path.unlink()
-            except OSError:
-                pass
+    # Do not unlink physical files before the transaction commits: a later
+    # notification/commit failure restores these rows and still needs the files.
+    # Retain unreferenced copies, like stale seed copies; a broad or same-path
+    # post-commit delete could race the next round's upload and is not safe here.
     conn.execute("DELETE FROM submission_draft_files WHERE draft_id = ?", (int(draft["id"]),))
     conn.execute("DELETE FROM submission_drafts WHERE id = ?", (int(draft["id"]),))
 
@@ -96,8 +106,16 @@ def restore_lapsed_resubmission(conn, payload: Mapping[str, Any], *, now: dateti
     """Apply the lapse rule inside the caller's transaction. Returns an outcome label."""
     from .assessment_appeal_service import schedule_resume_grading
     from .group_assignment_service import get_assignment_group_binding
+    from .submission_write_guard import lock_submission_writer
 
     submission_id = int(payload.get("submission_id") or 0)
+    identity = conn.execute("SELECT assignment_id,student_pk_id FROM submissions WHERE id=?", (submission_id,)).fetchone()
+    if not identity:
+        return "skipped: submission gone"
+    # Use the same group-first writer lock as student submission and teacher
+    # return. A snapshot read before waiting cannot authorize restoring a grade
+    # or removing a draft belonging to a newer resubmission/return round.
+    lock_submission_writer(conn, identity["assignment_id"], int(identity["student_pk_id"]))
     row = conn.execute(
         """
         SELECT s.*, a.title AS assignment_title, a.class_offering_id, a.grading_mode, o.teacher_id AS offering_teacher_id

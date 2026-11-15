@@ -6,7 +6,7 @@ import re
 from typing import Any
 
 from .grading_prompt_safety import neutralize_untrusted_text
-from .assessment_question_contract import SINGLE_CHOICE_TYPES
+from .assessment_question_contract import SINGLE_CHOICE_TYPES, numbered_blanks
 
 
 OBJECTIVE_TYPES = {"radio", "boolean", "checkbox", "text"}
@@ -176,8 +176,8 @@ def build_deterministic_grading_evidence(
             else:
                 reason = "partial_or_wrong_checkbox_requires_rubric"
         elif question_type == "text":
-            blanks = question.get("blanks")
-            if isinstance(blanks, list) and blanks:
+            blanks = numbered_blanks(question)
+            if blanks:
                 expected = [blank.get("answer", "") for blank in blanks if isinstance(blank, dict)]
                 expected_ids = [str(blank.get("id")) for blank in blanks if isinstance(blank, dict)]
                 actual_ids = answer_item.get("blank_ids")

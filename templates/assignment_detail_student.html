@@ -422,6 +422,7 @@
 <script type="module">
     import { showToast, renderMarkdown, formatDateLocal } from '{{ asset_url("js/ui.js") }}';
     import { mountAssessmentEditor, renderAssessmentMarkdown } from '{{ asset_url("js/assessment_editor.js") }}';
+    import { parseAnswerRecords } from '{{ asset_url("js/assessment_questions.js") }}';
     import { SubmissionUploadManager } from '{{ asset_url("js/submission_upload.js") }}';
     import { createDuplicateImageGuard } from '{{ asset_url("js/submission_image_guard.js") }}';
     import '{{ asset_url("js/ls_image_lightbox.js") }}';
@@ -661,38 +662,62 @@
         el.dataset.lqToneLevel = { saved: 'success', syncing: 'info', warning: 'warning' }[tone] || 'neutral';
     }
 
+    function ordinaryAnswerText(value) {
+        if (value == null) return '';
+        if (Array.isArray(value)) return value.map(String).join('\n\n');
+        if (typeof value !== 'object') return String(value);
+        const answer = value.answer ?? value.content ?? value.text;
+        if (answer != null) return ordinaryAnswerText(answer);
+        return ['answer', 'content', 'text'].some(key => Object.prototype.hasOwnProperty.call(value, key))
+            ? '' : JSON.stringify(value);
+    }
+
     function parseDraftAnswers(raw) {
-        if (!raw) return [];
-        try {
-            const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
-            const list = Array.isArray(data) ? data : (Array.isArray(data?.answers) ? data.answers : []);
-            return list
-                .filter((item) => item && typeof item === 'object')
-                .map((item) => ({ question: String(item.question ?? item.question_id ?? ''), answer: String(item.answer ?? item.content ?? item.text ?? '') }));
-        } catch {
-            return [];
+        let data = raw;
+        if (typeof raw === 'string') {
+            try { data = JSON.parse(raw); } catch { return [{ question: '', answer: raw }]; }
         }
+        const answers = data && !Array.isArray(data) && typeof data === 'object'
+            && Object.prototype.hasOwnProperty.call(data, 'answers') ? data.answers : data;
+        // Ordinary homework has always displayed scalar answers as well as
+        // records. Keep that local contract; exams still require question IDs.
+        const records = Array.isArray(answers) ? answers.map((item) => (
+            item && typeof item === 'object' && !Array.isArray(item) ? item : { answer: item }
+        )) : answers && typeof answers === 'object' ? parseAnswerRecords(data)
+            : answers == null ? [] : [{ answer: answers }];
+        return records.map((item) => ({
+            question: String(item.question ?? item.question_id ?? ''),
+            answer: ordinaryAnswerText(item),
+        }));
     }
 
     /**
-     * Fill the textareas from a saved answer list: match by question text,
-     * then by position when the counts agree, then hand any still-unmatched
-     * answers to the remaining boxes in order — a returned submission's
-     * original answers must never silently disappear because the question
-     * labels changed.
+     * Reserve exact question matches first, then hand each unused answer to
+     * a remaining box once. A scalar/record mixture must not reuse a matched
+     * record while dropping the scalar answer.
      */
     function applyDraftAnswers(list) {
         const textareas = Array.from(document.querySelectorAll('.answer-textarea'));
         if (!textareas.length || !list?.length) return 0;
         let applied = 0;
-        const byQuestion = new Map(list.map((item) => [item.question, item.answer]));
-        const labels = new Set(textareas.map((ta) => ta.dataset.question || ''));
-        const unmatched = list.filter((item) => !labels.has(item.question) && String(item.answer || '').trim());
+        const byQuestion = new Map();
+        list.forEach((item, index) => {
+            if (!item.question) return;
+            if (!byQuestion.has(item.question)) byQuestion.set(item.question, { indices: [], cursor: 0 });
+            byQuestion.get(item.question).indices.push(index);
+        });
+        const used = new Set();
+        const assignments = textareas.map((ta) => {
+            const group = byQuestion.get(ta.dataset.question || '');
+            const index = group?.indices[group.cursor++];
+            if (index !== undefined) used.add(index);
+            return index;
+        });
+        const unmatched = list.map((_, index) => index).filter(index => !used.has(index));
         let cursor = 0;
         textareas.forEach((ta, index) => {
-            let value = byQuestion.get(ta.dataset.question || '');
-            if (value === undefined && list.length === textareas.length) value = list[index]?.answer;
-            if (value === undefined && cursor < unmatched.length) value = unmatched[cursor++].answer;
+            const answerIndex = assignments[index] ?? unmatched[cursor++];
+            const value = list[answerIndex]?.answer;
             if (value === undefined || value === ta.value) return;
             ta.value = value;
             assignmentAnswerEditors.get(ta)?.refresh();
@@ -903,24 +928,16 @@
         container.innerHTML = '';
         try {
             const data = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
-            const answers = data.answers || data;
-
-            /** Extract a scalar string from any answer value */
-            function toText(v) {
-                if (v == null || v === '') return '（未作答）';
-                if (Array.isArray(v)) return v.map(String).join('\n\n');
-                if (typeof v !== 'object') return String(v);
-                return toText(v.answer ?? v.content ?? v.text ?? JSON.stringify(v));
-            }
+            const answers = data?.answers || data;
 
             if (Array.isArray(answers)) {
                 container.innerHTML = answers.map((item, index) => {
-                    const question = item.question || item.question_id || `Question ${index + 1}`;
-                    const answer = toText(item);
+                    const question = item?.question || item?.question_id || `Question ${index + 1}`;
+                    const answer = ordinaryAnswerText(item) || '（未作答）';
                     const feedback = findQuestionFeedback(gradingFeedback, {
                         index: index + 1,
-                        questionId: item.question_id,
-                        questionText: item.question || question,
+                        questionId: item?.question_id,
+                        questionText: item?.question || question,
                     });
                     return `
                         <div class="submitted-answer-item" data-lq-material="control">
@@ -944,7 +961,7 @@
                     return `
                         <div class="submitted-answer-item" data-lq-material="control">
                             <div class="font-semibold text-sm mb-2 text-primary">${escapeHtml(String(key))}</div>
-                            <div class="text-sm md-content">${renderAssessmentMarkdown(toText(value))}</div>
+                            <div class="text-sm md-content">${renderAssessmentMarkdown(ordinaryAnswerText(value) || '（未作答）')}</div>
                             ${renderQuestionFeedbackHtml(feedback)}
                         </div>
                     `;

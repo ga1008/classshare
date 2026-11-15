@@ -6,6 +6,7 @@ create, view, decide or cancel a given request.
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -98,10 +99,13 @@ def get_request(request_id: int, user: dict = Depends(get_current_user)):
 async def approve_request(request_id: int, request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request, optional=True)
     decision_payload = payload.get("decision_payload") if isinstance(payload.get("decision_payload"), dict) else {}
-    with get_db_connection() as conn:
+    from ..services.submission_draft_seed_service import resubmission_draft_rollback_scope
+
+    with ExitStack() as seed_cleanup, resubmission_draft_rollback_scope(seed_cleanup), get_db_connection() as conn:
         item = _run(conn, lambda: workflow.decide_request(
             conn, user, request_id, decision="approve", note=payload.get("note"), decision_payload=decision_payload,
         ))
+        seed_cleanup.pop_all()
     return {"status": "success", "request": item}
 
 

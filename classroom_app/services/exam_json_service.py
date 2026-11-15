@@ -6,7 +6,7 @@ from typing import Any
 from .assessment_question_contract import (
     CHOICE_QUESTION_TYPES, LONG_ANSWER_TYPES, QUESTION_TYPE_LABELS,
     TEXT_QUESTION_TYPES, VALID_QUESTION_TYPES, normalize_numbered_blanks,
-    normalize_question_type, numbered_blank_answer_text,
+    normalize_question_type, numbered_blank_answer_text, numbered_blanks,
 )
 
 EXAM_JSON_MAX_BYTES = 2 * 1024 * 1024
@@ -477,7 +477,7 @@ def _normalize_answer(raw_question: dict[str, Any], question_type: str) -> Any:
     else:
         raw_answer = raw_question.get("correct_answer", raw_question.get("correctAnswer", raw_question.get("答案", "")))
 
-    if question_type == "text" and "blanks" in raw_question and isinstance(raw_answer, list):
+    if numbered_blanks({**raw_question, "type": question_type}) and isinstance(raw_answer, list):
         return ["" if item is None else str(item).strip() for item in raw_answer]
     if question_type == "boolean" and isinstance(raw_answer, bool):
         return "正确" if raw_answer else "错误"
@@ -787,12 +787,16 @@ def strip_exam_scoring_for_student(exam_data: dict[str, Any]) -> dict[str, Any]:
                 "score_points",
             ):
                 question.pop(key, None)
-            if isinstance(raw_question.get("blanks"), list):
+            if "blanks" in raw_question:
                 # Nested answer metadata must never cross the student boundary.
-                question["blanks"] = [
-                    {key: blank[key] for key in ("id", "placeholder") if key in blank}
-                    for blank in raw_question["blanks"] if isinstance(blank, dict)
-                ]
+                blanks = numbered_blanks(raw_question)
+                if blanks:
+                    question["blanks"] = [
+                        {key: blank[key] for key in ("id", "placeholder") if key in blank}
+                        for blank in blanks
+                    ]
+                else:
+                    question.pop("blanks", None)
             questions.append(question)
         page["questions"] = questions
         pages.append(page)

@@ -144,7 +144,8 @@ export function createExamSubmissionController({ context, state, live, ports }) 
         const unanswered = allQuestions.filter(q => !(ports.answerIsComplete || ports.answerHasContent)(q));
         const hasAnswered = allQuestions.some(q => ports.answerHasContent(q));
         const hasQuestionUploads = allQuestions.some(q => ports.hasDrawing(q.id) || ports.hasQuestionFiles(q.id));
-        const hasFiles = (live.uploadManager?.hasFiles() ?? false) || hasQuestionUploads;
+        const hasFiles = (live.uploadManager?.hasFiles() ?? false) || hasQuestionUploads
+            || (Array.isArray(state.serverQuestionFiles?.['']) && state.serverQuestionFiles[''].length > 0);
         ports.getBehaviorTracker()?.log('exam_submit_attempt', '尝试提交试卷', {
             total_questions: allQuestions.length,
             unanswered_count: unanswered.length,

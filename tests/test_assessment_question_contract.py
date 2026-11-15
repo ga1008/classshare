@@ -60,6 +60,34 @@ class AssessmentQuestionContractTests(unittest.TestCase):
         self.assertEqual(normalize_exam_scoring_payload(source)["pages"][0]["questions"][0], legacy)
         self.assertEqual(source, original)
 
+    def test_legacy_blanks_extensions_do_not_enable_numbered_validation_or_grading(self):
+        for extension in (["first", "second"], [{"label": "first"}],
+                          [{"id": "1", "answer": "secret"}, {"label": "second"}],
+                          [{"id": "1"}, {"id": "1"}], [{"id": "0"}], None, 2, []):
+            legacy = {"id": "old", "type": "text", "text": "旧题___", "blanks": extension,
+                      "answer": "甲；乙", "points": 10}
+            source = self.paper(legacy)
+            before = copy.deepcopy(source)
+            payload = [{"question_id": "old", "answer": "甲；乙"}]
+            with self.subTest(extension=extension):
+                self.assertEqual(normalize_exam_scoring_payload(source)["pages"][0]["questions"][0]["answer"], "甲；乙")
+                self.assertIs(normalize_numbered_answer_payload(source, payload), payload)
+                safe = strip_exam_scoring_for_student(source)["pages"][0]["questions"][0]
+                self.assertNotIn("blanks", safe)
+                self.assertNotIn("answer", safe)
+                grade = build_deterministic_grading_evidence(source, {"answers": payload})
+                self.assertEqual(grade["fixed_scores"]["old"]["fixed_score"], 10)
+                self.assertEqual(source, before)
+                with self.assertRaises(ValueError):
+                    normalize_exam_scoring_payload(source, require_complete=True)
+
+    def test_numbered_ids_are_canonicalized_without_changing_order(self):
+        source = self.paper(self.question(blanks=[{"id": " 1 ", "answer": "def"}, {"id": 3, "answer": "return"}]))
+        answer = normalize_numbered_answer_payload(source, [{"question_id": "q1", "answer": ["def", ""], "blank_ids": ["1", "3"]}])
+        self.assertEqual(answer[0]["blank_ids"], ["1", "3"])
+        public = strip_exam_scoring_for_student(source)["pages"][0]["questions"][0]
+        self.assertEqual(public["blanks"], [{"id": "1"}, {"id": "3"}])
+
     def test_nested_blank_answers_are_removed_from_student_projection(self):
         question = self.question()
         question["blanks"][0].update({"grading": {"secret": "secret"}, "explanation": "secret"})

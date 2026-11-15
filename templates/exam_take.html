@@ -198,7 +198,7 @@
     import { mountAppealEntry } from '{{ asset_url('js/assessment_appeal.js') }}';
     import { localDraftKey, purgeForeignLocalDrafts } from '{{ asset_url('js/local_draft_scope.js') }}';
     import { mountAssessmentEditor, attachAutosize, renderAssessmentMarkdown } from '{{ asset_url('js/assessment_editor.js') }}';
-    import { QUESTION_TYPE_LABELS, normalizeQuestionType, questionBlanks, blankAnswerValues, answerHasText, answerIsComplete, answerDisplayText, questionTextForDisplay } from '{{ asset_url('js/assessment_questions.js') }}';
+    import { QUESTION_TYPE_LABELS, normalizeQuestionType, questionBlanks, blankAnswerValues, answerHasText, answerIsComplete, answerDisplayText, questionTextForDisplay, parseAnswerRecords } from '{{ asset_url('js/assessment_questions.js') }}';
     import {
         findQuestionFeedback,
         parseGradingFeedback,
@@ -290,6 +290,8 @@
         totalQuestions: 0
     };
     let uploadManager = null;
+    const pendingFooterFileDeletes = new Set();
+    const failedFooterFileDeletes = new Set();
     let questionUploadManagers = new Map();
     let questionDraftUploadTimers = new Map();
     let pendingDraftReplaceQuestionIds = new Set();
@@ -661,21 +663,10 @@
 
     function applyServerDraft(draft) {
         try {
-            const raw = draft.answers_json || '';
-            const data = typeof raw === 'string' ? JSON.parse(raw || '{}') : (raw || {});
-            const answers = data.answers || data;
-            if (Array.isArray(answers)) {
-                answers.forEach((item) => {
-                    if (!item || typeof item !== 'object') return;
-                    const qid = item.question_id || item.question;
-                    if (!qid) return;
-                    state.answers[qid] = storedQuestionAnswer(qid, item);
-                });
-            } else if (answers && typeof answers === 'object') {
-                Object.entries(answers).forEach(([qid, value]) => {
-                    state.answers[qid] = storedQuestionAnswer(qid, value);
-                });
-            }
+            parseAnswerRecords(draft.answers_json).forEach((item) => {
+                const qid = item.question_id || item.question;
+                if (qid) state.answers[qid] = storedQuestionAnswer(qid, item);
+            });
         } catch (error) {
             console.warn('Failed to apply server draft answers:', error);
         }
@@ -971,7 +962,7 @@
      * of silently disappearing once a new local file is added.
      */
     function seedManagerWithServerFiles(manager, qId) {
-        const files = getServerQuestionRegularFiles(qId);
+        const files = getServerQuestionRegularFiles(qId).filter(file => qId !== '' || !pendingFooterFileDeletes.has(String(file.id)));
         if (!files.length) return;
         manager.addServerEntries(files.map((file) => ({
             ...file,
@@ -987,6 +978,21 @@
 
     /** After a successful server save, attach thumbnails/URLs to local entries. */
     function applyServerFilesToManagers() {
+        const footerFiles = rawServerQuestionRegularFiles('');
+        const present = new Set(footerFiles.map(file => String(file.id)));
+        const confirmedDeleted = new Set();
+        failedFooterFileDeletes.forEach((id) => {
+            // A DELETE may commit even when its response is lost. A later
+            // successful draft snapshot settles that uncertainty safely.
+            if (!present.has(id)) {
+                failedFooterFileDeletes.delete(id);
+                confirmedDeleted.add(id);
+            }
+        });
+        if (confirmedDeleted.size) {
+            uploadManager?.removeEntries(entry => !entry.file && confirmedDeleted.has(String(entry.remote?.id)));
+        }
+        uploadManager?.applyRemoteFiles(footerFiles);
         questionUploadManagers.forEach((manager, qId) => {
             manager.applyRemoteFiles(rawServerQuestionRegularFiles(qId));
         });
@@ -1323,6 +1329,7 @@
     }
 
     function mountUploadManager() {
+        const hadManager = Boolean(uploadManager);
         const preservedEntries = uploadManager?.entries ? [...uploadManager.entries] : [];
         uploadManager?.destroy?.();
         uploadManager = new SubmissionUploadManager({
@@ -1347,16 +1354,52 @@
                 knownHashes: () => collectKnownImageHashes(''),
                 notify: showMessage,
             }),
-            onChange: (entries) => {
-                window.behaviorTracker?.log('exam_file_select', `选择 ${entries.length} 个考试附件`, {
-                    file_count: entries.length
+            onChange: (snapshot) => {
+                syncRemovedFooterDraftFiles();
+                window.behaviorTracker?.log('exam_file_select', `选择 ${snapshot.count} 个考试附件`, {
+                    file_count: snapshot.count
                 }, 'exam_take');
             }
         });
         uploadManager.entries = preservedEntries;
         uploadManager.init();
+        // Draft loading precedes the first page render. Seed once; an empty
+        // existing manager can mean the student deliberately removed its files.
+        if (!hadManager) seedManagerWithServerFiles(uploadManager, '');
+        else uploadManager.applyRemoteFiles(rawServerQuestionRegularFiles(''));
         document.getElementById('examPickFilesBtn')?.addEventListener('click', () => uploadManager.openFilePicker());
         document.getElementById('examPickFolderBtn')?.addEventListener('click', () => uploadManager.openFolderPicker());
+    }
+
+    function syncRemovedFooterDraftFiles() {
+        const kept = new Set((uploadManager?.entries || []).map(entry => String(entry.relativePath || '').replace(/\\/g, '/').toLowerCase()));
+        rawServerQuestionRegularFiles('').forEach((file) => {
+            const id = String(file.id || '');
+            const path = String(file.relative_path || file.file_name || '').replace(/\\/g, '/').toLowerCase();
+            if (!id || kept.has(path) || pendingFooterFileDeletes.has(id)) return;
+            pendingFooterFileDeletes.add(id);
+            // Share the existing write owner: final draft sync waits for these
+            // deletes, so a fast submit cannot silently reattach removed files.
+            serverDraftWriteChain = serverDraftWriteChain.catch(() => null).then(async () => {
+                try {
+                    const params = new URLSearchParams({ expected_submission_version: SUBMISSION_VERSION || '' });
+                    try {
+                        await apiFetch(`/api/assignments/${ASSIGNMENT_ID}/draft-files/${encodeURIComponent(id)}?${params}`, { method: 'DELETE', silent: true });
+                    } catch (error) {
+                        if (error?.status !== 404) throw error;
+                    }
+                    state.serverQuestionFiles[''] = rawServerQuestionRegularFiles('').filter(item => String(item.id) !== id);
+                    failedFooterFileDeletes.delete(id);
+                } catch (error) {
+                    if (error?.status === 409) serverDraftConflict = true;
+                    failedFooterFileDeletes.add(id);
+                    uploadManager?.addServerEntries([file], { silent: true });
+                    showMessage('服务器附件未能删除，已恢复附件。请重试移除或刷新确认后交卷。', 'warning');
+                } finally {
+                    pendingFooterFileDeletes.delete(id);
+                }
+            });
+        });
     }
 
     function mountQuestionUploadManagers(questions) {
@@ -1782,7 +1825,7 @@
     function clearEntirePaper() {
         if (SUBMISSION_EXISTS && !isEditingResubmission) return;
         const allQuestions = getAllQuestions();
-        const hasContent = allQuestions.some(questionHasAnyDraftState) || (uploadManager?.hasFiles() ?? false);
+        const hasContent = allQuestions.some(questionHasAnyDraftState) || (uploadManager?.hasFiles() ?? false) || rawServerQuestionRegularFiles('').length > 0;
         if (!hasContent) {
             showMessage('整张试卷还没有可清空的作答内容。', 'info');
             return;
@@ -1791,6 +1834,7 @@
 
         allQuestions.forEach((q) => resetQuestionDraftState(q.id));
         if (uploadManager) uploadManager.clear();
+        else syncRemovedFooterDraftFiles();
         saveToLocal();
         renderCurrentPage();
         showMessage('已清空整张试卷。', 'success');
@@ -2020,6 +2064,9 @@
     }
 
     function validateFormDataFileLimits(formData) {
+        if (pendingFooterFileDeletes.size || failedFooterFileDeletes.size) {
+            throw new Error('附件删除尚未完成，请重试移除或刷新确认后再交卷。');
+        }
         const files = formData.getAll('files').filter(file => file instanceof File);
         if (MAX_FILE_COUNT && files.length > MAX_FILE_COUNT) {
             throw new Error(`文件数量不能超过 ${MAX_FILE_COUNT} 个，请减少题目附件或末尾附件。`);
@@ -2174,19 +2221,10 @@
 
         // Reconstruct answers from submission data
         const submittedAnswers = {};
-        if (SUBMISSION_DATA) {
-            const ansList = SUBMISSION_DATA.answers || SUBMISSION_DATA;
-            if (Array.isArray(ansList)) {
-                ansList.forEach(item => {
-                    const key = item.question_id || item.question;
-                    if (key) submittedAnswers[key] = normalizeAnswerRecord(item);
-                });
-            } else if (typeof ansList === 'object') {
-                Object.entries(ansList).forEach(([key, value]) => {
-                    submittedAnswers[key] = normalizeAnswerRecord(value);
-                });
-            }
-        }
+        parseAnswerRecords(SUBMISSION_DATA).forEach(item => {
+            const key = item.question_id || item.question;
+            if (key) submittedAnswers[key] = normalizeAnswerRecord(item);
+        });
 
         const allQuestions = [];
         state.pages.forEach(page => {
@@ -2259,33 +2297,19 @@
 
     function extractSubmittedAnswers() {
         const submittedAnswers = {};
-        if (SUBMISSION_DATA) {
-            const ansList = SUBMISSION_DATA.answers || SUBMISSION_DATA;
-            if (Array.isArray(ansList)) {
-                ansList.forEach(item => {
-                    const key = item.question_id || item.question;
-                    if (key) submittedAnswers[key] = storedQuestionAnswer(key, item);
-                });
-            } else if (typeof ansList === 'object') {
-                Object.entries(ansList).forEach(([key, value]) => {
-                    submittedAnswers[key] = storedQuestionAnswer(key, value);
-                });
-            }
-        }
+        parseAnswerRecords(SUBMISSION_DATA).forEach(item => {
+            const key = item.question_id || item.question;
+            if (key) submittedAnswers[key] = storedQuestionAnswer(key, item);
+        });
         return submittedAnswers;
     }
 
     function extractSubmittedDrawings() {
         const drawings = {};
-        if (!SUBMISSION_DATA) return drawings;
-        const ansList = SUBMISSION_DATA.answers || SUBMISSION_DATA;
-        const items = Array.isArray(ansList)
-            ? ansList
-            : Object.entries(ansList || {}).map(([key, value]) => ({ question_id: key, ...(typeof value === 'object' ? value : { answer: value }) }));
-        items.forEach((item) => {
+        parseAnswerRecords(SUBMISSION_DATA).forEach((item) => {
             const qId = item?.question_id || item?.question;
             if (!qId || !Array.isArray(item.attachments)) return;
-            const attachment = item.attachments.find(att => (att.kind || att.type) === 'drawing' || String(att.relative_path || '').startsWith('exam_drawings/'));
+            const attachment = item.attachments.find(att => att && typeof att === 'object' && ((att.kind || att.type) === 'drawing' || String(att.relative_path || '').startsWith('exam_drawings/')));
             if (!attachment) return;
             const file = findSubmissionFileForAttachment(attachment);
             const fileName = attachment.file_name || file?.display_name || file?.original_filename || `${qId}_附图.png`;
@@ -2357,6 +2381,9 @@
         state.currentPageIdx = 0;
         state.activeQuestionId = null;
         uploadManager = null;
+        // This key is scoped to the returned round. Restore its timestamp too,
+        // so a newly seeded original server draft cannot replace newer edits.
+        loadFromLocal();
         restoreExamEditingShell();
         // An approved 错误提交 appeal seeds this round's server draft with the
         // original answers *and attachments*; restore it so nothing is re-uploaded.

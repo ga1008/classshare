@@ -57,6 +57,12 @@ test('eight types survive teacher save, student draft, failed submit, retry and 
   await expect(page.locator('#q-new4 [data-blank-index]').nth(0)).toHaveValue('HTTPS');
   await expect(page.locator('#q-new4 [data-blank-index]').nth(1)).toHaveValue('443');
   await page.locator('[data-text-input="new5"]').fill(Array.from({length:30},(_,i)=>`第 ${i+1} 行`).join('\n'));
+  // The native editor measures after requestAnimationFrame. Observe the
+  // settled user-visible height instead of racing the fill() input event.
+  await expect.poll(() => page.locator('[data-text-input="new5"]').evaluate(node => {
+    const area = node as HTMLTextAreaElement;
+    return area.clientHeight / parseFloat(getComputedStyle(area).lineHeight);
+  })).toBeGreaterThan(14);
   const geometry = await page.locator('[data-text-input="new5"]').evaluate(node => {
     const area = node as HTMLTextAreaElement, style = getComputedStyle(area);
     return {height:area.clientHeight,scroll:area.scrollHeight,line:parseFloat(style.lineHeight),overflow:style.overflowY};

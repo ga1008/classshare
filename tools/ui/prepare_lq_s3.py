@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sqlite3
 from datetime import datetime, timedelta
@@ -57,10 +58,15 @@ def prepare(runtime: Path):
             raise ValueError('Partial S3 seed detected; retain it and use a fresh runtime')
         base_assignment = fixture['studentSubmissionAssignmentId']
         base_submission = fixture['teacherReviewSubmissionId']
-        for name in ('authoring', 'examTake', 'examFailure', 'examDraft', 'examDeadline'):
+        for name in ('authoring', 'examTake', 'examFailure', 'examDraft', 'examDeadline', 'legacyExamRetake'):
             paper = f'lq-s3-{name}'
+            paper_questions = questions
+            if name == 'legacyExamRetake':
+                paper_questions = json.loads(json.dumps(questions))
+                paper_questions['pages'][0]['questions'][0].update(
+                    type='text', blanks=['第一空', '第二空'])
             insert(conn, 'exam_papers', {'id': paper, 'teacher_id': teacher, 'title': f'S3 {name} 试卷',
-                   'description': '独立合成验收材料', 'questions_json': json.dumps(questions, ensure_ascii=False),
+                   'description': '独立合成验收材料', 'questions_json': json.dumps(paper_questions, ensure_ascii=False),
                    'exam_config_json': '{}', 'status': 'ready', 'owner_role': 'teacher',
                    'owner_user_pk': teacher, 'scope_level': 'private', 'created_at': stamp, 'updated_at': stamp})
             if name == 'authoring':
@@ -68,7 +74,7 @@ def prepare(runtime: Path):
             else:
                 s3[f'{name}AssignmentId'] = clone(conn, 'assignments', base_assignment,
                     title=f'S3 {name} 独立任务', exam_paper_id=paper, due_at=None, created_at=stamp)
-        for name in ('draft', 'concurrency', 'return', 'wrong'):
+        for name in ('draft', 'concurrency', 'return', 'wrong', 'legacyHomeworkRetake'):
             paper = None
             if name == 'wrong':
                 paper = 'lq-s3-wrong'
@@ -78,13 +84,53 @@ def prepare(runtime: Path):
             aid = clone(conn, 'assignments', base_assignment, title=f'S3 {name} 独立任务',
                         exam_paper_id=paper, due_at=None, created_at=stamp)
             s3[f'{name}AssignmentId'] = aid
-            if name != 'draft':
+            if name == 'legacyHomeworkRetake':
+                conn.execute('UPDATE assignments SET requirements_md=? WHERE id=?',
+                             ('1. 说明协议分层的作用。', aid))
+            if name not in ('draft', 'legacyHomeworkRetake'):
                 s3[f'{name}SubmissionId'] = clone(conn, 'submissions', base_submission,
                     assignment_id=str(aid), score=None if name == 'concurrency' else 40,
                     status='submitted' if name == 'concurrency' else 'graded',
                     feedback_md='## 第1题\n得分：40/100\n缺少协作的说明。', submitted_at=stamp,
                     answers_json=json.dumps({'answers': [{'question_id': 'q1', 'question': '说明协议分层的作用。',
                                                           'answer': '各层分别完成任务。'}]}, ensure_ascii=False))
+        # Historical returns predate draft seeding. These records intentionally
+        # start with original files/answers and no draft, so GET recovery is
+        # exercised without a fresh teacher return masking the missing state.
+        for kind in ('Homework', 'ExamFiles', 'ExamLocal'):
+            paper = None
+            if kind.startswith('Exam'):
+                paper = f'lq-s3-legacyReturned{kind}'
+                two_pages = json.loads(json.dumps(questions))
+                two_pages['pages'][0]['questions'][0]['points'] = 50
+                second = json.loads(json.dumps(two_pages['pages'][0]))
+                second.update(id='p2', name='第二部分')
+                second['questions'][0].update(id='q2', text='说明接口协作。')
+                two_pages['pages'].append(second)
+                insert(conn, 'exam_papers', {'id': paper, 'teacher_id': teacher, 'title': 'S3 存量退回两页试卷',
+                    'questions_json': json.dumps(two_pages, ensure_ascii=False), 'exam_config_json': '{}',
+                    'status': 'ready', 'owner_role': 'teacher', 'owner_user_pk': teacher, 'scope_level': 'private'})
+            aid = clone(conn, 'assignments', base_assignment, title=f'S3 legacyReturned{kind} 独立任务',
+                        exam_paper_id=paper, requirements_md='1. 说明协议分层的作用。', status='closed',
+                        due_at=(now - timedelta(days=1)).isoformat(), created_at=stamp)
+            s3[f'legacyReturned{kind}AssignmentId'] = aid
+            answers = {'answers': []} if kind == 'ExamFiles' else ({'answers': [{'question_id': 'q1', 'answer': '存量旧答案：分层分工、接口协作。'}]}
+                if kind == 'ExamLocal' else {'answers': {'1. 说明协议分层的作用。': '存量旧答案：分层分工、接口协作。'}})
+            sid = clone(conn, 'submissions', base_submission, assignment_id=str(aid), score=None,
+                        status='submitted', feedback_md=None, submitted_at=(now - timedelta(days=1)).isoformat(),
+                        answers_json=json.dumps(answers, ensure_ascii=False), resubmission_allowed=1,
+                        resubmission_due_at=(now + timedelta(hours=1)).isoformat(),
+                        returned_at=(now - timedelta(minutes=10)).isoformat(), returned_by_teacher_id=teacher,
+                        returned_reason='部署前已退回、未生成草稿', is_absence_score=0)
+            s3[f'legacyReturned{kind}SubmissionId'] = sid
+            filename = f'legacy-returned-{kind.lower()}.txt'
+            file_bytes = b'Stored attachment before lazy resubmission recovery.\n'
+            stored = runtime / 'files/submissions' / str(fixture['courseId']) / str(aid) / str(student) / filename
+            stored.parent.mkdir(parents=True, exist_ok=True)
+            stored.write_bytes(file_bytes)
+            insert(conn, 'submission_files', {'submission_id': sid, 'original_filename': filename,
+                'relative_path': filename, 'stored_path': str(stored), 'mime_type': 'text/plain',
+                'file_size': len(file_bytes), 'file_ext': '.txt', 'file_hash': hashlib.sha256(file_bytes).hexdigest()})
         s3['textbookId'] = insert(conn, 'textbooks', {'teacher_id': teacher, 'title': 'S3 网络教材',
             'publisher': '合成出版社', 'authors_json': '["林老师"]', 'tags_json': '["S3"]',
             'owner_role': 'teacher', 'owner_user_pk': teacher, 'scope_level': 'private'})

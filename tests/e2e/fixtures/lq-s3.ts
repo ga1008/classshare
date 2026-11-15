@@ -12,6 +12,10 @@ export type S3Fixture = P03Fixture & {
     examTakeAssignmentId: number; examFailureAssignmentId: number; examDraftAssignmentId: number; examDeadlineAssignmentId: number;
     draftAssignmentId: number; concurrencyAssignmentId: number; concurrencySubmissionId: number;
     returnAssignmentId: number; returnSubmissionId: number;
+    legacyHomeworkRetakeAssignmentId: number; legacyExamRetakeAssignmentId: number;
+    legacyReturnedHomeworkAssignmentId: number; legacyReturnedHomeworkSubmissionId: number;
+    legacyReturnedExamFilesAssignmentId: number; legacyReturnedExamFilesSubmissionId: number;
+    legacyReturnedExamLocalAssignmentId: number; legacyReturnedExamLocalSubmissionId: number;
     wrongAssignmentId: number; wrongSubmissionId: number; textbookId: number;
     semesterId: number; manageOfferingId: number;
   };

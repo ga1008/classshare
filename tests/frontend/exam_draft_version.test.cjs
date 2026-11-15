@@ -133,6 +133,30 @@ test('successful final submission also carries the fixed page version', async ()
   assert.equal(f.calls[0].options.body.get('expected_submission_version'), 'opened-round-1');
 });
 
+test('generic server attachments permit topbar submission before the last-page manager mounts', async () => {
+  const f = fixture({ answerHasContent: () => false });
+  f.context.state.pages.push({ questions: [{ id: 'q2', text: 'Second page' }] });
+  f.context.state.answers = {};
+  f.context.state.serverQuestionFiles = { '': [{ id: 9, relative_path: 'retained.txt' }] };
+  assert.equal(f.context.uploadManager, null);
+  await f.context.handleSubmission();
+  assert.equal(f.calls.length, 1);
+  assert.match(f.calls[0].url, /\/submit$/);
+  assert.equal(f.calls[0].options.body.get('use_server_draft'), '1');
+  assert.equal(f.context.submissionSucceeded, true);
+});
+
+test('generic-only topbar submission still respects pending or failed footer deletion validation', async () => {
+  const f = fixture({ answerHasContent: () => false,
+    validateFormDataFileLimits() { throw new Error('附件删除尚未完成'); } });
+  f.context.state.answers = {};
+  f.context.state.serverQuestionFiles = { '': [{ id: 9, relative_path: 'retained.txt' }] };
+  await f.context.handleSubmission();
+  assert.equal(f.calls.length, 0);
+  assert.equal(f.context.submissionSucceeded, false);
+  assert.ok(f.messages.some(args => String(args[0]).includes('附件删除尚未完成')));
+});
+
 test('simultaneous topbar and regenerated footer actions share one submission operation', async () => {
   const sync = deferred();
   let draftSaves = 0, confirmations = 0;

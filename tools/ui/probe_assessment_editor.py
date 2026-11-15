@@ -116,6 +116,10 @@ def _stop_process(process: subprocess.Popen, *, require_running: bool = False) -
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence', type=Path, default=ROOT / '.codex-temp/evidence/assessment-editor-20261112')
+    parser.add_argument('--config', default='tests/e2e/assessment-editor.playwright.config.ts',
+                        help='Playwright config for the isolated synthetic assessment run')
+    parser.add_argument('--skip-layout', action='store_true', help='Run the selected business regression only')
+    parser.add_argument('--grep', help='Run only matching Playwright test titles within the selected config')
     args = parser.parse_args()
     evidence = args.evidence.resolve()
     if evidence.is_relative_to((ROOT / '.codex-temp/scratch').resolve()):
@@ -133,6 +137,7 @@ def main() -> int:
     processes = []
     interrupted_child = False
     report = {'synthetic': True, 'run_id': uuid.uuid4().hex, 'port': port,
+              'playwright_config': args.config, 'test_grep': args.grep, 'layout_skipped': args.skip_layout,
               'test_exit_code': None, 'layout_exit_codes': {}, 'errors': [],
               'server_pid': None, 'server_returncode': None, 'server_exit_confirmed': None}
 
@@ -195,11 +200,13 @@ def main() -> int:
                 if not ready:
                     raise RuntimeError('Synthetic server did not become ready')
                 with (evidence / 'playwright.log').open('w', encoding='utf-8') as browser_log:
-                    result = run(['node', 'node_modules/@playwright/test/cli.js', 'test',
-                        '--config', 'tests/e2e/assessment-editor.playwright.config.ts'], env=env,
+                    playwright_command = ['node', 'node_modules/@playwright/test/cli.js', 'test', '--config', args.config]
+                    if args.grep:
+                        playwright_command.extend(['--grep', args.grep])
+                    result = run(playwright_command, env=env,
                         name='playwright', log=browser_log)
                     report['test_exit_code'] = result
-                if result == 0:
+                if result == 0 and not args.skip_layout:
                     fixture = json.loads((runtime / 'fixture.json').read_text(encoding='utf-8'))
                     for role, routes in (
                         ('teacher', '/exam/lq-s3-examFailure/edit,/exam/lq-s3-authoring/edit'),
