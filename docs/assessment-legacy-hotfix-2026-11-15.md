@@ -16,7 +16,7 @@
 
 为避免通知或提交事务失败导致附件丢失，到期处理只事务性删除草稿数据库引用，暂保留物理副本；未增加全目录扫描或自动批删。历史缺失或不合法来源文件仍按既有策略跳过并计数，修复不承诺恢复本已不存在的文件。
 
-## 已核验与待完成项
+## 验证与发布
 
 | 检查 | 当前证据 |
 | --- | --- |
@@ -26,10 +26,17 @@
 | 正式构建与真实页面流程 | 最终构建资源图 `c18f03623fb5685e74210e81ca5b91041e57ad4c2950f3731917ca2d26ce725a`。run4 旧格式/存量退回/新退回 5 项通过；run3 新八题型、普通 Markdown 与题号安全 3 项通过，重复场景不累计。覆盖附件字节、旧代次 409、删除失败/响应丢失、刷新和重交；自有浏览器运行目录已清理 |
 | 布局观察 | 教师/学生亮暗布局进程完成；保留 1440/390 截图。390 视口的普通作业 full-page 图宽为 516，不能据输入框边界通过宣称整页没有水平溢出；本次不扩修既有共享布局 |
 | 线上访问恢复 | 紧急 SQL 版本发布后保全检查及 71 项公网检查通过；只读自然请求观测为考试文档 1 次 200、相关 API 16 次 200，未见本类类型错误。这不是合成线上测试或全平台功能证明 |
-| 后续兼容补丁上线 | 浏览器验收通过，待第二批发布核验 |
+| 后续兼容补丁上线 | 已部署 `20261115-104931-d909fe01ea95`，产品提交 `c976c1b8d304ee4389c04c054e839ec9f3c25bc6`；71 项公网检查通过，31 个变更文件在主机与镜像中的字节一致，健康正常、行为写入队列为 0 |
+| 最终 Linux 镜像 | 网络隔离、无生产挂载的 5 组测试共 626 项：610 通过、16 条件跳过；与本地相同测试不重复累计 |
 
 证据分别保存在 `.codex-temp/evidence/assessment-legacy-hotfix-20261115/`（权限查询和紧急发布）、`.codex-temp/evidence/assessment-compat-hotfix-20261115/`（后端合同）及 `.codex-temp/evidence/assessment-legacy-20261115/`（后续构建和页面验收）。不把线上只读取证用于测试夹具，不在真实业务库运行合成测试。
 
 前端报告为 `assessment-legacy-20261115/frontend-legacy-unit.json`、`frontend-exam-draft.tap`；最终后端汇总为 `assessment-legacy-hotfix-20261115/backend-legacy-lazy-summary.json`，新增恢复回归见同目录 `correction-lazy-recovery.json`。紧急上线证据为同目录 `urgent2-after.json`、`urgent2-public.json` 和 `urgent2-natural-followup.json`（均相对于上述 evidence 根目录）。
 
 全平台源码审计摘要为 [assessment-legacy-source-audit-2026-11-15.json](assessment-legacy-source-audit-2026-11-15.json)。完整快照保留于 `.codex-temp/evidence/assessment-legacy-source-audit-20261115/source-snapshot.json`，源码及快照哈希见该目录 `source-binding.json`，不重复将完整快照纳入 Git。审计记录控件源码候选及待核验状态，不能证明全平台交互、跨浏览器表现或容量上限。
+
+第二批发布的前后快照确认 PostgreSQL 容器、数据目录身份、非发布环境配置、依赖镜像、抽查附件和固定人工考勤决定保持；未改表结构，102 个迁移源码哈希仍与原生演练证明一致。沿用该匹配证明，切换前另做停写数据库备份，保存在 `/var/backups/lanshare-assessment-attendance-20261115-104931-d909fe01ea95`。数据库备份 189,679,840 字节、代码备份 269,118,011 字节，权限均为 0600。没有连接真实业务库运行合成测试。
+
+首次紧急发布尝试因新 Windows 工作区的模板换行字节差异被镜像测试拦截，发生于停写切换之前；修正发布包后通过。两次成功发布分别恢复作答入口和补全旧格式/退回流程，失败输入和证明均保留。
+
+产品提交已推送并复读 `dev` 与 `codex/assessment-attendance-20261112` 两个远端分支，包含既有智慧课堂联合改进。本文和 [机器可读发布记录](assessment-legacy-hotfix-2026-11-15.json) 随后作为文档提交推送，不改变已部署产品。最终证据见 `final-after.json`、`final-public.json`、`final-health-after.json` 和 `final-backup-metadata.json`。

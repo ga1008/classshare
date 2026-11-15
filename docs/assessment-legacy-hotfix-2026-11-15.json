@@ -1,0 +1,82 @@
+{
+  "status": "deployed_and_verified",
+  "verified_at_utc": "2026-11-15T02:57:55.589498+00:00",
+  "production_url": "https://guardianangel.net.cn",
+  "release": "20261115-104931-d909fe01ea95",
+  "product_commit": "c976c1b8d304ee4389c04c054e839ec9f3c25bc6",
+  "urgent_commit": "ab6d69266ee5b5de20ceb1338289b1197025be1e",
+  "urgent_release": "20261115-102547-4879cf2a138a",
+  "static_graph": "c18f03623fb5685e74210e81ca5b91041e57ad4c2950f3731917ca2d26ce725a",
+  "cause": "PostgreSQL text assignment-window ID compared directly with bigint assignment ID in AI policy query",
+  "source_files_verified_on_host_and_image": 31,
+  "validation": {
+    "backend": {
+      "tests": 139,
+      "passed": 126,
+      "skipped": 13
+    },
+    "frontend": {
+      "passed": 51
+    },
+    "browser_unique_scenarios": 8,
+    "final_legacy_browser_scenarios": 5,
+    "native_type_reproduction_checks": 11,
+    "persistent_native_tests": 2,
+    "immutable_image": {
+      "total": 626,
+      "passed": 610,
+      "skipped": 16
+    },
+    "public_checks": 71,
+    "health": "ok",
+    "behavior_queue_depth": 0,
+    "migration_sources_matched": 102,
+    "migration_schema_changes": false,
+    "migration_rehearsal": "Reused matching native rehearsal; fresh quiesced production backup taken for this cutover"
+  },
+  "preservation": {
+    "postgres_container": true,
+    "data_directory_identity": true,
+    "environment_except_release": true,
+    "dependency_images": true,
+    "explicit_material_rows": true,
+    "representative_attachment_paths_bytes_sha256": true,
+    "fixed_manual_decisions_rounds_and_projection_metadata": true,
+    "changed_source_host_and_image_file_count": 31,
+    "old_database_content": "covered_by_matching_native_rehearsal_and_cutover_backup; not a live full-table equality claim"
+  },
+  "backup_directory": "/var/backups/lanshare-assessment-attendance-20261115-104931-d909fe01ea95",
+  "backup_metadata": {
+    "db-cutover-20261115-105027.sql.gz": {
+      "bytes": 189679840,
+      "mode": "0o600"
+    },
+    "code-20261115-105027.tgz": {
+      "bytes": 269118011,
+      "mode": "0o600"
+    }
+  },
+  "natural_requests_observation": {
+    "status": 0,
+    "natural_assessment_request_statuses": {
+      "200": 8
+    },
+    "route_families": {
+      "assessment_api": {
+        "200": 8
+      }
+    },
+    "operator_type_error_mentions": 0
+  },
+  "git_product_refs_verified": [
+    "dev",
+    "codex/assessment-attendance-20261112"
+  ],
+  "limitations": [
+    "Ordinary homework full-page screenshot exceeds the configured 390px viewport; no claim of zero global horizontal overflow.",
+    "Expired unreferenced draft copies are retained to avoid pre-commit deletion or same-path upload races.",
+    "Missing historical source files cannot be reconstructed; original submissions are not rewritten."
+  ],
+  "evidence_root": ".codex-temp/evidence/assessment-legacy-hotfix-20261115",
+  "release_input_sha256": "f3608a39f9c261a8c4dad29d20d1a06bf826b0c07ec47354aafae1c0a3790996"
+}
