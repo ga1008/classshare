@@ -12,4 +12,10 @@ Tab、Shift+Tab及增加/减少层级图标共用目标层级编号逻辑。新�
 
 正式资源图`3d031e5d3914fa8ec13812207a7eeda63228a37f18c851ccbbe8f5d62eaf2bd1`，565资源；LQ基础入口gzip仍为18244/18432B。38项编辑纯函数测试、361项LQ单元测试通过。相关浏览器23项通过，覆盖实际键盘与图标、混合层级、上下文边界、光标/选区、一次撤销重做、输入法、CRLF、代码围栏、390px亮暗预览与原工具提示；两条合成真实路由验证试卷和普通作业保存POST200、清除本机草稿后从服务器恢复最终编号、旧附件保留。截图已人工复核，未扩大为所有设备验收。
 
-匹配现有102个迁移源码的原生PostgreSQL门禁通过，本次无数据库变更。实际发布与Git结果完成后追加。
+匹配现有102个迁移源码的原生PostgreSQL门禁通过，本次无数据库变更。
+
+功能提交`01c663415aa8a200209d540de6ce151dde1407dd`已上线，release为`20261116-102544-06fc5dbe7abe`。DryRun后按既有流程发布，12个变更文件在镜像和宿主逐字一致；隔离镜像后端门禁626项中610通过、16按既有条件跳过，未连接生产数据库运行测试。
+
+停写后数据库备份`db-cutover-20261116-102619.sql.gz`及代码备份`code-20261116-102619.tgz`保留于`/var/backups/lanshare-assessment-attendance-20261116-102544-06fc5dbe7abe/`，均为0600；数据库gzip完整性门禁通过。8服务运行、有healthcheck的服务健康，主服务status=ok；行为写入worker存活、队列0、last_error为空。后台历史失败累计1144、stale0，与前次观察一致。
+
+上线后数据目录身份、除发布号外的配置、受保护字段和代表附件校验通过；公网79项资源与缓存合同核验通过，静态图与最终验收构建一致。功能提交已正常推送`origin/dev`及`origin/codex/assessment-attendance-20261112`；这段发布记录另以纯文档提交推送，不改变已验证功能镜像。证据包含`release-source.json`、`final-deploy-inputs.json`、`before.json`、`after.json`、`public-postflight.json`、`final-health-after.json`和浏览器汇总。
