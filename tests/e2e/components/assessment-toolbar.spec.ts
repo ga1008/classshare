@@ -27,7 +27,7 @@ test('assessment icon toolbar retains native selection, actions and preview sema
   await input.press('End'); await input.press('Enter'); await input.pressSequentially('Next');
   await expect(input).toHaveValue('1. 步骤\n2. Next');
   await toolbar.getByRole('button', { name: '增加层级', exact: true }).click();
-  await expect(input).toHaveValue('1. 步骤\n    2. Next');
+  await expect(input).toHaveValue('1. 步骤\n    1. Next');
   await toolbar.getByRole('button', { name: '减少层级', exact: true }).click();
   await expect(input).toHaveValue('1. 步骤\n2. Next');
   await input.fill('居中内容'); await input.selectText();

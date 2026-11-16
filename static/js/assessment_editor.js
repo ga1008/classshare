@@ -80,7 +80,8 @@ export function parseCodeBlocks(value) {
 function insideFence(value, position) {
     let fence = null;
     for (const line of value.slice(0, position).split('\n')) {
-        const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+        // Fences may be nested inside an indented list item as well.
+        const match = line.match(/^[ \t]*(`{3,}|~{3,})(.*)$/);
         if (!match) continue;
         if (!fence) fence = match[1];
         else if (match[1][0] === fence[0] && match[1].length >= fence.length && !match[2].trim()) fence = null;
@@ -88,33 +89,103 @@ function insideFence(value, position) {
     return !!fence;
 }
 
+const listLine = line => line.match(/^([ \t]*)(?:(\d+)([.)])|([-+*]))([ \t]+)(.*)$/);
+const indentWidth = indent => [...indent].reduce((width, char) => char === '\t' ? width + 4 - width % 4 : width + 1, 0);
+const outdent = indent => indent.replace(/(?: {1,4}|\t)$/, '');
+
+// A single forward pass keeps the nearest sibling at each depth. Replacing a
+// parent drops its old descendants; prose, blank lines and fences end a list.
+function listContext(prefix) {
+    const siblings = new Map(), depths = [];
+    let fence = null;
+    const reset = () => { siblings.clear(); depths.length = 0; };
+    function remember(line) {
+        const boundary = line.match(/^[ \t]*(`{3,}|~{3,})(.*)$/);
+        if (boundary) {
+            if (!fence) fence = boundary[1];
+            else if (boundary[1][0] === fence[0] && boundary[1].length >= fence.length && !boundary[2].trim()) fence = null;
+            reset(); return;
+        }
+        if (fence) return;
+        const item = listLine(line);
+        if (item) {
+            const depth = indentWidth(item[1]);
+            while (depths.length && depths.at(-1) > depth) siblings.delete(depths.pop());
+            if (depths.at(-1) !== depth) depths.push(depth);
+            siblings.set(depth, item);
+        } else {
+            const depth = indentWidth(line.match(/^[ \t]*/)[0]);
+            // Continuation text may return from a child to a shallower parent.
+            // Drop only the ended child levels, retaining its enclosing list.
+            if (!line.trim()) reset();
+            else while (depths.length && depths.at(-1) >= depth) siblings.delete(depths.pop());
+        }
+    }
+    const lines = prefix.split('\n');
+    if (lines.at(-1) === '') lines.pop();
+    for (const line of lines) remember(line.replace(/\r$/, ''));
+    return { remember, next(indent, delimiter) {
+        const previous = siblings.get(indentWidth(indent));
+        const next = previous?.[3] === delimiter ? Number(previous[2]) + 1 : 1;
+        return Number.isSafeInteger(next) ? next : 1;
+    } };
+}
+
 /** Pure edit descriptions make list/code semantics testable independently of
  * browser key delivery. Null leaves the browser's native action untouched. */
 export function markdownKeyEdit(value, start, end, key, shift = false) {
     if (insideFence(value, start)) return null;
-    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-    const lineEndIndex = value.indexOf('\n', end);
-    const lineEnd = lineEndIndex < 0 ? value.length : lineEndIndex;
+    const lineStart = start ? value.lastIndexOf('\n', start - 1) + 1 : 0;
+    // A selection ending at the next line's start does not select that line.
+    const lastSelected = key === 'Tab' && end > start && value[end - 1] === '\n' ? end - 1 : end;
+    const lineEndIndex = value.indexOf('\n', lastSelected);
+    const lineEnd = lineEndIndex < 0 ? value.length : lineEndIndex - (value[lineEndIndex - 1] === '\r' ? 1 : 0);
     const before = value.slice(lineStart, start);
-    const match = before.match(/^(\s*)(\d+[.)]|[-+*])\s+(.*)$/);
+    const match = listLine(before);
     if (key === 'Enter' && !shift && match) {
         // Empty list items end the current nesting level. At the first level,
         // Enter removes the marker; normal prose continues on the same line.
-        if (!match[3].trim() && !value.slice(end, lineEnd).trim()) {
-            const indent = match[1].replace(/ {1,4}$/, '');
-            const replacement = match[1].length ? `${indent}1. ` : '';
+        if (!match[6].trim() && !value.slice(end, lineEnd).trim()) {
+            const indent = outdent(match[1]);
+            const marker = match[2] ? `${listContext(value.slice(0, lineStart)).next(indent, match[3])}${match[3]}` : match[4];
+            const replacement = match[1].length ? `${indent}${marker} ` : '';
             return { start: lineStart, end: lineEnd, text: replacement, caret: lineStart + replacement.length };
         }
-        const number = match[2].match(/^(\d+)([.)])$/);
-        const marker = number ? `${Number(number[1]) + 1}${number[2]}` : match[2];
-        const text = `\n${match[1]}${marker} `;
+        const next = Number(match[2]) + 1;
+        const marker = match[2] ? `${Number.isSafeInteger(next) ? next : 1}${match[3]}` : match[4];
+        const text = `${value.includes('\r\n') ? '\r\n' : '\n'}${match[1]}${marker} `;
         return { start, end, text, caret: start + text.length };
     }
-    if (key === 'Tab' && /^(\s*)(?:\d+[.)]|[-+*])\s/.test(value.slice(lineStart, lineEnd))) {
+    if (key === 'Tab' && listLine(value.slice(lineStart, lineEnd).split('\n', 1)[0].replace(/\r$/, ''))) {
         const selected = value.slice(lineStart, lineEnd);
-        const transformed = selected.split('\n').map(line => shift ? line.replace(/^ {1,4}/, '') : `    ${line}`).join('\n');
-        const delta = transformed.length - selected.length;
-        return { start: lineStart, end: lineEnd, text: transformed, caret: Math.max(lineStart, start + (shift ? Math.max(-4, delta) : 4)), selectionEnd: Math.max(lineStart, end + delta) };
+        // Code fences have their own editor/indentation contract.
+        if (/^[ \t]*(`{3,}|~{3,})/m.test(selected)) return null;
+        const context = listContext(value.slice(0, lineStart)), prefixes = [];
+        let offset = lineStart, changedLevel = false;
+        const transformed = selected.split('\n').map(line => {
+            const item = listLine(line), indent = item?.[1] ?? line.match(/^[ \t]*/)[0];
+            const nextIndent = shift ? outdent(indent) : `    ${indent}`;
+            changedLevel ||= indent !== nextIndent;
+            const oldPrefix = item ? indent + (item[2] ? item[2] + item[3] : item[4]) + item[5] : indent;
+            const marker = item?.[2] && changedLevel ? `${context.next(nextIndent, item[3])}${item[3]}` : item ? (item[2] ? item[2] + item[3] : item[4]) : '';
+            const prefix = nextIndent + marker + (item?.[5] ?? '');
+            const result = prefix + line.slice(oldPrefix.length);
+            prefixes.push({ offset, before: oldPrefix.length, after: prefix.length });
+            context.remember(result.replace(/\r$/, ''));
+            offset += line.length + 1;
+            return result;
+        }).join('\n');
+        if (transformed === selected) return null;
+        const mapPosition = position => {
+            let delta = 0;
+            for (const prefix of prefixes) {
+                if (position < prefix.offset) break;
+                if (position < prefix.offset + prefix.before) return prefix.offset + delta + Math.max(0, prefix.after - (prefix.before - (position - prefix.offset)));
+                delta += prefix.after - prefix.before;
+            }
+            return position + delta;
+        };
+        return { start: lineStart, end: lineEnd, text: transformed, caret: mapPosition(start), selectionEnd: mapPosition(end) };
     }
     return null;
 }

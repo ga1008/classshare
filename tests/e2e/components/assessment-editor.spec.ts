@@ -31,7 +31,7 @@ test.describe('Assessment native Markdown editor', () => {
         await input.press('Enter');
         await expect(input).toHaveValue('3. 前半段\n4. 后半段');
         await input.press('Tab');
-        await expect(input).toHaveValue('3. 前半段\n    4. 后半段');
+        await expect(input).toHaveValue('3. 前半段\n    1. 后半段');
         await input.press('Shift+Tab');
         await expect(input).toHaveValue('3. 前半段\n4. 后半段');
         await input.fill('需要强调');
