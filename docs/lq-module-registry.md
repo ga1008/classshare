@@ -1,6 +1,6 @@
 # LQ 模块使用记录本
 
-生成于 2026-11-15，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
+生成于 2026-11-16，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
 
 ## 怎么用
 
@@ -27,7 +27,7 @@
 | [React bridges](#react-bridges) | foundation | `lq-avatar-link` | 仅 CSS | 1 |
 | [Ability radar 六边形能力雷达](#ability-radar) | component | `lq-radar` | 仅 CSS | 3 |
 | [Business 业务呈现（DeadlineClock / JobStatus / QuestionNavigator）](#business) | component | `lq-clock`, `lq-job`, `lq-nav-grid` | 宏 / JS / Py | 1 |
-| [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 283 |
+| [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 284 |
 | [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 41 |
 | [ChipRow 芯片行](#chip-row) | component | `lq-chip-row` | 宏 / JS / Py | 10 |
 | [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 14 |
@@ -39,7 +39,7 @@
 | [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 186 |
 | [Indicators 徽标 / 头像 / 进度 / 加载](#indicators) | component | `lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner` | 宏 / JS / Py / React | 23 |
 | [Insights 统计（AvatarStack / Ring / Bars / Meter）](#insights) | component | `lq-avatar-stack`, `lq-bars`, `lq-insight`, `lq-meter`, `lq-ring` | 宏 / JS / Py | 4 |
-| [Layer 层栈](#layers) | component | — | JS | 34 |
+| [Layer 层栈](#layers) | component | — | JS | 36 |
 | [Lightbox 灯箱](#lightbox) | component | `lq-lightbox` | JS | 1 |
 | [Menu / Popover 菜单与浮层](#menus) | component | `lq-menu` | 宏 / JS / Py | 12 |
 | [NavMenu 导航菜单](#nav-menu) | component | `lq-nav-menu` | 宏 / JS / Py | 6 |
@@ -51,7 +51,7 @@
 | [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 24 |
 | [Table / Pager / BulkBar / ResultCount](#tables) | component | `lq-bulk-bar`, `lq-pager`, `lq-result-count`, `lq-table`, `lq-table-shell` | 宏 / JS / Py / React | 13 |
 | [Toast 通知](#toast) | component | `lq-toast`, `lq-toast-fallback`, `lq-toasts` | JS | 5 |
-| [Tooltip 提示](#tooltips) | component | `lq-tooltip` | 宏 / JS / Py | 2 |
+| [Tooltip 提示](#tooltips) | component | `lq-tooltip` | 宏 / JS / Py | 5 |
 | [Upload / Dropzone / FileChip](#upload) | component | `lq-dropzone`, `lq-file-chip`, `lq-upload` | 宏 / JS / Py | 1 |
 | [Workspace Split / Viewer](#workspace) | component | `lq-domain-workspace`, `lq-split`, `lq-viewer` | 宏 / JS / Py | 2 |
 | [Shells 页面壳（Topbar / Sidebar / Dock / Editor / PageLayout / FAB / Crumbs / Steps）](#shells) | composite | `lq-crumbs`, `lq-dock`, `lq-editor`, `lq-fab`, `lq-nav-item`, `lq-page-layout` … | 宏 / JS / Py | 10 |
@@ -252,7 +252,7 @@
 **Domain controls 领域控件就地接入** · 层：foundation · CSS：`static/css/lq/components/domain-controls.css`
 
 - **设计摘要**：`adoptDomainControl` / `createDomainButton` / `adoptDomainContentSlot` / `adoptDomainHandle` / `createDomainPopoverSystem`：已有领域控制器持有节点时只换呈现、不重绑业务事件；分页、图形选择卡、芯片组的布局钩子。
-- **规则**：不得在全页面 MutationObserver 里猜组件；数据色样只允许真实色值槽位 `data-lq-visual="color"`。 2026-11-12：assessment_editor.js 是作业/考试领域组合，消费者为试卷编辑、学生考试、普通作业与批改展示；按钮复用 createDomainButton，代码窗口复用 Dialog/layer，原生 textarea 是唯一表单与草稿真值。显式 mount/refresh/destroy，不做全站扫描；autoGrow 默认2行、上限16行，按输入帧更新且每窗口仅一个resize监听。代码弹层退出解除inert后才回写正文，取消不改答案；保留IME、撤销、maxlength、readonly、冲突与未提交草稿。正文对齐/代码颜色是内容数据，assessment-content.css不创建控件材质。见docs/assessment-editor-2026-11-12.md。 2026-11-15：assessment_questions.js 的纯函数 parseAnswerRecords 统一读取学生普通作业草稿与考试已提交/重做/草稿答案，兼容列表和字典、过滤无效列表条目、保留答案数组/编号/附件且不改存储格式；字典键优先作为题目身份。questionBlanks 仅在整个非空数组均为唯一正整数编号对象时启用新版填空，旧字符串/混合扩展保持整段旧答案，不部分启用。该共享数据模块其他消费者（出题、批改、试卷预览）沿用相同判定，无新增控件材质或页面扫描。 普通作业局部保留旧纯文本、JSON标量和字符串数组的读取/编辑合同，ordinaryAnswerText共用于显示和草稿恢复；考试不扩大为无题目身份的推测恢复。 考试通用附件首次mount复用服务器草稿恢复，跨页保留当前entries；删除/清空共用serverDraftWriteChain和原轮次令牌，失败还原、409停写，成功权威草稿对账响应丢失。submit.js唯一生产消费者为exam_take.html，未mount页尾也从服务器附件真值判断可交卷，最终仍校验删除状态。 重做入口先恢复本退回代次的LOCAL_DRAFT_KEY及更新时间，再调用既有controller比较服务器草稿，避免新补种的原答案覆盖较新的本地作答。
+- **规则**：不得在全页面 MutationObserver 里猜组件；数据色样只允许真实色值槽位 `data-lq-visual="color"`。 2026-11-12：assessment_editor.js 是作业/考试领域组合，消费者为试卷编辑、学生考试、普通作业与批改展示；按钮复用 createDomainButton，代码窗口复用 Dialog/layer，原生 textarea 是唯一表单与草稿真值。显式 mount/refresh/destroy，不做全站扫描；autoGrow 默认2行、上限16行，按输入帧更新且每窗口仅一个resize监听。代码弹层退出解除inert后才回写正文，取消不改答案；保留IME、撤销、maxlength、readonly、冲突与未提交草稿。正文对齐/代码颜色是内容数据，assessment-content.css不创建控件材质。见docs/assessment-editor-2026-11-12.md。 2026-11-15：assessment_questions.js 的纯函数 parseAnswerRecords 统一读取学生普通作业草稿与考试已提交/重做/草稿答案，兼容列表和字典、过滤无效列表条目、保留答案数组/编号/附件且不改存储格式；字典键优先作为题目身份。questionBlanks 仅在整个非空数组均为唯一正整数编号对象时启用新版填空，旧字符串/混合扩展保持整段旧答案，不部分启用。该共享数据模块其他消费者（出题、批改、试卷预览）沿用相同判定，无新增控件材质或页面扫描。 普通作业局部保留旧纯文本、JSON标量和字符串数组的读取/编辑合同，ordinaryAnswerText共用于显示和草稿恢复；考试不扩大为无题目身份的推测恢复。 考试通用附件首次mount复用服务器草稿恢复，跨页保留当前entries；删除/清空共用serverDraftWriteChain和原轮次令牌，失败还原、409停写，成功权威草稿对账响应丢失。submit.js唯一生产消费者为exam_take.html，未mount页尾也从服务器附件真值判断可交卷，最终仍校验删除状态。 重做入口先恢复本退回代次的LOCAL_DRAFT_KEY及更新时间，再调用既有controller比较服务器草稿，避免新补种的原答案覆盖较新的本地作答。 2026-11-16：assessment_editor 工具栏在试卷编辑、学生考试和普通作业三个交互入口统一为独立图标，保留原生 textarea、选择区、IME、撤销、草稿和代码弹层取消合同；预览切换同步更新 aria-label/aria-pressed 与图标。共享已有 bold/list/code/pencil，六个局部 Lucide SVG 路径沿用 lq-btn__icon 槽位，不扩全局图标包；按钮尺寸、触控命中和材质继续由 LQ 控制，仅领域 flex 布局允许换行。exam_board 附图工具栏复用既有 eraser SVG 与 aria-pressed，笔触1–32和橡皮4–120分别持久于实例，复用圆形光标；底图/笔画真实擦除后仍输出白底PNG，撤销/重做包括活动笔画，open generation阻止过期载图覆盖新画板。编辑器在mount绑定1000ms Tooltip，动作隐藏、destroy完整解绑；画板使用明确可见会话生命周期，close逐个destroy并清空bindings，下一次open只在空集合时重建，避免external parent关闭销毁子层后留下失效binding，不累加监听。
 - **根类**：`lq-chip-group`, `lq-domain-graph-choice`, `lq-pagination`
 - **JS 入口** `static/js/lq/domain-controls.js`：`adoptDomainContentSlot`, `adoptDomainControl`, `adoptDomainHandle`, `createDomainButton`, `createDomainPopoverSystem`, `domainButtonAttributes`
 - **消费者**：54 个文件
@@ -625,7 +625,7 @@
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
 - **React 适配器**：`LqButton`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：283 个文件
+- **消费者**：284 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -889,6 +889,7 @@
 - `static/js/user_ui_preferences.js` ×3
 - `static/js/whiteboard/panels/controls.js` ×3
 - `frontend/src/components/ui/dialog.tsx` ×2
+- `static/js/assessment_editor.js` ×2
 - `static/js/course_schedule_changes.js` ×2
 - `static/js/knowledge_tree/chrome.js` ×2
 - `static/js/learning_certificate_reveal.js` ×2
@@ -1636,12 +1637,13 @@
 **Layer 层栈** · 层：component · CSS：`static/css/lq/components/layers.css`
 
 - **设计摘要**：`getLayerSystem()` 唯一持有层级、焦点、背景 inert、滚动锁、嵌套顺序与关闭；可移植领域弹层显式注册。
-- **规则**：禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。 2026-10-28 close 的 beforeClose 自有确认子层沿祖先推进 pending 序号，成功关闭仍返回有效触发器；无关新层打断后不再恢复旧焦点请求。覆盖新开/重开/ordered external，保留新窗口防抢焦点与取消合同，见 social-dm-sidebar-2026-10-28 和 layer-core 浏览器回归。
+- **规则**：禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。 2026-10-28 close 的 beforeClose 自有确认子层沿祖先推进 pending 序号，成功关闭仍返回有效触发器；无关新层打断后不再恢复旧焦点请求。覆盖新开/重开/ordered external，保留新窗口防抢焦点与取消合同，见 social-dm-sidebar-2026-10-28 和 layer-core 浏览器回归。 2026-11-16：exam_board使用registerExternal(mode=ordered)登记既有画板，消费共享层级、将Tooltip置于其上；保留原画板开关和焦点owner，isPresent覆盖180ms退场直至root.hidden。close先销毁本次Tooltip绑定再refresh，open只重建已清空的绑定集合，destroy解除external登记；不硬改z-index、不增加扫描观察。
 - **JS 入口** `static/js/lq/layer.js`：`getLayerSystem`
-- **消费者**：34 个文件
+- **消费者**：36 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
+- `static/js/whiteboard/exam_board.test.js` ×4
 - `static/js/academic_sync_dialog.js` ×2
 - `static/js/ai_workspace_capture.js` ×2
 - `static/js/approval_workflow.js` ×2
@@ -1676,6 +1678,7 @@
 - `static/js/ui.js` ×2
 - `static/js/ui_explanation.js` ×2
 - `static/js/ui_preferences_panel.js` ×2
+- `static/js/whiteboard/exam_board.js` ×2
 
 </details>
 
@@ -1993,15 +1996,20 @@
 **Tooltip 提示** · 层：component · CSS：`static/css/lq/components/tooltips.css`
 
 - **设计摘要**：悬停/聚焦提示，不采样模糊；全站功能说明浮窗另见 ui explanation popover。
+- **参数 / 变体**：bindTooltip(trigger, rootOrProps, { hoverDelay=400, observeRemoval=true })；hoverDelay为0–60000有限毫秒数，observeRemoval为boolean；返回root/show/hide/destroy/handle。
+- **规则**：原消费者与开发页保留默认自动悬停400ms；cultivation_emblems首次接触显式show()的即时显示路径保持。2026-11-16：assessment_editor与whiteboard/exam_board显式1000ms、observeRemoval:false并由owner销毁，避免每题每图标的全页MutationObserver。鼠标按下引起的focusin不绕过悬停延迟，触控不自动提示；键盘/程序聚焦即时、不抢焦点。离开或hide取消计时，关闭/执行动作hide，destroy恢复ARIA及原title并清理监听。Tooltip仅用于图标名称且必须保留可访问名称，复杂说明仍由data-explain控制器负责。
 - **根类**：`lq-tooltip`
 - **Jinja 宏** `templates/macros/lq/tooltips.html`：`lq_tooltip`
 - **JS 入口** `static/js/lq/tooltips.js`：`bindTooltip`, `createTooltip`, `tooltipMarkup`, `tooltipProps`
 - **Python props** `classroom_app/lq_menu_tooltip.py`
-- **消费者**：2 个文件
+- **消费者**：5 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
+- `static/js/whiteboard/exam_board.test.js` ×4
+- `static/js/assessment_editor.js` ×2
 - `static/js/cultivation_emblems.js` ×2
+- `static/js/whiteboard/exam_board.js` ×2
 - `templates/dev/lq_interactions.html` ×1
 
 </details>

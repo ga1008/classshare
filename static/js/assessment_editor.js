@@ -7,10 +7,34 @@ import { openDialog } from './lq/dialogs.js';
 import { getLayerSystem } from './lq/layer.js';
 import { enhanceDropdowns } from './lq/dropdown.js';
 import { bindDirtyGuard } from './lq/dirty-guard.js';
+import { createIcon } from './lq/icons.js';
+import { bindTooltip } from './lq/tooltips.js';
 
 const mounted = new WeakMap();
 const autosizers = new WeakMap();
 const resizeOwners = new WeakMap();
+// These six editor-only glyphs reuse Lucide 1.17.0 paths (ISC; see
+// ./lq/lucide-LICENSE.txt) without enlarging the platform's shared icon payload.
+const editorIconPaths = {
+    'align-left': 'M21 5H3 M15 12H3 M17 19H3',
+    'align-center': 'M21 5H3 M17 12H7 M19 19H5',
+    'align-right': 'M21 5H3 M21 12H9 M21 19H7',
+    'indent-increase': 'M21 5H11 M21 12H11 M21 19H11 M3 8l4 4-4 4',
+    'indent-decrease': 'M21 5H11 M21 12H11 M21 19H11 M7 8l-4 4 4 4',
+    eye: 'M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0',
+};
+function createEditorIcon(name, doc) {
+    if (!Object.hasOwn(editorIconPaths, name)) return createIcon(name, doc);
+    // Keep the shared SVG attributes, size, currentColor and accessibility.
+    const svg = createIcon('code', doc), path = doc.createElementNS(svg.namespaceURI, 'path');
+    path.setAttribute('d', editorIconPaths[name]); svg.replaceChildren(path);
+    if (name === 'eye') {
+        const circle = doc.createElementNS(svg.namespaceURI, 'circle');
+        for (const [key, value] of Object.entries({ cx: '12', cy: '12', r: '3' })) circle.setAttribute(key, value);
+        svg.append(circle);
+    }
+    return svg;
+}
 const escapeHtml = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const pairs = { '(': ')', '[': ']', '{': '}' };
 const languages = ['text', 'python', 'javascript', 'typescript', 'java', 'c', 'cpp', 'csharp', 'html', 'css', 'sql', 'json', 'bash'];
@@ -383,41 +407,50 @@ export function mountAssessmentEditor(textarea, { format = true, code = false, l
     const autosize = attachAutosize(textarea);
     const listen = (node, event, callback, options) => { node.addEventListener(event, callback, options); disposers.push(() => node.removeEventListener(event, callback, options)); };
     const controls = [];
+    const controlTips = new Map();
     const addButton = (labelText, action, extra = {}) => {
-        const button = createDomainButton({ label: labelText, variant: 'ghost', size: 'sm', attrs: { title: extra.title || labelText, 'aria-label': labelText, ...extra.attrs } }, doc);
+        const button = createDomainButton({ label: labelText, variant: 'ghost', size: 'sm', className: 'lq-btn--icon',
+            attrs: { 'aria-label': labelText, 'data-assessment-command': extra.command || extra.icon, ...extra.attrs } }, doc);
+        const icon = doc.createElement('span'); icon.className = 'lq-btn__icon'; icon.append(createEditorIcon(extra.icon, doc));
+        button.replaceChildren(icon);
+        toolbar.append(button);
+        const tip = bindTooltip(button, { text: extra.title || labelText }, { hoverDelay: 1000, observeRemoval: false });
+        controlTips.set(button, tip); disposers.push(() => tip.destroy());
         // Keep the textarea's selection while a pointer operates its toolbar.
         listen(button, 'mousedown', event => event.preventDefault());
-        listen(button, 'click', () => { if (!textarea.disabled && !textarea.readOnly) action(button); });
-        toolbar.append(button); controls.push(button); return button;
+        listen(button, 'click', () => { void tip.hide('action'); if (!textarea.disabled && !textarea.readOnly) action(button); });
+        controls.push(button); return button;
     };
     const selectionEdit = (prefix, suffix = prefix, placeholder = '') => {
         const start = textarea.selectionStart, end = textarea.selectionEnd, selected = textarea.value.slice(start, end) || placeholder;
         applyEdit(textarea, { start, end, text: prefix + selected + suffix, caret: start + prefix.length, selectionEnd: start + prefix.length + selected.length });
     };
     if (format) {
-        addButton('加粗', () => selectionEdit('**', '**', '加粗内容'), { title: '加粗（Ctrl / ⌘ + B）' });
+        addButton('加粗', () => selectionEdit('**', '**', '加粗内容'), { icon: 'bold', title: '加粗（Ctrl / ⌘ + B）' });
         for (const [alignment, title] of [['left', '左对齐'], ['center', '居中'], ['right', '右对齐']]) addButton(title, () => {
             applyEdit(textarea, alignmentEdit(textarea.value, textarea.selectionStart, textarea.selectionEnd, alignment));
-        });
+        }, { icon: `align-${alignment}` });
         addButton('自动编号', () => {
             const start = textarea.value.lastIndexOf('\n', textarea.selectionStart - 1) + 1;
             const next = textarea.value.indexOf('\n', textarea.selectionEnd), end = next < 0 ? textarea.value.length : next;
             const text = textarea.value.slice(start, end).split('\n').map((line, index) => `${index + 1}. ${line.replace(/^\s*\d+[.)]\s+/, '')}`).join('\n');
             applyEdit(textarea, { start, end, text, caret: start + text.length });
-        });
+        }, { icon: 'list-ordered' });
         for (const [title, shift] of [['增加层级', false], ['减少层级', true]]) addButton(title, () => {
             const edit = markdownKeyEdit(textarea.value, textarea.selectionStart, textarea.selectionEnd, 'Tab', shift);
             if (edit) applyEdit(textarea, edit);
-        });
+        }, { icon: shift ? 'indent-decrease' : 'indent-increase' });
     }
-    if (code) addButton('插入代码块', trigger => editCode(null, trigger));
+    if (code) addButton('插入代码块', trigger => editCode(null, trigger), { icon: 'code' });
     const previewButton = addButton('预览', () => {
         previewMode = !previewMode;
         textarea.hidden = previewMode; preview.hidden = !previewMode; cards.hidden = previewMode;
-        previewButton.textContent = previewMode ? '继续编辑' : '预览'; previewButton.setAttribute('aria-label', previewButton.textContent);
+        const labelText = previewMode ? '继续编辑' : '预览';
+        previewButton.setAttribute('aria-label', labelText); controlTips.get(previewButton).root.textContent = labelText;
+        previewButton.firstElementChild.replaceChildren(createEditorIcon(previewMode ? 'pencil' : 'eye', doc));
         previewButton.setAttribute('aria-pressed', String(previewMode)); refresh();
         if (!previewMode) textarea.focus();
-    });
+    }, { icon: 'eye', command: 'preview' });
     previewButton.setAttribute('aria-pressed', 'false');
     function renderCards() {
         renderFrame = 0;
@@ -456,7 +489,10 @@ export function mountAssessmentEditor(textarea, { format = true, code = false, l
     }
     function refresh() {
         if (disposed) return;
-        controls.forEach(button => { button.disabled = textarea.disabled || textarea.readOnly; });
+        controls.forEach(button => {
+            button.disabled = textarea.disabled || textarea.readOnly;
+            if (button.disabled) void controlTips.get(button).hide('disabled');
+        });
         autosize.refresh();
         if (!renderFrame) renderFrame = win.requestAnimationFrame(renderCards);
     }

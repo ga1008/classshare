@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const evidence = '.codex-temp/evidence/assessment-editor-20261112';
+const evidence = process.env.ASSESSMENT_CONTROLS_EVIDENCE || process.env.ASSESSMENT_EVIDENCE || '.codex-temp/evidence/assessment-editor-20261112';
 fs.mkdirSync(evidence, { recursive: true });
 
 async function mount(page: Page, appearance = 'light') {

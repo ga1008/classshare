@@ -4,7 +4,7 @@
    keep their shared LQ material, states, focus and motion. */
 .assessment-editor { min-width: 0; width: 100%; display: grid; gap: .5rem; }
 .assessment-editor__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }
-.assessment-editor__toolbar .lq-btn { font-size: .8125rem; }
+.assessment-editor__toolbar .lq-btn--icon { flex: 0 0 auto; }
 .assessment-editor__body { min-width: 0; display: grid; gap: .5rem; }
 .assessment-editor__codes { display: flex; flex-wrap: wrap; gap: .375rem; }
 .assessment-editor__codes:empty { display: none; }

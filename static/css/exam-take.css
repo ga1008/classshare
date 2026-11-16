@@ -948,6 +948,9 @@ body.exam-page {
 
 .exam-drawing-whiteboard-root .teacher-whiteboard-toolbar {
     right: max(16px, calc(env(safe-area-inset-right) + 16px));
+    flex-wrap: wrap;
+    max-height: calc(100dvh - 100px);
+    overflow: auto;
 }
 
 .exam-drawing-whiteboard-root .exam-drawing-title {

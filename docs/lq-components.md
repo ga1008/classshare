@@ -102,6 +102,8 @@ S1检查点：`.codex-temp/lq-s1-engineering-checkpoint/manifest.json`，220个�
 
 `registerExternal`新增`mode:'ordered'`供portable课表按真实打开顺序协调；默认说明模式保持。外部层显式提供isOpen/isActive/isPresent/root/trigger/dismissTop，返回refresh/isTop/destroy。关闭动画仍占位；owned child先退出，再回到课表；dirty veto保留父子链。课表继续拥有focus/Tab/动画，不增加LQ import、不靠MutationObserver猜内部状态、不合成点击。三宿主只接`connectScheduleLayer(deck)`。
 
+2026-11-16：答题画板也显式使用ordered external登记，Tooltip跟随共享层级位于画板之上；`isPresent`保留180ms退场占位。外部owner关闭会销毁其子层，画板先销毁本次Tooltip bindings并清空集合，再refresh登记；再次打开仅重建已清空的绑定，完整销毁时解除external登记，防止复用已失效的子层binding或累加事件监听。
+
 `assignment-kind-modal`以native dialog登记，保存中beforeClose否决关闭，CAS冲突保留重选流程，迟到读取不抢子层焦点。React Dialog已经替换Radix行为，保留实际6个导出、可取消焦点事件、controlled close否决恢复、ExistingSurface/CalendarHost真实节点与草稿；旧编辑器与todo交接等待退出及DOM归位。StrictMode挂载登记和bootstrap readiness共享Promise，迟到回调使用代次保护。无代码引用后已移除直接依赖`@radix-ui/react-dialog`，随后typecheck通过。
 
 完整证据：`.codex-temp/lq-s2-native-schedule-report.md`、`lq-s2-ordered-final.log`。**105/105 browser，1.6m**：44 core/旧桥/chat +19 React +7原课表 +5原生分类 +10新课表桥 +20 dialogs。同包110相关单测、typecheck通过。原课表`DECK_CSS`23,155字符完全不变；原课表测试完整文件SHA未变，实际收集7项（纠正此前口述数量）。这些是合成请求的真实浏览器行为门禁，不代表真实业务页全链路、真机或生产发布。
@@ -139,6 +141,8 @@ Toast的直接ESM接口同步返回handle，`LQ.toast`按需下载后返回Promi
 `LQ.load('content')`提供8种纯呈现树/HTML/Node构造；Card主动作是标题原生控件，次操作并列。新PageHead/FilterBar保留旧签名和钩子，支持具名caller与旧零参caller；旧管理宏尚未迁移。Stat真值0保留，数值要求安全整数或调用者已格式化文本。Prose只排版既有安全渲染后的内容，Bubble时间在触控常显；outgoing时间改用已有ink-2以满足实际配色对比。23有效/25非法三入口、10 Python、19浏览器、24次整页axe零违规；见`lq-s2-content-report.md`。
 
 `LQ.load('menus')`的`bindMenu`复用core，命令等待关闭成功后才执行`onAction(id,itemElement)`，第二参是HTMLElement；链接保留原生导航和修饰键，不能被异步beforeClose阻止。禁用menuitem可聚焦但不能执行；Tab、方向、typeahead、IME、父宿主与关闭竞态均验收。`LQ.load('tooltips')`显式绑定图标名称提示，鼠标400ms、键盘即时、不抢焦点；说明仍用data-explain。32浏览器、19相关单元通过。Chrome Ctrl+新页route拦截限制及替代证据准确记录于`lq-s2-menu-tooltip-report.md`，不声称该组合已完成真实新页内容加载。
+
+2026-11-16：`bindTooltip(trigger, rootOrProps, { hoverDelay = 400, observeRemoval = true })` 支持显式悬停毫秒数（有限数值，0–60000）及移除观察开关。原调用者保留自动悬停400ms，显式`show()`仍即时（修为徽记首次接触沿用此路径）；作业/考试编辑器与附图工具栏使用1000ms。鼠标按下产生的聚焦不绕过悬停等待，触控不自动显示提示，键盘/程序聚焦仍即时显示且不抢焦点；离开或`hide()`取消尚未触发的计时。`observeRemoval:false`用于持有完整生命周期的owner，必须在销毁时逐一调用binding的`destroy()`，关闭或执行动作时调用`hide()`；编辑器与画板据此避免每个图标各建一个全页MutationObserver。返回值仍为`{ root, show, hide, destroy, handle }`，`root`仅允许纯文本，复杂功能说明继续用data-explain。
 
 `LQ.tone(family,state)`同步读取由现有CSS语义别名生成的9族62状态；未知值返回neutral/known=false，不生成任意属性名，不另存颜色表。生成器check、3 Python和3 JS通过。
 

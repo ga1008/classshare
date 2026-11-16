@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-15",
+ "generatedAt": "2026-11-16",
  "generator": "python tools/ui/lq_module_registry.py",
  "modules": {
   "materials": {
@@ -904,7 +904,7 @@
     "rules": "禁止 div 模拟按钮；颜色只来自变体及显式语义槽位，不传任意色；固定宽度长标签用 overflow-label。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。2026-11-12 对齐课次使用 soft 的 warning/success 槽位，动作保持原生 Button，不借用 filter Chip 的 toggle 语义；共享禁用/忙碌/强制颜色配方继续生效。"
    },
    "consumers": {
-    "count": 283,
+    "count": 284,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -1944,6 +1944,10 @@
      },
      {
       "path": "frontend/src/components/ui/dialog.tsx",
+      "hits": 2
+     },
+     {
+      "path": "static/js/assessment_editor.js",
       "hits": 2
      },
      {
@@ -4287,7 +4291,7 @@
     "summary": "`adoptDomainControl` / `createDomainButton` / `adoptDomainContentSlot` / `adoptDomainHandle` / `createDomainPopoverSystem`：已有领域控制器持有节点时只换呈现、不重绑业务事件；分页、图形选择卡、芯片组的布局钩子。",
     "params": "",
     "states": "",
-    "rules": "不得在全页面 MutationObserver 里猜组件；数据色样只允许真实色值槽位 `data-lq-visual=\"color\"`。 2026-11-12：assessment_editor.js 是作业/考试领域组合，消费者为试卷编辑、学生考试、普通作业与批改展示；按钮复用 createDomainButton，代码窗口复用 Dialog/layer，原生 textarea 是唯一表单与草稿真值。显式 mount/refresh/destroy，不做全站扫描；autoGrow 默认2行、上限16行，按输入帧更新且每窗口仅一个resize监听。代码弹层退出解除inert后才回写正文，取消不改答案；保留IME、撤销、maxlength、readonly、冲突与未提交草稿。正文对齐/代码颜色是内容数据，assessment-content.css不创建控件材质。见docs/assessment-editor-2026-11-12.md。 2026-11-15：assessment_questions.js 的纯函数 parseAnswerRecords 统一读取学生普通作业草稿与考试已提交/重做/草稿答案，兼容列表和字典、过滤无效列表条目、保留答案数组/编号/附件且不改存储格式；字典键优先作为题目身份。questionBlanks 仅在整个非空数组均为唯一正整数编号对象时启用新版填空，旧字符串/混合扩展保持整段旧答案，不部分启用。该共享数据模块其他消费者（出题、批改、试卷预览）沿用相同判定，无新增控件材质或页面扫描。 普通作业局部保留旧纯文本、JSON标量和字符串数组的读取/编辑合同，ordinaryAnswerText共用于显示和草稿恢复；考试不扩大为无题目身份的推测恢复。 考试通用附件首次mount复用服务器草稿恢复，跨页保留当前entries；删除/清空共用serverDraftWriteChain和原轮次令牌，失败还原、409停写，成功权威草稿对账响应丢失。submit.js唯一生产消费者为exam_take.html，未mount页尾也从服务器附件真值判断可交卷，最终仍校验删除状态。 重做入口先恢复本退回代次的LOCAL_DRAFT_KEY及更新时间，再调用既有controller比较服务器草稿，避免新补种的原答案覆盖较新的本地作答。"
+    "rules": "不得在全页面 MutationObserver 里猜组件；数据色样只允许真实色值槽位 `data-lq-visual=\"color\"`。 2026-11-12：assessment_editor.js 是作业/考试领域组合，消费者为试卷编辑、学生考试、普通作业与批改展示；按钮复用 createDomainButton，代码窗口复用 Dialog/layer，原生 textarea 是唯一表单与草稿真值。显式 mount/refresh/destroy，不做全站扫描；autoGrow 默认2行、上限16行，按输入帧更新且每窗口仅一个resize监听。代码弹层退出解除inert后才回写正文，取消不改答案；保留IME、撤销、maxlength、readonly、冲突与未提交草稿。正文对齐/代码颜色是内容数据，assessment-content.css不创建控件材质。见docs/assessment-editor-2026-11-12.md。 2026-11-15：assessment_questions.js 的纯函数 parseAnswerRecords 统一读取学生普通作业草稿与考试已提交/重做/草稿答案，兼容列表和字典、过滤无效列表条目、保留答案数组/编号/附件且不改存储格式；字典键优先作为题目身份。questionBlanks 仅在整个非空数组均为唯一正整数编号对象时启用新版填空，旧字符串/混合扩展保持整段旧答案，不部分启用。该共享数据模块其他消费者（出题、批改、试卷预览）沿用相同判定，无新增控件材质或页面扫描。 普通作业局部保留旧纯文本、JSON标量和字符串数组的读取/编辑合同，ordinaryAnswerText共用于显示和草稿恢复；考试不扩大为无题目身份的推测恢复。 考试通用附件首次mount复用服务器草稿恢复，跨页保留当前entries；删除/清空共用serverDraftWriteChain和原轮次令牌，失败还原、409停写，成功权威草稿对账响应丢失。submit.js唯一生产消费者为exam_take.html，未mount页尾也从服务器附件真值判断可交卷，最终仍校验删除状态。 重做入口先恢复本退回代次的LOCAL_DRAFT_KEY及更新时间，再调用既有controller比较服务器草稿，避免新补种的原答案覆盖较新的本地作答。 2026-11-16：assessment_editor 工具栏在试卷编辑、学生考试和普通作业三个交互入口统一为独立图标，保留原生 textarea、选择区、IME、撤销、草稿和代码弹层取消合同；预览切换同步更新 aria-label/aria-pressed 与图标。共享已有 bold/list/code/pencil，六个局部 Lucide SVG 路径沿用 lq-btn__icon 槽位，不扩全局图标包；按钮尺寸、触控命中和材质继续由 LQ 控制，仅领域 flex 布局允许换行。exam_board 附图工具栏复用既有 eraser SVG 与 aria-pressed，笔触1–32和橡皮4–120分别持久于实例，复用圆形光标；底图/笔画真实擦除后仍输出白底PNG，撤销/重做包括活动笔画，open generation阻止过期载图覆盖新画板。编辑器在mount绑定1000ms Tooltip，动作隐藏、destroy完整解绑；画板使用明确可见会话生命周期，close逐个destroy并清空bindings，下一次open只在空集合时重建，避免external parent关闭销毁子层后留下失效binding，不累加监听。"
    },
    "consumers": {
     "count": 54,
@@ -5617,11 +5621,15 @@
     "summary": "`getLayerSystem()` 唯一持有层级、焦点、背景 inert、滚动锁、嵌套顺序与关闭；可移植领域弹层显式注册。",
     "params": "",
     "states": "",
-    "rules": "禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。 2026-10-28 close 的 beforeClose 自有确认子层沿祖先推进 pending 序号，成功关闭仍返回有效触发器；无关新层打断后不再恢复旧焦点请求。覆盖新开/重开/ordered external，保留新窗口防抢焦点与取消合同，见 social-dm-sidebar-2026-10-28 和 layer-core 浏览器回归。"
+    "rules": "禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。 2026-10-28 close 的 beforeClose 自有确认子层沿祖先推进 pending 序号，成功关闭仍返回有效触发器；无关新层打断后不再恢复旧焦点请求。覆盖新开/重开/ordered external，保留新窗口防抢焦点与取消合同，见 social-dm-sidebar-2026-10-28 和 layer-core 浏览器回归。 2026-11-16：exam_board使用registerExternal(mode=ordered)登记既有画板，消费共享层级、将Tooltip置于其上；保留原画板开关和焦点owner，isPresent覆盖180ms退场直至root.hidden。close先销毁本次Tooltip绑定再refresh，open只重建已清空的绑定集合，destroy解除external登记；不硬改z-index、不增加扫描观察。"
    },
    "consumers": {
-    "count": 34,
+    "count": 36,
     "files": [
+     {
+      "path": "static/js/whiteboard/exam_board.test.js",
+      "hits": 4
+     },
      {
       "path": "static/js/academic_sync_dialog.js",
       "hits": 2
@@ -5756,6 +5764,10 @@
      },
      {
       "path": "static/js/ui_preferences_panel.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/whiteboard/exam_board.js",
       "hits": 2
      }
     ]
@@ -6986,15 +6998,27 @@
    "layer": "component",
    "notes": {
     "summary": "悬停/聚焦提示，不采样模糊；全站功能说明浮窗另见 ui explanation popover。",
-    "params": "",
+    "params": "bindTooltip(trigger, rootOrProps, { hoverDelay=400, observeRemoval=true })；hoverDelay为0–60000有限毫秒数，observeRemoval为boolean；返回root/show/hide/destroy/handle。",
     "states": "",
-    "rules": ""
+    "rules": "原消费者与开发页保留默认自动悬停400ms；cultivation_emblems首次接触显式show()的即时显示路径保持。2026-11-16：assessment_editor与whiteboard/exam_board显式1000ms、observeRemoval:false并由owner销毁，避免每题每图标的全页MutationObserver。鼠标按下引起的focusin不绕过悬停延迟，触控不自动提示；键盘/程序聚焦即时、不抢焦点。离开或hide取消计时，关闭/执行动作hide，destroy恢复ARIA及原title并清理监听。Tooltip仅用于图标名称且必须保留可访问名称，复杂说明仍由data-explain控制器负责。"
    },
    "consumers": {
-    "count": 2,
+    "count": 5,
     "files": [
      {
+      "path": "static/js/whiteboard/exam_board.test.js",
+      "hits": 4
+     },
+     {
+      "path": "static/js/assessment_editor.js",
+      "hits": 2
+     },
+     {
       "path": "static/js/cultivation_emblems.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/whiteboard/exam_board.js",
       "hits": 2
      },
      {
@@ -7360,11 +7384,13 @@
    "domain-controls"
   ],
   "static/js/assessment_editor.js": [
+   "button",
    "declarative",
    "dialogs",
    "domain-controls",
    "layers",
-   "status"
+   "status",
+   "tooltips"
   ],
   "static/js/assessment_kind_controls.js": [
    "layers"
@@ -8348,7 +8374,13 @@
   "static/js/whiteboard/exam_board.js": [
    "button",
    "declarative",
-   "domain-controls"
+   "domain-controls",
+   "layers",
+   "tooltips"
+  ],
+  "static/js/whiteboard/exam_board.test.js": [
+   "layers",
+   "tooltips"
   ],
   "static/js/whiteboard/panels/controls.js": [
    "button",

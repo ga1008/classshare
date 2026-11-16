@@ -15,8 +15,11 @@ export function tooltipProps(props = {}, doc) {
 export function tooltipMarkup(props) { const p = tooltipProps(props); return `<div${attributesMarkup(p.attrs)}>${escapeHtml(p.text)}</div>`; }
 export function createTooltip(props, doc = document) { const p = tooltipProps(props, doc), root = doc.createElement('div'); for (const [key, value] of Object.entries(p.attrs)) root.setAttribute(key, value); root.textContent = p.text; return root; }
 
-/** Opt-in icon names only; data-explain remains owned by its existing controller. */
-export function bindTooltip(trigger, rootOrProps) {
+/** Opt-in icon names only; data-explain remains owned by its existing controller.
+ * An explicit owner may disable removal observation and must call destroy(). */
+export function bindTooltip(trigger, rootOrProps, { hoverDelay = 400, observeRemoval = true } = {}) {
+    if (!Number.isFinite(hoverDelay) || hoverDelay < 0 || hoverDelay > 60000) throw new TypeError('Invalid tooltip hoverDelay');
+    if (typeof observeRemoval !== 'boolean') throw new TypeError('Invalid tooltip observeRemoval');
     const doc = trigger?.ownerDocument;
     if (!doc || !trigger.matches('button,[role="button"]') || !trigger.querySelector('svg,img') || trigger.textContent.trim() || trigger.hasAttribute('data-explain')) throw new TypeError('Tooltip needs an icon button without data-explain');
     const bindings = doc[BINDINGS] ||= new WeakMap();
@@ -32,7 +35,7 @@ export function bindTooltip(trigger, rootOrProps) {
     if (!originalLabel && !trigger.getAttribute('aria-labelledby')) trigger.setAttribute('aria-label', root.textContent);
     trigger.removeAttribute('title');
     const parent = root.parentNode, next = root.nextSibling, system = getLayerSystem(doc), listeners = [];
-    let handle = null, disposed = false, showTimer = null, hideTimer = null, hover = false, overTip = false, focused = false, suppressed = false;
+    let handle = null, disposed = false, showTimer = null, hideTimer = null, hover = false, overTip = false, focused = false, suppressed = false, pointerActive = false;
     const clear = () => { clearTimeout(showTimer); clearTimeout(hideTimer); showTimer = hideTimer = null; };
     const describe = show => {
         if (!show && ownedDescription === null) return;
@@ -62,15 +65,22 @@ export function bindTooltip(trigger, rootOrProps) {
     function hide(reason = 'programmatic') { clear(); return handle ? system.close(handle, reason) : Promise.resolve(true); }
     function leave() { clear(); if (!hover && !overTip && !focused) { suppressed = false; hideTimer = setTimeout(() => { void hide('leave'); }, 100); } }
     function destroy() {
-        if (disposed) return; disposed = true; clear(); observer.disconnect(); for (const remove of listeners) remove(); handle?.destroy(); restoreRoot();
+        if (disposed) return; disposed = true; clear(); observer?.disconnect(); for (const remove of listeners) remove(); handle?.destroy(); restoreRoot();
         if (!trigger.hasAttribute('title') && originalTitle !== null) trigger.setAttribute('title', originalTitle);
         if (originalLabel === null && trigger.getAttribute('aria-label') === root.textContent) trigger.removeAttribute('aria-label');
         bindings.delete(trigger); roots.delete(root);
     }
-    listen(trigger, 'pointerenter', event => { if (event.pointerType === 'touch') return; hover = true; clear(); if (!suppressed) showTimer = setTimeout(show, 400); });
-    listen(trigger, 'pointerleave', () => { hover = false; leave(); });
+    listen(trigger, 'pointerenter', event => { if (event.pointerType === 'touch') return; hover = true; clear(); if (!suppressed) showTimer = setTimeout(show, hoverDelay); });
+    listen(trigger, 'pointerdown', () => { pointerActive = true; });
+    listen(trigger, 'pointerup', () => { pointerActive = false; });
+    listen(trigger, 'pointercancel', () => { pointerActive = false; });
+    listen(trigger, 'pointerleave', () => { hover = false; pointerActive = false; leave(); });
     listen(root, 'pointerenter', () => { overTip = true; clear(); }); listen(root, 'pointerleave', () => { overTip = false; leave(); });
-    listen(trigger, 'focusin', () => { focused = true; if (!suppressed) show(); }); listen(trigger, 'focusout', () => { focused = false; leave(); });
-    const observer = new doc.defaultView.MutationObserver(() => { if (!trigger.isConnected) destroy(); }); observer.observe(doc.documentElement, { childList: true, subtree: true });
+    // Pointer focus must not bypass the hover delay (nor show a touch tooltip).
+    // Keyboard/programmatic focus remains immediate and never takes focus away.
+    listen(trigger, 'focusin', () => { focused = !pointerActive; if (focused && !suppressed) show(); });
+    listen(trigger, 'focusout', () => { focused = false; pointerActive = false; leave(); });
+    const observer = observeRemoval ? new doc.defaultView.MutationObserver(() => { if (!trigger.isConnected) destroy(); }) : null;
+    observer?.observe(doc.documentElement, { childList: true, subtree: true });
     const binding = { root, show, hide, destroy, get handle() { return handle; } }; bindings.set(trigger, binding); roots.set(root, binding); return binding;
 }

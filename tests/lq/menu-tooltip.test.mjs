@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { menuProps, menuMarkup } from '../../static/js/lq/menus.js';
-import { tooltipProps, tooltipMarkup } from '../../static/js/lq/tooltips.js';
+import { tooltipProps, tooltipMarkup, bindTooltip } from '../../static/js/lq/tooltips.js';
 import fs from 'node:fs';
 const fixtures = JSON.parse(fs.readFileSync(new URL('../e2e/components/fixtures/lq-menu-tooltip.json', import.meta.url), 'utf8'));
 describe('LQ Menu/Tooltip pure contracts', () => {
     for (const props of fixtures.invalidMenus) it(`rejects invalid menu ${JSON.stringify(props)}`, () => expect(() => menuProps(props)).toThrow());
     for (const props of fixtures.invalidTooltips) it(`rejects invalid tooltip ${JSON.stringify(props)}`, () => expect(() => tooltipProps(props)).toThrow());
+    it('rejects invalid explicit tooltip timing and lifecycle options before binding', () => {
+        for (const hoverDelay of [-1, NaN, Infinity, 60001, '1000', null]) {
+            expect(() => bindTooltip(null, { text: '图标说明' }, { hoverDelay })).toThrow('Invalid tooltip hoverDelay');
+        }
+        expect(() => bindTooltip(null, { text: '图标说明' }, { observeRemoval: 'false' })).toThrow('Invalid tooltip observeRemoval');
+    });
     it('uses one shared button contract with safe links, focusable disabled items and danger separation', () => {
         const value = menuMarkup(fixtures.menus[0]);
         expect(value).toContain('role="menuitem" tabindex="-1"'); expect(value).toContain('aria-disabled="true"');

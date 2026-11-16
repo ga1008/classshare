@@ -35,6 +35,8 @@
 }
 .back-link:hover { color: var(--primary-color); }
 .workspace-container {
+    width: 100%;
+    min-width: 0;
     max-width: 1000px;
     margin: 0 auto;
     padding: var(--spacing-xl) var(--spacing-md);
@@ -256,6 +258,8 @@
 }
 .file-chip {
     display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
     align-items: center;
     gap: 6px;
     background: hsl(var(--lq-page-control));
