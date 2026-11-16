@@ -25,3 +25,13 @@
 - LQ模块记录、API与设计说明已同步；全平台源码审计摘要见`lq-platform-component-audit-2026-11-16.summary.json`，完整入口和源码hash见证据目录的`source-audit.json`。整体acceptance保持pending，专项验证不等于全平台业务验收。
 
 已有原生PostgreSQL演练与本次102个迁移源码字节匹配；本次无数据库变更。发布仍执行DryRun、停写后的新备份、逐角色启动及上线后只读核验，发布结果完成后追加。
+
+## 实际发布与Git结果
+
+功能提交`94bf04bc43803c1b09af03045c7b6984757da8ea`已上线，release为`20261116-092050-1071430e1de9`；静态图与最终验收构建一致。实际归档SHA256为`1071430e1de94a7f5fb08d92c36e182762862ec0d164ba8de6ff944410ab13a2`。镜像中21个变更文件逐字校验通过；隔离镜像门禁626项中610项通过、16项按既有条件跳过，未连接生产数据库运行测试。
+
+停写后备份位于`/var/backups/lanshare-assessment-attendance-20261116-092050-1071430e1de9/`，代码备份为`code-20261116-092134.tgz`，数据库备份为`db-cutover-20261116-092134.sql.gz`；权限均为0600，数据库gzip完整性门禁通过。PostgreSQL容器未重建，`/lanshare/data`保留。
+
+2026-11-16 09:27上线后只读检查通过：8个服务运行，有healthcheck的服务健康；主服务status=ok，行为写入worker存活、队列0、无last_error。后台历史失败累计1144、stale为0，未将历史计数视为新故障。21个变更文件在宿主与镜像一致，数据目录身份、除发布号外的环境配置、受保护考勤字段和代表性附件校验保持。公网79项检查通过，包含本次编辑器、橡皮板、Tooltip及布局CSS的实际资源hash，以及登录缓存只清cache而不清cookie/storage的合同。
+
+功能提交已正常推送至`origin/dev`及`origin/codex/assessment-attendance-20261112`。此上线记录作为后续纯文档提交推送，不重新部署记录文件；功能版本仍为上述提交。证据包括`release-source.json`、`final-deploy-inputs.json`、`before.json`、`after.json`、`public-postflight.json`、`final-health-after.json`和浏览器验收摘要。
