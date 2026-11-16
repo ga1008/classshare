@@ -8,16 +8,19 @@ that was human-edited.
 Modes:
   * default (no flag): read-only dry run, prints the planned changes.
   * --apply: writes a full backup (including every old prompt) first, then applies.
-  * --restore <backup>: text-level rollback from a backup written by --apply.
+  * --restore <backup>: restore full persona metadata from a v2 backup.
 
 Only rows with ``origin = 'seed'`` and an empty ``persona_updated_at`` are ever
-written. The tool works on both SQLite and PostgreSQL; the active engine is
-reported so the operator always knows what they are touching.
+written. Every write compares the complete planned state atomically; later
+edits are conflicts. Backups are bound to their database target and row identity.
+Other worker processes retain their existing, bounded 60-second identity cache.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -25,7 +28,7 @@ import sys
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-BACKUP_CONTRACT = "wanderer-persona-refresh-backup-v1"
+BACKUP_CONTRACT = "wanderer-persona-refresh-backup-v2"
 DEFAULT_BACKUP_DIR = REPO / "data" / "backups" / "persona_refresh"
 
 
@@ -38,18 +41,48 @@ def _plan(conn) -> list[dict]:
     return plan_seed_persona_refresh(conn)
 
 
-def _write_backup(plan: list[dict], engine: str, backup_dir: Path) -> Path:
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+def _database_identity(conn, engine: str) -> dict:
+    """Fingerprint the connected target without storing credentials or URLs."""
+    if engine == "sqlite":
+        rows = conn.execute("PRAGMA database_list").fetchall()
+        filename = next((row[2] for row in rows if row[1] == "main"), "")
+        if not filename:
+            raise ValueError("Persona backups require a persistent SQLite database target")
+        target = [str(Path(filename).resolve())]
+    else:
+        row = conn.execute(
+            "SELECT current_database() AS database_name, current_schema() AS schema_name, "
+            "'wanderer_agents'::regclass::oid AS relation_oid"
+        ).fetchone()
+        info = conn.raw_connection.info
+        target = [str(info.host), str(info.port), row["database_name"], row["schema_name"], row["relation_oid"]]
+    encoded = json.dumps(target, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return {"engine": engine, "fingerprint": hashlib.sha256(encoded).hexdigest()}
+
+
+def _write_backup(plan: list[dict], target: dict, backup_dir: Path) -> Path:
+    backup_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     path = backup_dir / f"wanderer_persona_refresh_{stamp}.json"
     document = {
         "contract": BACKUP_CONTRACT,
         "created_at": datetime.now().isoformat(timespec="seconds"),
-        "engine": engine,
+        "engine": target["engine"],
+        "target": target,
         "count": len(plan),
         "items": plan,
     }
-    path.write_text(json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Exclusive creation never overwrites a prior recovery point. fsync the full
+    # snapshot before any database write; a backup failure leaves the DB alone.
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(document, ensure_ascii=False, indent=2) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -78,52 +111,53 @@ def _run_refresh(apply: bool, backup_dir: Path) -> int:
             _print({"mode": "apply", "engine": engine, "changes": 0,
                     "message": "All untouched seed personas are already current."})
             return 0
-        backup_path = _write_backup(plan, engine, backup_dir)
+        backup_path = _write_backup(plan, _database_identity(conn, engine), backup_dir)
         refreshed = apply_seed_persona_refresh(conn, plan)
         conn.commit()
+        conflicts = [item["slug"] for item in plan if item["slug"] not in refreshed]
         _print({"mode": "apply", "engine": engine, "refreshed": refreshed,
+                "conflicts": conflicts,
                 "backup": str(backup_path),
                 "rollback": f"python tools/wanderer_persona_refresh.py --restore \"{backup_path}\" --apply"})
-        return 0
+        return 2 if conflicts else 0
 
 
 def _run_restore(backup: Path, apply: bool) -> int:
     from classroom_app.database import get_db_connection
     from classroom_app.db.connection import get_configured_db_engine
+    from classroom_app.services.wanderer_persona_seeds import restore_seed_persona_refresh
 
     document = json.loads(backup.read_text(encoding="utf-8"))
-    if document.get("contract") != BACKUP_CONTRACT:
-        raise ValueError(f"{backup} is not a {BACKUP_CONTRACT} backup")
+    if not isinstance(document, dict) or document.get("contract") != BACKUP_CONTRACT:
+        raise ValueError(f"{backup} is not a {BACKUP_CONTRACT} backup; legacy text-only backups require manual review")
+    items = document.get("items")
+    if not isinstance(items, list) or document.get("count") != len(items):
+        raise ValueError("Persona backup item count is invalid")
+    if len({item.get("id") for item in items}) != len(items):
+        raise ValueError("Persona backup contains duplicate row identities")
     engine = get_configured_db_engine()
     with get_db_connection() as conn:
         if not apply and engine == "postgres":
             conn.execute("SET TRANSACTION READ ONLY")
-        restored = []
-        missing = []
-        for item in document.get("items", []):
-            row = conn.execute("SELECT id FROM wanderer_agents WHERE id = ?", (item["id"],)).fetchone()
-            if row is None:
-                missing.append(item["slug"])
-                continue
-            if apply:
-                conn.execute("UPDATE wanderer_agents SET persona_prompt = ? WHERE id = ?",
-                             (item["old_prompt"], item["id"]))
-            restored.append(item["slug"])
+        if document.get("engine") != engine or document.get("target") != _database_identity(conn, engine):
+            raise ValueError("Persona backup belongs to a different database target")
+        report = restore_seed_persona_refresh(conn, items, apply=apply)
         if apply:
             conn.commit()
         else:
             conn.rollback()
         _print({"mode": "restore-apply" if apply else "restore-dry-run", "engine": engine,
-                "would_restore": restored, "missing_rows": missing,
-                "note": "Text-level rollback of persona_prompt; review version/hash fields afterwards."})
-        return 0
+                **{("would_restore" if not apply and key == "restored" else key): value
+                   for key, value in report.items()},
+                "note": "Full persona metadata; later edits remain untouched. Other workers' caches expire within 60s."})
+        return 2 if report["conflicts"] or report["missing_rows"] else 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--apply", action="store_true", help="Actually write; default is a read-only dry run.")
-    parser.add_argument("--restore", type=Path, help="Roll back persona_prompt from the given backup file.")
+    parser.add_argument("--restore", type=Path, help="Restore complete persona metadata from a matching v2 backup.")
     parser.add_argument("--backup-dir", type=Path, default=DEFAULT_BACKUP_DIR,
                         help="Directory for backup files (refresh mode only).")
     args = parser.parse_args()

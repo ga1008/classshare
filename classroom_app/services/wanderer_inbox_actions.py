@@ -131,8 +131,17 @@ async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
     turn = result["turn"]
     if turn["action"] == "skip" and not turn.get("reason"):
         return {"status": "failed", "error": "silence decision missing reason"}
-    return {"status": "ok", "parts": list(turn["parts"]) if result.get("support_fallback") else turn_parts(ctx, turn, limit=False), "action": turn["action"],
-            "mood": turn.get("mood") or "", "reason": turn.get("reason") or "", "ai_calls": result.get("ai_calls", 0),
+    parts = list(turn["parts"]) if result.get("support_fallback") else turn_parts(ctx, turn, limit=False)
+    action, reason = turn["action"], turn.get("reason") or ""
+    style_rules: list[str] = []
+    if parts and not result.get("support_fallback"):
+        from .wanderer_style_guard import guard_parts
+        parts, style_rules, _ = guard_parts(parts, channel="dm", natural_only=True)
+        if not parts:
+            action, reason = "skip", "style_empty"
+    return {"status": "ok", "parts": parts, "action": action,
+            "mood": turn.get("mood") or "", "reason": reason, "ai_calls": result.get("ai_calls", 0),
+            "style": style_rules,
             "feeling": turn.get("feeling") or None,
             "learning": ctx.pending_learning.pop(thread_key(task), None), "support_fallback": bool(result.get("support_fallback")),
             "romance_response": bool(support_state.get("romance_allowed")),
@@ -223,6 +232,22 @@ def send_part(ctx: ActionContext, task: dict) -> tuple[bool, list]:
                 return False, events
         if part >= len(response["parts"]):
             return False, events
+        if not response.get("support_fallback"):
+            # Stored responses survive deployments/restarts. Normalize only the
+            # unsent suffix and persist the same text that will be delivered.
+            from .wanderer_style_guard import guard_parts
+            pending, rules, _ = guard_parts(response["parts"][part:], channel="dm", natural_only=True)
+            normalized = response["parts"][:part] + pending
+            if normalized != response["parts"]:
+                response["parts"] = normalized
+                response["style"] = sorted(set(response.get("style", [])) | set(rules))
+                if not normalized:
+                    response["action"], response["reason"] = "skip", "style_empty"
+                conn.execute("UPDATE wanderer_social_inbox SET response_json=?,updated_at=? WHERE id=?",
+                             (json.dumps(response, ensure_ascii=False), now_iso(), task["id"]))
+            if part >= len(normalized):
+                conn.commit()
+                return False, events
         text = response["parts"][part]
         if task["source"] == "social":
             from .social_message_service import send_message

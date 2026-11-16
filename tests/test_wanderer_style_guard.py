@@ -78,6 +78,43 @@ class StyleGuardTest(unittest.TestCase):
         self.assertLessEqual(result.text.count("！"), 3)
         self.assertIn("太离谱了", result.text)
 
+    def test_opening_words_in_normal_subjects_are_kept(self):
+        for text in ("家人们的意见很重要。", "宝子细胞正在分裂。", "老铁匠正在开门。"):
+            self.assertEqual(guard_text(text, channel="dm").text, text)
+
+    def test_opening_only_parts_become_silence_and_other_parts_survive(self):
+        self.assertEqual(guard_text("家人们！", channel="dm").text, "")
+        parts, rules, repaired = guard_parts(["家人们！！！", "普通内容。", "🥳"], channel="dm")
+        self.assertEqual(parts, ["普通内容。", "🥳"])
+        self.assertIn("opening", rules)
+        self.assertTrue(repaired)
+        self.assertEqual(guard_parts(["老铁"], channel="dm")[0], [])
+
+    def test_one_exclamation_run_is_normalized_without_other_violations(self):
+        self.assertEqual(guard_text("太好了！！！", channel="dm").text, "太好了！")
+        self.assertEqual(guard_text("真的!!", channel="dm").text, "真的！")
+
+    def test_natural_only_preserves_requested_summary_and_advice(self):
+        text = "我来总结一下：家人们的意见很重要。建议你先看原文。🥳"
+        self.assertEqual(guard_text(text, channel="dm", natural_only=True).text, text)
+
+    def test_natural_only_preserves_code_and_meaningful_spacing(self):
+        for text in ('说明：\n```python\n    if ready:\n        print("ok!!")\n```\n太好了！！！',
+                     '使用 `print("ok!!")`，太好了！！！', '    print("ok!!")\n太好了！！！',
+                     '        print("ok!!")', '\t\tprint("ok!!")'):
+            self.assertEqual(guard_text(text, channel="dm", natural_only=True).text, text)
+            self.assertEqual(guard_text(text, channel="group").text, text)
+        text = "第一列    第二列！！！"
+        self.assertEqual(guard_text(text, channel="dm", natural_only=True).text, "第一列    第二列！")
+
+    def test_code_cannot_be_changed_by_direct_repair_or_rewrite(self):
+        code = '代码：\n    if ready:\n        print("ok!!")\n太好了！！！'
+        self.assertEqual(lint(code, channel="group"), [])
+        self.assertEqual(repair(code, lint("甲！！乙！！", channel="group")), code)
+        async def unexpected_rewrite(*args):
+            raise AssertionError("code must not be sent for style rewriting")
+        self.assertEqual(asyncio.run(guard_turn(code, channel="group", rewrite=unexpected_rewrite)).text, code)
+
     def test_emoji_density_is_reduced_but_pure_emoji_reply_survives(self):
         result = guard_text("今天好开心啊🥳✨💖🎉一起去吃饭吧", channel="dm")
         self.assertEqual(result.text.count("🥳"), 1)

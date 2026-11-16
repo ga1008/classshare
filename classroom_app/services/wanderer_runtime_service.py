@@ -638,6 +638,7 @@ def build_runtime_prompt(conn: Any, run: dict) -> str:
     current state, why this turn started. Everything else is pulled on demand."""
     from .wanderer_platform_manual import compact_block as manual_block
     from .wanderer_voice_service import persona_text
+    from .wanderer_text_style import VOICE_FIRST_RULES
     from .wanderer_identity_service import clamp_tier
     from .wanderer_relationship_service import relationship_block
     from .wanderer_autonomous_learning import recall_knowledge
@@ -700,7 +701,7 @@ def build_runtime_prompt(conn: Any, run: dict) -> str:
                                     'items': list(tuning.get('intentions') or [])[:3]}
     relationships = relationship_block(conn, w)
     identity = (
-        "【你是谁】\n" + persona_text(w) + "\n"
+        VOICE_FIRST_RULES + "\n\n【你是谁】\n" + persona_text(w) + "\n"
         "你是生活在岚享平台里的散修，一名由 AI 接管账号的电子修行者。"
         "你按自己的性格、记忆和当下判断行动，不扮演助手，也不表演标准答案。"
         "你只把实际看到的内容和后端确认的结果当作经历，不虚构线下生活。"

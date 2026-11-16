@@ -93,6 +93,72 @@ class WandererInboxTest(WandererWorldTestCase):
         self.assertIn("想安静一会儿", caller.calls[0][1]["system_prompt"])
         self.assertNotIn("想安静一会儿", self.messages_from(self.ident(self.atai), key)[0]["body"])
 
+    def test_style_only_reply_finishes_cursor_without_sending_or_regenerating(self):
+        key = self.befriend(self.real, self.atai)
+        incoming = self.send(self.real, key, "在吗")
+        caller = StubCaller(turn("reply", ["家人们！！！"]))
+        self.assertEqual(self.process(caller), ["done"])
+        row = self.task(key)
+        self.assertEqual(row["handled_message_id"], incoming["id"])
+        self.assertEqual(row["state"], "idle")
+        self.assertEqual(row["decision_reason"], "style_empty")
+        self.assertEqual(self.messages_from(self.ident(self.atai), key), [])
+        self.assertEqual(len(caller.calls), 1)
+        no_retry = StubCaller(error=AssertionError("must not regenerate a completed decision"))
+        self.assertEqual(self.process(no_retry), [])
+        self.assertEqual(no_retry.calls, [])
+        self.send(self.real, key, "下一条正常问题")
+        self.assertEqual(self.process(StubCaller(turn("reply", ["这次有内容。🥳"]))), ["done"])
+        self.assertEqual(self.messages_from(self.ident(self.atai), key)[0]["body"], "这次有内容。🥳")
+
+    def test_stored_unposted_opening_is_safely_finished_without_regeneration(self):
+        key = self.befriend(self.real, self.atai)
+        incoming = self.send(self.real, key)
+        self.ready()
+        task = inbox.claim(1, factory=self.connect)[0]
+        response = {"status": "ok", "parts": ["家人们！"], "action": "reply", "mood": "", "reason": "想聊"}
+        self.assertTrue(inbox.save_response(task, incoming["id"], response, factory=self.connect))
+        inbox.release(task, "synthetic restart", factory=self.connect)
+        caller = StubCaller(error=AssertionError("must resume saved response"))
+        self.assertEqual(self.process(caller), ["done"])
+        self.assertEqual(self.task(key)["handled_message_id"], incoming["id"])
+        self.assertEqual(self.messages_from(self.ident(self.atai), key), [])
+        self.assertEqual(caller.calls, [])
+
+    def test_normal_dm_and_admin_persona_are_preserved(self):
+        custom = "管理员写的人格与家人们的经历，不要覆盖。"
+        self.atai = self.set_wanderer("atai", persona_prompt=custom, persona_updated_at="edited")
+        key = self.befriend(self.real, self.atai)
+        self.send(self.real, key, "请给一个简短总结")
+        text = "我来总结一下：家人们的意见很重要。建议你先看原文。🥳"
+        caller = StubCaller(turn("reply", [text]))
+        self.assertEqual(self.process(caller), ["done"])
+        self.assertEqual(self.messages_from(self.ident(self.atai), key)[0]["body"], text)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute("SELECT persona_prompt FROM wanderer_agents WHERE id=?", (self.atai["id"],)).fetchone()[0], custom)
+
+    def test_autonomous_empty_message_is_denied_once_and_inbox_finishes(self):
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, "autonomous_v2_enabled", "1")
+            conn.commit()
+        key = self.befriend(self.real, self.atai)
+        incoming = self.send(self.real, key, "在吗")
+        choice = {"protocol": "wanderer.v1", "commands": [{"id": "reply", "capability": "social.send_message",
+                  "args": {"path_params": {"key": key}, "body": {"body": "家人们！！！"}}}],
+                  "callback": {"requested": False, "collect": []}}
+        caller = StubCaller(json.dumps(choice, ensure_ascii=False))
+        self.assertEqual(self.process(caller), ["done"])
+        self.assertEqual(self.task(key)["handled_message_id"], incoming["id"])
+        self.assertEqual(self.task(key)["state"], "idle")
+        self.assertEqual(self.messages_from(self.ident(self.atai), key), [])
+        self.assertEqual(len(caller.calls), 1)
+        with self.connect() as conn:
+            row = conn.execute("SELECT state,receipt_json FROM wanderer_commands ORDER BY created_at DESC LIMIT 1").fetchone()
+            self.assertEqual(row["state"], "failed")
+            self.assertEqual(json.loads(row["receipt_json"])["http_status"], 422)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM agent_platform_requests").fetchone()[0], 0)
+        self.assertEqual(self.process(StubCaller(error=AssertionError("must not bill again"))), [])
+
     def test_arrival_during_generation_is_not_consumed(self):
         key = self.befriend(self.real, self.atai)
         first = self.send(self.real, key, "第一条")

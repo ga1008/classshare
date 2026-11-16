@@ -75,7 +75,7 @@ class AgentSdkRuntimeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.enterClassContext(isolated_sqlite_database())
-        cls.workspace = Path(tempfile.mkdtemp(prefix="agent-sdk-ws-"))
+        cls.workspace = Path(cls.enterClassContext(tempfile.TemporaryDirectory(prefix="agent-sdk-ws-")))
         from classroom_app.app import app
 
         cls.app = app
@@ -84,10 +84,8 @@ class AgentSdkRuntimeTests(unittest.TestCase):
         from classroom_app.database import get_db_connection
         from classroom_app.services import agent_task_service
 
-        self.patches = [patch.object(agent_task_service, "AGENT_TASK_WORKSPACE_ROOT", self.workspace),
-                        patch.object(agent_task_service, "_notify_task_finished")]
-        for item in self.patches:
-            item.start()
+        self.enterContext(patch.object(agent_task_service, "AGENT_TASK_WORKSPACE_ROOT", self.workspace))
+        self.enterContext(patch.object(agent_task_service, "_notify_task_finished"))
         with get_db_connection() as conn:
             conn.execute("DELETE FROM agent_tasks")
             conn.execute("DELETE FROM agent_task_events")
@@ -106,10 +104,6 @@ class AgentSdkRuntimeTests(unittest.TestCase):
                          "VALUES (?, ?, ?, 'teacher', '测试老师', '2099-01-01T00:00:00+00:00')",
                          (f"teacher:{self.teacher_id}", "sess-agent-1", str(self.teacher_id)))
             conn.commit()
-
-    def tearDown(self):
-        for item in reversed(self.patches):
-            item.stop()
 
     # ------------------------------------------------------------------ helpers
     def _user(self):

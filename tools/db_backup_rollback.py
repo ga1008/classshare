@@ -12,6 +12,10 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from tools.temp_path_safety import owned_temp_workspace, resolve_temp_child
+
 TEMP_ROOT = REPO_ROOT / ".codex-temp"
 DEFAULT_RUNTIME_ROOT = TEMP_ROOT / "db-backup-rollback"
 KEY_TABLES = (
@@ -30,23 +34,8 @@ def _now() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
 
 
-def _is_relative_to(path: Path, parent: Path) -> bool:
-    try:
-        path.relative_to(parent)
-        return True
-    except ValueError:
-        return False
-
-
 def resolve_runtime_root(raw: str | Path | None = None) -> Path:
-    runtime_root = Path(raw) if raw else DEFAULT_RUNTIME_ROOT
-    if not runtime_root.is_absolute():
-        runtime_root = REPO_ROOT / runtime_root
-    runtime_root = runtime_root.resolve()
-    temp_root = TEMP_ROOT.resolve()
-    if runtime_root != temp_root and not _is_relative_to(runtime_root, temp_root):
-        raise ValueError(f"backup rollback runtime root must stay under {temp_root}; got {runtime_root}")
-    return runtime_root
+    return resolve_temp_child(raw, repo_root=REPO_ROOT, temp_root=TEMP_ROOT, default=DEFAULT_RUNTIME_ROOT)
 
 
 def source_db_path(raw: str | Path | None = None) -> Path:
@@ -154,6 +143,7 @@ def _load_postgres_drill_report(path: Path | str | None) -> dict[str, Any]:
         return {"status": "unreadable", "path": str(report_path), "error": str(exc)}
 
 
+@owned_temp_workspace(resolve_runtime_root, temp_root=lambda: TEMP_ROOT, tool="db-backup-rollback")
 def run_backup_rollback_drill(
     runtime_root: Path | str | None = None,
     *,
@@ -161,8 +151,6 @@ def run_backup_rollback_drill(
     postgres_drill_report: Path | str | None = None,
 ) -> dict[str, Any]:
     runtime_root = resolve_runtime_root(runtime_root)
-    if runtime_root.exists():
-        shutil.rmtree(runtime_root)
     backup_dir = runtime_root / "backups"
     restore_dir = runtime_root / "restore-drill"
     reports_dir = runtime_root / "reports"

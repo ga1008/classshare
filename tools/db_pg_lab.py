@@ -15,6 +15,10 @@ from typing import Any, Sequence
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from tools.temp_path_safety import owned_temp_workspace, resolve_temp_child
+
 TEMP_ROOT = REPO_ROOT / ".codex-temp"
 DEFAULT_LAB_ROOT = TEMP_ROOT / "pg-migration-lab"
 DEFAULT_REPORTS_DIRNAME = "reports"
@@ -43,11 +47,7 @@ def _resolve_repo_path(raw: str | Path | None, default: Path) -> Path:
 
 
 def resolve_lab_root(raw: str | Path | None = None) -> Path:
-    lab_root = _resolve_repo_path(raw, DEFAULT_LAB_ROOT)
-    temp_root = TEMP_ROOT.resolve()
-    if lab_root != temp_root and not _is_relative_to(lab_root, temp_root):
-        raise ValueError(f"lab root must stay under {temp_root}; got {lab_root}")
-    return lab_root
+    return resolve_temp_child(raw, repo_root=REPO_ROOT, temp_root=TEMP_ROOT, default=DEFAULT_LAB_ROOT)
 
 
 def source_db_path(raw: str | Path | None = None) -> Path:
@@ -121,6 +121,7 @@ def backup_sqlite_database(source_db: Path, copied_db: Path) -> None:
         source_conn.close()
 
 
+@owned_temp_workspace(resolve_lab_root, temp_root=lambda: TEMP_ROOT, tool="pg-migration-lab", clean_argument="clean")
 def prepare_lab(
     lab_root: Path | str | None = None,
     *,
@@ -130,8 +131,6 @@ def prepare_lab(
     lab_root = resolve_lab_root(lab_root)
     source_db = source_db_path(source_db)
 
-    if clean and lab_root.exists():
-        shutil.rmtree(lab_root)
 
     data_dir = _ensure_lab_path(lab_root / DEFAULT_DATA_DIRNAME, lab_root)
     reports_dir = _ensure_lab_path(lab_root / DEFAULT_REPORTS_DIRNAME, lab_root)

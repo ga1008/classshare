@@ -647,21 +647,14 @@ class AgentTaskImprovementTests(unittest.TestCase):
 
 
     def test_read_task_result_deliverable_reads_workspace_result_md(self):
-        import tempfile
-        from pathlib import Path
-
-        original_root = agent_task_service.AGENT_TASK_WORKSPACE_ROOT
-        try:
-            root = Path(tempfile.mkdtemp())
-            agent_task_service.AGENT_TASK_WORKSPACE_ROOT = root
+        root = Path(self.enterContext(tempfile.TemporaryDirectory(prefix="agent-result-test-")))
+        with patch.object(agent_task_service, "AGENT_TASK_WORKSPACE_ROOT", root):
             task_dir = root / "tasks" / "4242"
             task_dir.mkdir(parents=True)
             (task_dir / "RESULT.md").write_text("# 成品标题\n\n正文。", encoding="utf-8")
             text = agent_task_service.read_task_result_deliverable(4242)
             self.assertIn("成品标题", text)
             self.assertEqual("", agent_task_service.read_task_result_deliverable(999999))
-        finally:
-            agent_task_service.AGENT_TASK_WORKSPACE_ROOT = original_root
 
     def test_strip_proposed_actions_block_removes_fenced_protocol_json(self):
         from classroom_app.services.agent_action_registry import strip_proposed_actions_block

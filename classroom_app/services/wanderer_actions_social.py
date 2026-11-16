@@ -360,6 +360,8 @@ async def _compose(ctx: ActionContext, window: dict[str, Any], mode: str,
 async def post_parts(ctx: ActionContext, window: dict[str, Any], parts: list[str], *,
                       direct: bool = False) -> tuple[int, str]:
     """Send each part as its own message after a typing push and a typing-length pause."""
+    if any(not str(part or "").strip() for part in parts):
+        return 0, "empty_part"
     user = build_wanderer_user_dict(ctx.wanderer)
     key = window["key"]
     audience = [item for item in window["audience"] if item != ctx.identity]
@@ -468,9 +470,11 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
     echo_dropped = 0
     repetition_dropped = 0
     style_rules: list[str] = []
+    style_dropped = False
     if parts and not window.get("_support_fallback"):
         parts, style_rules, _ = guard_parts(
             parts, channel="group" if window["type"] == "group" else "dm")
+        style_dropped = not parts
     if parts and window["type"] == "group" and not mentioned and not window.get("_support_fallback"):
         recent = [str(row.get("body") or "") for row in window["rows"][-10:]
                   if str(row.get("sender_identity") or "") != ctx.identity and not row.get("recalled_at")]
@@ -483,7 +487,8 @@ async def reply_in_conversation(ctx: ActionContext, key: str, *, mentioned: bool
         parts, repetition_dropped = filter_repetition_parts(parts, own_recent)
     if not parts:
         await _mark_read(ctx, window)
-        reason = "group_echo" if echo_dropped else "repetition" if repetition_dropped else f"turn:{action}"
+        reason = ("style_empty" if style_dropped else "group_echo" if echo_dropped
+                  else "repetition" if repetition_dropped else f"turn:{action}")
         return await _skip(ctx, window, reason, ai_calls=calls, mood=mood)
     sent, error = await post_parts(ctx, window, parts, direct=direct)
     nudged = await _maybe_nudge(ctx, window) if sent else False

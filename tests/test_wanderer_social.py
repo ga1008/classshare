@@ -641,6 +641,19 @@ class WandererSocialTest(WandererWorldTestCase):
         self.assertIn("summary", style)
         self.assertIn("advice", style)
 
+    def test_default_social_style_guard_keeps_prepared_code_verbatim(self):
+        _, key = self.make_group(self.atai)
+        self.send(self.real, key, "演示一段代码")
+        code = '代码：\n    if ready:\n        print("ok!!")\n太好了！！！'
+        # Supply the already-prepared output at the generation boundary. This
+        # checks the real social guard/send/DB path without changing the older
+        # Markdown-to-plain-text formatter's independent contract.
+        with patch("classroom_app.services.wanderer_actions_social._compose",
+                   return_value=([code], 0, "", "reply", {})):
+            result = self.run_reply(self.atai, key, StubCaller())
+        self.assertIn("parts=1", result)
+        self.assertEqual(self.messages_from(self.ident(self.atai), key)[0]["body"], code)
+
     def test_group_mention_bypasses_echo_filter(self):
         _, key = self.make_group(self.atai)
         self.send(self.real, key, "@阿泰 别在真页面上试，本地起个环境随便折腾。",

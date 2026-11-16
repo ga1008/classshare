@@ -69,6 +69,7 @@ class PackageBuildTestBase(unittest.TestCase):
     def setUp(self):
         schema_gongwen._SCHEMA_READY = False
         self.conn = sqlite3.connect(":memory:")
+        self.addCleanup(self.conn.close)
         self.conn.row_factory = sqlite3.Row
         ensure_gongwen_schema(self.conn)
 
@@ -79,12 +80,8 @@ class PackageBuildTestBase(unittest.TestCase):
         self._conn_patcher = patch.object(pkg, "get_db_connection", _shared_conn)
         self._conn_patcher.start()
         self.addCleanup(self._conn_patcher.stop)
-        self.addCleanup(self.conn.close)
 
-        self.workdir = Path(tempfile.mkdtemp(prefix="gwpkg_test_"))
-        import shutil
-
-        self.addCleanup(lambda: shutil.rmtree(self.workdir, ignore_errors=True))
+        self.workdir = Path(self.enterContext(tempfile.TemporaryDirectory(prefix="gwpkg_test_")))
 
     def _insert_document(self, **overrides) -> int:
         values = {

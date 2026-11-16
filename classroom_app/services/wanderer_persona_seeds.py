@@ -1061,33 +1061,77 @@ def upgrade_seed_personas(conn: Any) -> list[str]:
     from .wanderer_voice_service import normalized_speech_style
 
     rows = conn.execute(
-        "SELECT id, slug, persona_prompt, persona_updated_at, origin FROM wanderer_agents "
+        "SELECT " + ", ".join(_PERSONA_REFRESH_FIELDS) + " FROM wanderer_agents "
         "WHERE origin = 'seed'"
     ).fetchall()
     upgraded: list[str] = []
     for row in rows:
-        slug = str(row["slug"] if hasattr(row, "keys") else row[1])
+        old = _persona_refresh_state(row)
+        slug = str(old["slug"])
         seed = SEED_BY_SLUG.get(slug)
-        if seed is None or (row["persona_updated_at"] if hasattr(row, "keys") else row[3]):
+        if seed is None or old["persona_updated_at"]:
             continue
-        current = persona_text_hash(str(row["persona_prompt"] if hasattr(row, "keys") else row[2]))
+        current = persona_text_hash(str(old["persona_prompt"]))
         normalized = {**seed, "speech_style": normalized_speech_style(seed)}
         expected = {persona_text_hash(render_persona_prompt_v1(seed)),
                     persona_text_hash(render_persona_prompt_v1(normalized))}
         if current not in expected:
             continue
         prepared = _prepared_seed(seed)
-        conn.execute(
-            "UPDATE wanderer_agents SET persona_prompt = ?, persona_version = ?, persona_source_hash = ?, "
-            "persona_source_json = ?, updated_at = ? WHERE id = ?",
-            (prepared["persona_prompt"], PERSONA_VERSION, prepared["persona_source_hash"],
-             json.dumps(prepared["persona_source"], ensure_ascii=False, sort_keys=True),
-             local_iso(), row["id"] if hasattr(row, "keys") else row[0]),
-        )
-        upgraded.append(slug)
+        new = {**old, "persona_prompt": prepared["persona_prompt"], "persona_version": PERSONA_VERSION,
+               "persona_source_hash": prepared["persona_source_hash"],
+               "persona_source_json": json.dumps(prepared["persona_source"], ensure_ascii=False, sort_keys=True),
+               "updated_at": local_iso()}
+        if _compare_and_write_persona(conn, old, new):
+            upgraded.append(slug)
     if upgraded:
         invalidate_wanderer_cache()
     return upgraded
+
+
+_PERSONA_REFRESH_FIELDS = (
+    "id", "slug", "student_id", "created_at", "origin", "persona_prompt", "persona_version",
+    "persona_source_hash", "persona_source_json", "persona_updated_at", "updated_at",
+)
+_PERSONA_REFRESH_WRITES = (
+    "persona_prompt", "persona_version", "persona_source_hash", "persona_source_json", "updated_at",
+)
+
+
+def _persona_refresh_state(row: Any) -> dict[str, Any]:
+    return {field: row[field] if hasattr(row, "keys") else row[index]
+            for index, field in enumerate(_PERSONA_REFRESH_FIELDS)}
+
+
+def _refresh_states(item: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    old, new = item.get("old_state"), item.get("new_state")
+    if not isinstance(old, dict) or not isinstance(new, dict) or any(
+        field not in state for state in (old, new) for field in _PERSONA_REFRESH_FIELDS
+    ):
+        raise ValueError("Persona refresh requires complete before/after snapshots")
+    fixed = set(_PERSONA_REFRESH_FIELDS) - set(_PERSONA_REFRESH_WRITES)
+    if (any(old[field] != new[field] for field in fixed) or old["origin"] != "seed"
+            or old["persona_updated_at"] or old["id"] != item.get("id")
+            or old["slug"] != item.get("slug")
+            or persona_text_hash(str(old["persona_prompt"])) != item.get("old_hash")
+            or persona_text_hash(str(new["persona_prompt"])) != new["persona_source_hash"]):
+        raise ValueError("Persona refresh snapshot identity or prompt hash is invalid")
+    return old, new
+
+
+def _compare_and_write_persona(conn: Any, expected: dict[str, Any], replacement: dict[str, Any]) -> bool:
+    # Null-safe equality works on both backends. Rechecking the complete snapshot
+    # inside UPDATE protects against an admin save after planning or a row-lock wait.
+    where = " AND ".join(f"({field} = ? OR ({field} IS NULL AND ? = 1))"
+                         for field in _PERSONA_REFRESH_FIELDS)
+    values = tuple(replacement[field] for field in _PERSONA_REFRESH_WRITES)
+    matches = tuple(value for field in _PERSONA_REFRESH_FIELDS
+                    for value in (expected[field], int(expected[field] is None)))
+    cursor = conn.execute(
+        "UPDATE wanderer_agents SET " + ", ".join(f"{field} = ?" for field in _PERSONA_REFRESH_WRITES)
+        + " WHERE " + where, (*values, *matches),
+    )
+    return cursor.rowcount == 1
 
 
 def plan_seed_persona_refresh(conn: Any) -> list[dict[str, Any]]:
@@ -1097,27 +1141,29 @@ def plan_seed_persona_refresh(conn: Any) -> list[dict[str, Any]]:
     so older legacy renderings (which the strict whitelist silently skips) are
     included. It is still strictly read-only and only considers rows that are
     ``origin = 'seed'`` and have no ``persona_updated_at`` (never human-edited).
-    Each item carries the full old prompt so the caller can back it up / roll back.
+    Each item carries complete before/after persona snapshots. A caller can back
+    them up before writing and later restore only a still-matching refreshed row.
     """
+    from ..time_utils import local_iso
+
     rows = conn.execute(
-        "SELECT id, slug, persona_prompt, persona_updated_at, origin FROM wanderer_agents "
+        "SELECT " + ", ".join(_PERSONA_REFRESH_FIELDS) + " FROM wanderer_agents "
         "WHERE origin = 'seed'"
     ).fetchall()
     plan: list[dict[str, Any]] = []
     for row in rows:
-        row_id = row["id"] if hasattr(row, "keys") else row[0]
-        slug = str(row["slug"] if hasattr(row, "keys") else row[1])
-        current_prompt = str(row["persona_prompt"] if hasattr(row, "keys") else row[2])
-        updated_at = row["persona_updated_at"] if hasattr(row, "keys") else row[3]
+        old_state = _persona_refresh_state(row)
+        slug = str(old_state["slug"])
+        current_prompt = str(old_state["persona_prompt"])
         seed = SEED_BY_SLUG.get(slug)
-        if seed is None or updated_at:
+        if seed is None or old_state["persona_updated_at"]:
             continue  # unknown seed or human-edited: never touch
         prepared = _prepared_seed(seed)
         new_prompt = str(prepared["persona_prompt"])
         if persona_text_hash(current_prompt) == persona_text_hash(new_prompt):
             continue  # already current
         plan.append({
-            "id": row_id,
+            "id": old_state["id"],
             "slug": slug,
             "old_prompt": current_prompt,
             "new_prompt": new_prompt,
@@ -1125,43 +1171,62 @@ def plan_seed_persona_refresh(conn: Any) -> list[dict[str, Any]]:
             "persona_version": PERSONA_VERSION,
             "persona_source": prepared["persona_source"],
             "persona_source_hash": str(prepared["persona_source_hash"]),
+            "old_state": old_state,
+            "new_state": {**old_state, "persona_prompt": new_prompt, "persona_version": PERSONA_VERSION,
+                          "persona_source_hash": str(prepared["persona_source_hash"]),
+                          "persona_source_json": json.dumps(prepared["persona_source"], ensure_ascii=False,
+                                                            sort_keys=True),
+                          "updated_at": local_iso()},
         })
     return plan
 
 
 def apply_seed_persona_refresh(conn: Any, plan: list[dict[str, Any]] | None = None) -> list[str]:
-    """Apply a refresh plan, re-verifying each row is still untouched before writing.
+    """Apply only rows still equal to their planned, untouched seed snapshot.
 
     The caller owns the transaction (commit/rollback). Returns the refreshed slugs.
     """
-    from ..time_utils import local_iso
     from .wanderer_identity_service import invalidate_wanderer_cache
 
     if plan is None:
         plan = plan_seed_persona_refresh(conn)
     refreshed: list[str] = []
-    for item in plan:
-        row = conn.execute(
-            "SELECT persona_updated_at, origin FROM wanderer_agents WHERE id = ?",
-            (item["id"],),
-        ).fetchone()
-        if row is None:
-            continue
-        updated_at = row["persona_updated_at"] if hasattr(row, "keys") else row[0]
-        origin = row["origin"] if hasattr(row, "keys") else row[1]
-        if updated_at or origin != "seed":
-            continue  # changed since planning: do not touch
-        conn.execute(
-            "UPDATE wanderer_agents SET persona_prompt = ?, persona_version = ?, persona_source_hash = ?, "
-            "persona_source_json = ?, updated_at = ? WHERE id = ?",
-            (item["new_prompt"], item["persona_version"], item["persona_source_hash"],
-             json.dumps(item["persona_source"], ensure_ascii=False, sort_keys=True),
-             local_iso(), item["id"]),
-        )
-        refreshed.append(str(item["slug"]))
+    states = [(item, *_refresh_states(item)) for item in plan]
+    for item, old, new in states:
+        if _compare_and_write_persona(conn, old, new):
+            refreshed.append(str(item["slug"]))
     if refreshed:
         invalidate_wanderer_cache()
     return refreshed
+
+
+def restore_seed_persona_refresh(conn: Any, plan: list[dict[str, Any]], *, apply: bool = False) -> dict[str, list[str]]:
+    """Restore full persona metadata only while the refreshed snapshot still matches.
+
+    The caller validates the backup's database identity and owns the transaction.
+    Conflicts (including any later admin edit) are reported without overwriting.
+    """
+    from .wanderer_identity_service import invalidate_wanderer_cache
+
+    report: dict[str, list[str]] = {"restored": [], "conflicts": [], "missing_rows": [], "already_restored": []}
+    states = [(item, *_refresh_states(item)) for item in plan]
+    for item, old, new in states:
+        slug = str(item["slug"])
+        row = conn.execute("SELECT " + ", ".join(_PERSONA_REFRESH_FIELDS)
+                           + " FROM wanderer_agents WHERE id = ?", (item["id"],)).fetchone()
+        if row is None:
+            report["missing_rows"].append(slug)
+            continue
+        current = _persona_refresh_state(row)
+        if current == old:
+            report["already_restored"].append(slug)
+        elif current != new or (apply and not _compare_and_write_persona(conn, new, old)):
+            report["conflicts"].append(slug)
+        else:
+            report["restored"].append(slug)
+    if apply and report["restored"]:
+        invalidate_wanderer_cache()
+    return report
 
 
 def seed_wanderers(conn: Any) -> dict[str, Any]:

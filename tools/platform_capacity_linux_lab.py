@@ -43,7 +43,7 @@ REQUIRED_EXPORT = {
     "tools/platform_capacity_probe.py", "tools/platform_capacity_ambient.py",
     "tools/platform_capacity_socket_workers.py", "tools/platform_capacity_http_pools.py",
     "tools/platform_capacity_social.py", "tools/platform_capacity_reading.py", "tools/isolated_environment.py",
-    "tools/db_postgres_export.py",
+    "tools/db_postgres_export.py", "tools/temp_path_safety.py",
 }
 FORBIDDEN_ROOTS = {".git", ".codex-temp", "data", "storage", "attendance", "chat_logs", "homework_submissions",
                    "logs", "rosters", "shared_files", "node_modules", "venv", ".venv", "python_runtime"}

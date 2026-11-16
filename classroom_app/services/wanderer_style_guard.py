@@ -43,8 +43,10 @@ _LIST_LINE = re.compile(r"(?m)^\s*\d{1,2}[.、)]\s*")
 # A fixed opening only counts at the very start of a message, followed by
 # punctuation/whitespace, so the same word used mid-sentence is left alone.
 _OPENING_WORDS = ("家人们", "集美们", "老铁们", "宝子们", "铁子们", "兄弟们", "老铁", "宝子")
+_OPENING_SEPARATORS = r"\s！!，,。．.…？?：:；;~～"
 _OPENING_RE = re.compile(
-    r"^\s*(?:" + "|".join(_OPENING_WORDS) + r")\s*[！!，,~～\s]*"
+    r"^\s*(?:" + "|".join(_OPENING_WORDS) + r")(?=$|[" + _OPENING_SEPARATORS
+    + r"])[" + _OPENING_SEPARATORS + r"]*"
 )
 # Single emoji glyph plus an optional variation selector / joining char. The
 # arrow block is intentionally excluded so ordinary arrows are not treated as
@@ -53,6 +55,8 @@ _EMOJI_CHAR = re.compile(r"[\U0001F000-\U0001FAFF☀-➿⬀-⯿⌀-⏿][️‍]?
 _EXCLAMATION_RUN = re.compile(r"[！!]{2,}")
 EXCLAMATION_MAX = 3
 EMOJI_MAX = 3
+NATURAL_RULES = frozenset({"opening", "exclamation", "emoji_density"})
+_CODE_MARKER = re.compile(r"`|^[ \t]*~~~|^(?: {4}|\t)[ \t]*\S", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -131,7 +135,9 @@ def _normalize_emoji(value: str) -> str:
 def lint(text: object, *, channel: str = "", persona: dict | None = None) -> list[Violation]:
     """High-confidence assistant-pattern violations; never edits the text."""
     raw = str(text or "")
-    if not raw.strip():
+    if not raw.strip() or _CODE_MARKER.search(raw):
+        # All callers, including the legacy social guard, must preserve code.
+        # Punctuation, indentation and quoted strings are meaningful there.
         return []
     found: list[Violation] = []
     seen: set[str] = set()
@@ -159,7 +165,7 @@ def lint(text: object, *, channel: str = "", persona: dict | None = None) -> lis
         add("meta", "high", "", "replace platform vocabulary")
     if _has_fixed_opening(raw):
         add("opening", "high", _OPENING_RE.match(raw).group(0), "remove the fixed opening")
-    if len(re.findall(r"[！!]", _EXCLAMATION_RUN.sub("！", raw))) > EXCLAMATION_MAX:
+    if _EXCLAMATION_RUN.search(raw) or len(re.findall(r"[！!]", raw)) > EXCLAMATION_MAX:
         add("exclamation", "medium", "！", "reduce exclamation marks")
     # A pure emoji reply is a legal action; only text messages with excessive emoji count.
     if _has_text_without_emoji(raw) and len(_emoji_matches(raw)) > EMOJI_MAX:
@@ -169,10 +175,10 @@ def lint(text: object, *, channel: str = "", persona: dict | None = None) -> lis
 
 def repair(text: object, violations: Iterable[Violation], *, channel: str = "",
            repair_advice: bool = True) -> str:
-    """Deterministic, content-preserving repair; falls back to the original."""
+    """Preserve content; an opening with no remaining words may become silence."""
     raw = str(text or "")
     rules = {violation.rule for violation in violations}
-    if not raw.strip() or not rules:
+    if not raw.strip() or not rules or _CODE_MARKER.search(raw):
         return raw
     value = raw
     if "summary" in rules:
@@ -203,28 +209,40 @@ def repair(text: object, violations: Iterable[Violation], *, channel: str = "",
         value = _normalize_emoji(value)
     value = re.sub(r"[ \t]{2,}", " ", value)
     value = re.sub(r"\n{3,}", "\n\n", value).strip()
-    return value or raw
+    return value if value or "opening" in rules else raw
 
 
 def guard_text(text: object, *, channel: str = "", persona: dict | None = None,
-               repair_advice: bool = True) -> GuardResult:
+               repair_advice: bool = True, natural_only: bool = False) -> GuardResult:
     raw = str(text or "")
     violations = lint(raw, channel=channel, persona=persona)
+    if natural_only:
+        violations = [violation for violation in violations if violation.rule in NATURAL_RULES]
     if not violations:
         return GuardResult(raw, (), False)
-    repaired = repair(raw, violations, channel=channel, repair_advice=repair_advice)
+    if natural_only:
+        rules = {violation.rule for violation in violations}
+        repaired = _strip_fixed_opening(raw) if "opening" in rules else raw
+        if "exclamation" in rules:
+            repaired = _normalize_exclamation(repaired)
+        if "emoji_density" in rules:
+            repaired = _normalize_emoji(repaired)
+    else:
+        repaired = repair(raw, violations, channel=channel, repair_advice=repair_advice)
     return GuardResult(repaired, tuple(violations), repaired != raw)
 
 
 def guard_parts(parts: Iterable[object], *, channel: str = "", persona: dict | None = None,
-                repair_advice: bool = True) -> tuple[list[str], list[str], bool]:
-    """(parts, rule names, any repair); keeps one result per input part."""
+                repair_advice: bool = True, natural_only: bool = False) -> tuple[list[str], list[str], bool]:
+    """(nonempty parts, rule names, any repair); empty repairs become silence."""
     kept: list[str] = []
     rules: set[str] = set()
     repaired = False
     for part in parts:
-        result = guard_text(part, channel=channel, persona=persona, repair_advice=repair_advice)
-        kept.append(result.text)
+        result = guard_text(part, channel=channel, persona=persona, repair_advice=repair_advice,
+                            natural_only=natural_only)
+        if result.text.strip():
+            kept.append(result.text)
         rules.update(violation.rule for violation in result.violations)
         repaired = repaired or result.repaired
     return kept, sorted(rules), repaired

@@ -12,6 +12,10 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from tools.temp_path_safety import owned_temp_workspace, resolve_temp_child
+
 TEMP_ROOT = REPO_ROOT / ".codex-temp"
 DEFAULT_RUNTIME_ROOT = TEMP_ROOT / "db-inventory"
 SCAN_DIRS = ("classroom_app", "tools", "deployment", "tests")
@@ -64,14 +68,7 @@ def _now() -> str:
 
 
 def resolve_runtime_root(raw: str | None) -> Path:
-    runtime = Path(raw) if raw else DEFAULT_RUNTIME_ROOT
-    if not runtime.is_absolute():
-        runtime = REPO_ROOT / runtime
-    runtime = runtime.resolve()
-    temp_root = TEMP_ROOT.resolve()
-    if runtime != temp_root and temp_root not in runtime.parents:
-        raise ValueError(f"database inventory root must stay under {temp_root}; got {runtime}")
-    return runtime
+    return resolve_temp_child(raw, repo_root=REPO_ROOT, temp_root=TEMP_ROOT, default=DEFAULT_RUNTIME_ROOT)
 
 
 def source_db_path(raw: str | None = None) -> Path:
@@ -94,10 +91,9 @@ def source_db_path(raw: str | None = None) -> Path:
     raise FileNotFoundError("Cannot find data/db/classroom.db or data/classroom.db")
 
 
+@owned_temp_workspace(resolve_runtime_root, temp_root=lambda: TEMP_ROOT, tool="db-inventory")
 def copy_sqlite_database(runtime_root: Path, source_db: Path) -> Path:
     runtime_root = resolve_runtime_root(str(runtime_root))
-    if runtime_root.exists():
-        shutil.rmtree(runtime_root)
     db_dir = runtime_root / "db"
     db_dir.mkdir(parents=True, exist_ok=True)
     copied_db = db_dir / "classroom.db"

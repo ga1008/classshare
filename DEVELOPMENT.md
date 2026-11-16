@@ -46,24 +46,13 @@ curl -s http://127.0.0.1:8099/api/internal/health   # database_backend.engine �
 
 ## 4. 测试
 
-- **单元测试用内存 SQLite 隔离**（快、无副作用）。`tests/__init__.py` 会在导入应用前强制 `DB_ENGINE=sqlite`，所以**必须把 tests 当包导入**：
+- **单元测试统一通过隔离入口运行**，在应用导入前阻断 dotenv 与真实 PostgreSQL，并使用本轮独占的 SQLite 和临时目录：
   ```bash
-  venv/Scripts/python.exe -m unittest discover -s tests -t . -p "test_*.py"
+  venv/Scripts/python.exe tools/test_backend.py --pattern "test_*.py" --report .codex-temp/evidence/backend-tests/result.json
   ```
-  `-t .` 不可省略（否则 `tests/__init__.py` 不会先执行，会用 `.env` 的 postgres 跑单测而报 `information_schema` 之类的错）。当前基线：3 个历史失败，其余通过。
-- **DB 相关功能必须在真 PostgreSQL 上验证**（单测的 SQLite 抓不到方言 bug）。两种方式：
-  1. 本地：直接对本机 PostgreSQL 跑 service 流程（见下方“可回滚验证”）或起 uvicorn 点页面。
-  2. 线上容器内可回滚验证（不污染线上数据）：
-     ```bash
-     ssh -i ~/.ssh/lanshare_deploy_rsa root@<prod> "cd /lanshare && docker compose exec -T app python -" <<'PY'
-     from classroom_app.database import get_db_connection
-     conn = get_db_connection()
-     try:
-         ...  # 跑 create/vote/snapshot/edit/delete 等
-     finally:
-         conn.rollback(); conn.close()   # LanSharePostgresConnection 仅在 with/commit 时提交
-     PY
-     ```
+  `--pattern` 可限定本次相关测试；`--check-only` 仅检查隔离配置。父进程等待测试子进程退出后删除本轮 scratch，报告单独保留在 scratch 外；失败或中断也写明结果与清理状态。不要以直接导入应用或普通 `unittest discover` 替代此入口。
+- **数据库功能还需在隔离合成的原生 PostgreSQL 上验证**，单元测试的 SQLite 不能覆盖 PostgreSQL 方言与并发合同。自有回环集群可用 `venv/Scripts/python.exe tools/wanderer_native_pg_probe.py`；其他领域 probe 使用其明确指定的独立合成集群。不要连接本机业务库或线上库运行测试，即使计划回滚。
+- 测试夹具创建连接、临时目录或 patch 后立即注册清理，使用 `enterContext` / `enterClassContext` 或 `addCleanup` / `addClassCleanup`，覆盖 `setUp` / `setUpClass` 中途失败。资源释放顺序、部署资料与恢复证据的保留边界见 [临时产物生命周期](docs/temporary-artifact-lifecycle-2026-11-12.md)。
 
 ### PostgreSQL vs SQLite 常见方言坑（上线前自检）
 - `SELECT DISTINCT ... ORDER BY <派生表达式>`：PG 要求 ORDER BY 列在选择列表里；多数情况 DISTINCT 可去掉。

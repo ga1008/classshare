@@ -88,6 +88,8 @@ class RuntimeV2Tests(WandererDbTestCase):
                  "【为何此刻醒来】", "【输出合同】"]
         positions = [prompt.index(marker) for marker in order]
         self.assertEqual(positions, sorted(positions), positions)
+        self.assertIn("不用固定开场招呼", prompt)
+        self.assertIn("人格旧文本里的说话习惯若与本原则冲突", prompt)
 
     def test_prompt_carries_only_the_five_small_parts(self):
         caller = Caller(decision())

@@ -1,6 +1,10 @@
 """Service principals traverse real auth and ordinary owner/version policies."""
 import asyncio
+import hashlib
+import json
 import uuid
+from dataclasses import replace
+from unittest.mock import patch
 
 from fastapi import Depends, FastAPI, HTTPException, File, Form, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -21,6 +25,14 @@ class ItemBody(BaseModel):
 
 def fixture_app():
     app = FastAPI()
+
+    @app.post("/api/social/conversations/{key}/messages")
+    def send_social_message(key: str, payload: dict, user=Depends(get_current_user)):
+        from classroom_app.services.social_message_service import send_message
+        with database.get_db_connection() as conn:
+            result = send_message(conn, user, key, payload)
+            conn.commit()
+            return result
 
     @app.get("/api/typed-items/{item_id:int}")
     def typed_item(item_id: int, user=Depends(get_current_user)):
@@ -142,6 +154,72 @@ class WandererPlatformExecutionTest(WandererDbTestCase):
                 self.assertIsNone(receipt[field])
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM user_sessions WHERE role='student' AND user_id=?", (str(data["owner"]),)).fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM synthetic_owned_items").fetchone()[0], 0)
+
+    def test_natural_message_body_hash_and_replay_match_actual_native_delivery(self):
+        from classroom_app.services.social_common import dm_key
+        with self.connect() as conn:
+            people = conn.execute("SELECT student_id FROM wanderer_agents ORDER BY id LIMIT 2").fetchall()
+            sender, peer = (f"student:{row['student_id']}" for row in people)
+            conn.execute("INSERT INTO social_friendships(identity_a,identity_b,status,requester_identity,created_at) "
+                         "VALUES(?,?,'accepted',?,'now') ON CONFLICT(identity_a,identity_b) DO UPDATE SET status='accepted'",
+                         (*sorted([sender, peer]), sender))
+            conn.commit()
+        operation_id = str(uuid.uuid4())
+        raw = "家人们！太好了！！！"
+        args = {"path_params": {"key": dm_key(sender, peer)}, "body": {"body": raw, "body_format": "text"}}
+        first = self.execute("POST", "/api/social/conversations/{key}/messages", args=args, operation_id=operation_id)
+        replay = asyncio.run(platform.execute_platform_command(**self.authority, app=self.app,
+            conn_factory=self.connect, operation_id=operation_id,
+            command={"id": "same", "capability": "social.send_message", "args": args}))
+        self.assertEqual(first["status"], "succeeded", first)
+        self.assertEqual(first["request_id"], replay["request_id"])
+        self.assertEqual(args["body"]["body"], raw, "model command must remain immutable")
+        expected_body = {"body": "太好了！", "body_format": "text", "client_nonce": operation_id}
+        expected_hash = hashlib.sha256(json.dumps(expected_body, ensure_ascii=False, sort_keys=True,
+                                                separators=(",", ":")).encode()).hexdigest()
+        with self.connect() as conn:
+            message = conn.execute("SELECT body FROM social_messages WHERE client_nonce=?", (operation_id,)).fetchall()
+            self.assertEqual([row["body"] for row in message], ["太好了！"])
+            requests = conn.execute("SELECT request_json FROM agent_platform_requests WHERE operation_id=?", (operation_id,)).fetchall()
+            self.assertEqual(len(requests), 1)
+            self.assertEqual(json.loads(requests[0]["request_json"])["body_hash"], expected_hash)
+
+    def test_empty_natural_message_never_enters_request_admission(self):
+        operation_id = str(uuid.uuid4())
+        with self.assertRaises(HTTPException) as denied:
+            self.execute("POST", "/api/social/conversations/{key}/messages", operation_id=operation_id,
+                         args={"path_params": {"key": "dm:synthetic"}, "body": {"body": "家人们！！！"}})
+        self.assertEqual(denied.exception.status_code, 422)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM agent_platform_requests WHERE operation_id=?", (operation_id,)).fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_resource_reservations WHERE operation_id LIKE ?",
+                                          (f"platform-action:{self.wid}:{operation_id}:%",)).fetchone()[0], 0)
+
+    def test_attachment_only_message_keeps_its_existing_delivery_contract(self):
+        from classroom_app.services import agent_platform_request_service as broker, wanderer_platform_results as results
+        receipt = {"operation_id": "synthetic", "status": "succeeded", "result": {}}
+        with patch.object(broker, "dispatch_platform_request", return_value=receipt) as dispatch, \
+                patch.object(results, "normalize_platform_result", return_value=receipt):
+            self.execute("POST", "/api/social/conversations/{key}/messages",
+                         args={"path_params": {"key": "dm:synthetic"}, "body": {"body": "家人们！", "media_tokens": ["synthetic-token"]}})
+        self.assertEqual(dispatch.call_args.kwargs["body"]["body"], "")
+        self.assertEqual(dispatch.call_args.kwargs["body"]["media_tokens"], ["synthetic-token"])
+
+    def test_legacy_text_and_attachment_only_payload_use_the_same_natural_rules(self):
+        from classroom_app.services import agent_platform_request_service as broker, wanderer_platform_results as results
+        operation, route = platform.resolve_wanderer_capability(self.app, route_key("POST", "/api/social/conversations/{key}/messages"))
+        operation = replace(operation, path="/api/message-center/private/messages")
+        receipt = {"operation_id": "synthetic", "status": "succeeded", "result": {}}
+        with patch.object(platform, "resolve_wanderer_capability", return_value=(operation, route)), \
+                patch.object(broker, "dispatch_platform_request", return_value=receipt) as dispatch, \
+                patch.object(results, "normalize_platform_result", return_value=receipt):
+            for args, expected in (({"body": {"contact_identity": "student:999", "content": "老铁！太好了！！！"}}, "太好了！"),
+                                   ({"body": {"contact_identity": "student:999", "content": "家人们！"},
+                                     "files": [{"filename": "note.txt", "content_text": "synthetic"}]}, "")):
+                asyncio.run(platform.execute_platform_command(**self.authority, app=self.app,
+                    conn_factory=self.connect, operation_id=str(uuid.uuid4()),
+                    command={"id": "legacy", "capability": "legacy.send_message", "args": args}))
+                self.assertEqual(dispatch.call_args.kwargs["body"]["content"], expected)
 
     def test_ownership_conflict_and_self_confirmation_are_not_bypassed(self):
         with self.connect() as conn:

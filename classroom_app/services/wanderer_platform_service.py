@@ -320,6 +320,22 @@ async def execute_platform_command(*, wanderer_id: int, turn_id: str, life_epoch
     app = _app(app)
     operation, _route = resolve_wanderer_capability(app, command["capability"])
     values = dict(args)
+    # Normalize only wanderer-authored chat text, before dispatch admits and
+    # hashes the HTTP body. Alias and route-key commands share this same path;
+    # the immutable model command remains intact in the runtime command ledger.
+    chat_fields = {
+        "/api/social/conversations/{key}/messages": "body",
+        "/api/message-center/private/messages": "content",
+    }
+    text_field = chat_fields.get(operation.path) if operation.method == "POST" else None
+    body = values.get("body")
+    if text_field and isinstance(body, dict) and isinstance(body.get(text_field, ""), str):
+        from .wanderer_style_guard import guard_text
+        text = guard_text(body.get(text_field, ""), channel="dm", natural_only=True).text
+        has_attachments = bool(values.get("files") or (body.get("media_tokens") if text_field == "body" else False))
+        if not text.strip() and not has_attachments:
+            raise HTTPException(422, "自然表达整理后没有可发送的正文或附件；本次未发送消息。")
+        values["body"] = {**body, text_field: text}
     read = next((item for item in READ_OPERATIONS if item.key == operation.key), None)
     if read is not None and read.fixed_query:
         values["query_params"] = {**(values.get("query_params") or {}), **read.fixed_query}

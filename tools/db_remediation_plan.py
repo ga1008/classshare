@@ -14,6 +14,7 @@ from typing import Any, Sequence
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+from tools.temp_path_safety import owned_temp_workspace, resolve_temp_child
 
 TEMP_ROOT = REPO_ROOT / ".codex-temp"
 DEFAULT_RUNTIME_ROOT = TEMP_ROOT / "db-remediation-plan"
@@ -24,23 +25,8 @@ def _now() -> str:
     return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
 
 
-def _is_relative_to(path: Path, parent: Path) -> bool:
-    try:
-        path.relative_to(parent)
-        return True
-    except ValueError:
-        return False
-
-
 def resolve_runtime_root(raw: str | Path | None = None) -> Path:
-    runtime_root = Path(raw) if raw else DEFAULT_RUNTIME_ROOT
-    if not runtime_root.is_absolute():
-        runtime_root = REPO_ROOT / runtime_root
-    runtime_root = runtime_root.resolve()
-    temp_root = TEMP_ROOT.resolve()
-    if runtime_root != temp_root and not _is_relative_to(runtime_root, temp_root):
-        raise ValueError(f"remediation runtime root must stay under {temp_root}; got {runtime_root}")
-    return runtime_root
+    return resolve_temp_child(raw, repo_root=REPO_ROOT, temp_root=TEMP_ROOT, default=DEFAULT_RUNTIME_ROOT)
 
 
 def source_db_path(raw: str | Path | None = None) -> Path:
@@ -229,6 +215,7 @@ def _missing_submission_files(conn: sqlite3.Connection, data_root: Path, repo_ro
     return missing
 
 
+@owned_temp_workspace(resolve_runtime_root, temp_root=lambda: TEMP_ROOT, tool="db-remediation-plan")
 def build_remediation_plan(
     runtime_root: Path | str | None = None,
     *,
@@ -238,8 +225,6 @@ def build_remediation_plan(
     apply_to_copy: bool = False,
 ) -> dict[str, Any]:
     runtime_root = resolve_runtime_root(runtime_root)
-    if runtime_root.exists():
-        shutil.rmtree(runtime_root)
     copied_db = runtime_root / "db" / "classroom.remediation.db"
     reports_dir = runtime_root / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
