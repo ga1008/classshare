@@ -1,0 +1,112 @@
+{
+  "status": "deployed_and_verified",
+  "product_commit": "3d41a34d7edad9461e4998077d8548b608194de0",
+  "release": "20261116-184808-968ae23e6c12",
+  "image_id": "sha256:35cb23744a28b8ff3f8a7191cb2e92fc9555e718926b97e2d9bf4d1bb9dc7589",
+  "static_graph": "3d031e5d3914fa8ec13812207a7eeda63228a37f18c851ccbbe8f5d62eaf2bd1",
+  "verified_at_utc": "2026-11-16T11:21:04.999046+00:00",
+  "backups": {
+    "directory": "/var/backups/lanshare-branch-consolidation-20261116-184808-968ae23e6c12",
+    "directory_mode": "0o700",
+    "backups": {
+      "code-20261116-185738.tgz": {
+        "bytes": 269391595,
+        "mode": "0o600",
+        "sha256": "e58e7f8590029002a86a8e0f91e8059ce720422d4fd52fc0d381e39fad9381c1",
+        "gzip_verified": true
+      },
+      "db-cutover-20261116-185738.sql.gz": {
+        "bytes": 208606554,
+        "mode": "0o600",
+        "sha256": "6db1afd9cf9941418af6438863187f4f4adc1fdd8fb617f63188a2447feb7a8e",
+        "gzip_verified": true
+      },
+      "business-files-and-config.tar.gz": {
+        "path": "/var/backups/lanshare-branch-consolidation-20261116-184808-968ae23e6c12/preservation-20261116-185738-20261116-184808-968ae23e6c12/business-files-and-config.tar.gz",
+        "bytes": 4393482771,
+        "mode": "0o600",
+        "sha256": "6d7fb7f87d37187759373b4eb45ffdf2df002a18f81a508c0dfb8c450fadc533",
+        "post_checksum_verified": true
+      }
+    },
+    "data_preservation": {
+      "groups": 33,
+      "rows_hashed": 174446,
+      "comparison": {
+        "changed_groups": [],
+        "interpretation": "Only valid while all application writers and nginx remain stopped. New runtime metadata/schema columns are excluded; no automatic rollback.",
+        "ok": true
+      },
+      "before_sha256": "66f15a5fdd06cdb168c9029b5510dafaf6a23e5b0220ee783c2d4ca59ab026a8",
+      "after_sha256": "5659fe59dbe1a780331407ce86558e3e1f1ce0850c162d8770ad8405f2693737"
+    },
+    "file_backup": {
+      "release": "20261116-184808-968ae23e6c12",
+      "ts": "20261116-185738",
+      "image_id": "sha256:35cb23744a28b8ff3f8a7191cb2e92fc9555e718926b97e2d9bf4d1bb9dc7589",
+      "archive_bytes": 4393482771,
+      "gzip_verified": true,
+      "tar_verified": true,
+      "pgdata_raw_excluded": true
+    }
+  },
+  "verification": {
+    "native_migration_source_files": 102,
+    "frozen_source_files_host_and_image": 41,
+    "isolated_existing_tests": {
+      "run": 626,
+      "passed": 610,
+      "conditionally_skipped": 16
+    },
+    "isolated_new_tests": {
+      "run": 305,
+      "passed": 305,
+      "skipped": 0,
+      "windows_only_excluded": 2
+    },
+    "formal_asset_browser_tests": 27,
+    "public_checks": 79,
+    "source_and_live_preservation": {
+      "postgres_container": true,
+      "data_directory_identity": true,
+      "environment_except_release": true,
+      "dependency_images": true,
+      "explicit_material_rows": true,
+      "representative_attachment_paths_bytes_sha256": true,
+      "fixed_manual_decisions_rounds_and_projection_metadata": true,
+      "changed_source_host_and_image_file_count": 41,
+      "old_database_content": "covered_by_matching_native_rehearsal_and_cutover_backup; not a live full-table equality claim"
+    },
+    "all_services_running": 8,
+    "application_roles_same_image": 6,
+    "schema_tables_required": 211,
+    "schema_tables_present": 211,
+    "schema_index_failures": 0,
+    "schema_skipped_steps": 0,
+    "behavior_queue_depth": 0,
+    "behavior_last_error": "",
+    "background_failed_before": 1146,
+    "background_failed_after": 1146,
+    "background_stale_after": 0,
+    "wanderer_invariants_ok": true,
+    "natural_model_activity_observed": false
+  },
+  "recovered_preservation_gate": {
+    "stage": "read_only_snapshot_before_database_backup_or_initialization",
+    "cause": "agent_task_composers intentionally has no primary key",
+    "fix": "full-row multiset hashing preserves duplicate rows and content; table was not skipped",
+    "synthetic_native_pg_checks": 15,
+    "reused_verified_file_archive": true,
+    "before_snapshot_sha256": "66f15a5fdd06cdb168c9029b5510dafaf6a23e5b0220ee783c2d4ca59ab026a8",
+    "resume_script_sha256": "89a874deb6ca8bbad1f1952ea9c2101ea7b11c6c9424dcae9e8e78eda1fb458f",
+    "all_failed_evidence_retained": true,
+    "automatic_database_rollback": false
+  },
+  "production_functional_tests_run": false,
+  "production_persona_refresh_applied": false,
+  "notes": [
+    "The migration report was reused only after exact-byte validation of all 102 unchanged migration sources; this release made a new stopped-writer database backup.",
+    "No new natural model dispatch or conversation was observed in the postflight window; synthetic tests are not a claim of live output quality.",
+    "Public Git refs are verified separately after release-document synchronization."
+  ]
+}
