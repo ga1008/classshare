@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "macros/app_topbar.html" import app_topbar_icon %}
 {% from "macros/lq/button.html" import lq_btn %}
+{% from "macros/lq/icons.generated.html" import lq_icon %}
 {% from "macros/lq/navigation.html" import lq_tabs %}
 {% from "macros/classroom_menus.html" import classroom_more_menu, classroom_personal_menu %}
 {% from "macros/ui_explanation.html" import explain_attrs %}
@@ -217,34 +218,46 @@
                     <div class="teaching-session-modal-body">
                         <p class="cw-session-detail-meta" id="cw-session-detail-meta"></p>
                         <div class="teaching-session-modal-summary md-content" id="teachingSessionModalSummary"></div>
-                        {% if user_info.role == 'teacher' %}<details class="cw-session-management lq-disclosure-popover" data-lq-align="end"><summary data-lq-component="disclosure" class="lq-disclosure-trigger">管理课次</summary><div class="teaching-timeline-detail-actions" id="teachingTimelineDetailActions" {% if selected_session.is_academic_exam %}hidden{% endif %}>
-                                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="teachingTimelineSelectHomeMaterialBtn" data-cw-external-modal>
-                                            添加首页材料
-                                        </button>
-                                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" id="teachingTimelineSelectMaterialBtn" data-cw-external-modal>添加课堂材料</button>
-                                        <button data-lq-component="button"
-                                            type="button"
-                                            class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm btn-ai-assistant{% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %} is-busy{% endif %}"
-                                            id="teachingTimelineAiMaterialBtn" data-cw-external-modal
-                                            {% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %}disabled{% endif %}
-                                        >
-                                            {% if selected_session.material_generation_task and selected_session.material_generation_task.is_active %}
-                                            助教在思考
-                                            {% elif selected_session.material_generation_task and selected_session.material_generation_task.status == 'completed' %}
-                                            再次生成
-                                            {% elif selected_session.material_generation_task and selected_session.material_generation_task.status == 'failed' %}
-                                            重新生成
-                                            {% else %}
-                                            AI助教
-                                            {% endif %}
-                                        </button>
-                                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm btn-ai-assistant" id="teachingTimelineLessonDocRewriteBtn" data-cw-external-modal hidden>
-                                            AI 重写本课
-                                        </button>
-                                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm btn-ai-assistant" id="teachingTimelineLessonDocNextBtn" data-cw-external-modal hidden>
-                                            AI 生成下次课
-                                        </button>
-                                    </div></details><div
+                        <div class="cw-session-actions" id="teachingSessionModalActions" role="group" aria-label="课次操作">
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--md lq-btn--glass" id="teachingSessionOpenMaterialBtn">
+                                <span class="lq-btn__icon" aria-hidden="true">{{ lq_icon('book-open') }}</span><span class="lq-btn__label">学习材料</span>
+                            </button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--md lq-btn--glass" id="teachingSessionKnowledgeTreeBtn" aria-haspopup="dialog" aria-describedby="cw-session-knowledge-status" hidden>
+                                <span class="lq-btn__icon" aria-hidden="true">{{ lq_icon('list') }}</span><span class="lq-btn__label">知识树</span>
+                            </button>
+                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--md lq-btn--glass" id="teachingSessionAutoAttendanceBtn" aria-haspopup="dialog" hidden>
+                                <span class="lq-btn__icon" aria-hidden="true">{{ lq_icon('circle-check') }}</span><span class="lq-btn__label">{{ '自动点名' if user_info.role == 'teacher' else '我的签到' }}</span>
+                            </button>
+                            {% if user_info.role == 'teacher' %}{{ lq_btn('点名统计', variant='glass', icon='layout-dashboard', id='teachingSessionCheckinBtn', attrs={'aria-controls':'teachingSessionCheckinPanel','aria-expanded':'false'}) }}{% endif %}
+                        </div>
+                        <small id="cw-session-knowledge-status" class="cw-kp" data-role="knowledge-tree-entry-state" data-state="none" hidden>
+                            <span class="cw-kp__ring" aria-hidden="true"></span>知识树<span data-role="knowledge-tree-entry-label">未生成</span>
+                        </small>
+                        <div id="cw-session-material-status" class="cw-session-material-status" role="status" hidden></div>
+                        <div class="cw-session-tools">
+                            {% if user_info.role == 'teacher' %}
+                            <details class="lq-collapsible cw-session-management" {% if selected_session.is_academic_exam %}hidden{% endif %}>
+                                <summary class="lq-collapsible__summary" data-lq-component="disclosure">
+                                    管理课次<span class="lq-collapsible__indicator" aria-hidden="true">{{ lq_icon('chevron-down') }}</span>
+                                </summary>
+                                <div class="cw-session-manage-actions" id="teachingTimelineDetailActions" {% if selected_session.is_academic_exam %}hidden{% endif %}>
+                                    {{ lq_btn('添加首页材料', variant='glass', id='teachingTimelineSelectHomeMaterialBtn', attrs={'data-cw-external-modal':''}) }}
+                                    {{ lq_btn('添加课堂材料', variant='glass', id='teachingTimelineSelectMaterialBtn', attrs={'data-cw-external-modal':''}) }}
+                                    {% set task = selected_session.material_generation_task %}
+                                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--md lq-btn--glass" id="teachingTimelineAiMaterialBtn" data-cw-external-modal {% if task and task.is_active %}disabled{% endif %}>
+                                        {% if task and task.is_active %}助教在思考
+                                        {% elif task and task.status == 'completed' %}再次生成
+                                        {% elif task and task.status == 'failed' %}重新生成
+                                        {% else %}AI助教{% endif %}
+                                    </button>
+                                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--md lq-btn--glass" id="teachingTimelineLessonDocRewriteBtn" data-cw-external-modal hidden>AI 重写本课</button>
+                                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--md lq-btn--glass" id="teachingTimelineLessonDocNextBtn" data-cw-external-modal hidden>AI 生成下次课</button>
+                                </div>
+                            </details>
+                            {% endif %}
+                            {{ lq_btn('返回课次', variant='ghost', icon='arrow-left', id='cw-session-back') }}
+                        </div>
+                        {% if user_info.role == 'teacher' %}<div
                                     class="teaching-timeline-ai-task-strip{% if not selected_session.material_generation_task %} is-hidden{% endif %}"
                                     id="teachingTimelineAiTaskStrip"
                                     {% if not selected_session.material_generation_task %}hidden{% endif %}
@@ -266,26 +279,6 @@
                                         {% endif %}
                                     </span>
                                 </div>{% endif %}
-                        <div class="teaching-session-modal-actions" id="teachingSessionModalActions">
-                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teaching-session-action" id="teachingSessionOpenMaterialBtn">
-                                <span>进入本次学习材料</span>
-                            </button>
-                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teaching-session-action" id="cw-session-back">返回课次</button>
-                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teaching-session-action" id="teachingSessionKnowledgeTreeBtn" aria-haspopup="dialog" hidden>
-                                <span>知识树</span>
-                                <small class="cw-kp" data-role="knowledge-tree-entry-state" data-state="none"><span class="cw-kp__ring" aria-hidden="true"></span><span data-role="knowledge-tree-entry-label">未生成</span></small>
-                            </button>
-                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--prominent teaching-session-action" id="teachingSessionAutoAttendanceBtn" aria-haspopup="dialog" hidden>
-                                <span>{{ '自动点名' if user_info.role == 'teacher' else '我的签到' }}</span>
-                            </button>
-                            {% if user_info.role == 'teacher' %}
-                            <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass teaching-session-action is-accent" id="teachingSessionCheckinBtn">
-                                <span>点名统计</span>
-                                <small>智慧课堂签到</small>
-                            </button>
-                            {% endif %}
-                        </div>
-                        <div id="cw-session-material-status" class="cw-session-material-status" role="status" hidden></div>
                         {% if user_info.role == 'teacher' %}
                         <section data-lq-component="surface" class="lq-surface teaching-session-checkin-panel" id="teachingSessionCheckinPanel" hidden>
                             <div class="teaching-session-checkin-head">

@@ -1,6 +1,6 @@
 # LQ 模块使用记录本
 
-生成于 2026-11-18，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
+生成于 2026-11-19，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
 
 ## 怎么用
 
@@ -30,16 +30,16 @@
 | [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 284 |
 | [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 42 |
 | [ChipRow 芯片行](#chip-row) | component | `lq-chip-row` | 宏 / JS / Py | 10 |
-| [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 16 |
+| [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 18 |
 | [Composer 输入区](#composer) | component | `lq-composer` | 宏 / JS / Py | 5 |
 | [Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）](#content) | component | `lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list` … | 宏 / JS / Py / React | 182 |
 | [Cultivation emblem 境界标志与道印图案身份](#cultivation-emblem) | component | `lq-cultivation-emblem`, `lq-cultivation-emblem-img`, `lq-cultivation-host`, `cultivation-card__emblem` | 仅 CSS | 8 |
-| [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 44 |
+| [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 43 |
 | [EmojiPicker 表情选择器](#emoji-picker) | component | `.emoji-picker`, `.emoji-picker-item`, `.emoji-picker-grid`, `createEmojiPicker` | JS | 5 |
 | [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 187 |
 | [Indicators 徽标 / 头像 / 进度 / 加载](#indicators) | component | `lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner` | 宏 / JS / Py / React | 23 |
 | [Insights 统计（AvatarStack / Ring / Bars / Meter）](#insights) | component | `lq-avatar-stack`, `lq-bars`, `lq-insight`, `lq-meter`, `lq-ring` | 宏 / JS / Py | 4 |
-| [Layer 层栈](#layers) | component | — | JS | 38 |
+| [Layer 层栈](#layers) | component | — | JS | 37 |
 | [Lightbox 灯箱](#lightbox) | component | `lq-lightbox` | JS | 1 |
 | [Menu / Popover 菜单与浮层](#menus) | component | `lq-menu` | 宏 / JS / Py | 12 |
 | [NavMenu 导航菜单](#nav-menu) | component | `lq-nav-menu` | 宏 / JS / Py | 6 |
@@ -88,7 +88,7 @@
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `templates/assignment_detail_teacher.html` ×49
-- `templates/classroom_main_v4.html` ×31
+- `templates/classroom_main_v4.html` ×29
 - `templates/dashboard.html` ×22
 - `templates/dashboard_teacher.html` ×22
 - `static/js/materials_manage.js` ×20
@@ -621,7 +621,7 @@
 - **设计摘要**：所有操作入口：`lq-btn` + 变体 + 尺寸 + 可选图标/徽标/加载态；原生 button/a 语义与 type、form、href 保留。
 - **参数 / 变体**：`label, variant(prominent|glass|soft|ghost|destructive|link), size(sm|md|lg), icon, href, type, disabled, aria_disabled, loading, badge, attrs`；纯图标按钮必须给 aria-label。soft 操作按钮可显式透传 `data-lq-action-tone=warning|success` 表示需要处理/已完成状态；未使用槽位的消费者保持原配色。
 - **状态**：default / hover / focus-visible / active 按压 / disabled（native）/ aria-disabled / loading（保留名称，防重复提交）。
-- **规则**：禁止 div 模拟按钮；颜色只来自变体及显式语义槽位，不传任意色；固定宽度长标签用 overflow-label。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。2026-11-12 对齐课次使用 soft 的 warning/success 槽位，动作保持原生 Button，不借用 filter Chip 的 toggle 语义；共享禁用/忙碌/强制颜色配方继续生效。
+- **规则**：禁止 div 模拟按钮；颜色只来自变体及显式语义槽位，不传任意色；固定宽度长标签用 overflow-label。课次详情的操作共用 LQ Button 规格，知识树等状态另行显示，窄屏允许操作组换行。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。2026-11-12 对齐课次使用 soft 的 warning/success 槽位，动作保持原生 Button，不借用 filter Chip 的 toggle 语义；共享禁用/忙碌/强制颜色配方继续生效。
 - **根类**：`lq-btn`
 - **Jinja 宏** `templates/macros/lq/button.html`：`lq_btn`
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
@@ -631,7 +631,7 @@
 
 <details><summary>消费者清单（按命中次数）</summary>
 
-- `templates/classroom_main_v4.html` ×363
+- `templates/classroom_main_v4.html` ×357
 - `templates/assignment_detail_teacher.html` ×312
 - `static/js/blog.js` ×228
 - `static/js/collaboration.js` ×196
@@ -1016,7 +1016,7 @@
 - **Jinja 宏** `templates/macros/lq/collapsible.html`：`lq_collapsible`
 - **JS 入口** `static/js/lq/collapsible.js`：`collapsibleMarkup`, `collapsibleProps`, `createCollapsible`, `enhanceCollapsible`, `html`
 - **Python props** `classroom_app/lq_collapsible.py`
-- **消费者**：16 个文件
+- **消费者**：18 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1025,7 +1025,9 @@
 - `templates/manage/system/wanderers.html` ×4
 - `static/js/attendance_calendar.js` ×3
 - `static/js/attendance_calendar_sync.js` ×3
+- `static/js/login_attendance_history.js` ×3
 - `static/js/login_attendance_sync.js` ×3
+- `templates/classroom_main_v4.html` ×3
 - `static/js/dashboard.js` ×2
 - `static/js/social/friends_modal.js` ×2
 - `static/js/wanderer_memory_editor.js` ×2
@@ -1295,12 +1297,12 @@
 
 - **设计摘要**：模态与非模态浮层外壳：raised Surface、scrim、头/体/脚槽；`openDialog` 与 `confirm/choose` 返回 Promise，取消不执行分支；关闭可被未保存草稿否决。
 - **状态**：open / closing（可取消）/ busy 否决关闭 / nested child。
-- **规则**：浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。 2026-10-27 好友页「+新朋友」复用二层 Dialog，取消后恢复触发器，已发申请与找人草稿由同一持久 owner 保留。道印点击后 createDialog/openDialog 创建 parentLayer 为 Viewer 的保存子层，取消只关闭子层、焦点回到道印；写入期间否决关闭与重复保存。 2026-10-27用户管理4个原生表单继续由manage_users.js显式createDomainModal托管；confirm导入别名confirmDialog区分共享确认与浏览器原生确认，未更改取消/脏草稿/忙碌合同。 2026-10-28群设置与邀请由social_dom适配共享Dialog；busy阻重复与关闭，dirty关闭用共享confirm；对话失权/切换的销毁不保留孤立子层，网络失败保留输入。 2026-10-28私聊设置遵循同一子层合同，读取失败原位重试、保存失败留稿、成功字段推进基线、防止部分成功后重复写入。 2026-11-09本地点名复用二层Dialog（课次为parentLayer），学校回读为其子层；原智慧课堂导入入口保留。批量6态保留revision冲突选择与理由，申诉草稿按request保存；ambient poll仅可见且无草稿时运行，关闭销毁请求、dropdown和轮询。教师跨页申诉强提醒使用同一LQ层栈与服务端tab lease，不抢占已有弹层/表单/IME；已知悉、审批、邮件发送是独立状态。学校仅显示已验证capability，当前交接/学生状态回读不能冒充远端开始、结束或完整完成。验收见docs/login-attendance-ui-validation-2026-11-09.json。 合班历史另用teacher-only picker每页50轮与history_only精确round入口，session可空且绝不借用当前课次；can_edit与is_current分开门禁，原班级来自封存record。React宿主对显式历史或无效点名意图禁用旧panel恢复；强提醒保留BFC缓存返回恢复，ack与审批分离。 2026-11-09闭环补验：普通课次作废后仅latest void且无current有效轮允许重开，historyOnly及被新轮替代的旧void链接禁新开；通用审批复用六态共享常量，冲突后保留说明并显式刷新展示revision，绝不自动吞409；失权attention claim/ack404销毁旧层释放inert，不将权限丢失记作ACK。 2026-11-12自动点名按课前核对、后台记录、课后同步组织：全宽学生Choice卡片点击打开独立详情Dialog，详情更正持有独立草稿/revision；不再常驻右侧详情栏。主浮窗内联课次匹配与Progress，历史学校核对入口保留在更多操作中；关闭释放请求、轮询与下拉，服务器持久任务继续。 2026-11-12学生签到详情由login_attendance_student_correction.js管理双动作：保存只写本地，保存并推送只作用该学生且须课程课次对齐与学校点名预检。学校异步状态不重建表单，明确拒绝保留草稿，响应未知复用原收据，旧未知推送可在新本地改签后继续只读恢复；关闭焦点与请求代次由父详情层持有。 立即结算中断确认显式绑定稳定trigger；确认层靠共享inert防重入，取消时按钮保持可恢复焦点。后台执行允许关闭主窗，只有提交请求期间否决关闭。
+- **规则**：浮层有且只有一个 owner（LQ.layer）；退出后焦点归还有效触发器。 修为面板（partials/cultivation_panel.html + static/js/cultivation_panel.js）是领域弹层样板：壳用 lq-dialog-root/lq-scrim/lq-dialog__surface（lq-modal--xl），内容由 JS 从 /api/classrooms/{id}/learning/progress 渲染，课堂页与个人中心共用，经 createDomainModal 注册到 LQ.layer；页面层样式只在 pages/cultivation.css。 2026-10-27 好友页「+新朋友」复用二层 Dialog，取消后恢复触发器，已发申请与找人草稿由同一持久 owner 保留。道印点击后 createDialog/openDialog 创建 parentLayer 为 Viewer 的保存子层，取消只关闭子层、焦点回到道印；写入期间否决关闭与重复保存。 2026-10-27用户管理4个原生表单继续由manage_users.js显式createDomainModal托管；confirm导入别名confirmDialog区分共享确认与浏览器原生确认，未更改取消/脏草稿/忙碌合同。 2026-10-28群设置与邀请由social_dom适配共享Dialog；busy阻重复与关闭，dirty关闭用共享confirm；对话失权/切换的销毁不保留孤立子层，网络失败保留输入。 2026-10-28私聊设置遵循同一子层合同，读取失败原位重试、保存失败留稿、成功字段推进基线、防止部分成功后重复写入。 2026-11-09本地点名复用二层Dialog（课次为parentLayer），学校回读为其子层；原智慧课堂导入入口保留。批量6态保留revision冲突选择与理由，申诉草稿按request保存；ambient poll仅可见且无草稿时运行，关闭销毁请求、dropdown和轮询。教师跨页申诉强提醒使用同一LQ层栈与服务端tab lease，不抢占已有弹层/表单/IME；已知悉、审批、邮件发送是独立状态。学校仅显示已验证capability，当前交接/学生状态回读不能冒充远端开始、结束或完整完成。验收见docs/login-attendance-ui-validation-2026-11-09.json。 教师从课堂顶部打开历史点名时直接读取本教学班最新一轮，从点名详情进入时优先该轮。较早轮次在同一浮窗切换，按50轮分页。历史深链沿用 history_only 和精确轮次，原课次与班级取自封存记录，编辑权限沿用 can_edit。React宿主对显式历史或无效点名意图禁用旧panel恢复；强提醒保留BFC缓存返回恢复，ack与审批分离。 2026-11-09闭环补验：普通课次作废后仅latest void且无current有效轮允许重开，historyOnly及被新轮替代的旧void链接禁新开；通用审批复用六态共享常量，冲突后保留说明并显式刷新展示revision，绝不自动吞409；失权attention claim/ack404销毁旧层释放inert，不将权限丢失记作ACK。 2026-11-12自动点名按课前核对、后台记录、课后同步组织：全宽学生Choice卡片点击打开独立详情Dialog，详情更正持有独立草稿/revision；不再常驻右侧详情栏。主浮窗内联课次匹配与Progress，历史学校核对入口保留在更多操作中；关闭释放请求、轮询与下拉，服务器持久任务继续。 2026-11-12学生签到详情由login_attendance_student_correction.js管理双动作：保存只写本地，保存并推送只作用该学生且须课程课次对齐与学校点名预检。学校异步状态不重建表单，明确拒绝保留草稿，响应未知复用原收据，旧未知推送可在新本地改签后继续只读恢复；关闭焦点与请求代次由父详情层持有。 立即结算中断确认显式绑定稳定trigger；确认层靠共享inert防重入，取消时按钮保持可恢复焦点。后台执行允许关闭主窗，只有提交请求期间否决关闭。
 - **根类**：`lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim`, `lq-sheet`
 - **Jinja 宏** `templates/macros/lq/dialogs.html`：`lq_dialog`
 - **JS 入口** `static/js/lq/dialogs.js`：`choiceProps`, `choose`, `confirm`, `createDialog`, `dialogMarkup`, `dialogProps`, `disposeDialog`, `openDialog`
 - **Python props** `classroom_app/lq_dialogs.py`
-- **消费者**：44 个文件
+- **消费者**：43 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1330,7 +1332,6 @@
 - `static/js/login_attendance.js` ×2
 - `static/js/login_attendance_alignment.js` ×2
 - `static/js/login_attendance_attention.js` ×2
-- `static/js/login_attendance_history.js` ×2
 - `static/js/login_attendance_settlement.js` ×2
 - `static/js/login_attendance_sync.js` ×2
 - `static/js/manage_teacher_schedule_query.js` ×2
@@ -1648,7 +1649,7 @@
 - **设计摘要**：`getLayerSystem()` 唯一持有层级、焦点、背景 inert、滚动锁、嵌套顺序与关闭；可移植领域弹层显式注册。
 - **规则**：禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。 2026-10-28 close 的 beforeClose 自有确认子层沿祖先推进 pending 序号，成功关闭仍返回有效触发器；无关新层打断后不再恢复旧焦点请求。覆盖新开/重开/ordered external，保留新窗口防抢焦点与取消合同，见 social-dm-sidebar-2026-10-28 和 layer-core 浏览器回归。 2026-11-16：exam_board使用registerExternal(mode=ordered)登记既有画板，消费共享层级、将Tooltip置于其上；保留原画板开关和焦点owner，isPresent覆盖180ms退场直至root.hidden。close先销毁本次Tooltip绑定再refresh，open只重建已清空的绑定集合，destroy解除external登记；不硬改z-index、不增加扫描观察。
 - **JS 入口** `static/js/lq/layer.js`：`getLayerSystem`
-- **消费者**：38 个文件
+- **消费者**：37 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1674,7 +1675,6 @@
 - `static/js/login_attendance.js` ×2
 - `static/js/login_attendance_alignment.js` ×2
 - `static/js/login_attendance_attention.js` ×2
-- `static/js/login_attendance_history.js` ×2
 - `static/js/login_attendance_settlement.js` ×2
 - `static/js/login_attendance_student_correction.js` ×2
 - `static/js/login_attendance_sync.js` ×2

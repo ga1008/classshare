@@ -307,6 +307,7 @@ test('moving activities retains discussion history quote attachment and both uns
 test('lesson drag only browses while keyboard activation opens complete detail with responsive compact actions', async ({ page }) => {
   await loginStudent(page, fixture());
   await page.goto(`/classroom/${fixture().classOfferingId}`);
+  await waitForClassroomControls(page);
   const rail = page.locator('#teachingTimelineScroll');
   const selected = rail.locator('[aria-pressed="true"]');
   const initial = await selected.getAttribute('data-session-id');

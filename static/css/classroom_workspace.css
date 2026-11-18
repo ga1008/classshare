@@ -65,10 +65,6 @@ main.classroom-workspace-v2 { container: classroom-main / inline-size; width: 10
 .cw-session-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .cw-session-nav .teaching-timeline-nav-btn { position: static; inset: auto; transform: none; width: 32px; height: 32px; min-width: 32px; border: 1px solid var(--cw-line); background: transparent; box-shadow: none; border-radius: 8px; }
 .cw-session-nav .teaching-timeline-nav-btn:hover { transform: none; background: var(--cw-soft); }
-.cw-session-management { position: relative; font-size: 13px; color: var(--cw-muted); }
-.cw-session-management > summary { cursor: pointer; min-height: 32px; padding: 5px 8px; }
-.cw-session-management[open] { z-index: 5; }
-.cw-session-management .teaching-timeline-detail-actions { position: absolute; right: 0; top: 100%; width: min(400px, 80vw); padding: 14px; display: flex; gap: 8px; flex-wrap: wrap; border: 1px solid var(--cw-line); border-radius: 10px; background-color: var(--cw-paper); box-shadow: 0 8px 24px hsl(var(--ls-ink) / .1); }
 .cw-status { color: var(--cw-accent); }
 .cw-live-activity { margin-top: 10px; padding: 0 4px; }
 .classroom-workspace-v2 .cw-workspace-flow { display: flex; flex-direction: column; gap: 28px; margin-top: 24px; min-width: 0; }
@@ -348,8 +344,8 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
     background-color: var(--cw-paper); color: var(--cw-ink); font-size: 13px; font-weight: 550; line-height: 1.45; text-decoration: none; cursor: pointer;
 }
 .cw-button:hover, .classroom-workspace-v2 .cw-session-nav .cw-text-button:hover { border-color: var(--cw-accent); background: var(--cw-tint); color: var(--cw-accent); }
-.cw-button.is-primary, .classroom-workspace-v2 #teachingSessionOpenMaterialBtn { color: hsl(var(--ls-primary-foreground)); background: var(--cw-primary); border-color: var(--cw-primary); }
-.cw-button.is-primary:hover, .classroom-workspace-v2 #teachingSessionOpenMaterialBtn:hover { background: hsl(var(--ls-primary) / .9); }
+.cw-button.is-primary { color: hsl(var(--ls-primary-foreground)); background: var(--cw-primary); border-color: var(--cw-primary); }
+.cw-button.is-primary:hover { background: hsl(var(--ls-primary) / .9); }
 .classroom-workspace-v2 :is(.cw-button, .cw-text-button, .cw-nav-link, .teaching-session-action, .teaching-timeline-nav-btn, .classroom-activity-tab, .cw-task-title, .cw-task-card:not(.lq-card), .cw-task-tabs button, .cw-timeline-index-item, .cw-explain-button, .cw-overflow) {
     transition: color var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast), opacity var(--transition-fast);
 }
@@ -406,12 +402,25 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
 .cw-timeline-index-item small, .cw-timeline-index-item > span { color: var(--cw-muted); font-size: 12px; }
 .cw-session-detail-meta { margin: 0 0 16px; color: var(--cw-muted); font-size: 13px; line-height: 1.7; }
 .classroom-workspace-v2 .teaching-session-modal-summary { max-height: none; padding: 0; margin: 0 0 18px; background: transparent; border: 0; overflow-wrap: anywhere; }
-.classroom-workspace-v2 .teaching-session-modal-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px; padding: 0; margin-top: 18px; }
-.classroom-workspace-v2 .teaching-session-action { flex: 0 0 auto; width: auto; min-width: 0; height: auto; min-height: 36px; padding: 7px 12px; border: 1px solid var(--cw-line); border-radius: 8px; background-color: var(--cw-paper); color: var(--cw-ink); box-shadow: none; font-size: 13px; line-height: 1.4; }
-.classroom-workspace-v2 .teaching-session-action > span { font-size: inherit; }
-.classroom-workspace-v2 .teaching-session-action:hover { background: var(--cw-tint); border-color: var(--cw-accent); transform: none; }
+.cw-session-actions, .cw-session-manage-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--ls-s-2); max-inline-size: 42rem; }
+.cw-session-actions [hidden], .cw-session-manage-actions [hidden] { display: none; }
+.cw-session-actions:has(> :not([hidden])) { margin-block-start: var(--ls-s-4); }
+#cw-session-knowledge-status { margin-block-start: var(--ls-s-2); }
+.cw-session-tools { display: grid; grid-template-columns: 1fr auto; align-items: start; max-inline-size: 42rem; margin-block-start: var(--ls-s-3); padding-block-start: var(--ls-s-2); border-block-start: 1px solid var(--cw-line); }
+.cw-session-management { grid-area: 1 / 1 / 2 / -1; }
+.cw-session-management > summary { inline-size: fit-content; max-inline-size: calc(100% - 8rem); gap: var(--ls-s-2); padding-inline-start: 0; }
+.cw-session-management .lq-collapsible__indicator { display: inline-flex; }
+.cw-session-manage-actions { padding-block-start: var(--ls-s-2); }
+.cw-session-tools > #cw-session-back { grid-area: 1 / 2; justify-self: end; }
+@media (min-width: 769px) {
+    .cw-dialog:has(.cw-session-actions > :not([hidden])) { max-inline-size: 48rem; }
+    .cw-dialog :is(.cw-session-actions, .cw-session-manage-actions, .cw-session-tools) { max-inline-size: none; }
+}
+@media (max-width: 640px) {
+    .cw-session-actions, .cw-session-manage-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cw-session-actions > .lq-btn, .cw-session-tools .lq-btn { min-block-size: 44px; }
+}
 .cw-session-material-status { margin-top: 12px; padding: 12px; border-radius: 10px; border: 1px solid var(--cw-line); background: var(--cw-soft); color: var(--cw-muted); line-height: 1.7; }
-.cw-dialog .cw-session-management .teaching-timeline-detail-actions { position: static; width: auto; box-shadow: none; }
 .classroom-workspace-v2 .cw-activity-section { container: classroom-activity / inline-size; }
 .classroom-workspace-v2 .classroom-activity-header { display: block; }
 .classroom-workspace-v2 .classroom-activity-tabs { margin-top: 14px; width: 100%; background: var(--cw-soft); }
@@ -459,7 +468,6 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
     .classroom-workspace-v2 .embedded-teaching-plan, .classroom-workspace-v2 .cw-primary-section { padding: 16px; }
     .cw-timeline-index-item { grid-template-columns: 70px minmax(0, 1fr); }
     .cw-timeline-index-item small { grid-column: 2; }
-    .classroom-workspace-v2 .teaching-session-modal-actions { justify-content: flex-start; }
 }
 @media (max-width: 480px) {
     .classroom-workspace-v2 .embedded-teaching-plan-head { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }

@@ -1,32 +1,147 @@
-/** Owner-only history picker; historical context never impersonates a live lesson. */
-import { apiFetch } from './api.js';
-import { openDialog } from './lq/dialogs.js';
-import { getLayerSystem } from './lq/layer.js';
+import { openLoginAttendance } from './login_attendance.js';
+import { createDomainButton } from './lq/domain-controls.js';
 import { createForm } from './lq/forms.js';
 import { enhanceDropdowns } from './lq/dropdown.js';
-import { createDomainButton } from './lq/domain-controls.js';
 
-export function openAttendanceHistory({ classOfferingId, trigger, parentLayer }) {
-    const body = document.createElement('div'); body.className = 'la-workspace';
-    const message = document.createElement('p'); message.setAttribute('role','status');
-    const field = createForm('select',{id:`la-history-${crypto.randomUUID()}`,label:'历史点名',value:'',options:[{value:'',label:'选择原课次记录'}]});
-    const select = field.querySelector('select'), controls = document.createElement('div'); controls.className = 'la-actions';
-    let closed=false, loading=false, rows=[], request=null, nextBeforeId=null;
-    const view=createDomainButton({label:'查看所选历史',variant:'prominent',size:'sm'}), retry=createDomainButton({label:'最新历史记录',variant:'glass',size:'sm'}), older=createDomainButton({label:'更早记录',variant:'ghost',size:'sm'});
-    controls.append(view,retry,older); body.append(message,field,controls);
-    const top=getLayerSystem(document).top();
-    const handle=openDialog({title:'历史点名',body,size:'md'},{trigger,...(parentLayer?{parentLayer}:top?.root.contains(trigger)?{parentLayer:top}:{}),onClose:cleanup,onDestroy:cleanup});
-    const dropdowns=enhanceDropdowns(body);
-    function cleanup(){if(closed)return;closed=true;request?.abort();dropdowns.forEach(d=>d.destroy());}
-    function gate(){view.disabled=closed||loading||!select.value;retry.disabled=loading;older.disabled=loading||!nextBeforeId;select.disabled=loading;}
-    select.addEventListener('change',gate);
-    async function load(beforeId=null){if(loading||closed)return;loading=true;gate();request=new AbortController();const deadline=window.setTimeout(()=>request.abort(),20000);
-        try{const query=new URLSearchParams({limit:'50'});if(beforeId)query.set('before_id',String(beforeId));const value=await apiFetch(`/api/classrooms/${classOfferingId}/login-attendance/history?${query}`,{silent:true,signal:request.signal});if(closed)return;rows=value.items||[];nextBeforeId=value.next_before_id||null;
-            select.replaceChildren(new Option('选择原课次记录',''),...rows.map(row=>{const c=row.context||{};return new Option([`${c.session_date||''} ${c.session_title||c.course_name||'历史课次'}`.trim(),c.class_name||c.teaching_class_name,`点名 ${row.id}`].filter(Boolean).join(' · '),String(row.id));}));
-            message.textContent=rows.length?`本页 ${rows.length} 轮${nextBeforeId?'，可继续读取更早记录':''}；合班迁移记录保留原日期与学生班名。`:'暂无历史点名记录。';message.setAttribute('role','status');
-        }catch(error){if(!closed){message.textContent=error.name==='AbortError'?'读取未完成，请重试。':error.message||'读取失败，请重试。';message.setAttribute('role','alert');}}
-        finally{window.clearTimeout(deadline);loading=false;if(!closed)gate();}}
-    retry.addEventListener('click',()=>load());older.addEventListener('click',()=>load(nextBeforeId));
-    view.addEventListener('click',async()=>{const row=rows.find(row=>String(row.id)===select.value);if(!row||loading||closed)return;loading=true;gate();try{const mod=await import('./login_attendance.js');if(!closed){const result=mod.openLoginAttendance({classOfferingId,session:null,userRole:'teacher',trigger:view,historyOnly:true,attendanceId:row.id});if(result?.handle===parentLayer)await getLayerSystem(document).close(handle,'already-open');}}catch(error){if(!closed)message.textContent=error.message||'历史记录界面加载失败。';}finally{loading=false;if(!closed)gate();}});
-    void load();return handle;
+export function openAttendanceHistory({ classOfferingId, trigger, preferredRoundId }) {
+    return openLoginAttendance({ classOfferingId, userRole: 'teacher', trigger, historyOnly: true,
+        attendanceId: preferredRoundId, mountHistory: mountHistoryNavigation })?.handle;
+}
+
+function roundLabel(row) {
+    const c = row.context || {};
+    return [c.session_date, c.detail_title || c.session_title || c.course_name, c.class_name || c.teaching_class_name,
+        `点名 ${row.id}`].filter(Boolean).join(' · ');
+}
+
+function mountHistoryNavigation({ host, request, openRound, preferredRoundId }) {
+    const message = document.createElement('p');
+    message.setAttribute('role', 'status');
+    const controls = document.createElement('div');
+    controls.className = 'la-actions';
+    const newer = createDomainButton({ label: '较新一轮' });
+    const older = createDomainButton({ label: '较早一轮' });
+    const retry = createDomainButton({ label: '重新读取' });
+    controls.append(newer, older, retry);
+    const jump = document.createElement('details');
+    jump.className = 'lq-collapsible';
+    const summary = document.createElement('summary');
+    summary.className = 'lq-collapsible__summary';
+    summary.textContent = '按课次查找';
+    const field = createForm('select', { id: 'la-history-' + crypto.randomUUID(), label: '本页点名记录', options: [] });
+    const select = field.querySelector('select');
+    const pages = document.createElement('div');
+    pages.className = 'la-actions';
+    const previousPage = createDomainButton({ label: '较新一页' }), nextPage = createDomainButton({ label: '更早一页' });
+    pages.append(previousPage, nextPage);
+    const jumpContent = document.createElement('div');
+    jumpContent.className = 'lq-collapsible__content la-workspace';
+    jumpContent.append(field, pages); jump.append(summary, jumpContent);
+    host.append(message, controls, jump);
+    const dropdowns = enhanceDropdowns(jump);
+
+    // Keep one bounded page of round summaries. Only cursors are retained when moving back.
+    let items = [], index = -1, cursors = [null], next = null, pending = false, saving = false, disposed = false, retryAction = null;
+    let fetchedPage = null;
+    function paint() {
+        const first = index <= 0, last = index >= items.length - 1, anchored = cursors.length === 1 && cursors[0] !== null;
+        const hasNewerPage = cursors.length > 1 || anchored;
+        const busy = pending || saving;
+        newer.disabled = busy || (first && !hasNewerPage);
+        older.disabled = busy || (last && !next);
+        newer.textContent = first && anchored ? '最新一轮' : '较新一轮';
+        previousPage.disabled = busy || !hasNewerPage;
+        nextPage.disabled = busy || !next;
+        pages.hidden = !hasNewerPage && !next;
+        select.disabled = busy;
+        select.value = String(items[index]?.id ?? '');
+        retry.hidden = !retryAction;
+        retry.disabled = busy;
+        newer.hidden = older.hidden = items.length < 2 && !hasNewerPage && !next;
+        controls.hidden = newer.hidden && retry.hidden;
+        jump.hidden = items.length < 3 && !hasNewerPage && !next;
+        message.hidden = !message.textContent;
+        host.hidden = message.hidden && controls.hidden && jump.hidden;
+    }
+    async function run(action) {
+        if (pending || saving || disposed) return;
+        const focus = host.contains(document.activeElement) ? document.activeElement : null;
+        pending = true; retryAction = null;
+        message.setAttribute('role', 'status');
+        message.textContent = items.length ? '' : '正在读取点名记录…';
+        paint();
+        try { await action(); }
+        catch (error) {
+            if (!disposed) {
+                message.textContent = error.message || '读取点名记录失败。';
+                message.setAttribute('role', 'alert');
+                retryAction = action;
+            }
+        } finally {
+            pending = false;
+            if (!disposed) {
+                paint();
+                if (focus && document.activeElement === document.body) {
+                    [focus, retry, older, newer].find(el => !el.disabled && el.getClientRects().length)?.focus({ preventScroll: true });
+                }
+            }
+        }
+    }
+    async function show(rows, pos, pageCursors, nextCursor) {
+        if (disposed) return;
+        if (!rows.length) {
+            if (items.length) throw new Error('该页记录已变化，请重新读取。');
+            message.textContent = '本课程暂无点名记录。';
+            return;
+        }
+        if (!await openRound(rows[pos].id) || disposed) return;
+        if (items !== rows) select.replaceChildren(...rows.map(r => new Option(roundLabel(r), String(r.id))));
+        items = rows; index = pos; cursors = pageCursors; next = nextCursor;
+        message.textContent = '';
+    }
+    async function fetchPage(cursor) {
+        if (fetchedPage?.cursor === cursor) return fetchedPage.value;
+        const query = new URLSearchParams({ limit: '50' });
+        if (cursor) query.set('before_id', String(cursor));
+        const value = await request('/history?' + query);
+        fetchedPage = { cursor, value };
+        return value;
+    }
+    async function loadLatest() {
+        let value = await fetchPage(null);
+        let pos = value.items.findIndex(r => r.id === preferredRoundId);
+        let history = [null];
+        // An explicit lesson can point further back than the latest page. Start at
+        // that exact round with one bounded cursor lookup; the course header starts at the latest.
+        if (pos < 0 && preferredRoundId && value.next_before_id && preferredRoundId < value.next_before_id) {
+            const older = await fetchPage(preferredRoundId + 1);
+            if (older.items[0]?.id === preferredRoundId) {
+                value = older; history = [preferredRoundId + 1];
+            }
+        }
+        await show(value.items, Math.max(0, pos), history, value.next_before_id);
+    }
+    async function changePage(direction) {
+        let path;
+        let last;
+        if (direction > 0) { path = [...cursors, next]; last = false; }
+        else if (cursors.length === 1) { path = [null]; last = false; }
+        else { path = cursors.slice(0, -1); last = true; }
+        const value = await fetchPage(path.at(-1));
+        await show(value.items, last ? value.items.length - 1 : 0, path, value.next_before_id);
+    }
+    newer.addEventListener('click', () => run(() => index > 0 ? show(items, index - 1, cursors, next) : changePage(-1)));
+    older.addEventListener('click', () => run(() => index + 1 < items.length ? show(items, index + 1, cursors, next) : changePage(1)));
+    previousPage.addEventListener('click', () => run(() => changePage(-1)));
+    nextPage.addEventListener('click', () => run(() => changePage(1)));
+    select.addEventListener('change', () => {
+        const pos = select.selectedIndex;
+        if (pos >= 0 && pos !== index) void run(() => show(items, pos, cursors, next));
+    });
+    retry.addEventListener('click', () => { if (retryAction) void run(retryAction); });
+    void run(loadLatest);
+    return {
+        setSaving(value) { saving = value; paint(); },
+        destroy() { disposed = true; dropdowns.forEach(binding => binding.destroy()); }
+    };
 }

@@ -30,11 +30,11 @@ const button = (label, action, variant = 'glass') => { const n = createDomainBut
 const request = (url, options = {}) => apiFetch(url, { silent: true, ...options });
 const safeId = value => /^[1-9]\d*$/.test(String(value || '')) && Number.isSafeInteger(Number(value)) ? Number(value) : null;
 
-export function openLoginAttendance({ classOfferingId, session, userRole, trigger, attendanceId, studentId, appealId, historyOnly = false }) {
+export function openLoginAttendance({ classOfferingId, session, userRole, trigger, attendanceId, studentId, appealId, historyOnly = false, mountHistory }) {
     const offering = safeId(classOfferingId), lesson = safeId(session?.id);
     if (historyOnly && userRole !== 'teacher') return null;
-    if (!offering || (!lesson && !(historyOnly && userRole === 'teacher' && safeId(attendanceId)))) return null;
-    const key = `${userRole}:${offering}:${historyOnly ? `history-${attendanceId}` : lesson}`;
+    if (!offering || (!lesson && !(historyOnly && (mountHistory || safeId(attendanceId))))) return null;
+    const key = `${userRole}:${offering}:${mountHistory ? 'history' : historyOnly ? `history-${attendanceId}` : lesson}`;
     if (active.has(key)) return active.get(key);
     const teacher = userRole === 'teacher';
     if (!teacher && userRole !== 'student') return null;
@@ -52,6 +52,10 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     const isCurrent = () => round && (round.is_current === undefined || Boolean(round.is_current));
     const canEdit = () => round && (round.can_edit === undefined ? isCurrent() && round.state !== 'void' : Boolean(round.can_edit));
     const shell = node('div', 'la-workspace');
+    const historyHost = mountHistory && node('div', 'la-workspace');
+    const body = historyHost ? node('div', 'la-workspace') : shell;
+    let historyNavigation, historyLayer;
+    if (historyHost) { body.append(historyHost, shell); shell.hidden = true; }
     const notice = node('div', 'la-notice'); notice.setAttribute('role', 'status');
     const heading = node('div', 'la-heading');
     const headingState = node('span');
@@ -113,7 +117,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     const cancelRequests = new Set();
     const disabledBeforeBusy = new WeakMap();
     const setNotice = (text = '', error = false) => { notice.textContent = text; notice.setAttribute('role', error ? 'alert' : 'status'); };
-    const setBusy = value => { busy = value; shell.setAttribute('aria-busy', String(value)); shell.querySelectorAll('button').forEach(n => { if (value) { if (!disabledBeforeBusy.has(n)) disabledBeforeBusy.set(n, n.disabled); n.disabled = true; } else if (disabledBeforeBusy.has(n)) { n.disabled = disabledBeforeBusy.get(n) || n.dataset.laDisabled === 'true'; disabledBeforeBusy.delete(n); } }); workflow?.update(); correction?.update(); settlement?.update(); };
+    const setBusy = value => { busy = value; historyNavigation?.setSaving(value); shell.setAttribute('aria-busy', String(value)); shell.querySelectorAll('button').forEach(n => { if (value) { if (!disabledBeforeBusy.has(n)) disabledBeforeBusy.set(n, n.disabled); n.disabled = true; } else if (disabledBeforeBusy.has(n)) { n.disabled = disabledBeforeBusy.get(n) || n.dataset.laDisabled === 'true'; disabledBeforeBusy.delete(n); } }); workflow?.update(); correction?.update(); settlement?.update(); };
     function fail(error) { if (!closed) setNotice(error.status === 409 ? `内容已变化，选择与理由已保留。${error.message || '请核对最新结果后重试。'}` : error.message || '读取失败，请重试。', true); }
     async function call(path, options = {}, timeoutMs = 20000) {
         const controller = new AbortController(); cancelRequests.add(controller);
@@ -194,11 +198,22 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
             if (focusedStudent) await showDetail(focusedStudent);
         });
     }
-    async function load({ preserveNotice = false, signal } = {}) {
+    async function load({ preserveNotice = false, signal, targetRoundId = attendanceId } = {}) {
+        if (mountHistory && !targetRoundId) return;
         const generation = ++epoch;
-        const result = await call(teacher ? (attendanceId ? `/rounds/${attendanceId}` : `/sessions/${lesson}`) : `/sessions/${lesson}/me`, { signal });
+        const result = await call(teacher ? (targetRoundId ? `/rounds/${targetRoundId}` : `/sessions/${lesson}`) : `/sessions/${lesson}/me`, { signal });
         if (closed || generation !== epoch) return;
         if (teacher) {
+            if (mountHistory) {
+                if (Number(result.id) !== targetRoundId) throw new Error('点名轮次已变化，请重新读取。');
+                if (round && round.id !== targetRoundId) {
+                    selected.clear(); appealDrafts.clear(); recordDrafts.clear(); dirty = false;
+                    page = 0; batch.open = false; fields.reason.value = ''; fields.search.value = '';
+                    fields.status.value = 'PRESENT'; fields.filter.value = ''; fields.sort.value = '';
+                    dropdowns.forEach(binding => binding.refresh());
+                }
+                attendanceId = targetRoundId;
+            }
             // A voided exact link can point behind a newer live round. Only
             // the actual lesson projection can authorize showing a restart.
             const latest = attendanceId && !historyOnly && result.state === 'void' ? await call(`/sessions/${lesson}`, { signal }) : null;
@@ -213,6 +228,19 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         if (focusedStudent && teacher && !detailDirty) await showDetail(focusedStudent);
         workflow?.refresh().catch(() => {});
         settlement?.refresh();
+    }
+    async function openHistoryRound(id) {
+        if (closed || busy || detailHandle || externalOpen) return false;
+        if (round?.id === id) return true;
+        if ((dirty || selected.size) && !await confirmDialog({ title: '切换并放弃未提交内容？',
+            message: '已保存的点名记录会保留。', confirmLabel: '切换记录', danger: true }, { parentLayer: handle })) return false;
+        if (closed) return false;
+        shell.inert = true;
+        try {
+            await load({ targetRoundId: id });
+            if (!closed) shell.hidden = false;
+            return !closed;
+        } finally { shell.inert = false; }
     }
     function paintHeadingState() {
         const schoolRegister = round?.state === 'published' && round?.context?.time_source === 'school_register';
@@ -236,12 +264,13 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     function paint() {
         // Preserve the nested layer's trigger, focus and configuration draft
         // if a parent request that started earlier completes behind it.
-        if (externalOpen || detailHandle) return;
+        if (externalOpen || detailHandle || (historyLayer && historyLayer.root.isConnected)) return;
         const context = historyOnly ? round?.context || {} : session || {};
         const originalClasses = [...new Set((round?.records||[]).map(r=>r.class_name).filter(Boolean))];
         const classLabel = context.class_name || context.teaching_class_name || (historyOnly ? originalClasses.slice(0,8).join('、') + (originalClasses.length>8?` 等 ${originalClasses.length} 个班`:'') : '');
         const lessonMeta = [context.session_date, context.academic_section_text || context.section_text, classLabel].filter(Boolean).join(' ');
-        heading.replaceChildren(node('h3', '', context.detail_title || context.session_title || context.title || context.course_name || '历史点名'), node('p', '', historyOnly ? `${lessonMeta} · 原课次` : lessonMeta), headingState, elapsed);
+        const originalLesson = historyOnly && (round?.history_only || context.merged_from);
+        heading.replaceChildren(node('h3', '', context.detail_title || context.session_title || context.title || context.course_name || '历史点名'), node('p', '', originalLesson ? `${lessonMeta} · 原课次` : lessonMeta), headingState, elapsed);
         paintHeadingState(); paintClock();
         if (!teacher) { paintStudent(); return; }
         const readyToStart = !historyOnly && (!round || (round.state === 'void' && latestLessonRoundId === round.id));
@@ -250,13 +279,14 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         summary.replaceChildren(...[['出勤', counts.PRESENT || 0], ['待确认', counts.PENDING || 0], ['应到', round?.summary?.expected ?? '—'], ['免考勤', round?.summary?.exempt ?? 0]].map(([label, value]) => createContent('card', { title: label, variant: 'stat', value })));
         stateCounts.replaceChildren(...RECORDED_ATTENDANCE_STATES.filter(([key]) => key !== 'PRESENT' && counts[key] > 0).map(([key, label]) => chip(`${label} ${counts[key]} 人`, key === 'ABSENT' ? 'warning' : 'neutral')));
         const settlementFocused = document.activeElement === settlement?.button;
-        actions.replaceChildren(); secondaryActions.replaceChildren(button('刷新记录', () => load().catch(fail)), button('学期签到统计', openDashboard), button('历史点名', async event => { const trigger=event.currentTarget; trigger.disabled=true; try { const mod=await import('./login_attendance_history.js'); if(!closed && trigger.isConnected) mod.openAttendanceHistory({classOfferingId:offering,trigger,parentLayer:handle}); } catch(error){fail(error);} finally{if(trigger.isConnected)trigger.disabled=busy;} }));
+        actions.replaceChildren(); secondaryActions.replaceChildren(button('刷新记录', () => load().catch(fail)), button('学期签到统计', openDashboard));
+        if (!mountHistory) secondaryActions.append(button('历史点名', openHistory));
         if (readyToStart) { const start = button('开始记录', createRound, 'prominent'); start.disabled = Boolean(data?.policy?.closed_at_ms); start.dataset.laDisabled = String(start.disabled); actions.append(start); }
-        if (isCurrent() && ['running', 'scheduled'].includes(round?.state)) actions.append(button('结束本地点名', endRound));
+        if (!historyOnly && isCurrent() && ['running', 'scheduled'].includes(round?.state)) actions.append(button('结束本地点名', endRound));
         if (settlement) { actions.append(settlement.button); settlement.update(); if (settlementFocused && !settlement.button.disabled) settlement.button.focus({ preventScroll: true }); }
-        if (isCurrent() && round.state !== 'void') secondaryActions.append(button('作废本轮', voidRound, 'destructive'));
+        if (!historyOnly && isCurrent() && round.state !== 'void') secondaryActions.append(button('作废本轮', voidRound, 'destructive'));
         if (round) secondaryActions.append(button(historyOnly || !isCurrent() || round.state === 'void' ? '查看学校同步记录' : '高级核对与历史任务', event => showExternal(event).catch(fail)));
-        if (!formInitialized && data?.policy) {
+        if (!historyOnly && !formInitialized && data?.policy) {
             appendField(configBody, 'enforceNetwork', 'switch', '限定课堂网络', 'on', { checked: data.policy.enforce_network === true, help: '开启后仅认定所填网段内的接入；关闭时不按 IP 限制。' });
             appendField(networkFields, 'networks', 'textarea', '本课教室 IP 或网段（每行一个）', (data.policy.networks?.length ? data.policy.networks : [data.teacher_network?.suggested_cidr || data.teacher_network?.ip].filter(Boolean)).join('\n'), { rows: 2, help: '教师当前网段作为建议值，请核对；最多 16 条，可填写 IPv4 或 IPv6 CIDR。' });
             configBody.append(networkFields);
@@ -390,6 +420,15 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         submit.disabled = !data.can_appeal; submit.dataset.laDisabled = String(!data.can_appeal);
         detail.append(f.wrapper, submit, node('p', '', data.can_appeal ? '仅提交本人的签到说明。已受理申诉会继续处理。' : '点名结束并开放申诉后可提交；作废轮次和已过期记录不开放新申诉。'));
     }
+    async function openHistory(event) {
+        const trigger = event.currentTarget;
+        trigger.disabled = true;
+        try {
+            const mod = await import('./login_attendance_history.js');
+            if (!closed && trigger.isConnected) historyLayer = mod.openAttendanceHistory({ classOfferingId: offering, trigger, preferredRoundId: round?.id });
+        } catch (error) { fail(error); }
+        finally { if (trigger.isConnected) trigger.disabled = busy; }
+    }
     async function openDashboard(event) { const trigger=event.currentTarget; trigger.disabled=true; try { const mod=await import('./attendance_dashboard.js'); if(!closed&&trigger.isConnected)mod.openAttendanceDashboard({classOfferingId:offering,userRole,trigger}); } catch(error){fail(error);} finally{if(trigger.isConnected)trigger.disabled=busy;} }
     async function showExternal(event) { const trigger=event.currentTarget; trigger.disabled=true; try { externalCleanup?.(); const mod = await import('./login_attendance_sync.js'); if (!closed && trigger.isConnected) { externalOpen = true; externalCleanup = mod.openAttendanceSync({ base: `${base}/rounds/${round.id}/external`, round, trigger, parentLayer: handle, readOnly: historyOnly || !isCurrent() || round.state === 'void', onClose: () => { externalOpen = false; externalCleanup = null; } }); } } catch(error) { externalOpen = false; throw error; } finally {if(trigger.isConnected)trigger.disabled=busy;} }
     fields.search.addEventListener('input', () => { page = 0; paintGrid(); }); fields.filter.addEventListener('change', () => { page = 0; paintGrid(); }); fields.sort.addEventListener('change', () => { page = 0; paintGrid(); });
@@ -400,9 +439,9 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     listPane.hidden = !teacher; config.hidden = !teacher || historyOnly; workflowHost.hidden = !teacher || historyOnly; secondary.hidden = !teacher;
     let dropdowns = [];
     let poll;
-    function cleanup() { if (closed) return; closed = true; epoch++; detailEpoch++; settlementResultEpoch++; poll?.dispose(); clock?.destroy(); workflow?.destroy(); settlement?.destroy(); correction?.destroy(); clearAppeal(); detailHandle?.destroy(); dropdowns.forEach(d => d.destroy()); detailDropdowns.forEach(d => d.destroy()); externalCleanup?.(); cancelRequests.forEach(c => c.abort()); active.delete(key); }
+    function cleanup() { if (closed) return; closed = true; epoch++; detailEpoch++; settlementResultEpoch++; historyNavigation?.destroy(); poll?.dispose(); clock?.destroy(); workflow?.destroy(); settlement?.destroy(); correction?.destroy(); clearAppeal(); detailHandle?.destroy(); dropdowns.forEach(d => d.destroy()); detailDropdowns.forEach(d => d.destroy()); externalCleanup?.(); cancelRequests.forEach(c => c.abort()); active.delete(key); }
     const parent = getLayerSystem(document).top();
-    handle = openDialog({ title: teacher ? (historyOnly ? '历史点名详情' : '自动点名') : '我的签到', body: shell, size: 'xl' }, { trigger, ...(parent?.root.contains(trigger) ? { parentLayer: parent } : {}),
+    handle = openDialog({ title: mountHistory ? '历史点名' : teacher ? (historyOnly ? '历史点名详情' : '自动点名') : '我的签到', body, size: 'xl' }, { trigger, ...(parent?.root.contains(trigger) ? { parentLayer: parent } : {}),
         beforeClose: async () => !busy && !settlement?.isSubmitting() && (!dirty || await confirmDialog({ title: '关闭并放弃未提交内容？', message: '已保存的签到记录不会受影响。', confirmLabel: '关闭', danger: true }, { parentLayer: handle })), onClose: cleanup, onDestroy: cleanup });
     handle.root.classList.add('la-dialog');
     clock = createAttendanceClock({ active: () => !closed && !document.hidden && getLayerSystem(document).top() === handle, onTick: () => { paintClock(); settlement?.tick(); } });
@@ -424,6 +463,8 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     dropdowns = enhanceDropdowns(shell);
     const controller = { handle, refresh: load, destroy: () => handle.destroy() }; active.set(key, controller);
     poll = createAmbientPoll(async signal => { if (!busy && !dirty) { try { await load({ preserveNotice: true, signal }); } catch (error) { fail(error); throw error; } } }, { intervalMs: 15000, active: () => !closed && !historyOnly && !document.hidden && getLayerSystem(document).top() === handle && !busy && !dirty });
-    load().catch(fail); poll.start(15000);
+    if (mountHistory) historyNavigation = mountHistory({ host: historyHost, request: call, openRound: openHistoryRound, preferredRoundId: safeId(attendanceId) });
+    else load().catch(fail);
+    if (!historyOnly) poll.start(15000);
     return controller;
 }

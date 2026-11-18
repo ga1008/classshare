@@ -948,8 +948,10 @@ function initTeachingTimeline() {
     const detailActions = document.getElementById('teachingTimelineDetailActions');
     const sessionModalOpenHomeBtn = document.getElementById('teachingSessionOpenHomeBtn');
     const sessionModalOpenMaterialBtn = document.getElementById('teachingSessionOpenMaterialBtn');
+    const sessionMaterialLabel = sessionModalOpenMaterialBtn?.querySelector(':scope > span:last-child');
     const sessionModalCheckinBtn = document.getElementById('teachingSessionCheckinBtn');
     const sessionModalKnowledgeTreeBtn = document.getElementById('teachingSessionKnowledgeTreeBtn');
+    const sessionKnowledgeStatus = document.getElementById('cw-session-knowledge-status');
     const sessionModalAutoAttendanceBtn = document.getElementById('teachingSessionAutoAttendanceBtn');
     const sessionCheckinPanel = document.getElementById('teachingSessionCheckinPanel');
     const sessionCheckinMessage = document.getElementById('teachingSessionCheckinMessage');
@@ -1159,7 +1161,10 @@ function initTeachingTimeline() {
         const hasMaterial = sessionHasBoundMaterial(session);
         button.disabled = isTeacher ? !hasMaterial && !progress : !progress;
         button.title = isTeacher && !hasMaterial && !progress ? '请先为本课次绑定学习材料，再生成知识树' : '';
-        paintKnowledgeIndicator(button.querySelector('[data-role="knowledge-tree-entry-state"]'), progress, { entry: true });
+        if (sessionKnowledgeStatus) {
+            sessionKnowledgeStatus.hidden = button.hidden;
+            paintKnowledgeIndicator(sessionKnowledgeStatus, progress, { entry: true });
+        }
     };
     const applyKnowledgeProgress = (sessionId, state) => {
         const session = sessions.find(item => Number(item.id) === Number(sessionId) && !isHomeEntry(item) && !isAcademicExamEntry(item));
@@ -1205,12 +1210,12 @@ function initTeachingTimeline() {
             sessionModalOpenMaterialBtn.hidden = isExam;
             sessionModalOpenMaterialBtn.disabled = isExam;
             sessionModalOpenMaterialBtn.removeAttribute('aria-busy');
-            const label = sessionModalOpenMaterialBtn.querySelector('span');
-            if (label) label.textContent = isHome ? '进入课程首页材料' : '进入本次学习材料';
+            if (sessionMaterialLabel) sessionMaterialLabel.textContent = isHome ? '首页材料' : '学习材料';
         }
         if (sessionModalCheckinBtn) {
-            sessionModalCheckinBtn.hidden = isExam;
+            sessionModalCheckinBtn.hidden = isHome || isExam;
             sessionModalCheckinBtn.disabled = isHome || isExam;
+            sessionModalCheckinBtn.setAttribute('aria-expanded', 'false');
         }
         syncKnowledgeEntry(session);
         if (sessionModalAutoAttendanceBtn) {
@@ -1466,7 +1471,6 @@ function initTeachingTimeline() {
         if (selectHomeMaterialBtn) {
             selectHomeMaterialBtn.hidden = examEntry;
             selectHomeMaterialBtn.disabled = examEntry;
-            selectHomeMaterialBtn.textContent = '添加首页材料';
         }
         if (detailActions) {
             detailActions.hidden = examEntry;
@@ -1672,7 +1676,7 @@ function initTeachingTimeline() {
         renderDetailSummary(session);
         renderDetailMeta(session);
         syncTeacherActionState(session);
-        if (compactWorkspace && detailActions?.closest('details')) detailActions.closest('details').hidden = isAcademicExamEntry(session);
+        if (detailActions?.closest('details')) detailActions.closest('details').hidden = isAcademicExamEntry(session);
         if (isHomeEntry(session) || isAcademicExamEntry(session)) {
             sessionMaterialAssistant?.syncSelectedSession(null);
         } else {
@@ -2085,8 +2089,7 @@ function initTeachingTimeline() {
 
     function presentMaterialChoices(session, decision) {
         const status = document.getElementById('cw-session-material-status');
-        const label = sessionModalOpenMaterialBtn?.querySelector('span');
-        if (label) label.textContent = isHomeEntry(session) ? '进入课程首页材料' : '进入本次学习材料';
+        if (sessionMaterialLabel) sessionMaterialLabel.textContent = isHomeEntry(session) ? '首页材料' : '学习材料';
         if (!status) return;
         status.replaceChildren(); status.hidden = decision.kind !== 'empty';
         if (decision.kind === 'empty') {
@@ -2104,8 +2107,7 @@ function initTeachingTimeline() {
         const button = sessionModalOpenMaterialBtn;
         const status = document.getElementById('cw-session-material-status');
         button.disabled = true; button.setAttribute('aria-busy', 'true');
-        const label = button.querySelector('span');
-        if (label) label.textContent = '正在读取学习材料…';
+        if (sessionMaterialLabel) sessionMaterialLabel.textContent = '读取中…';
         if (status) { status.hidden = false; status.textContent = '正在读取本课可访问的学习材料…'; }
         try {
             const response = await fetch(`/api/classrooms/${classOfferingIdValue()}/learning-materials?session_id=${scope}&generate_blurbs=false`, { credentials: 'same-origin', signal: controller.signal });
@@ -2119,7 +2121,7 @@ function initTeachingTimeline() {
         } catch (error) {
             if (controller.signal.aborted || epoch !== materialEpoch) return;
             if (status) { status.hidden = false; status.textContent = error.message || '材料读取失败，请重试。'; }
-            if (label) label.textContent = '重试读取学习材料';
+            if (sessionMaterialLabel) sessionMaterialLabel.textContent = '重试读取';
         } finally {
             if (epoch === materialEpoch) { materialRequest = null; button.disabled = false; button.removeAttribute('aria-busy'); }
         }
@@ -2198,6 +2200,7 @@ function initTeachingTimeline() {
     document.getElementById('cw-session-back')?.addEventListener('click', closeSessionModal);
     sessionModalCheckinBtn?.addEventListener('click', () => {
         if (sessionCheckinPanel) sessionCheckinPanel.hidden = false;
+        sessionModalCheckinBtn.setAttribute('aria-expanded', 'true');
         fetchSessionCheckin({ sync: false });
     });
     // 文档与知识树：全部课次的文档与知识树批量管理（教师）。

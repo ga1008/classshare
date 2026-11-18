@@ -1,21 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
-import fs from 'node:fs';
 import path from 'node:path';
-
-const sources = new Map(['classroom_page.js', 'classroom_workspace.js', 'ui_overlay_motion.js']
-  .map(name => [name, fs.readFileSync(path.resolve('static/js', name), 'utf8')]));
-const dependencies = `export const apiFetch = async () => ({});
-  export const initLearningMaterialSelector = () => ({});
-  export const initSessionMaterialAiAssistant = () => ({});
-  export const initAssignmentClocks = () => {};
-  export const showToast = () => {};
-  export const openMaterialListPopup = () => {};`;
 
 async function mountTimeline(page: Page) {
   await page.route('http://schedule.test/**', async route => {
     const url = new URL(route.request().url());
     if (url.pathname.startsWith('/static/js/')) {
-      await route.fulfill({ contentType: 'text/javascript', body: sources.get(path.basename(url.pathname)) || dependencies });
+      await route.fulfill({ contentType: 'text/javascript', path: path.resolve('.' + url.pathname) });
       return;
     }
     await route.fulfill({ contentType: 'text/html', body: `<!doctype html><html lang="zh-CN"><meta charset="utf-8">
@@ -27,12 +17,14 @@ async function mountTimeline(page: Page) {
       import { initClassroomPage } from '/static/js/classroom_page.js';
       window.APP_CONFIG = {classOfferingId:1,userInfo:{role:'student'},teachingPlan:{sessions:[3,4].map(id=>({id,order_index:id,title:'课次 '+id}))}};
       window.pendingMaterials = [];
-      window.fetch = (url, options) => new Promise(resolve => {
+      window.fetch = (url, options) => {
+        const resource = new URL(url, location.origin);
+        if (!resource.pathname.endsWith('/learning-materials')) return Promise.resolve(Response.json({}));
         // Keep an already-started response deliverable after cancellation as well:
         // the controller must guard against a late body from the old session.
-        window.pendingMaterials.push({scope:new URL(url,location.origin).searchParams.get('session_id'),
-          signal:options.signal, resolve:materials=>resolve({ok:true,json:async()=>({materials})})});
-      });
+        return new Promise(resolve => window.pendingMaterials.push({scope:resource.searchParams.get('session_id'),
+          signal:options.signal, resolve:materials=>resolve(Response.json({materials}))}));
+      };
       initClassroomPage();
       window.timelineReady = true;
       </script></body></html>` });

@@ -806,17 +806,106 @@ test('LQ merged history deep link has no lesson dependency and gates manual edit
   expect(calls.every(url=>url.includes('/rounds/42'))).toBeTruthy();expect(errors).toEqual([]);
 });
 
-test('LQ teacher history picker pages without merging lesson identities or accumulating all pages',async({page})=>{
-  const current=round(2), history={...round(1),id:42,session_id:null,is_current:0,can_edit:false,history_only:true,context:{session_title:'原班级归档课次',session_date:'2026-09-13'}};
-  const before:(string|null)[]=[];
+test('LQ history opens the exact lesson round inline and switches across cursor pages without losing a draft', async ({page}) => {
+  const rounds = [43,42,41].map(id => ({...round(2),id,can_edit:true,
+    session_id:id===41?null:12,history_only:id===41,context:{session_title:'历史课次 '+id}}));
+  const before:(string|null)[]=[], reads:number[]=[];
+  let failOnce = true;
   const errors=await fixture(page,async(route,url)=>{
-    if(url.endsWith('/sessions/12'))return json(route,{session,policy:current.policy,round:current});
-    if(url.endsWith('/history')){const value=new URL(route.request().url()).searchParams.get('before_id');before.push(value);return json(route,{items:[{id:value?41:42,context:history.context}],next_before_id:value?null:42});}
-    if(url.endsWith('/rounds/42'))return json(route,history);return json(route,{detail:'unexpected'},500);
+    if(url.endsWith('/sessions/12')) return json(route,{session,policy:rounds[1].policy,round:rounds[1]});
+    if(url.endsWith('/history')){
+      const cursor=new URL(route.request().url()).searchParams.get('before_id'); before.push(cursor);
+      return json(route,{items:cursor?rounds.slice(2):rounds.slice(0,2),next_before_id:cursor?null:42});
+    }
+    const match=rounds.find(r=>url.endsWith('/rounds/'+r.id));
+    if(match) {
+      reads.push(match.id);
+      if(match.id===41 && failOnce) {failOnce=false;return json(route,{detail:'读取历史暂不可用'},409);}
+      return json(route,match);
+    }
+    return json(route,{detail:'unexpected'},500);
   });
-  await open(page);await page.getByRole('dialog',{name:'自动点名',exact:true}).getByRole('button',{name:'历史点名',exact:true}).click();const picker=page.getByRole('dialog',{name:'历史点名',exact:true});
-  await choose(page,picker,'历史点名','2026-09-13 原班级归档课次 · 点名 42');await picker.getByRole('button',{name:'查看所选历史'}).click();const d=page.getByRole('dialog',{name:'历史点名详情',exact:true});await expect(d.getByRole('heading',{name:'原班级归档课次'})).toBeVisible();
-  await page.keyboard.press('Escape');await expect(d).not.toBeVisible();await picker.getByRole('button',{name:'更早记录'}).click();await expect(picker.locator('select option')).toHaveCount(2);await expect(picker.getByRole('button',{name:'更早记录'})).toBeDisabled();expect(before).toEqual([null,'42']);expect(errors).toEqual([]);
+  await open(page);
+  const parent=page.getByRole('dialog',{name:'自动点名',exact:true}), enter=parent.getByRole('button',{name:'历史点名',exact:true});
+  await enter.click();
+  const d=page.getByRole('dialog',{name:'历史点名',exact:true});
+  const titled=(id:number)=>d.getByRole('heading',{name:'历史课次 '+id});
+  await expect(titled(42)).toBeVisible(); expect(reads).toEqual([42]);
+  await expect(d.getByRole('button',{name:'结束本地点名'})).toHaveCount(0);
+  await expect(d.getByRole('button',{name:'作废本轮'})).toHaveCount(0);
+  await d.getByText('批量修改出勤状态',{exact:true}).click();
+  await d.getByRole('button',{name:'全班',exact:true}).click();
+  await d.getByLabel('修改理由').fill('未提交的本轮改签');
+  await d.getByRole('button',{name:'较早一轮'}).click();
+  const confirm=page.getByRole('dialog',{name:'切换并放弃未提交内容？'});
+  await confirm.getByRole('button',{name:'取消'}).click();
+  await expect(d.getByLabel('修改理由')).toHaveValue('未提交的本轮改签');
+  expect(reads).toEqual([42]);
+  await d.getByRole('button',{name:'较早一轮'}).click();
+  await confirm.getByRole('button',{name:'切换记录'}).click();
+  await expect(d.getByRole('alert')).toContainText('读取历史暂不可用');
+  await expect(titled(42)).toBeVisible(); await expect(d.getByLabel('修改理由')).toHaveValue('未提交的本轮改签');
+  await d.getByRole('button',{name:'重新读取'}).click();
+  await confirm.getByRole('button',{name:'切换记录'}).click();
+  await expect(titled(41)).toBeVisible();
+  await expect(d.getByRole('button',{name:'较早一轮'})).toBeDisabled();
+  await d.getByRole('button',{name:'较新一轮'}).click();
+  await expect(titled(42)).toBeVisible();
+  await d.getByRole('button',{name:'较新一轮'}).click();
+  await expect(titled(43)).toBeVisible();
+  await page.keyboard.press('Escape'); await expect(enter).toBeFocused();
+  expect(before).toEqual([null,'42',null]); expect(reads).toEqual([42,41,41,42,43]); expect(errors).toEqual([]);
+});
+
+test('LQ history opens an older exact round with one cursor and can jump directly to the latest page', async ({page}) => {
+  const ids=[90,89,88,9,8,7];
+  const byId=(id:number)=>({...round(1),id,context:{session_title:'第 '+id+' 轮'}});
+  const fetched:(string|null)[]=[], details:number[]=[];
+  const errors=await fixture(page,async(route,url)=>{
+    if(url.endsWith('/sessions/12'))return json(route,{session,round:byId(9)});
+    if(url.endsWith('/history')){
+      const before=new URL(route.request().url()).searchParams.get('before_id'); fetched.push(before);
+      const older=before==='10'; return json(route,{items:(older?ids.slice(3):ids.slice(0,3)).map(byId),next_before_id:older?null:88});
+    }
+    const target=ids.find(id=>url.endsWith('/rounds/'+id));
+    if(target){details.push(target);return json(route,byId(target));}
+    return json(route,{detail:'unexpected'},500);
+  });
+  await open(page); await page.getByRole('button',{name:'历史点名',exact:true}).click();
+  const d=page.getByRole('dialog',{name:'历史点名',exact:true});
+  await expect(d.getByRole('heading',{name:'第 9 轮'})).toBeVisible();
+  await d.getByRole('button',{name:'最新一轮',exact:true}).click();
+  await expect(d.getByRole('heading',{name:'第 90 轮'})).toBeVisible();
+  await d.getByText('按课次查找',{exact:true}).click();
+  await choose(page,d,'本页点名记录','第 88 轮 · 点名 88');
+  await expect(d.getByRole('heading',{name:'第 88 轮'})).toBeVisible();
+  expect(fetched).toEqual([null,'10',null]); expect(details).toEqual([9,90,88]); expect(errors).toEqual([]);
+});
+
+test('LQ classroom history entry retries in place and automatically opens the latest round of this offering', async ({page}) => {
+  let attempts=0;
+  const viewed:string[]=[];
+  const markup=`<!doctype html><html lang="zh-CN"><head><link rel="stylesheet" href="${asset('css/tailwind-app.css')}"><link rel="stylesheet" href="${asset('css/login_attendance.css')}"></head><body><button id="cw-attendance-history">历史点名</button>
+  <script>window.APP_CONFIG={classOfferingId:2,userInfo:{id:1,role:'teacher'},teachingPlan:{sessions:[]}};</script>
+  <script type="module">import {initClassroomPage} from '${asset('js/classroom_page.js')}';initClassroomPage();window.ready=true;</script></body></html>`;
+  const errors=await fixture(page,async(route,url)=>{
+    if(url==='/api/classrooms/2/login-attendance/history') {
+      attempts++;
+      if(attempts===1) return json(route,{detail:'暂时无法读取本课'},409);
+      return json(route,{items:attempts===2?[]:[{id:16}],next_before_id:null});
+    }
+    viewed.push(url);
+    return json(route,{...round(1),id:16,context:{session_title:'本课程最近记录'}});
+  },'teacher','',markup);
+  const entry=page.getByRole('button',{name:'历史点名',exact:true});
+  await entry.click(); const d=page.getByRole('dialog',{name:'历史点名',exact:true});
+  await expect(d.getByRole('alert')).toBeVisible(); await d.getByRole('button',{name:'重新读取'}).click();
+  await expect(d.getByText('本课程暂无点名记录。')).toBeVisible(); expect(viewed).toEqual([]);
+  await page.keyboard.press('Escape'); await expect(entry).toBeFocused(); await entry.click();
+  await expect(d.getByRole('heading',{name:'本课程最近记录'})).toBeVisible();
+  await expect(d.getByRole('combobox',{name:'本页点名记录'})).not.toBeVisible();
+  await expect(d.getByRole('button',{name:'较早一轮'})).not.toBeVisible();
+  expect(viewed).toEqual(['/api/classrooms/2/login-attendance/rounds/16']); expect(errors).toEqual([]);
 });
 
 test('LQ school recovery reloads the actual binding revision and requires local end before binding',async({page})=>{
