@@ -2,11 +2,11 @@
 import { createDomainButton } from './lq/domain-controls.js';
 import { createAmbientPoll } from './ambient_poll.js';
 import { getLayerSystem } from './lq/layer.js';
-import { ATTENDANCE_STATES } from './login_attendance_states.js';
+import { ATTENDANCE_STATES, RECORDED_ATTENDANCE_STATES } from './login_attendance_states.js';
 
 const el = (tag, text) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = String(text); return node; };
 const ACTIVE = new Set(['queued', 'checking', 'sending', 'outcome_unknown']);
-const stateLabel = state => ATTENDANCE_STATES.find(([key]) => key === state)?.[1] || state;
+const stateLabel = state => RECORDED_ATTENDANCE_STATES.find(([key]) => key === state)?.[1] || state;
 
 export function mountStudentCorrection({ host, endpoint, record, field, request, initialDraft, intentState,
     editable, parentBusy, getLayer, onBusy, onDirty, onDraft, onSaved, onReload }) {
@@ -14,7 +14,10 @@ export function mountStudentCorrection({ host, endpoint, record, field, request,
     let dirty = Boolean(initialDraft), gate = { allowed: false, code: 'checking', message: '正在核对智慧课堂点名状态；可先保存本地。' };
     let push = intentState.push || null;
     const draft = initialDraft || { status: record.status === 'PENDING' ? 'PRESENT' : record.status, reason: '' };
-    const status = field('select', '出勤状态', draft.status, { options: ATTENDANCE_STATES.map(([value, label]) => ({ value, label })) });
+    const choices = ATTENDANCE_STATES.map(([value, label]) => ({ value, label }));
+    const existing = choices.some(option => option.value === draft.status);
+    if (!existing) choices.unshift({ value: '', label: '请选择更正后的状态' });
+    const status = field('select', '出勤状态', existing ? draft.status : '', { required: true, options: choices });
     const reason = field('textarea', '改签理由', draft.reason, { rows: 2, required: true, maxLength: 1000 });
     const actions = el('div'); actions.className = 'la-actions';
     const save = createDomainButton({ label: '保存', variant: 'glass', size: 'sm' });
@@ -111,7 +114,7 @@ export function mountStudentCorrection({ host, endpoint, record, field, request,
         if (disposed || busy || (mode === 'push' && !recovering(mode) && !(retryable() && currentPush()?.readback_only) && (!gate.allowed || checking))) return;
         if (mode === 'push' && retryable()) { void run(() => request(`${endpoint}/push/${encodeURIComponent(push.id)}/retry`, { method: 'POST', body: {} }, 95000), 'retry'); return; }
         reason.control.setCustomValidity(reason.control.value.trim() ? '' : '请填写改签理由。');
-        if (!reason.control.reportValidity()) return;
+        if (!status.control.reportValidity() || !reason.control.reportValidity()) return;
         const data = { status: status.control.value, revision: record.revision, reason: reason.control.value.trim(), mode,
             ...(mode === 'push' ? { expected_binding_revision: gate.binding_revision, expected_remote_checkin_id: gate.remote_checkin_id } : {}) };
         const signature = inputSignature(mode);

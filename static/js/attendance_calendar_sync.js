@@ -1,4 +1,4 @@
-import { confirm, openDialog } from './lq/dialogs.js';
+import { openDialog } from './lq/dialogs.js';
 import { getLayerSystem } from './lq/layer.js';
 import { enhanceDropdowns } from './lq/dropdown.js';
 import { createAmbientPoll } from './ambient_poll.js';
@@ -6,12 +6,13 @@ import { openAttendanceAlignment } from './login_attendance_alignment.js';
 import { action, badge, calendarRequests, element, feedback, field, lessonLabel, statusText, studentLabel } from './attendance_calendar_controls.js';
 
 const states = {
-    ready: '可推送', create_available: '学校未点名', school_only: '已回读学校', empty: '两端均未点名', school_missing: '学校未点名', local_pending: '等待结算',
-    alignment_required: '待对齐', blocked: '暂不能推送', confirmed: '已核对', partial: '部分完成', conflict: '需核对',
+    imported: '本地已登记', empty: '未开始点名', school_missing: '学校未点名', location_required: '需要定位', local_pending: '等待结算',
+    alignment_required: '待对齐', blocked: '暂不能同步', confirmed: '两端一致', partial: '部分需核对', conflict: '需核对',
     queued: '已排队', running: '处理中', reading: '正在回读', comparing: '正在比对', outcome_unknown: '待查回执',
     pending: '已排队', superseded: '版本已更新', failed: '处理失败', not_sent: '可重试原请求', no_receipt: '未找到回执',
+    paused: '已暂停', needs_teacher_reauth: '需要重新登录', needs_location: '需要定位',
 };
-const rowStates = { needs_teacher_action: '拟推送', confirmed: '已一致', protected: '保留学校记录', blocked: '已跳过', conflict: '有差异', not_enrolled: '学校无此人', no_local_record: '无本地记录', unmapped: '未匹配' };
+const rowStates = { imported: '已更新本地', needs_teacher_action: '待推送学校', confirmed: '已一致', protected: '保留学校记录', blocked: '已跳过', conflict: '需核对', not_enrolled: '学校无此人', no_local_record: '无本地记录', unmapped: '未匹配' };
 const pendingStates = new Set(['queued', 'running', 'reading', 'comparing', 'outcome_unknown', 'pending', 'sending', 'readback']);
 const remoteText = value => ({ CHECKED: '出勤', UNCHECKED: '缺课', NOT_APPLICABLE: '免考勤', STUDY_TOUR: '研学', PRACTICE: '实践', VOLUNTEER: '志愿服务' }[value] || statusText(value));
 
@@ -23,11 +24,12 @@ function receiptStore(base) {
         try { return key ? JSON.parse(sessionStorage.getItem(key) || '[]').filter(item => Number(item.session) > 0 && typeof item.key === 'string') : []; }
         catch { return []; }
     }
-    return { read, remember(session, id) {
+    function write(rows) {
         if (!key) return;
-        const rows = read().filter(item => item.key !== id);
-        try { sessionStorage.setItem(key, JSON.stringify([...rows, { session, key: id }].slice(-96))); } catch { /* The active dialog still owns this receipt. */ }
-    } };
+        try { sessionStorage.setItem(key, JSON.stringify(rows)); } catch { /* The active dialog still owns this receipt. */ }
+    }
+    return { read, remember(session, id) { write([...read().filter(item => item.key !== id), { session, key: id }].slice(-96)); },
+        forget(id) { write(read().filter(item => item.key !== id)); } };
 }
 function multiField(label, rows, value, labelOf, selected) {
     const { wrapper, input } = field('select', label, { value: '', searchable: true, options: [{ value: '', label: '请选择' },
@@ -38,7 +40,7 @@ function multiField(label, rows, value, labelOf, selected) {
     return { wrapper, input };
 }
 
-export function openCalendarSync({ base, students = [], sessions = [], today, studentIds = null, fixedScope = false, trigger, parentLayer, onChange }) {
+export function openCalendarSync({ base, students = [], sessions = [], today, studentIds = null, fixedScope = false, trigger, parentLayer, onLocalChanged, onChange }) {
     const req = calendarRequests(), store = receiptStore(base), body = element('div', 'la-workspace lac-sync'), footer = element('div', 'la-actions');
     const scope = element('div', 'lac-sync-filters'), feedbackNode = element('p', 'la-notice'), list = element('div', 'lac-sync-list');
     const pupilNames = new Map(students.map(student => [Number(student.student_id), studentLabel(student)]));
@@ -50,29 +52,25 @@ export function openCalendarSync({ base, students = [], sessions = [], today, st
     const scopeNote = element('p', 'lac-summary');
     scope.append(chooseLessons.wrapper, group.wrapper, pupils.wrapper);
     const toolbar = element('div', 'la-actions');
-    const align = action('对齐课程与课次', async () => {
-        if (busy) return;
-        busy = true; gate(); feedback(feedbackNode, '正在核对本课程的学期、课表与名单…');
-        try {
-            const result = await req.read(base + '/calendar/align', { method: 'POST', body: {} }, 100000);
-            if (!req.closed) { clear(); feedback(feedbackNode, result.message || `已核对 ${result.session_count || 0} 个课次，请重新预览。`); }
-        } catch (error) { if (!req.closed) feedback(feedbackNode, error.message || '课表对齐未完成。', true); }
-        finally { if (!req.closed) { busy = false; gate(); } }
+    const receiptButton = action('近期同步回执', () => recover(), 'ghost');
+    const stop = action('停止后续课次', () => {
+        stopped = true; stop.disabled = true; feedback(feedbackNode, '当前课次处理后停止。');
     }, 'ghost');
-    const receiptButton = action('查看近期推送回执', () => recover(), 'ghost');
-    const stop = action('停止后续课次', () => { stopped = true; stop.disabled = true; feedback(feedbackNode, '当前课次处理后停止。'); }, 'ghost');
-    const preview = action('核对并预览', () => scan());
-    const submit = action('推送已核对差异', () => send(), 'prominent');
-    const create = action('定位并新建学校点名', () => send(true));
-    footer.append(stop, preview, submit, create); toolbar.append(align, receiptButton);
+    const submit = action('同步所选课次', () => synchronize(), 'prominent');
+    toolbar.append(receiptButton); footer.append(stop, submit);
     body.append(scope, scopeNote, toolbar, feedbackNode, list);
-    let busy = false, dispatching = false, closed = false, stopped = false, loop = false, changed = false, pollReading = false, historyView = false;
-    const entries = new Map(); let poll, readSequence = 0;
-    const handle = openDialog({ title: '智慧课堂同步', body, footer, size: 'lg' }, { trigger, parentLayer, beforeClose: () => !dispatching,
-        onClose: cleanup, onDestroy: cleanup });
+    const entries = new Map(), notifiedLocal = new Set();
+    let busy = false, closed = false, stopped = false, loop = false, changed = false, historyView = false, readSequence = 0;
+    let fix = null, locationError = '', posting = false, poll;
+    const handle = openDialog({ title: '智慧课堂同步', body, footer, size: 'lg' }, { trigger, parentLayer,
+        beforeClose: () => !posting && !loop, onClose: cleanup, onDestroy: cleanup });
     handle.root.classList.add('la-dialog');
     const dropdowns = enhanceDropdowns(body);
-    function cleanup() { if (closed) return; closed = true; req.close(); poll?.dispose(); dropdowns.forEach(item => item.destroy()); if (changed) onChange?.(); }
+    function cleanup() {
+        if (closed) return;
+        closed = true; req.close(); poll?.dispose(); dropdowns.forEach(item => item.destroy());
+        fix = null; if (changed) onChange?.();
+    }
     function ids() {
         if (fixedScope) return studentIds;
         return group.input.value === 'all' ? null : [...pupils.input.selectedOptions].map(opt => Number(opt.value));
@@ -80,204 +78,197 @@ export function openCalendarSync({ base, students = [], sessions = [], today, st
     function selectedLessons() { return fixedScope ? sessions : [...chooseLessons.input.selectedOptions].map(opt => lessonById.get(Number(opt.value))); }
     function gate() {
         const selected = ids(), size = selectedLessons().length;
-        const locked = busy || pollReading;
-        chooseLessons.input.disabled = group.input.disabled = pupils.input.disabled = locked;
+        chooseLessons.input.disabled = group.input.disabled = pupils.input.disabled = busy;
         pupils.wrapper.hidden = group.input.value !== 'selected'; scope.hidden = fixedScope;
-        scopeNote.textContent = historyView ? '本课程近期推送回执按原授权范围显示，包含其他学生或全班的请求。' : [fixedScope ? lessonLabel(sessions[0]) : `${size} 个课次`,
-            selected === null ? '每课全班名单' : selected.length === 1 ? pupilNames.get(selected[0]) || '1 名学生' : `${selected.length} 名学生`].join(' · ');
-        preview.disabled = locked || !size || (selected && !selected.length);
-        const sendable = [...entries.values()].filter(canSend);
-        submit.disabled = locked || !sendable.length; submit.textContent = sendable.length ? `推送 ${sendable.length} 个课次的差异` : '推送已核对差异';
-        const creatable = [...entries.values()].filter(canCreate);
-        const chosen = creatable.filter(entry => entry.authorizeCreate).length;
-        create.hidden = !creatable.length; create.disabled = locked || !chosen;
-        create.textContent = chosen ? `定位并新建 ${chosen} 个学校点名` : '定位并新建学校点名';
-        align.disabled = receiptButton.disabled = locked; receiptButton.hidden = !store.read().some(row => lessonById.has(row.session));
-        stop.hidden = !loop; stop.disabled = stopped;
-        for (const button of list.querySelectorAll('button')) button.disabled = locked;
-        for (const input of list.querySelectorAll('input')) input.disabled = locked;
+        scopeNote.textContent = historyView ? '本课程近期回执按各次同步时的范围显示。' : [fixedScope ? lessonLabel(sessions[0]) : size + ' 个课次',
+            selected === null ? '每课全班名单' : selected.length === 1 ? pupilNames.get(selected[0]) || '1 名学生' : selected.length + ' 名学生'].join(' · ');
+        stop.hidden = !loop || size < 2; stop.disabled = stopped;
+        submit.textContent = fixedScope ? '再次同步本课' : '同步所选课次';
+        submit.disabled = busy || !size || (selected && !selected.length);
+        receiptButton.disabled = busy; toolbar.hidden = !store.read().some(row => lessonById.has(row.session));
+        for (const button of list.querySelectorAll('button')) button.disabled = busy;
     }
     function clear() { historyView = false; entries.clear(); list.replaceChildren(); }
-    function canSend(entry) { return !entry.createIntent && ['ready', 'not_sent'].includes(entry.value?.state) && Boolean(entry.token); }
-    function canCreate(entry) { return ids() === null && entry.createIntent && entry.token && ['create_available', 'not_sent'].includes(entry.value?.state); }
+    function acceptResult(entry, result) {
+        entry.value = result;
+        changed ||= Boolean(result.local_changed || result.receipt);
+        if (fixedScope && !historyView && result.local_changed && !notifiedLocal.has(entry.key)) {
+            notifiedLocal.add(entry.key); onLocalChanged?.();
+        }
+    }
+    function makeEntry(lesson, key = null, selected) {
+        const lookup = historyView ? key : lesson.session_id;
+        const entry = { lesson, key: key || crypto.randomUUID(), selected, value: {}, lastRead: 0, node: element('article', 'lac-sync-item') };
+        const previous = entries.get(lookup);
+        if (previous) previous.node.replaceWith(entry.node); else list.append(entry.node);
+        entries.set(lookup, entry);
+        return entry;
+    }
+    const endpoint = entry => base + '/sessions/' + entry.lesson.session_id + '/external';
     function render(entry) {
         const { value, lesson } = entry, state = value.state;
         const first = element('div', 'lac-sync-line');
-        first.append(element('strong', '', `${lesson.date} · ${lessonLabel(lesson)}`), badge(states[state] || '需核对', ['confirmed', 'school_only'].includes(state) ? 'success' : ['ready', 'queued', 'running'].includes(state) ? 'info' : 'neutral'));
-        const content = [first, element('p', '', value.message || '')];
-        if (value.counts) {
-            const counts = Object.entries(value.counts).filter(([, n]) => Number(n) > 0).map(([k, n]) => (rowStates[k] || states[k] || k) + ' ' + n);
-            if (counts.length) content.push(element('small', '', counts.join(' · ')));
-            if (value.counts.protected) content.push(element('small', '', '需人工更正时，在本课点名中打开该生详情，核对学校现值后选择“保存并推送”。'));
-        }
+        const tone = ['confirmed', 'imported'].includes(state) ? 'success' : pendingStates.has(state) ? 'info' : ['partial', 'conflict', 'failed'].includes(state) ? 'warning' : 'neutral';
+        first.append(element('strong', '', lesson.date + ' · ' + lessonLabel(lesson)), badge(states[state] || '需核对', tone));
+        const content = [first];
+        if (entry.expanded) content.push(element('small', '', '本次范围 · 本课全班'));
+        if (value.message) content.push(element('p', '', value.message));
+        const counts = Object.entries(value.counts || {}).filter(([, n]) => Number(n) > 0).map(([k, n]) => (rowStates[k] || states[k] || '待核对') + ' ' + n);
+        if (counts.length) content.push(element('small', '', counts.join(' · ')));
         if (value.rows?.length) {
-            const details = element('details', 'lq-collapsible'), title = element('summary', 'lq-collapsible__summary', `查看 ${value.rows.length} 人的比对`);
+            const details = element('details', 'lq-collapsible'), title = element('summary', 'lq-collapsible__summary', '查看 ' + value.rows.length + ' 人的记录');
             const rows = element('div', 'lq-collapsible__content lac-differences'); details.append(title, rows);
             details.addEventListener('toggle', () => {
                 if (!details.open || rows.childElementCount) return;
                 for (const row of value.rows) {
-                    const name = pupilNames.get(Number(row.student_id)) || row.student_number || '未匹配学生';
-                    const reason = row.state === 'needs_teacher_action' ? '拟推送为' + remoteText(row.target_status) : row.reason || rowStates[row.state] || '待核对';
-                    rows.append(element('p', '', `${name}　 本地 ${statusText(row.local_status)} / 学校 ${remoteText(row.remote_status)}　·　${reason}`));
+                    const name = pupilNames.get(Number(row.student_id)) || studentLabel(row) || '未匹配学生';
+                    const statuses = '本地 ' + statusText(row.local_status) + ' / 学校 ' + remoteText(row.remote_status);
+                    const reason = row.reason || rowStates[row.state];
+                    rows.append(element('p', '', [name, statuses, reason].filter(Boolean).join('　·　')));
                 }
             }); content.push(details);
         }
         if (state === 'alignment_required') content.push(action('核对此课对齐', event => review(entry, event.currentTarget)));
-        if (canCreate(entry)) {
-            const consent = field('checkbox', '为本课全班新建学校点名', { checked: Boolean(entry.authorizeCreate) });
-            consent.input.addEventListener('change', () => { entry.authorizeCreate = consent.input.checked; gate(); });
-            content.push(consent.wrapper);
+        if (state === 'school_missing' && value.requires_full_roster && Array.isArray(entry.selected)) {
+            content.push(action('同步本课全班', () => run(async () => {
+                const full = makeEntry(lesson, null, null); full.expanded = true;
+                await reconcile(full);
+            })));
         }
-        if (state === 'school_missing' && !ids() || value.counts?.protected) content.push(action('查看本课点名设置', async event => {
-            const button = event.currentTarget; button.disabled = true;
-            try {
-                const { openLoginAttendance } = await import('./login_attendance.js');
-                if (!closed && button.isConnected) openLoginAttendance({ classOfferingId: Number(base.split('/')[3]), session: { id: lesson.session_id, title: lesson.title, session_date: lesson.date },
-                    studentId: ids()?.length === 1 ? ids()[0] : null, userRole: 'teacher', trigger: button });
-            } catch (error) { if (!closed) feedback(feedbackNode, error.message, true); }
-            finally { if (button.isConnected) button.disabled = false; }
-        }, 'ghost'));
-        if (value.historical && state === 'outcome_unknown') content.push(element('small', '', '原任务已被替代，可重新预览本课的当前状态。'));
-        if (!value.historical && pendingStates.has(state) && entry.key) content.push(action('查询此次回执', () => readOne(entry), 'ghost'));
-        if (!value.historical && state === 'outcome_unknown' && entry.key) content.push(action('回读学校', () => readOne(entry, true)));
-        entry.node.replaceChildren(...content);
+        if (state === 'location_required') content.push(action('重新定位并同步本课', () => run(() => reconcile(entry))));
+        if (state === 'not_sent' && entry.selected !== undefined) content.push(action('重试此次同步', () => run(() => reconcile(entry))));
+        if (value.historical && state === 'outcome_unknown') content.push(element('small', '', '可重新同步本课，核对当前两端状态。'));
+        if (!value.historical && pendingStates.has(state)) content.push(action('查询此次回执', () => run(() => receipt(entry))));
+        if (!value.historical && state === 'outcome_unknown') content.push(action('回读学校', () => run(() => receipt(entry, true))));
+        entry.node.replaceChildren(...content); gate();
     }
-    function newEntry(lesson, key = null) {
-        const row = { lesson, key, token: null, lastRead: 0, node: element('article', 'lac-sync-item') };
-        entries.set(key || String(lesson.session_id), row); list.append(row.node); return row;
+    async function run(task, batch = false) {
+        if (busy || closed) return;
+        busy = true; loop = batch; stopped = false; locationError = ''; gate();
+        try { await task(); }
+        catch (error) { if (!closed) feedback(feedbackNode, error.message || '同步未完成，请重试。', true); }
+        finally { if (!closed) { busy = loop = false; gate(); } }
     }
-    const endpoint = row => `${base}/sessions/${row.lesson.session_id}/external`;
-    async function check(entry, selected) {
-        entry.value = await req.read(endpoint(entry) + '/calendar-preview', { method: 'POST', body: { student_ids: selected } }, 100000);
-        entry.key = null; entry.token = entry.value.preview_token;
-        entry.createIntent = entry.value.state === 'create_available' && selected === null;
-        entry.authorizeCreate = false;
-        changed ||= ['school_only', 'ready', 'confirmed', 'partial', 'local_pending', 'blocked'].includes(entry.value.state);
+    async function location() {
+        if (fix && Date.now() - fix.captured_at_ms < 270000) return fix;
+        if (locationError) throw new Error(locationError);
+        try {
+            if (!navigator.geolocation) throw new Error('当前浏览器不支持定位。');
+            const position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve,
+                () => reject(new Error('未取得浏览器定位。')), { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }));
+            fix = { latitude: position.coords.latitude, longitude: position.coords.longitude, captured_at_ms: position.timestamp };
+            return fix;
+        } catch (error) {
+            locationError = error.message + '允许定位后可继续为本课全班新建学校点名。'; throw new Error(locationError);
+        }
+    }
+    async function reconcile(entry) {
+        const payload = { student_ids: entry.selected, idempotency_key: entry.key };
+        const post = () => req.read(endpoint(entry) + '/calendar-reconcile', { method: 'POST', body: payload }, 100000);
+        posting = true;
+        store.remember(entry.lesson.session_id, entry.key);
+        try {
+            let result = await post();
+            if (closed) return;
+            if (result.state === 'location_required' && entry.selected === null && !stopped) {
+                entry.value = { ...result, message: '正在取得浏览器定位，以便为本课全班新建学校点名。' }; render(entry); gate();
+                try { payload.location = await location(); }
+                catch (error) { result = { ...result, message: error.message }; }
+                if (closed) return;
+                if (payload.location && !stopped) result = await post();
+            }
+            if (closed) return;
+            acceptResult(entry, result);
+            const hasReceipt = result.has_receipt || result.receipt;
+            if (!hasReceipt) store.forget(entry.key);
+            if (hasReceipt && result.state === 'outcome_unknown' && !result.historical && !entry.triedReadback) {
+                await receipt(entry, true); return;
+            }
+        } catch (error) {
+            if (closed) return;
+            if (!error.status || error.status >= 500) {
+                changed = true; entry.value = { state: 'outcome_unknown', message: '正在查询原请求回执…' }; render(entry);
+                await receipt(entry); return;
+            }
+            store.forget(entry.key);
+            entry.value = { state: 'blocked', message: error.message || '此次同步未完成。' };
+            if ([401, 403, 429].includes(error.status)) stopped = true;
+        } finally { posting = false; }
+        render(entry);
     }
     async function review(entry, button) {
-        if (busy || closed) return;
-        busy = true; gate();
-        try {
-            const base = endpoint(entry), post = (path, body) => req.read(base + path, { method: 'POST', body }, 100000);
+        await run(async () => {
+            const post = (path, body) => req.read(endpoint(entry) + path, { method: 'POST', body }, 100000);
             const result = await post('/match', {});
             if (closed) return;
-            const after = async () => {
-                if (closed) return;
-                busy = true; gate();
-                try { await check(entry, ids()); if (!closed) render(entry); }
-                catch (error) { if (!closed) feedback(feedbackNode, error.message, true); }
-                finally { if (!closed) { busy = false; gate(); } }
+            if (result.binding?.state === 'matched') { await reconcile(entry); return; }
+            let matched = false;
+            const update = async (path, payload) => {
+                const value = await post(path, payload); matched = value.binding?.state === 'matched'; return value;
             };
-            if (result.binding?.state === 'matched') await after();
-            else openAttendanceAlignment({ value: result, trigger: button, parentLayer: handle, confirm: payload => post('/confirm', payload), realign: () => post('/match', {}), onClose: after });
-        } catch (error) { if (!closed) feedback(feedbackNode, error.message || '对齐暂未完成。', true); }
-        finally { if (!closed) { busy = false; gate(); } }
+            openAttendanceAlignment({ value: result, trigger: button, parentLayer: handle, confirm: payload => update('/confirm', payload),
+                realign: () => update('/match', {}), onClose: () => { if (matched && !closed) void run(() => reconcile(entry)); } });
+        });
     }
-    async function scan() {
-        if (busy || pollReading) return;
-        const scope = selectedLessons(), selected = ids(); if (!scope.length || (selected && !selected.length)) return;
-        clear(); busy = loop = true; stopped = false; gate();
-        let index = 0;
-        for (const lesson of scope) {
-            if (closed || stopped) break;
-            feedback(feedbackNode, `正在核对 ${++index} / ${scope.length} 课次…`);
-            const entry = newEntry(lesson);
-            try { await check(entry, selected); }
-            catch (error) {
-                entry.value = { state: 'blocked', message: error.message || '预览未完成，请重新核对。' };
-                if ([401, 403, 429].includes(error.status)) stopped = true;
+    function synchronize() {
+        const lessons = selectedLessons(), selected = ids();
+        if (!lessons.length || (selected && !selected.length)) return;
+        return run(async () => {
+            if (historyView) clear();
+            let count = 0;
+            for (const lesson of lessons) {
+                if (closed || stopped) break;
+                feedback(feedbackNode, '正在同步 ' + (++count) + ' / ' + lessons.length + ' 课次…');
+                const prior = entries.get(lesson.session_id);
+                if (prior && !prior.value.historical && pendingStates.has(prior.value.state)) await receipt(prior);
+                else if (prior?.value.state === 'not_sent') await reconcile(prior);
+                else await reconcile(makeEntry(lesson, null, selected));
             }
-            if (!closed) render(entry);
-        }
-        if (!closed) {
-            const ready = [...entries.values()].filter(canSend).length, creatable = [...entries.values()].filter(canCreate).length;
-            feedback(feedbackNode, `${stopped ? '已停止，' : ''}已核对 ${index} 个课次，${ready} 个课次有可推送差异。` + (creatable ? `${creatable} 个学校点名待新建，可逐课勾选。` : ''));
-            busy = loop = false; gate();
-        }
-    }
-    async function createLocation(targets) {
-        const labels = targets.map(({ lesson }) => lesson.date + ' · ' + lessonLabel(lesson));
-        const approved = await confirm({ title: `授权新建 ${targets.length} 个全班点名？`,
-            message: `将用本次浏览器位置在智慧课堂为以下课次新建全班点名，并推送本地有效记录。\n${labels.join('\n')}`,
-            confirmLabel: '定位并授权新建' }, { parentLayer: handle, trigger: create });
-        if (!approved || closed) return null;
-        if (!navigator.geolocation) throw new Error('当前浏览器不支持定位。已保留所选课次。');
-        const fix = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve,
-            () => reject(new Error('未取得定位。允许定位后可重试，所选课次已保留。')), { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }));
-        return { latitude: fix.coords.latitude, longitude: fix.coords.longitude, captured_at_ms: fix.timestamp };
-    }
-    async function send(creating = false) {
-        if (busy || pollReading) return;
-        const targets = [...entries.values()].filter(entry => creating ? canCreate(entry) && entry.authorizeCreate : canSend(entry)); if (!targets.length) return;
-        busy = dispatching = loop = true; stopped = false; gate();
-        let index = 0, location = null, expired = false;
-        if (creating) {
-            try { location = await createLocation(targets); }
-            catch (error) { if (!closed) feedback(feedbackNode, error.message || '定位未完成，请重试。', true); }
-            if (closed || !location) { busy = dispatching = loop = false; if (!closed) gate(); return; }
-        }
-        for (const entry of targets) {
-            if (closed || stopped) break;
-            if (creating && Date.now() - location.captured_at_ms >= 300000) { expired = true; break; }
-            feedback(feedbackNode, `正在提交 ${++index} / ${targets.length} 课次…`);
-            entry.key ||= crypto.randomUUID(); store.remember(entry.lesson.session_id, entry.key);
-            try {
-                const payload = { preview_token: entry.token, idempotency_key: entry.key };
-                if (creating) Object.assign(payload, { authorize_create: true, location });
-                entry.value = await req.read(endpoint(entry) + (creating ? '/calendar-create' : '/calendar-sync'), { method: 'POST', body: payload }, 100000);
-                changed = true;
-            } catch (error) {
-                if (!error.status || error.status >= 500) entry.value = { state: 'outcome_unknown', message: '送达情况待确认，请查询此次回执。' };
-                else entry.value = { state: 'blocked', message: error.message || '快照已变化，请重新核对。' };
-            }
-            if (!closed) render(entry);
-        }
-        if (!closed) {
-            busy = dispatching = loop = false; gate();
-            feedback(feedbackNode, `${expired ? '定位已过期，剩余课次须重新定位。' : stopped ? '已停止后续课次。' : ''}已处理 ${index} 项提交。各课次以回执为准。`);
-        }
+            if (closed) return;
+            const pending = [...entries.values()].filter(row => !row.value.historical && pendingStates.has(row.value.state)).length;
+            feedback(feedbackNode, (stopped ? '已停止后续课次。' : '') + (lessons.length > 1 ? '已处理 ' + count + ' 个课次。' : '') + (pending ? pending + ' 个课次正在等待学校回执。' : ''));
+        }, true);
     }
     async function receipt(entry, readSchool = false) {
         entry.lastRead = ++readSequence;
+        if (readSchool) entry.triedReadback = true;
+        const url = endpoint(entry) + '/calendar-sync/' + encodeURIComponent(entry.key);
         try {
-            const url = endpoint(entry) + '/calendar-sync/' + encodeURIComponent(entry.key);
-            const result = readSchool ? await req.read(url + '/readback', { method: 'POST', body: {} }, 100000) : await req.read(url);
+            let result = readSchool ? await req.read(url + '/readback', { method: 'POST', body: {} }, 100000) : await req.read(url);
             if (closed) return;
-            entry.value = result; changed = true;
+            if (!readSchool && result.state === 'outcome_unknown' && !result.historical && !entry.triedReadback) {
+                entry.triedReadback = true;
+                result = await req.read(url + '/readback', { method: 'POST', body: {} }, 100000);
+            }
+            if (closed) return;
+            acceptResult(entry, result); changed = true;
         } catch (error) {
             if (closed) return;
-            if (error.status === 404 && entry.token) entry.value = { state: 'not_sent', message: '尚无此请求的收据，可使用同一请求号重试。' };
-            else if (error.status === 404) entry.value = { state: 'no_receipt', message: '未找到这次推送回执，请重新核对两端状态。' };
-            else entry.value = { state: 'outcome_unknown', message: error.message || '暂未能查询到收据。' };
+            if (error.status === 404) {
+                entry.value = entry.selected !== undefined ? { state: 'not_sent', message: '未查到后台任务，可按原范围重试此次同步。' }
+                    : { state: 'no_receipt', message: '未查到后台任务，可重新选择范围同步。' };
+                store.forget(entry.key);
+            } else entry.value = { state: 'outcome_unknown', message: error.message || '回执暂不可用，可稍后查询。' };
         }
         render(entry);
     }
-    async function readOne(entry, readSchool = false) {
-        if (busy || pollReading) return;
-        busy = true; gate();
-        try { await receipt(entry, readSchool); } finally { if (!closed) { busy = false; gate(); } }
-    }
-    async function recover() {
-        if (busy || pollReading) return;
+    function recover() {
         const receipts = store.read().filter(row => lessonById.has(row.session));
-        busy = loop = true; stopped = false; clear(); historyView = true; gate();
-        try {
+        return run(async () => {
+            clear(); historyView = true; gate();
             for (const item of receipts.reverse()) {
                 if (closed || stopped) break;
-                await receipt(newEntry(lessonById.get(item.session), item.key));
+                await receipt(makeEntry(lessonById.get(item.session), item.key));
             }
-            if (!closed) feedback(feedbackNode, '已查询近期推送回执。');
-        } finally { if (!closed) { busy = loop = false; gate(); } }
+            if (!closed) feedback(feedbackNode, '已查询近期同步回执。');
+        }, true);
     }
     scope.addEventListener('change', () => { clear(); feedback(feedbackNode, ''); gate(); });
     poll = createAmbientPoll(async () => {
-        const pending = [...entries.values()].filter(entry => entry.key && !entry.value?.historical && pendingStates.has(entry.value?.state)).sort((a, b) => a.lastRead - b.lastRead);
-        if (!pending.length) return;
-        pollReading = true; gate();
-        try { for (const entry of pending.slice(0, 3)) { if (closed) break; await receipt(entry); } }
-        finally { if (!closed) { pollReading = false; gate(); } }
-    }, { intervalMs: 12000, timeoutMs: 85000, active: () => !closed && !busy && !pollReading && !document.hidden && getLayerSystem(document).top() === handle });
+        const pending = [...entries.values()].filter(entry => !entry.value.historical && pendingStates.has(entry.value.state)).sort((a, b) => a.lastRead - b.lastRead);
+        if (pending.length) await run(async () => { for (const entry of pending.slice(0, 3)) { if (closed) break; await receipt(entry); } });
+    }, { intervalMs: 12000, timeoutMs: 85000, active: () => !closed && !busy && !document.hidden && getLayerSystem(document).top() === handle });
     poll.start(12000); gate();
-    if (fixedScope && sessions.length === 1) void scan();
+    if (fixedScope && sessions.length === 1) void synchronize();
     return handle;
 }

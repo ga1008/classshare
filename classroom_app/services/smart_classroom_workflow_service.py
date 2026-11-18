@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
-from datetime import date, datetime, timezone, timedelta
 import json
 import re
 import time
@@ -58,7 +57,8 @@ def workflow(conn, user, offering_id, session_id):
     from .smart_classroom_alignment_service import alignment_view
     ctx = _lesson(conn, user, offering_id, session_id)
     binding = _binding_view(ctx, _link(conn, user, session_id))
-    alignment = alignment_view(conn, user, offering_id, session_id)
+    alignment_context = offering_alignment_context(conn, user, offering_id)
+    alignment = alignment_view(conn, user, offering_id, session_id, alignment_context)
     if alignment['course']['state'] != 'matched' or alignment['session']['state'] != 'matched':
         binding['state'] = alignment['session']['state'] if alignment['session']['state'] != 'matched' else 'stale'
         if alignment['course']['state'] != 'matched':
@@ -67,7 +67,7 @@ def workflow(conn, user, offering_id, session_id):
     plan = auto.get_auto_sync(conn, user, row["id"])["plan"] if row else None
     if plan and plan.get("remote_checkin_id"):
         binding["needs_location"] = False
-    active = bool(plan and plan["enabled"] and plan["state"] in {"pending", "running", "comparing", "reading", "outcome_unknown"})
+    active = bool(plan and (plan["state"] == "outcome_unknown" or plan["enabled"] and plan["state"] in {"pending", "running", "comparing", "reading"}))
     from .login_attendance_settlement_service import has_unpublished_settlement
     settling = bool(row and has_unpublished_settlement(conn,row['id']))
     if row:
@@ -79,12 +79,18 @@ def workflow(conn, user, offering_id, session_id):
                 raise
             active = True
     can_sync = bool(row and row["state"] == "published" and binding["state"] == "matched" and not active and not settling and not ctx["closed"])
-    message = binding["message"] if binding["state"] != "matched" else ("下课自动结算完成后，点击同步与推送。" if not row or row["state"] != "published" else "已准备好同步本次课；远端出勤和特殊请假状态会受到保护。")
+    can_reconcile = bool(not ctx["closed"] and not active and not settling and (not row or row["state"] == "published")
+                         and session_id in alignment_context['contexts'] and alignment_context['access'])
+    message = binding["message"] if binding["state"] != "matched" else (
+        "可同步学校点名到本地。" if not row else "可以同步本课出勤。" if row["state"] == "published" else "本地点名结束并结算后可同步。")
     if active and binding['state'] == 'matched':
         message = '学校同步正在处理或等待回读，请完成后再同步整班。'
     if settling:
         message = '本地结算尚未完成，请等待结果发布；失败时可点击立即结算重试。'
-    return {"binding": binding, "plan": plan, "alignment": alignment, "can_sync": can_sync, "message": message, "capabilities": ledger.capabilities()}
+    if alignment_context['account_error']:
+        message = alignment_context['account_error']['message']
+    return {"binding": binding, "plan": plan, "alignment": alignment, "can_sync": can_sync,
+            "can_reconcile": can_reconcile, "message": message, "capabilities": ledger.capabilities()}
 
 
 async def _ai_assist(task, facts):
@@ -305,27 +311,13 @@ def enqueue_sync(conn, user, offering_id, round_id, payload, *, calendar=None):
     return workflow(conn, user, offering_id, ctx["session_id"])
 
 
-def _timestamp_ms(value):
-    if not value:
-        return None
-    try:
-        if isinstance(value, (int, float)):
-            return int(value * 1000 if value < 100000000000 else value)
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone(timedelta(hours=8)))
-        return int(parsed.timestamp() * 1000)
-    except (ValueError, TypeError, OverflowError):
-        return None
-
-
 def comparison_targets(ctx, snapshot, *, selected_ids=None):
     """Compare source edit times, never fetch times or AI guesses.
 
     With unknown/remote-newer time only positive attendance can be added.
     Protected school leave and pending local absence always remain protected.
     """
-    remote_time = _timestamp_ms(snapshot["record"].get("updateTime"))
+    remote_time = mini.school_timestamp_ms(snapshot["record"].get("updateTime"))
     students = {r["student_number"]: r for r in ctx["students"]}
     result, counts = [], Counter()
     for target in ledger._targets(ctx):

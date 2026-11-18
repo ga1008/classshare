@@ -7,13 +7,13 @@ import { createContent } from './lq/content.js';
 import { createComponent } from './lq/components.js';
 import { createForm } from './lq/forms.js';
 import { enhanceDropdowns } from './lq/dropdown.js';
-import { ATTENDANCE_STATES } from './login_attendance_states.js';
+import { ATTENDANCE_STATES, RECORDED_ATTENDANCE_STATES } from './login_attendance_states.js';
 
 const active = new Map();
 const n = (tag, cls = '', text) => { const el = document.createElement(tag); el.className = cls; if (text !== undefined) el.textContent = String(text); return el; };
 const button = (label, action, variant = 'glass') => { const el = createDomainButton({ label, variant, size: 'sm' }); el.addEventListener('click', action); return el; };
 const chip = (label, tone = 'neutral') => createComponent('chip', { label: String(label), kind: 'status', tone });
-const labels = Object.fromEntries([...ATTENDANCE_STATES, ['PENDING', '待核对'], ['EXEMPT', '免考勤'], ['NOT_APPLICABLE', '免考勤'], ['LATE_OR_EARLY', '迟到或早退'], ['UNKNOWN', '待核对'], ['CHECKED', '出勤'], ['UNCHECKED', '缺课']]);
+const labels = Object.fromEntries([...RECORDED_ATTENDANCE_STATES, ['PENDING', '待核对'], ['EXEMPT', '免考勤'], ['NOT_APPLICABLE', '免考勤'], ['UNKNOWN', '待核对'], ['CHECKED', '出勤'], ['UNCHECKED', '缺课']]);
 const sources = { local: '本地点名', smart_synced: '智慧课堂同步', confirmed_pdf: '已确认签到原件', mixed: '多来源核对' };
 const states = { scheduled: '待开始', running: '点名中', settling: '等待补报结算', published: '已结束', synced: '已同步', unrecorded: '未纳入统计', void: '已作废' };
 const count = value => Number.isFinite(Number(value)) ? Number(value) : 0;

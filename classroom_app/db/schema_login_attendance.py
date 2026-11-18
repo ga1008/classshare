@@ -14,7 +14,7 @@ REQUIRED_COLUMNS = {
     "login_attendance_policies": tuple("class_offering_id revision closed_at_ms networks_json enforce_network before_minutes after_minutes appeal_days teacher_reference_ms updated_by updated_at_ms".split()),
     "login_attendance_rounds": tuple("id class_offering_id session_id teacher_id request_key state is_current revision settlement_generation starts_at_ms ends_at_ms window_start_ms window_end_ms settle_at_ms created_at_ms ended_at_ms evaluated_at_ms next_evaluation_ms policy_json context_json baseline_json watermark_json supersedes_id void_reason".split()),
     "login_attendance_settlement_runs": tuple("id round_id owner_teacher_id generation revision request_key request_hash state stage completed total cutoff_ms scope_json worker_token message created_at_ms updated_at_ms".split()),
-    "login_attendance_records": tuple("id round_id student_id student_number name class_name expected confirmed_retake status suggestion quality manual_confirmed revision first_seen_ms last_seen_ms deviation_ms evidence_json reason decided_by decided_at_ms updated_at_ms".split()),
+    "login_attendance_records": tuple("id round_id student_id student_number name class_name expected confirmed_retake status suggestion quality manual_confirmed revision first_seen_ms last_seen_ms deviation_ms evidence_json school_decision_json reason decided_by decided_at_ms updated_at_ms".split()),
     "login_attendance_access": tuple("event_key student_id observed_at_ms ip_address network_source auth_channel session_hash source class_offering_hint received_at_ms".split()),
     "login_attendance_evaluations": tuple("id round_id evaluated_at_ms algorithm_version input_hash baseline_json watermark_json results_json".split()),
     "login_attendance_audit": tuple("id round_id record_id actor_id action before_json after_json reason created_at_ms".split()),
@@ -60,7 +60,7 @@ def ensure_login_attendance_schema(conn, *, engine=None):
             suggestion TEXT NOT NULL DEFAULT 'PENDING', quality TEXT NOT NULL DEFAULT 'unknown',
             manual_confirmed INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 1,
             first_seen_ms BIGINT, last_seen_ms BIGINT, deviation_ms BIGINT,
-            evidence_json TEXT NOT NULL DEFAULT '{{}}', reason TEXT NOT NULL DEFAULT '',
+            evidence_json TEXT NOT NULL DEFAULT '{{}}', school_decision_json TEXT, reason TEXT NOT NULL DEFAULT '',
             decided_by BIGINT, decided_at_ms BIGINT, updated_at_ms BIGINT NOT NULL,
             UNIQUE(round_id,student_id)
         )""",
@@ -127,3 +127,9 @@ def ensure_login_attendance_schema(conn, *, engine=None):
         policy_columns = {r[1] for r in conn.execute('PRAGMA table_info(login_attendance_policies)').fetchall()}
     if 'enforce_network' not in policy_columns:
         conn.execute('ALTER TABLE login_attendance_policies ADD COLUMN enforce_network INTEGER NOT NULL DEFAULT 0')
+    if engine == 'postgres':
+        record_columns = {r['column_name'] for r in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='login_attendance_records'")}
+    else:
+        record_columns = {r[1] for r in conn.execute('PRAGMA table_info(login_attendance_records)')}
+    if 'school_decision_json' not in record_columns:
+        conn.execute('ALTER TABLE login_attendance_records ADD COLUMN school_decision_json TEXT')

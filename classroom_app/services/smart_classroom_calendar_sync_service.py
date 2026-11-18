@@ -42,7 +42,7 @@ def _result(state, message, rows=(), **extra):
 
 def _session(conn, user, offering_id, session_id, *, lock=False):
     offering = local.require_teacher(conn, offering_id, user, lock=lock)
-    _, lessons = semester_sessions(conn, offering, session_id)
+    _, lessons = semester_sessions(conn, offering, session_id, lock=lock)
     return lessons[0]
 
 
@@ -52,6 +52,9 @@ def _round(conn, offering_id, session_id):
 
 
 def comparisons(ctx, snapshot, selection):
+    if selection.get('bidirectional'):
+        from .smart_classroom_reconciliation_service import compare_for_push
+        return compare_for_push(ctx, snapshot, selection)
     # The signed preview pins both the eligible students and the observed school
     # values. Only collect targets within that scope, even after a worker restart.
     baseline = selection['baseline']
@@ -70,6 +73,11 @@ def comparisons(ctx, snapshot, selection):
 async def preview(user, offering_id, session_id, student_ids):
     if student_ids is not None and len(set(student_ids)) != len(student_ids):
         raise HTTPException(422, '选择中含有重复学生。')
+    return await read_lesson_snapshot(user, offering_id, session_id,
+        lambda *args: _review_snapshot(user, offering_id, session_id, *args, student_ids))
+
+
+async def read_lesson_snapshot(user, offering_id, session_id, consume):
     with get_db_connection() as conn:
         lesson = _session(conn, user, offering_id, session_id)
         if lesson['schedule_status'] in {'cancelled', 'canceled', 'suspended'}:
@@ -92,7 +100,7 @@ async def preview(user, offering_id, session_id, student_ids):
     async with _account_turn(source['external_account_key']) as lease:
         async with flow.open_authenticated_smart_classroom_client(access, api='mini') as (raw, _, _):
             snapshot = await mini.read_slot(auto._LeasedClient(raw, source['external_account_key'], lease), slot, source, remote_id)
-        return _review_snapshot(user, offering_id, session_id, link['revision'], source, slot, access, snapshot, student_ids)
+        return consume(link['revision'], source, slot, access, snapshot)
 
 
 def _review_snapshot(user, offering_id, session_id, binding_revision, source, slot, access, snapshot, student_ids):
@@ -188,6 +196,33 @@ def _key(value):
 
 def status(conn, user, offering_id, session_id, key):
     _session(conn, user, offering_id, session_id)
+    receipt = conn.execute("SELECT result_json FROM smart_attendance_calendar_receipts WHERE owner_teacher_id=? "
+                           "AND class_offering_id=? AND session_id=? AND request_key=?", (user['id'], offering_id, session_id, key)).fetchone()
+    if receipt:
+        result = json.loads(receipt['result_json'])
+        result['has_receipt'] = True
+        if result['receipt']:
+            job = _workflow_status(conn, user, offering_id, session_id, key)
+            result.update(job)
+            if result['rows']:
+                operations = {r['student_id']: r for r in conn.execute(
+                    "SELECT o.student_id,o.state,o.remote_status,o.reason FROM smart_attendance_sync_runs s "
+                    "JOIN smart_attendance_sync_operations o ON o.run_id=s.id "
+                    "JOIN login_attendance_rounds r ON CAST(r.id AS TEXT)=s.local_round_id "
+                    "WHERE s.owner_teacher_id=? AND s.request_key=? AND r.class_offering_id=? AND r.session_id=?",
+                    (user['id'], _key(key), offering_id, session_id))}
+                for row in result['rows']:
+                    op = operations.get(row['student_id'])
+                    if op and row['state'] == 'needs_teacher_action':
+                        row.update(state=op['state'], remote_status=op['remote_status'], reason=op['reason'])
+                result['counts'] = dict(Counter(r['state'] for r in result['rows']))
+            if result['state'] == 'confirmed' and result.get('requires_review'):
+                result.update(state='partial', message='可同步的学生已完成，仍有待核对的记录。')
+        return result
+    return _workflow_status(conn, user, offering_id, session_id, key)
+
+
+def _workflow_status(conn, user, offering_id, session_id, key):
     row = conn.execute("SELECT w.local_round_id FROM smart_attendance_workflow_requests w JOIN login_attendance_rounds r "
                        "ON CAST(r.id AS TEXT)=w.local_round_id WHERE w.owner_teacher_id=? AND w.request_key=? "
                        "AND r.class_offering_id=? AND r.session_id=?", (user['id'], _key(key), offering_id, session_id)).fetchone()
@@ -296,7 +331,7 @@ async def readback(user, offering_id, session_id, key):
         async with flow.open_authenticated_smart_classroom_client(access, api='mini') as (raw, _, _):
             client = auto._LeasedClient(raw, plan['external_account_key'], lease)
             if run:
-                result = await auto._reconcile_unknown(client, user, plan, dict(run))
+                result = await auto._reconcile_unknown(client, user, plan, dict(run), read_generation=access['credential_generation'])
             else:
                 return await _read_creation_receipt(client, user, plan, offering_id, session_id, key)
         with get_db_connection() as conn:

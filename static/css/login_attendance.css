@@ -93,6 +93,7 @@
 .lac-day-result[data-tone="danger"] { background:hsl(var(--ls-tone-danger-soft)); color:hsl(var(--ls-tone-danger-fg)); }
 .lac-day-result[data-tone="warning"] { background:hsl(var(--ls-tone-warning-soft)); color:hsl(var(--ls-ink)); }
 .lac-day-result[data-tone="neutral"] { background:hsl(var(--ls-tone-neutral-soft)); color:hsl(var(--ls-tone-neutral-fg)); }
+.lac-day-result[data-tone="info"] { background:hsl(var(--ls-tone-info-soft)); color:hsl(var(--ls-ink)); }
 .lac-holiday { font-size:.7rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
 .lac-legend { gap:.4rem; }
 .lac-empty { grid-column:1/-1; }

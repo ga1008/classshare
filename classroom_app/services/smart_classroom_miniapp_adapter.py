@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from datetime import datetime, timedelta, timezone
+from math import isfinite
 
 from fastapi import HTTPException
 
@@ -40,18 +42,53 @@ async def _post(client, operation, data):
     return result
 
 
-def student_map(rows):
+def school_timestamp_ms(value):
+    """Convert a school edit timestamp to milliseconds. Naive school dates use UTC+8."""
+    if isinstance(value, str):
+        value = value.strip()
+        if re.fullmatch(r"[0-9]{10}|[0-9]{13}", value):
+            value = int(value)
+        elif re.match(r"^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}", value):
+            try:
+                stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=timezone(timedelta(hours=8)))
+                return int(stamp.timestamp() * 1000) if stamp.year >= 1970 else None
+            except (ValueError, OverflowError, OSError):
+                return None
+    if type(value) in (int, float) and 0 < value < 10**14 and isfinite(value):
+        return int(value * 1000 if value < 10**11 else value)
+    return None
+
+
+def _attendance_rows(rows, *, checkin_id=None, exact_records=False):
     if not isinstance(rows, list) or len(rows) > 1000:
         raise AttendanceSourceError("invalid_roster", "远端名单格式异常或超过核对范围。")
-    result = {}
+    statuses, times = {}, {}
     for row in rows:
         if not isinstance(row, dict):
             raise AttendanceSourceError("invalid_roster", "远端名单格式异常。")
         number = str(row.get("no") or "").strip()
-        if not number or number in result:
+        if not number or number in statuses:
             raise AttendanceSourceError("duplicate_student", "远端学号缺失或重复，已停止写入。")
-        result[number] = str(row.get("status") or "")
-    return result
+        statuses[number] = str(row.get("status") or "")
+        if checkin_id is None:
+            continue
+        row_round = row.get("checkinCourseId")
+        if row_round is not None and str(row_round) != str(checkin_id):
+            raise AttendanceSourceError("round_identity_changed", "学校学生记录与点名轮次不一致。")
+        # The timetable also includes student profile information. Only use a
+        # generic updateTime if the row is known to be an attendance record.
+        stamp = school_timestamp_ms(row.get("statusUpdateTime"))
+        if stamp is None and (exact_records or row_round is not None):
+            stamp = school_timestamp_ms(row.get("updateTime"))
+        if stamp is not None:
+            times[number] = stamp
+    return statuses, times
+
+
+def student_map(rows):
+    return _attendance_rows(rows)[0]
 
 
 def sections(value):
@@ -91,8 +128,8 @@ def validate_view(payload, slot, source, expected_checkin_id=None):
             raise AttendanceSourceError("missing_round_id", "远端点名缺少标识。")
     if expected_checkin_id and (not record or str(record["id"]) != str(expected_checkin_id)):
         raise AttendanceSourceError("round_replaced", "学校官方端已删除或重新发起点名，原绑定已暂停。")
-    students = student_map(payload.get("stuList"))
-    return {"record": record, "students": students,
+    students, times = _attendance_rows(payload.get("stuList"), checkin_id=record["id"] if record else None)
+    return {"record": record, "students": students, "student_times": times,
             "student_names": {str(r["no"]).strip(): str(r.get("name") or "") for r in payload["stuList"]},
             "can_checkin": payload.get("isCanCheckin") is True, "schedule": schedule}
 
@@ -121,7 +158,8 @@ async def read_slot(client, slot, source, expected_checkin_id=None):
         candidates = [r for r in history if all(str(r.get(k)) == str(v) for k,v in scope.items())]
         if len(candidates) != 1 or str(candidates[0].get('id')) != str(record['id']) or str(candidates[0].get('teacherScheduleId')) != str(record.get('teacherScheduleId')):
             raise AttendanceSourceError('round_identity_changed', '学校排课历史未唯一证明本轮点名归属，已停止同步。') from exc
-        snapshot.update(record=record, students=await read_records(client, record['id']), can_checkin=False,
+        students, times = await _read_record_rows(client, record["id"])
+        snapshot.update(record=record, students=students, student_times=times, can_checkin=False,
                         record_scope_evidence={'kind':'requested_schedule_history','schedule_id':str(slot['schedule_id']),
                                                'remote_checkin_id':str(record['id']), 'record_schedule_id':str(record['teacherScheduleId'])})
         return snapshot
@@ -159,8 +197,14 @@ async def read_alignment_slot(client, slot, source):
     return validate_alignment_view(payload, slot, source)
 
 
+async def _read_record_rows(client, checkin_id):
+    rows = await _post(client, "viewCheckinCoursesRecords", {"checkinCourseId": str(checkin_id)})
+    return _attendance_rows(rows, checkin_id=checkin_id, exact_records=True)
+
+
 async def read_records(client, checkin_id):
-    return student_map(await _post(client, "viewCheckinCoursesRecords", {"checkinCourseId": str(checkin_id)}))
+    statuses, _ = await _read_record_rows(client, checkin_id)
+    return statuses
 
 
 async def list_schedules(client):

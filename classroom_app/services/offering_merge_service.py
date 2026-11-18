@@ -122,6 +122,7 @@ def _rules() -> dict[str, MergeRule]:
     rules["smart_attendance_session_links"] = MergeRule(STRATEGY_KEEP_TARGET)
     rules["smart_attendance_course_links"] = MergeRule(STRATEGY_KEEP_TARGET)
     rules["smart_attendance_alignment_requests"] = MergeRule(STRATEGY_IMMUTABLE_RECEIPTS)
+    rules["smart_attendance_calendar_receipts"] = MergeRule(STRATEGY_IMMUTABLE_RECEIPTS)
     # A single-student correction authorizes its original school round only.
     # The nullable live references may be cleared; origin_scope_json must not move.
     rules["smart_attendance_student_corrections"] = MergeRule(STRATEGY_IMMUTABLE_RECEIPTS)

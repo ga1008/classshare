@@ -200,6 +200,21 @@ async function correctionFixture(page:Page,options:any={}){
   if(options.dark)await page.evaluate(()=>{document.documentElement.dataset.appearance='dark';});await open(page,'teacher',false);s.parent=page.getByRole('dialog',{name:'自动点名',exact:true});s.card=s.parent.locator('.la-student-open').first();await s.card.click();s.dialog=page.getByRole('dialog',{name:'学生签到详情',exact:true});return s;
 }
 
+test('school activity remains the recorded value until the teacher explicitly selects a local correction',async({page})=>{
+  const current={...round(2),state:'published'};
+  current.records[0]={...current.records[0],status:'STUDY_TOUR',status_label:'研学',revision:1};
+  const s=await correctionFixture(page,{current}),d=s.dialog;
+  const select=d.locator('select:has(option[value="PRESENT"])').first();
+  await expect(select).toHaveValue('');
+  await d.getByLabel('改签理由').fill('核验返校记录');
+  await d.getByRole('button',{name:'保存',exact:true}).click();
+  expect(s.saves).toBe(0);
+  await choose(page,d,'出勤状态','出勤');
+  await d.getByRole('button',{name:'保存',exact:true}).click();
+  await expect(d.getByText('本地已保存。',{exact:true})).toBeVisible();
+  expect(s.saves).toBe(1); expect(s.current.records[0].status).toBe('PRESENT');
+});
+
 test('LQ single student local save is idempotent and does not dispatch a school or class command',async({page})=>{
   const s=await correctionFixture(page,{gate:{allowed:false,code:'alignment_required',message:'请先对齐课程与课次'}}),d=s.dialog;
   await expect(d.getByRole('button',{name:'保存并推送',exact:true})).toBeDisabled();await expect(d.getByRole('button',{name:'保存',exact:true})).toBeEnabled();await d.getByLabel('改签理由').fill('教师现场复核，只保存本地');await d.getByRole('button',{name:'保存',exact:true}).click();await expect(d.getByText('本地已保存。',{exact:true})).toBeVisible();
@@ -314,6 +329,34 @@ test('LQ alignment gates pushes by a real binding and preserves settlement requi
   await expect(align).toHaveAttribute('data-lq-action-tone','warning');await expect(d.getByText('未对齐',{exact:true})).toBeVisible();await expect(push).toBeDisabled();await expect(push).toHaveAttribute('aria-disabled','true');
   view=alignmentWorkflow('matched');current.state='running';await page.evaluate(()=>(window as any).attendance.refresh());await expect(align).toHaveAttribute('data-lq-action-tone','success');await expect(push).toBeDisabled();
   current.state='published';await page.evaluate(()=>(window as any).attendance.refresh());await expect(push).toBeEnabled();await expect(push).toHaveAttribute('data-lq-disabled','false');
+});
+
+test('a school-only lesson becomes an editable local register through the normal rollcall dialog',async({page})=>{
+  let imported=false;
+  const calls:any[]=[];
+  const local={...round(2),state:'published',records:round(2).records.map(row=>({...row,status:'PRESENT',status_label:'出勤'}))};
+  const errors=await fixture(page,async(route,url,body)=>{
+    if(url.endsWith('/sessions/12'))return json(route,{session,policy:local.policy,round:imported?local:null});
+    if(url.endsWith('/external/workflow'))return json(route,{binding:{state:'matched',revision:2},can_sync:false,can_reconcile:true});
+    if(url.endsWith('/external/calendar-reconcile')){
+      calls.push(body);imported=true;
+      return json(route,{state:'confirmed',local_changed:true,receipt:true,message:'学校点名已同步到本地',counts:{imported:2},rows:[]});
+    }
+    return json(route,{detail:'unexpected '+url},500);
+  },'teacher','',undefined,true);
+  await open(page,'teacher',false);
+  const main=page.getByRole('dialog',{name:'自动点名',exact:true});
+  await main.getByRole('button',{name:'同步本课点名',exact:true}).click();
+  const sync=page.getByRole('dialog',{name:'智慧课堂同步',exact:true});
+  await expect(sync.getByText('学校点名已同步到本地',{exact:true})).toBeVisible();
+  expect(calls).toHaveLength(1);
+  expect(calls[0]).toMatchObject({student_ids:null,idempotency_key:expect.any(String)});
+  await expect(page.locator('.la-student-open').first()).toContainText('出勤');
+  await expect(sync).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(main.locator('.la-student-open').first()).toContainText('出勤');
+  await expect(main.getByRole('button',{name:'开始记录',exact:true})).toHaveCount(0);
+  expect(errors).toEqual([]);
 });
 
 test('LQ alignment reviews course then lesson cards and submits only server candidate identities',async({page})=>{

@@ -80,7 +80,9 @@ def _targets(ctx):
             raise HTTPException(409, "学生学号缺失或重复，请先核对本地名单。")
         ids.add(student); numbers.add(number)
         target = LOCAL_STATUS_MAP.get(status)
-        if status == "ABSENT" and row.get("manual_confirmed") not in (True, 1):
+        if row.get("school_status") in REMOTE_STATUSES and not row.get("manual_confirmed"):
+            target = row["school_status"]
+        if status == "ABSENT" and not row.get("manual_confirmed") and row.get("school_status") != 'UNCHECKED':
             target = None
         result.append({"student_id": student, "student_number": number, "local_status": status,
                        "target_status": target, "revision": int(row.get("revision") or 1)})
@@ -115,7 +117,7 @@ def compare_students(targets, baseline, remote, *, school_authoritative=False):
         elif actual is None: state, reason = "unmapped", "远端名单没有唯一匹配学生。"
         elif actual not in REMOTE_STATUSES: state, reason = "blocked", "远端包含尚未支持的状态，保留原值。"
         elif actual == desired: state, reason = "confirmed", "本次读取的学生状态一致。"
-        elif actual in PROTECTED_STATUSES and not (target.get("allow_protected_override") and actual in {"SICK_LEAVE", "PERSONAL_LEAVE"}): state, reason = "protected", "保留远端请假或特殊状态；普通请假仅由时间更新的教师明确更正覆盖。"
+        elif actual in PROTECTED_STATUSES and not (target.get("reconcile_newer") or target.get("allow_protected_override") and actual in {"SICK_LEAVE", "PERSONAL_LEAVE"}): state, reason = "protected", "保留学校请假或特殊状态，尚无可覆盖的较新本地决定。"
         elif actual != old: state, reason = "conflict", "远端状态已变化，保留外部修改。"
         result.append({**target, "baseline_status": old, "remote_status": actual, "state": state, "reason": reason})
     return result

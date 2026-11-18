@@ -2,10 +2,10 @@ import { apiFetch } from './api.js';
 import { createComponent } from './lq/components.js';
 import { createDomainButton } from './lq/domain-controls.js';
 import { createForm } from './lq/forms.js';
-import { ATTENDANCE_STATES } from './login_attendance_states.js';
+import { ATTENDANCE_STATES, RECORDED_ATTENDANCE_STATES } from './login_attendance_states.js';
 
 export const stateOptions = ATTENDANCE_STATES.map(([value, label]) => ({ value, label }));
-const labels = Object.fromEntries([...ATTENDANCE_STATES, ['PENDING', '待确认'], ['EXEMPT', '免考勤'], ['LATE_OR_EARLY', '迟到或早退']]);
+const labels = Object.fromEntries([...RECORDED_ATTENDANCE_STATES, ['PENDING', '待确认'], ['UNKNOWN', '待确认'], ['EXEMPT', '免考勤']]);
 export const statusText = status => labels[status] || '暂无记录';
 export const sourceText = source => ({ local: '本地', smart_synced: '智慧课堂', confirmed_pdf: '签到原件', mixed: '多来源' }[source] || '');
 export const studentLabel = row => [row.name, row.student_number].filter(Boolean).join(' · ');
@@ -32,7 +32,7 @@ export function feedback(node, message, alert = false) {
     node.setAttribute('role', alert ? 'alert' : 'status');
     node.textContent = message;
 }
-/** Requests belong to the layer that started them. A closed preview cannot start its next lesson. */
+/** A closed dialog cancels its requests and cannot start another lesson. */
 export function calendarRequests() {
     const pending = new Set();
     let closed = false;

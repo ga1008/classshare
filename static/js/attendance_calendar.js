@@ -7,21 +7,26 @@ import { addDays, formatIsoDate, getMonday, parseIsoDate } from './semester_cale
 import { openCalendarLesson } from './attendance_calendar_lesson.js';
 import { openCalendarSync } from './attendance_calendar_sync.js';
 import { action, badge, calendarRequests, element, feedback, field, lessonLabel, sourceText, statusText, studentLabel } from './attendance_calendar_controls.js';
+import { SCHOOL_ACTIVITY_LABELS } from './login_attendance_states.js';
 
 function totals(row) {
     const counts = row.counts || {}, present = Number(counts.PRESENT || 0);
     const irregular = Number(counts.LATE || 0) + Number(counts.EARLY || 0) + Number(counts.LATE_OR_EARLY || 0);
     const missing = Number(counts.ABSENT || 0) + Number(counts.SICK_LEAVE || 0) + Number(counts.PERSONAL_LEAVE || 0);
     const pending = Number(counts.PENDING || 0) + Number(counts.UNKNOWN || 0) + Number(row.unrecorded_count || 0);
-    return { attended: present + irregular, missing, pending, irregular };
+    const activities = Object.keys(SCHOOL_ACTIVITY_LABELS).reduce((sum, key) => sum + Number(counts[key] || 0), 0);
+    return { attended: present + irregular, missing, pending, irregular, activities };
 }
 function sessionMark(row, personal) {
     if (!row.recorded) return { text: personal && (row.round_id || row.school_cached) ? '无个人记录' : '未点名', tone: 'neutral' };
-    if (personal) return { text: statusText(row.status), tone: row.status === 'PRESENT' ? 'success' : row.status === 'ABSENT' ? 'danger' : 'neutral' };
-    const { attended, missing, pending, irregular } = totals(row);
-    if (!attended && !missing) return { text: pending ? `待确认 ${pending}` : '免考勤', tone: 'neutral' };
-    const tone = missing || irregular ? 'warning' : pending ? 'neutral' : 'success';
-    return { text: `到${attended} 未到${missing}` + (pending ? ` 待${pending}` : ''), tone };
+    if (personal) return { text: statusText(row.status), tone: row.status === 'PRESENT' ? 'success' : row.status === 'ABSENT' ? 'danger' : SCHOOL_ACTIVITY_LABELS[row.status] ? 'info' : 'neutral' };
+    const { attended, missing, pending, irregular, activities } = totals(row);
+    const parts = [];
+    if (attended || missing) parts.push(`到${attended} 未到${missing}`);
+    if (activities) parts.push(`活动${activities}`);
+    if (pending) parts.push(parts.length ? `待${pending}` : `待确认 ${pending}`);
+    const tone = missing || irregular ? 'warning' : activities ? 'info' : pending || !attended ? 'neutral' : 'success';
+    return { text: parts.join(' ') || '免考勤', tone };
 }
 
 export function openAttendanceCalendar({ classOfferingId, studentId = null, trigger, parentLayer, sessionId = null }) {
@@ -30,7 +35,7 @@ export function openAttendanceCalendar({ classOfferingId, studentId = null, trig
     const req = calendarRequests(), body = element('div', 'la-workspace lac-workspace');
     const heading = element('div', 'lac-heading'), title = element('h3'), semester = element('p', 'lac-subtitle');
     const identity = element('div'); identity.append(title, semester);
-    const sync = action('同步到智慧课堂', event => openSync(event.currentTarget), 'prominent');
+    const sync = action('同步智慧课堂', event => openSync(event.currentTarget), 'prominent');
     heading.append(identity, sync);
     const notice = element('p', 'la-notice'), content = element('div', 'lac-content');
     const retry = action('重新读取日历', () => load()); retry.hidden = true;
@@ -42,7 +47,7 @@ export function openAttendanceCalendar({ classOfferingId, studentId = null, trig
     nav.append(prev, month, next); tools.append(person.wrapper, nav);
     const grid = element('div', 'lac-month-grid'), legend = element('div', 'la-actions lac-legend');
     const basis = element('details', 'lq-collapsible');
-    basis.append(element('summary', 'lq-collapsible__summary', '统计口径'), element('p', 'lq-collapsible__content', '到场含正常出勤、迟到和早退，未到含缺课、病假和事假。待确认单列，免考勤不计入应到。全员正常出勤计为满勤。'));
+    basis.append(element('summary', 'lq-collapsible__summary', '统计口径'), element('p', 'lq-collapsible__content', '到场含正常出勤、迟到和早退，未到含缺课、病假和事假。研学、实践、志愿服务列为学校活动。待确认单列，免考勤和学校活动不计入应到。全员正常出勤计为满勤。'));
     content.append(tools, summary, grid, legend, basis); content.hidden = true;
     body.append(heading, notice, retry, content);
     let data, selected = Number(studentId) || null, monthKey, loading = false, epoch = 0, first = true, changed = false;
@@ -140,6 +145,8 @@ export function openAttendanceCalendar({ classOfferingId, studentId = null, trig
         const unit = selected ? '次' : '人次';
         summary.textContent = `已统计 ${recorded.length} / ${rows.length} 课次　·　${selected ? '出勤' : '到场'} ${present} ${unit}　·　${selected ? '缺课' : '未到'} ${absent} ${unit}`;
         legend.replaceChildren(badge(selected ? '出勤' : '满勤', 'success'), badge(selected ? '缺课' : '未满勤', selected ? 'danger' : 'warning'), badge(selected ? '其他 / 未点名' : '待确认 / 未点名 / 免考勤'));
+        const activities = recorded.reduce((n, row) => n + (selected ? Number(Boolean(SCHOOL_ACTIVITY_LABELS[row.status])) : totals(row).activities), 0);
+        if (activities) { summary.append('　·　学校活动 ' + activities + ' ' + unit); legend.append(badge('学校活动', 'info')); }
         basis.hidden = Boolean(selected);
         if (data.calendar?.start && data.calendar.end) {
             const from = data.calendar.start.slice(0, 7), to = data.calendar.end.slice(0, 7);

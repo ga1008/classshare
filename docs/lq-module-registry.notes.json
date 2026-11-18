@@ -376,10 +376,10 @@
     "attendance-term-calendar": {
       "title": "教师出勤日历 static/js/attendance_calendar.js",
       "layer": "composite",
-      "summary": "从签到统计进入本课程本学期日历，按学生和课次查看出勤、补记或改签，并核对智慧课堂同步结果。",
+      "summary": "在本学期日历中查看和改签出勤。教师可从日历或普通点名面板发起同一个双向同步流程。",
       "params": "复用 Dialog、Button、Chip 和原生表单控件。月历按星期排布，日期含多节课时逐课显示；数据色配合状态文字。",
       "states": "未点名、待核对、出勤、缺课与请假，保存草稿、本地版本冲突、学校课次待对齐和远端回读结果。",
-      "rules": "日历的学生范围、课次范围、改签与学校推送都由教师选择。嵌套浮窗使用同一 LQ layer 焦点栈。"
+      "rules": "按教师选定的学生和课次自动登记学校结果、比较新旧并回读。全班需要新建学校点名时才请求浏览器定位。子集扩大到全班须明确选择。结果面板显示更新后的两端状态、未匹配人员与原请求回执。嵌套浮窗使用同一 LQ layer 焦点栈。"
     },
     "attendance-immediate-settlement": {
       "title": "立即结算本地点名 static/js/login_attendance_settlement.js",

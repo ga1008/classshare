@@ -1,6 +1,12 @@
 """One explicit, durable school-sync authorization for each local round."""
 
 SMART_CLASSROOM_AUTO_SYNC_TABLES = {
+    "smart_attendance_calendar_receipts": """CREATE TABLE IF NOT EXISTS smart_attendance_calendar_receipts (
+        owner_teacher_id BIGINT NOT NULL, request_key TEXT NOT NULL,
+        class_offering_id BIGINT NOT NULL, session_id BIGINT NOT NULL,
+        scope_hash TEXT NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL,
+        PRIMARY KEY(owner_teacher_id,request_key)
+    )""",
     "smart_attendance_student_corrections": """CREATE TABLE IF NOT EXISTS smart_attendance_student_corrections (
         id TEXT PRIMARY KEY, owner_teacher_id BIGINT NOT NULL,
         request_key TEXT NOT NULL, request_hash TEXT NOT NULL,
@@ -61,6 +67,7 @@ SMART_CLASSROOM_AUTO_SYNC_TABLES = {
     )""",
 }
 SMART_CLASSROOM_AUTO_SYNC_REQUIRED_COLUMNS = {
+    "smart_attendance_calendar_receipts": tuple("owner_teacher_id request_key class_offering_id session_id scope_hash result_json created_at".split()),
     "smart_attendance_student_corrections": tuple("id owner_teacher_id request_key request_hash class_offering_id session_id origin_scope_json local_round_id student_id student_number local_revision target_status mode state source_json slot_json binding_revision external_account_key credential_generation remote_checkin_id run_id baseline_status code message dispatch_seq created_at updated_at".split()),
     "smart_attendance_course_links": tuple("class_offering_id owner_teacher_id revision state context_fingerprint source_json alignment_json message updated_at".split()),
     "smart_attendance_alignment_requests": tuple("owner_teacher_id request_key request_hash class_offering_id session_id created_at".split()),

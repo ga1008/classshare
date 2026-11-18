@@ -82,3 +82,26 @@ class AlignmentAdapterTests(unittest.IsolatedAsyncioTestCase):
         snapshot=await mini.read_slot(object(),self.slot,self.source,'exact-checkin')
         self.assertEqual('exact-checkin',snapshot['record']['id'])
         self.assertEqual(['view'],[c[0] for c in self.calls])
+
+    async def test_only_attendance_edit_times_are_associated_with_the_returned_status(self):
+        self.record['teacherScheduleId'] = self.slot['schedule_id']
+        self.payload['stuList'] = [
+            {'no':'S1', 'status':'CHECKED', 'statusUpdateTime':'2026-11-09 08:00:00'},
+            {'no':'S2', 'status':'UNCHECKED', 'updateTime':'2035-01-01 00:00:00'},
+            {'no':'S3', 'status':'CHECKED', 'checkinCourseId':'exact-checkin', 'updateTime':'2026-11-09T00:00:00Z'},
+            {'no':'S4', 'status':'CHECKED', 'statusUpdateTime':'2026-11-09'},
+        ]
+        snapshot = await mini.read_slot(object(), self.slot, self.source)
+        self.assertEqual({'S1':1794182400000, 'S3':1794182400000}, snapshot['student_times'])
+        self.assertEqual(4, len(snapshot['students']))
+        self.payload['stuList'][2]['checkinCourseId'] = 'another-checkin'
+        with self.assertRaises(AttendanceSourceError):
+            await mini.read_slot(object(), self.slot, self.source)
+
+    async def test_exact_history_uses_timestamps_from_its_own_student_records(self):
+        self.payload['stuList'][0]['statusUpdateTime'] = '2035-01-01T08:00:00+08:00'
+        responses = [self.payload, self.history, [{'no':'S1', 'status':'UNCHECKED', 'updateTime':'1794182400'}]]
+        with patch.object(mini, '_post', AsyncMock(side_effect=responses)):
+            snapshot = await mini.read_slot(object(), self.slot, self.source, 'exact-checkin')
+        self.assertEqual({'S1':1794182400000}, snapshot['student_times'])
+        self.assertEqual({'S1':'UNCHECKED'}, snapshot['students'])

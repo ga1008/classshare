@@ -247,7 +247,7 @@ def evaluate_round(conn, round_id, *, timestamp=None):
     now = now_ms() if timestamp is None else timestamp
     row = load_round(conn, round_id)
     if (row["state"] == "void" or not row["is_current"] or not row["class_offering_id"]
-            or _load(row["context_json"]).get("time_source") == "manual_register"):
+            or _load(row["context_json"]).get("time_source") in {"manual_register", "school_register"}):
         return
     # All attendance writers use parent -> round -> record order.
     owner = conn.execute("SELECT teacher_id FROM class_offerings WHERE id=?",(row["class_offering_id"],)).fetchone()
@@ -398,12 +398,13 @@ def apply_evaluation(conn, row, result):
                     "network_access":network_evidence.get(record["student_id"],{"distinct_ips":[],"source_types":[],"observation_count":0}),
                     "matching_seen_ms":candidate["matching_seen_ms"]}
         status = record["status"]
-        if not record["manual_confirmed"] and (finalized or calculation['version'] == rules.ACTUAL_WINDOW_VERSION):
+        decided = bool(record["manual_confirmed"] or school_status(record))
+        if not decided and (finalized or calculation['version'] == rules.ACTUAL_WINDOW_VERSION):
             # Preserve published positive facts; later uncertainty creates a
             # visible suggestion, never an automatic absence or downgrade.
             status = "PRESENT" if candidate["suggestion"] == "PRESENT" or status == "PRESENT" else "PENDING"
         quality = facts["collection"]["status"]
-        reason = record["reason"] if record["manual_confirmed"] else REASON_LABELS.get(candidate["reason_code"], "待教师核对")
+        reason = record["reason"] if decided else REASON_LABELS.get(candidate["reason_code"], "待教师核对")
         changed = any((record[k] != value) for k,value in {
             "status":status,"suggestion":candidate["suggestion"],"quality":quality,"first_seen_ms":candidate["first_seen_ms"],
             "last_seen_ms":candidate["last_seen_ms"],"deviation_ms":candidate["deviation_ms"],"evidence_json":_json(evidence),"reason":reason}.items())
@@ -414,7 +415,7 @@ def apply_evaluation(conn, row, result):
                           _json(evidence),reason,max(now,record['updated_at_ms']),record["id"]))
         if status=="PRESENT" and record["status"]!="PRESENT":
             newly_present.add(record["student_id"])
-        outputs.append({"student_id":record["student_id"],"status":status,"manual":bool(record["manual_confirmed"]),**candidate,
+        outputs.append({"student_id":record["student_id"],"status":record_status(record) if decided else status,"manual":bool(record["manual_confirmed"]),**candidate,
                         "collection":facts["collection"],"learning":facts["learning"]})
     baseline = calculation["baseline"]
     fingerprint = hashlib.sha256(_json({"results":outputs,"baseline":baseline,"state":state,"watermark":watermark}).encode()).hexdigest()
@@ -511,7 +512,7 @@ def change_records(conn, round_id, user, payload, *, resolve_appeals=True, inclu
         conn.execute("UPDATE login_attendance_records SET status=?,manual_confirmed=1,reason=?,decided_by=?,decided_at_ms=?,"
                      "revision=revision+1,updated_at_ms=? WHERE id=? AND revision=?",
                      (entry["status"],reason,user["id"],now_ms(),now_ms(),record["id"],record["revision"]))
-        _audit(conn,round_id,"manual_decision",user,record_id=record["id"],before={"status":record["status"],"revision":record["revision"]},
+        _audit(conn,round_id,"manual_decision",user,record_id=record["id"],before={"status":record_status(record),"revision":record["revision"]},
                after={"status":entry["status"],"revision":record["revision"]+1},reason=reason)
         settled.add(entry["student_id"])
         results.append({"student_id":entry["student_id"],"result":"updated","revision":record["revision"]+1})
@@ -526,7 +527,20 @@ def change_records(conn, round_id, user, payload, *, resolve_appeals=True, inclu
     return result
 
 
+def school_status(record):
+    decision = _load(record.get("school_decision_json"))
+    if decision.get("applied") and not record["manual_confirmed"]:
+        return decision.get("status")
+    return None
+
+
+def record_status(record):
+    return rules.SCHOOL_STATUS.get(school_status(record), record["status"])
+
+
 def confirmed_record_status(record, state):
+    if school_status(record):
+        return record_status(record)
     if not record["manual_confirmed"]:
         if not record["expected"]:
             return "EXEMPT"
@@ -538,8 +552,10 @@ def confirmed_record_status(record, state):
 def _public_record(record, *, teacher=False):
     result = {k:record[k] for k in ("id","student_id","student_number","name","class_name","status","suggestion","expected","confirmed_retake",
                                    "quality","revision","manual_confirmed","first_seen_ms","last_seen_ms","deviation_ms","updated_at_ms")}
-    result["status_label"] = rules.STATUS_LABELS[result["status"]]
-    if not record["expected"] and record["status"]=="PENDING":
+    result["status"] = record_status(record)
+    result["school_status"] = school_status(record)
+    result["status_label"] = rules.ALL_STATUS_LABELS[result["status"]]
+    if not record["expected"] and result["status"]=="PENDING":
         result["status_label"]="免考勤"
     facts = _load(record["evidence_json"])
     if teacher:
@@ -550,7 +566,8 @@ def _public_record(record, *, teacher=False):
             'learning_seconds':facts.get('learning',{}).get('measured_seconds'),
             'access_observation_count':facts.get('network_access',{}).get('observation_count',0)}
     else:
-        result["message"] = "教师已确认" if record["manual_confirmed"] else ("已确认到课" if record["status"]=="PRESENT" else "结束后可提交申诉，请等待教师核对")
+        result["message"] = ("已同步智慧课堂点名" if result["school_status"] else "教师已确认" if record["manual_confirmed"]
+                             else "已确认到课" if record["status"]=="PRESENT" else "结束后可提交申诉，请等待教师核对")
         result["participation"] = {"measured_seconds": facts.get("learning",{}).get("measured_seconds"),
                                     "collection_status": facts.get("collection",{}).get("status","no_observation")}
         for key in ("deviation_ms","suggestion","quality"):
@@ -561,14 +578,19 @@ def _public_record(record, *, teacher=False):
 def round_view(conn, round_id, user):
     row = load_round(conn,round_id,user)
     records = _records(conn,round_id)
-    counts = Counter(r["status"] for r in records)
+    counts = Counter(record_status(r) for r in records)
+    expected_counts = Counter(record_status(r) for r in records if r["expected"])
+    school_exempt = expected_counts.pop("EXEMPT", 0)
+    for activity in rules.SCHOOL_ACTIVITIES:
+        expected_counts.pop(activity, None)
     result = {k:row[k] for k in ("id","class_offering_id","session_id","state","revision","is_current","starts_at_ms","ends_at_ms",
                                  "window_start_ms","window_end_ms","settle_at_ms","ended_at_ms","evaluated_at_ms","void_reason")}
     result.update({"can_edit":_can_edit(row),"history_only":bool(_load(row["context_json"]).get("history_only")),
                    "context":_load(row["context_json"]),"policy":_load(row["policy_json"]),"baseline":_load(row["baseline_json"]),
                    "watermark":_load(row["watermark_json"]),"records":[_public_record(r,teacher=True) for r in records],
-                   "summary":{"total":len(records),"expected":sum(r["expected"] for r in records),"exempt":sum(not r["expected"] for r in records),
-                              "counts":dict(counts),"expected_counts":dict(Counter(r["status"] for r in records if r["expected"])),
+                   "summary":{"total":len(records),"expected":sum(expected_counts.values()),
+                              "exempt":sum(not r["expected"] for r in records) + school_exempt,
+                              "counts":dict(counts),"expected_counts":dict(expected_counts),
                               "provisionally_present":sum(r["suggestion"]=="PRESENT" and r["expected"] for r in records)},
                    "collection_health":collection_health(), 'server_now_ms':now_ms(),
                    'actual_started_at_ms':row['starts_at_ms'] if _load(row['context_json']).get('time_source') == 'server_actual' else None,
@@ -660,12 +682,22 @@ def load_attendance_sync_context(conn, user, round_id):
     if not row["is_current"] or row["state"]=="void":
         raise HTTPException(409,"只能同步当前有效点名轮次。")
     context = _load(row["context_json"])
+    records = _records(conn,round_id)
+    students, exempt = [], []
+    for record in records:
+        imported = school_status(record)
+        if record["expected"] or record["manual_confirmed"] or imported:
+            student = {k:record[k] for k in ("student_id","student_number","name","revision","manual_confirmed","expected","updated_at_ms","decided_at_ms")}
+            student.update(status=rules.SCHOOL_STATUS.get(imported, record["status"]), school_status=imported,
+                           school_baseline=_load(record.get("school_decision_json")))
+            students.append(student)
+        else:
+            exempt.append(record["student_id"])
     return {**context,"round_id":row["id"],"revision":row["revision"],"state":row["state"],
             "ended_at_ms":row["ended_at_ms"],"evaluated_at_ms":row["evaluated_at_ms"],
             "closed":bool(load_policy(conn,row["class_offering_id"]).get("closed_at_ms")),"voided":False,
-            "students":[{k:r[k] for k in ("student_id","student_number","name","status","revision","manual_confirmed","expected","updated_at_ms","decided_at_ms")}
-                        for r in _records(conn,round_id) if r["expected"] or r["manual_confirmed"]],
-            "exempt_students":[r["student_id"] for r in _records(conn,round_id) if not r["expected"] and not r["manual_confirmed"]]}
+            "students":students,
+            "exempt_students":exempt}
 
 
 def close_attendance_for_course(conn, offering_id, user):

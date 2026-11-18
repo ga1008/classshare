@@ -37,10 +37,10 @@ export function openCalendarLesson({ base, date, lessons, calendarNote, selected
     const retry = action('读取最新名单', () => load(true)); retry.hidden = true;
     const push = action('本课同步', event => syncLesson(event.currentTarget, marked.size ? [...marked] : selected ? [selected] : null));
     const save = action('保存到本地', () => saveDraft(false));
-    const savePush = action('保存并推送', () => saveDraft(true), 'prominent');
+    const savePush = action('保存并同步', () => saveDraft(true), 'prominent');
     footer.append(push, save, savePush);
     body.append(lessonField.wrapper, info, notice, retry, edit);
-    let busy = true, saving = false, conflict = false, page = 0, records = [], lesson = lessons[0], changed = false, writeKey = null;
+    let busy = true, saving = false, conflict = false, page = 0, records = [], lesson = lessons[0], changed = false, writeKey = null, loadEpoch = 0;
     function dirty() { return Boolean(draft.size || reason.input.value.trim()); }
     const handle = openDialog({ title: date + ' 出勤记录', body, footer, size: 'lg' }, { trigger, parentLayer,
         beforeClose: async () => !saving && (!dirty() || await confirm({ title: '放弃未保存的更正？', message: '本次选择的状态和更正理由将清除。', confirmLabel: '放弃更正', danger: true }, { parentLayer: handle })),
@@ -50,8 +50,9 @@ export function openCalendarLesson({ base, date, lessons, calendarNote, selected
     function cleanup() { req.close(); dropdowns.forEach(item => item.destroy()); onClose?.(changed); }
     function syncLesson(button, ids) {
         if (busy || dirty()) return;
+        const refreshLesson = () => { changed = true; void load(true); };
         openCalendarSync({ base, students, sessions: [lesson], studentIds: ids,
-            fixedScope: true, trigger: button, parentLayer: handle, onChange: () => { changed = true; void load(); } });
+            fixedScope: true, trigger: button, parentLayer: handle, onLocalChanged: refreshLesson, onChange: refreshLesson });
     }
     function gate() {
         edit.setAttribute('aria-busy', String(busy));
@@ -106,10 +107,11 @@ export function openCalendarLesson({ base, date, lessons, calendarNote, selected
     }
     async function load(keepDraft = false) {
         if (req.closed) return;
+        const epoch = ++loadEpoch;
         busy = true; gate(); edit.hidden = !keepDraft; retry.hidden = true; feedback(notice, '正在读取课次名单…');
         try {
             const data = await req.read(`${base}/calendar/sessions/${lesson.session_id}${selected ? '?student_id=' + selected : ''}`);
-            if (req.closed) return;
+            if (req.closed || epoch !== loadEpoch) return;
             const previous = new Map(records.map(row => [row.student_id, row]));
             const moved = Boolean(lesson.slot_revision && data.session.slot_revision && lesson.slot_revision !== data.session.slot_revision);
             lesson = data.session; records = data.records || [];
@@ -120,14 +122,14 @@ export function openCalendarLesson({ base, date, lessons, calendarNote, selected
             const eligible = new Set(records.filter(row => row.editable !== false).map(row => row.student_id));
             for (const id of marked) if (!eligible.has(id)) marked.delete(id);
             if (selected && eligible.has(selected)) marked.add(selected);
-            info.textContent = [lessonLabel(lesson), lesson.round_id ? '已开展本地点名' : lesson.can_edit ? '本地尚未点名，保存时仅补记所选学生' : '本地未点名', lesson.school_cached ? '有学校回读记录' : '', lesson.date === date && calendarNote, lesson.schedule_status_label, lesson.schedule_note, lesson.edit_note].filter(Boolean).join(' · ');
+            info.textContent = [lessonLabel(lesson), lesson.round_id ? '本地已点名' : lesson.school_cached ? '学校已有记录，可同步到本地' : '本地未开始点名', lesson.date === date && calendarNote, lesson.schedule_status_label, lesson.schedule_note, lesson.edit_note].filter(Boolean).join(' · ');
             const changes = keepDraft ? [...draft.keys()].filter(id => previous.get(id)?.revision !== records.find(row => row.student_id === id)?.revision || !eligible.has(id)) : [];
             for (const id of [...draft.keys()]) if (!eligible.has(id)) draft.delete(id);
             conflict = false; writeKey = null; edit.hidden = false; paintRows();
             const update = moved ? `课次已调整为 ${lesson.date} · ${lessonLabel(lesson)}。请核对该课次与拟改值后保存。` : '';
             feedback(notice, update || (keepDraft && draft.size ? (changes.length ? `${changes.length} 人的记录或资格已变化。请核对最新状态与拟改值，再保存。` : '已读取最新名单，请核对拟改值后保存。') : ''));
-        } catch (error) { if (!req.closed) { conflict = true; edit.hidden = !keepDraft; retry.hidden = false; feedback(notice, error.message || '读取名单失败', true); } }
-        finally { if (!req.closed) { busy = false; gate(); } }
+        } catch (error) { if (!req.closed && epoch === loadEpoch) { conflict = true; edit.hidden = !keepDraft; retry.hidden = false; feedback(notice, error.message || '读取名单失败', true); } }
+        finally { if (!req.closed && epoch === loadEpoch) { busy = false; gate(); } }
     }
     async function saveDraft(andPush) {
         if (busy || conflict || !draft.size) return;

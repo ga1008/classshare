@@ -14,6 +14,7 @@ from ..services import smart_classroom_auto_sync_service as auto_sync
 from ..services import smart_classroom_workflow_service as workflow_service
 from ..services import smart_classroom_student_push_service as student_push
 from ..services import smart_classroom_calendar_sync_service as calendar_sync
+from ..services import smart_classroom_reconciliation_service as reconciliation
 from ..services.smart_classroom_session_service import SmartClassroomSessionError
 from ..services.attendance_report_service import sign_attendance_source_option, _decode_option
 from ..services.trusted_network_service import require_same_origin
@@ -83,6 +84,11 @@ class CalendarPreview(Strict):
     student_ids: list[Annotated[int, Field(strict=True, gt=0)]] | None = Field(default=None, min_length=1, max_length=500)
 
 
+class CalendarReconcile(CalendarPreview):
+    idempotency_key: str = Field(min_length=8, max_length=100, pattern=r'^[A-Za-z0-9._:-]+$')
+    location: Location | None = None
+
+
 class CalendarSync(Strict):
     preview_token: str = Field(min_length=1, max_length=100_000)
     idempotency_key: str = Field(min_length=8, max_length=100, pattern=r'^[A-Za-z0-9._:-]+$')
@@ -104,6 +110,15 @@ async def preview_calendar_sync(offering_id: int, session_id: int, payload: Cale
                                 user: dict = Depends(get_current_teacher)):
     require_same_origin(request)
     return await _call(asyncio.wait_for(calendar_sync.preview(user, offering_id, session_id, payload.student_ids), timeout=90))
+
+
+@session_router.post('/calendar-reconcile')
+async def reconcile_calendar(offering_id: int, session_id: int, payload: CalendarReconcile, request: Request,
+                             user: dict = Depends(get_current_teacher)):
+    require_same_origin(request)
+    return await _call(asyncio.wait_for(reconciliation.reconcile(
+        user, offering_id, session_id, payload.student_ids, payload.idempotency_key,
+        payload.location.model_dump() if payload.location else None), timeout=90))
 
 
 @session_router.post('/calendar-sync', status_code=202)

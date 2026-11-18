@@ -12,11 +12,9 @@ from .classroom_activity_evidence_service import _roster
 from .resource_access_service import ensure_classroom_access
 
 
-SMART_STATUS = {"CHECKED": "PRESENT", "UNCHECKED": "ABSENT", "SICK_LEAVE": "SICK_LEAVE",
-                "PERSONAL_LEAVE": "PERSONAL_LEAVE", "LATE_OR_EARLY": "LATE_OR_EARLY",
-                "NOT_APPLICABLE": "EXEMPT"}
-STATUS_LABELS = {**rules.STATUS_LABELS, "LATE_OR_EARLY": "迟到或早退", "EXEMPT": "免考勤"}
-FINAL_STATUSES = frozenset(STATUS_LABELS) - {"PENDING", "EXEMPT"}
+SMART_STATUS = rules.SCHOOL_STATUS
+STATUS_LABELS = rules.ALL_STATUS_LABELS
+FINAL_STATUSES = frozenset(STATUS_LABELS) - {"PENDING", "EXEMPT", *rules.SCHOOL_ACTIVITIES}
 RATE_NOTE = "出勤率为出勤人次除以已确认应考勤人次。待确认、免考勤和未开启课次不计入分母。"
 
 
@@ -63,7 +61,7 @@ def _fingerprint(*parts):
 
 def _local_rows(conn, offering_id, student_id, session_id, dates=None):
     sql = """SELECT s.id AS source_id,s.student_id,s.name,s.student_number,s.class_name,s.status,s.expected,
-        s.manual_confirmed,s.quality,s.revision,r.id AS round_id,r.session_id,r.state,r.policy_json,
+        s.manual_confirmed,s.school_decision_json,s.quality,s.revision,r.id AS round_id,r.session_id,r.state,r.policy_json,
         r.ended_at_ms,r.ends_at_ms FROM login_attendance_rounds r
         JOIN class_offering_sessions lesson ON lesson.id=r.session_id AND lesson.class_offering_id=r.class_offering_id
         JOIN login_attendance_records s ON s.round_id=r.id

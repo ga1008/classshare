@@ -12,7 +12,7 @@ import { openAttendanceAlignment } from './login_attendance_alignment.js';
 const el = (tag, text) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = String(text); return n; };
 
 /** One owner for the lesson binding and the teacher-triggered durable sync. */
-export function createAttendanceWorkflow({ host, base, sessionId, getRound, getLayer, isLocalBusy = () => false, isSettlementActive = () => false }) {
+export function createAttendanceWorkflow({ host, base, sessionId, session, getRound, getLayer, onLocalChanged, onReconciled, hasDraft = () => false, isLocalBusy = () => false, isSettlementActive = () => false }) {
     const sessionBase = `${base}/sessions/${sessionId}/external`, endpoint = `${sessionBase}/workflow`;
     let value = null, disposed = false, pending = false, refreshing = null, serial = 0, syncKey = crypto.randomUUID(), keyRevision = null, review = null;
     const requests = new Set();
@@ -39,7 +39,12 @@ export function createAttendanceWorkflow({ host, base, sessionId, getRound, getL
     function gate() {
         const round = getRound(), historical = Boolean(round && round.is_current !== undefined && !round.is_current), locked = pending || isLocalBusy() || historical;
         host.hidden = historical;
-        for (const [button, disabled] of [[match, locked], [doubt, locked], [sync, locked || isSettlementActive() || value?.binding?.state !== 'matched' || !value?.can_sync || round?.state !== 'published' || !round?.is_current]]) {
+        const twoWay = typeof value?.can_reconcile === 'boolean';
+        const published = round?.state === 'published' && Boolean(round.is_current);
+        const allowed = twoWay ? value.can_reconcile && (!round || published) && !hasDraft()
+            : value?.can_sync && value.binding?.state === 'matched' && published;
+        sync.textContent = twoWay ? '同步本课点名' : '同步与推送';
+        for (const [button, disabled] of [[match, locked], [doubt, locked], [sync, locked || isSettlementActive() || !allowed]]) {
             button.disabled = disabled; button.setAttribute('aria-disabled', String(disabled)); button.dataset.lqDisabled = String(disabled);
         }
         match.setAttribute('aria-busy', String(pending)); host.setAttribute('aria-busy', String(pending));
@@ -127,6 +132,18 @@ export function createAttendanceWorkflow({ host, base, sessionId, getRound, getL
         review = openAttendanceAlignment({ value, trigger: doubt, parentLayer: getLayer(), confirm: payload => submit(`${sessionBase}/confirm`, payload), realign: () => submit(`${sessionBase}/match`, {}), onClose: () => { review = null; if (doubt.hidden) queueMicrotask(() => { if (!disposed && match.isConnected) match.focus(); }); } });
     });
     sync.addEventListener('click', () => act(async () => {
+        if (typeof value?.can_reconcile === 'boolean') {
+            if (!value.can_reconcile || hasDraft() || isSettlementActive()) return value;
+            const { openCalendarSync } = await import('./attendance_calendar_sync.js');
+            if (disposed || !sync.isConnected) return value;
+            const round = getRound(), meta = round?.context || {};
+            openCalendarSync({
+                base, sessions: [{ session_id: sessionId, date: session?.session_date || meta.session_date,
+                    title: session?.title || meta.session_title, section_text: session?.academic_section_text || meta.academic_section_text }],
+                students: round?.records || [], studentIds: null, fixedScope: true, trigger: sync, parentLayer: getLayer(), onLocalChanged, onChange: onReconciled,
+            });
+            return value;
+        }
         const round = getRound(); if (!round || !value?.can_sync || value?.binding?.state !== 'matched') throw new Error('课次尚未对齐，已保留本地点名。请先点击对齐课次。');
         const revision = `${round.id}:${round.revision}:${value.binding.revision}`;
         if (keyRevision !== revision) { keyRevision = revision; syncKey = crypto.randomUUID(); }

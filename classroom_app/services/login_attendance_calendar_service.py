@@ -161,6 +161,7 @@ def _projection(conn, offering, lessons, student_id, *, detail=False):
         record.update(expected=expected, revision=local_fact["revision"] if local_fact else 0,
                       status=local_fact["status"] if local_fact else ("PENDING" if expected else "EXEMPT"),
                       manual_confirmed=bool(local_fact and local_fact["manual_confirmed"]),
+                      school_status=local.school_status(local_fact) if local_fact else None,
                       effective_status=appeals.get(fact["source_key"], {}).get("effective_status", fact["status"]),
                       source=fact["source"], editable=bool(local_fact or not meta[sid]["round_id"]))
         people[sid][person_id] = record
@@ -242,6 +243,10 @@ def _manual_round(conn, offering, lesson, user):
             roster.append({"id": person_id, "name": fact["name"], "student_id_number": fact["student_number"],
                            "class_name": fact.get("class_name") or "", "confirmed_retake": False,
                            "expected": fact["status"] != "EXEMPT"})
+    return create_register(conn, offering, lesson, user, roster, time_source="manual_register")
+
+
+def create_register(conn, offering, lesson, user, roster, *, time_source):
     if not roster:
         raise HTTPException(409, "本课程当前没有可补记的学生。")
     now = local.now_ms()
@@ -251,16 +256,16 @@ def _manual_round(conn, offering, lesson, user):
         cutoff = min(now, local.rules.resolve_session_window(lesson)["ends_at_ms"])
     except (TypeError, ValueError):
         cutoff = min(now, local.rules.to_ms(str(lesson["session_date"])[:10] + "T23:59:59"))
-    context = {**local._context(conn, offering, lesson), "time_source": "manual_register"}
-    policy = {**local.load_policy(conn, offering["id"]), "time_source": "manual_register"}
+    context = {**local._context(conn, offering, lesson), "time_source": time_source}
+    policy = {**local.load_policy(conn, offering["id"]), "time_source": time_source}
     round_id = execute_insert_returning_id(conn, """INSERT INTO login_attendance_rounds
         (class_offering_id,session_id,teacher_id,request_key,state,starts_at_ms,ends_at_ms,window_start_ms,
          window_end_ms,ended_at_ms,settle_at_ms,created_at_ms,evaluated_at_ms,next_evaluation_ms,policy_json,context_json)
         VALUES(?,?,?,?,'published',?,?,?,?,?,?,?,?,?,?,?)""",
-        (offering["id"], lesson["id"], user["id"], "manual:" + uuid4().hex, cutoff, cutoff, cutoff, cutoff,
+        (offering["id"], lesson["id"], user["id"], time_source + ":" + uuid4().hex, cutoff, cutoff, cutoff, cutoff,
          cutoff, cutoff, now, now, now + 8 * 86400_000, local._json(policy), local._json(context)))
     local.seed_records(conn, round_id, roster, now)
-    local._audit(conn, round_id, "manual_register_created", user, after={"students": len(roster), "session_id": lesson["id"]})
+    local._audit(conn, round_id, time_source + "_created", user, after={"students": len(roster), "session_id": lesson["id"]})
     return round_id
 
 

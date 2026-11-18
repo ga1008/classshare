@@ -669,6 +669,9 @@ def _new_run(user, plan, ctx, snapshot):
         elif intent.get("manual_dispatch"):
             from .smart_classroom_workflow_service import comparison_targets
             targets, _ = comparison_targets(ctx, {**snapshot, "record": snapshot.get("comparison_record", snapshot["record"])})
+            if intent.get("calendar_create", {}).get("bidirectional") and snapshot.get("new_remote_round"):
+                for target in targets:
+                    target["reconcile_newer"] = bool(target["target_status"])
             # This explicit dispatch authorizes a fresh remote snapshot; later
             # changes are still protected by the per-operation baseline fence.
             baseline = dict(snapshot["students"])
@@ -742,7 +745,7 @@ def _run_finish(plan, run, *, waiting=False):
         return {"round_id": plan["local_round_id"], "state": state, "run_id": run["id"]}
 
 
-def _project_readback(user, plan, run, snapshot):
+def _project_readback(user, plan, run, snapshot, *, batch_only=False, read_generation=None):
     """A recovered school fact remains valid after a local edit, but not after a rebind."""
     from .smart_classroom_workflow_service import persist_remote_snapshot
     from .smart_classroom_alignment import roster_evidence, roster_authorized
@@ -752,7 +755,7 @@ def _project_readback(user, plan, run, snapshot):
         if not fresh or not ctx.get('is_current', True) or ctx['state'] == 'void' or fresh['binding_id'] != run['binding_id']:
             return
         try:
-            ledger._account_access(conn, user['id'], plan['external_account_key'], plan['credential_generation'])
+            ledger._account_access(conn, user['id'], plan['external_account_key'], read_generation or plan['credential_generation'])
             _assert_alignment(conn, user, plan)
         except HTTPException as exc:
             if exc.status_code != 409:
@@ -764,17 +767,31 @@ def _project_readback(user, plan, run, snapshot):
                 source, ledger._hash(sorted(snapshot['students']))):
             ledger._event(conn, run['id'], 'projection_skipped', user['id'], {'reason': 'school_roster_changed'})
             return
-        persist_remote_snapshot(conn, user, ctx, source, snapshot)
+        if not batch_only:
+            persist_remote_snapshot(conn, user, ctx, source, snapshot)
+        intent = json.loads(plan['intent_json'])
+        selection = intent.get('calendar') or intent.get('calendar_create') or {}
+        if selection.get('bidirectional') and str(snapshot['record']['id']) == str(plan['remote_checkin_id']):
+            # Never interpret changes in the school's other students as this
+            # student's edit. Pin the actual agreement already proved by this
+            # job; a later teacher decision can then supersede it even when the
+            # school exposes only a shared round clock.
+            from .login_attendance_school_register_service import reconcile_snapshot
+            confirmed = [row['student_id'] for row in conn.execute(
+                "SELECT student_id,student_number,target_status FROM smart_attendance_sync_operations "
+                "WHERE run_id=? AND state='confirmed'", (run['id'],))
+                if snapshot['students'].get(row['student_number']) == row['target_status']]
+            if confirmed:
+                reconcile_snapshot(conn, user, ctx['class_offering_id'], ctx['session_id'], snapshot, confirmed,
+                                   observe_only=True)
 
 
-async def _reconcile_unknown(client, user, plan, run):
+async def _reconcile_unknown(client, user, plan, run, *, read_generation=None):
     source, slot = json.loads(plan["source_json"]), json.loads(plan["slot_json"])
     # Preserve identity verification even when the local round has been voided.
     snapshot = await mini.read_slot(client, slot, source, plan["remote_checkin_id"])
     remote = await mini.read_records(client, plan["remote_checkin_id"])
     intent = json.loads(plan["intent_json"])
-    if intent.get('calendar') or intent.get('calendar_create'):
-        _project_readback(user, plan, run, {**snapshot, 'students': remote})
     with get_db_connection() as conn:
         operations = [dict(r) for r in conn.execute("SELECT * FROM smart_attendance_sync_operations WHERE run_id=? AND state='outcome_unknown'", (run["id"],)).fetchall()]
     for op in operations:
@@ -791,6 +808,10 @@ async def _reconcile_unknown(client, user, plan, run):
             conn.execute("UPDATE smart_attendance_auto_sync SET intent_json=? WHERE local_round_id=? AND revision=?", (_json(intent), plan["local_round_id"], plan["revision"]))
             conn.commit()
         plan["intent_json"] = _json(intent)
+    if intent.get('calendar') or intent.get('calendar_create'):
+        if snapshot['students'] != remote:
+            snapshot = await mini.read_slot(client, slot, source, plan['remote_checkin_id'])
+        _project_readback(user, plan, run, snapshot, read_generation=read_generation)
     return _run_finish(plan, run, waiting=True)
 
 
@@ -841,11 +862,24 @@ def _submission_intent(user, plan, run, op):
 
 async def _write_batch(client, user, plan, run, snapshot):
     source, slot = json.loads(plan["source_json"]), json.loads(plan["slot_json"])
-    leave_corrections = {t["student_number"] for t in json.loads(run["target_json"]) if t.get("allow_protected_override")}
+    reconcile = json.loads(plan["intent_json"]).get("calendar", {}).get("bidirectional")
+    targets = json.loads(run["target_json"])
+    leave_corrections = {t["student_number"] for t in targets if t.get("allow_protected_override")}
+    newer = {t["student_number"] for t in targets if t.get("reconcile_newer")}
     # AI comparison and queue handoff may take seconds. Read again before the
     # first mutation so independent school edits become conflicts, not writes.
-    remote = await mini.read_records(client, plan["remote_checkin_id"])
+    async def read_current():
+        if reconcile:
+            current = await mini.read_slot(client, slot, source, plan["remote_checkin_id"])
+            if not current["record"] or current["record"].get("isStop") is not True:
+                raise HTTPException(409, {"code":"alignment_changed", "message":"学校轮次已变更，停止发送。"})
+            return current
+        return {"students": await mini.read_records(client, plan["remote_checkin_id"])}
+
+    fresh_snapshot = await read_current()
+    remote = fresh_snapshot["students"]
     ctx, _ = _fence(user, plan, sending=True, expected_fingerprint=run["context_fingerprint"])
+    people = {p["student_id"]: p for p in ctx["students"]} if reconcile else {}
     _guard_remote_roster(user, plan, ctx, remote)
     with get_db_connection() as conn:
         operations = [dict(r) for r in conn.execute("SELECT * FROM smart_attendance_sync_operations WHERE run_id=? ORDER BY student_id", (run["id"],)).fetchall()]
@@ -868,16 +902,23 @@ async def _write_batch(client, user, plan, run, snapshot):
         if actual is None or actual not in mini.STATUSES or desired is None:
             _op_state(run["id"], op["student_number"], "blocked", actual, "身份或结果无法可靠确认，保留学校原状态。")
             continue
-        if actual in ledger.PROTECTED_STATUSES and not (op["student_number"] in leave_corrections and actual in {"SICK_LEAVE", "PERSONAL_LEAVE"}):
+        if actual in ledger.PROTECTED_STATUSES and op["student_number"] not in newer and not (
+                op["student_number"] in leave_corrections and actual in {"SICK_LEAVE", "PERSONAL_LEAVE"}):
             _op_state(run["id"], op["student_number"], "protected", actual, "学校已设置请假或特殊状态，保留原值。")
             continue
         if actual != op["baseline_status"]:
             _op_state(run["id"], op["student_number"], "conflict", actual, "学校状态在同步期间已发生独立变化，保留原值。")
             continue
+        if reconcile and op["student_number"] in fresh_snapshot.get("student_times", {}):
+            from .login_attendance_school_register_service import decision_direction
+            if decision_direction(people[op["student_id"]], ctx, fresh_snapshot) != "local_newer":
+                _op_state(run["id"], op["student_number"], "conflict", actual, "学校学生的修改时间已变化，保留现值。")
+                continue
         _submission_intent(user, plan, run, op)
         await mini.change_student(client, plan["remote_checkin_id"], op["student_number"], desired)
         submitted += 1
-        remote = await mini.read_records(client, plan["remote_checkin_id"])
+        fresh_snapshot = await read_current()
+        remote = fresh_snapshot["students"]
         actual = remote.get(op["student_number"])
         if actual != desired:
             _op_state(run["id"], op["student_number"], "outcome_unknown", actual, "学校已响应但回读未确认目标状态，停止后续提交。")
@@ -898,8 +939,8 @@ async def _write_batch(client, user, plan, run, snapshot):
                     conn.execute("UPDATE smart_attendance_sync_operations SET state='conflict',remote_status=?,reason=?,updated_at=? "
                                  "WHERE id=? AND state='confirmed'", (actual, '学校在最终回读时已有其他结果，保留该次修改。',
                                  _now(), confirmed['id']))
-        if not unfinished:
-            _project_readback(user, plan, run, final)
+        if not unfinished or reconcile or json.loads(plan["intent_json"]).get("calendar_create", {}).get("bidirectional"):
+            _project_readback(user, plan, run, final, batch_only=bool(unfinished))
     return _run_finish(plan, run)
 
 

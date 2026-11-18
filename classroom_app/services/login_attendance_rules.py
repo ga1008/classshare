@@ -19,6 +19,11 @@ SCHOOL_PERIODS = {
 }
 STATUS_LABELS = {"PENDING": "待确认", "PRESENT": "出勤", "ABSENT": "缺课",
                  "SICK_LEAVE": "病假", "PERSONAL_LEAVE": "事假", "LATE": "迟到", "EARLY": "早退"}
+SCHOOL_ACTIVITIES = {"STUDY_TOUR": "研学", "PRACTICE": "实践", "VOLUNTEER": "志愿服务"}
+SCHOOL_STATUS = {"CHECKED": "PRESENT", "UNCHECKED": "ABSENT", "SICK_LEAVE": "SICK_LEAVE",
+                 "PERSONAL_LEAVE": "PERSONAL_LEAVE", "LATE_OR_EARLY": "LATE_OR_EARLY",
+                 "NOT_APPLICABLE": "EXEMPT", **{key: key for key in SCHOOL_ACTIVITIES}}
+ALL_STATUS_LABELS = {**STATUS_LABELS, "LATE_OR_EARLY": "迟到或早退", "EXEMPT": "免考勤", **SCHOOL_ACTIVITIES}
 
 
 def to_ms(value):

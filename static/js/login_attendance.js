@@ -9,7 +9,7 @@ import { createForm } from './lq/forms.js';
 import { enhanceDropdowns } from './lq/dropdown.js';
 import { createTable } from './lq/tables.js';
 import { createAmbientPoll } from './ambient_poll.js';
-import { ATTENDANCE_STATES } from './login_attendance_states.js';
+import { ATTENDANCE_STATES, RECORDED_ATTENDANCE_STATES } from './login_attendance_states.js';
 import { createAttendanceWorkflow } from './login_attendance_sync.js';
 import { mountStudentCorrection } from './login_attendance_student_correction.js';
 import { createAttendanceSettlement } from './login_attendance_settlement.js';
@@ -24,7 +24,7 @@ let sequence = 0;
 const node = (tag, className = '', text) => { const n = document.createElement(tag); n.className = className; if (text !== undefined) n.textContent = String(text); return n; };
 const time = value => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '暂无';
 const duration = value => value == null ? '无法完整观察' : `${Math.floor(Number(value) / 60)} 分 ${Math.floor(Number(value) % 60)} 秒`;
-const statusLabel = value => ATTENDANCE_STATES.find(([key]) => key === value)?.[1] || (value === 'PENDING' ? '待确认' : '暂无');
+const statusLabel = value => RECORDED_ATTENDANCE_STATES.find(([key]) => key === value)?.[1] || (value === 'PENDING' ? '待确认' : '暂无');
 const chip = (text, tone = 'neutral') => createComponent('chip', { label: String(text), tone, kind: 'status' });
 const button = (label, action, variant = 'glass') => { const n = createDomainButton({ label, variant, size: 'sm' }); n.addEventListener('click', action); return n; };
 const request = (url, options = {}) => apiFetch(url, { silent: true, ...options });
@@ -88,7 +88,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     appendField(searchbar, 'search', 'input', '搜索姓名或学号', '', { type: 'search' });
     appendField(searchbar, 'filter', 'select', '筛选', '', { options: [
         { value: '', label: '全部学生' }, { value: 'PENDING', label: '待确认' }, { value: 'error', label: '采集待核对' },
-        ...ATTENDANCE_STATES.map(([value, label]) => ({ value, label })),
+        ...RECORDED_ATTENDANCE_STATES.map(([value, label]) => ({ value, label })),
     ] });
     appendField(searchbar, 'sort', 'select', '排序', '', { options: [
         { value: '', label: '名单顺序' }, { value: 'access_desc', label: '登录跨度：长到短' }, { value: 'access_asc', label: '登录跨度：短到长' },
@@ -144,6 +144,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         return value != null && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null;
     }
     function paintGrid() {
+        workflow?.update();
         if (!teacher || closed) return;
         const rows = filtered(); page = Math.min(page, Math.max(0, Math.ceil(rows.length / 40) - 1));
         grid.replaceChildren();
@@ -214,14 +215,15 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         settlement?.refresh();
     }
     function paintHeadingState() {
-        const label = round?.state === 'settling' && SETTLEMENT_LABELS[settlement?.taskState()];
+        const schoolRegister = round?.state === 'published' && round?.context?.time_source === 'school_register';
+        const label = schoolRegister ? '已点名 · 智慧课堂登记' : round?.state === 'settling' && SETTLEMENT_LABELS[settlement?.taskState()];
         headingState.replaceChildren(chip(label || ROUND_LABELS[round?.state] || '尚未开启'));
     }
     function paintClock() {
         const now = clock?.now(), minutes = Number(fields.duration?.value);
         endForecast.textContent = now != null && minutes >= 1 && minutes <= 240 ? `现在开始，预计 ${time(now + minutes * 60000)} 结束（北京时间）。` : '点击开始记录时，以服务器实际时间开始；结束时间按预计时长计算。';
         const start = Number(round?.actual_started_at_ms || round?.starts_at_ms);
-        elapsed.hidden = !Number.isFinite(start) || !start;
+        elapsed.hidden = !Number.isFinite(start) || !start || round?.context?.time_source === 'school_register';
         if (elapsed.hidden) return;
         const stopped = !['running', 'scheduled'].includes(round.state), end = Number(round.ended_at_ms || round.actual_ends_at_ms || round.ends_at_ms);
         const through = stopped && end ? end : now;
@@ -246,7 +248,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         guidance.textContent = historyOnly ? '历史轮次，可查看学生凭据与改签记录。' : readyToStart ? '开始后按设定时长自动结束。' : ['running', 'scheduled'].includes(round?.state) ? `正在自动记录，预计 ${time(round.ends_at_ms)} 结束。` : '';
         const counts = round?.summary?.counts || {};
         summary.replaceChildren(...[['出勤', counts.PRESENT || 0], ['待确认', counts.PENDING || 0], ['应到', round?.summary?.expected ?? '—'], ['免考勤', round?.summary?.exempt ?? 0]].map(([label, value]) => createContent('card', { title: label, variant: 'stat', value })));
-        stateCounts.replaceChildren(...ATTENDANCE_STATES.filter(([key]) => key !== 'PRESENT' && counts[key] > 0).map(([key, label]) => chip(`${label} ${counts[key]} 人`, key === 'ABSENT' ? 'warning' : 'neutral')));
+        stateCounts.replaceChildren(...RECORDED_ATTENDANCE_STATES.filter(([key]) => key !== 'PRESENT' && counts[key] > 0).map(([key, label]) => chip(`${label} ${counts[key]} 人`, key === 'ABSENT' ? 'warning' : 'neutral')));
         const settlementFocused = document.activeElement === settlement?.button;
         actions.replaceChildren(); secondaryActions.replaceChildren(button('刷新记录', () => load().catch(fail)), button('学期签到统计', openDashboard), button('历史点名', async event => { const trigger=event.currentTarget; trigger.disabled=true; try { const mod=await import('./login_attendance_history.js'); if(!closed && trigger.isConnected) mod.openAttendanceHistory({classOfferingId:offering,trigger,parentLayer:handle}); } catch(error){fail(error);} finally{if(trigger.isConnected)trigger.disabled=busy;} }));
         if (readyToStart) { const start = button('开始记录', createRound, 'prominent'); start.disabled = Boolean(data?.policy?.closed_at_ms); start.dataset.laDisabled = String(start.disabled); actions.append(start); }
@@ -391,7 +393,10 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     async function openDashboard(event) { const trigger=event.currentTarget; trigger.disabled=true; try { const mod=await import('./attendance_dashboard.js'); if(!closed&&trigger.isConnected)mod.openAttendanceDashboard({classOfferingId:offering,userRole,trigger}); } catch(error){fail(error);} finally{if(trigger.isConnected)trigger.disabled=busy;} }
     async function showExternal(event) { const trigger=event.currentTarget; trigger.disabled=true; try { externalCleanup?.(); const mod = await import('./login_attendance_sync.js'); if (!closed && trigger.isConnected) { externalOpen = true; externalCleanup = mod.openAttendanceSync({ base: `${base}/rounds/${round.id}/external`, round, trigger, parentLayer: handle, readOnly: historyOnly || !isCurrent() || round.state === 'void', onClose: () => { externalOpen = false; externalCleanup = null; } }); } } catch(error) { externalOpen = false; throw error; } finally {if(trigger.isConnected)trigger.disabled=busy;} }
     fields.search.addEventListener('input', () => { page = 0; paintGrid(); }); fields.filter.addEventListener('change', () => { page = 0; paintGrid(); }); fields.sort.addEventListener('change', () => { page = 0; paintGrid(); });
-    shell.addEventListener('input', event => { if (![fields.search, fields.filter, fields.sort].includes(event.target)) dirty = true; });
+    shell.addEventListener('input', event => {
+        if (![fields.search, fields.filter, fields.sort].includes(event.target)) dirty = true;
+        if (event.target === fields.reason) workflow?.update();
+    });
     listPane.hidden = !teacher; config.hidden = !teacher || historyOnly; workflowHost.hidden = !teacher || historyOnly; secondary.hidden = !teacher;
     let dropdowns = [];
     let poll;
@@ -405,7 +410,16 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         settlement = createAttendanceSettlement({ host: settlementHost, base, getRound: () => round, getLayer: () => handle, getServerNow: () => clock.now(), isBusy: () => busy || detailBusy, request: call,
             onAccepted: result => { if (!round || Number(result.revision) >= Number(round.revision)) { round = result; if (data) data.round = round; } paint(); workflow?.refresh().catch(() => {}); },
             onCompleted: refreshSettlementResults, onStateChange: () => { workflow?.update(); paintHeadingState(); } });
-        workflow = createAttendanceWorkflow({ host: workflowHost, base, sessionId: lesson, getRound: () => round, getLayer: () => handle, isLocalBusy: () => busy || detailBusy || settlement.isSubmitting(), isSettlementActive: () => settlement.isActive() });
+        const refreshRound = () => { if (!closed) load({ preserveNotice: true }).catch(fail); };
+        workflow = createAttendanceWorkflow({
+            host: workflowHost, base, sessionId: lesson, session, getRound: () => round, getLayer: () => handle,
+            isLocalBusy: () => busy || detailBusy || settlement.isSubmitting(), isSettlementActive: () => settlement.isActive(),
+            hasDraft: () => Boolean(selected.size || fields.reason.value.trim() || detailDirty),
+            onLocalChanged: refreshRound, onReconciled: () => {
+                document.dispatchEvent(new CustomEvent('classroom:attendance-changed'));
+                refreshRound();
+            },
+        });
     }
     dropdowns = enhanceDropdowns(shell);
     const controller = { handle, refresh: load, destroy: () => handle.destroy() }; active.set(key, controller);
