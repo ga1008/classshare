@@ -824,6 +824,23 @@ def _upsert_checkin_students(
     synced_at: str,
 ) -> int:
     local_students = _student_match_map(conn, class_offering_id)
+    # A fresh read of the same school record must retain a proven historical
+    # participant who later left the class. Never carry mappings across
+    # offerings/lessons, deleted students or subsequently corrected numbers.
+    if class_offering_id and session_id:
+        previous_matches = conn.execute("""
+            SELECT h.student_number,s.id FROM smart_classroom_checkin_students h
+            JOIN students s ON s.id=h.student_id AND TRIM(s.student_id_number)=h.student_number
+            WHERE h.checkin_session_id=? AND h.teacher_id=? AND h.class_offering_id=?
+              AND h.session_id=? AND h.local_match_status='matched'
+        """, (checkin_session_id, teacher_id, class_offering_id, session_id)).fetchall()
+        for previous in previous_matches:
+            number = previous["student_number"]
+            current = local_students.get(number)
+            if current and current["id"] != previous["id"]:
+                local_students.pop(number)  # Conflicting identities require a fresh match.
+            elif not current:
+                local_students[number] = {"id": previous["id"]}
     seen_numbers: set[str] = set()
     saved_count = 0
     for index, raw_item in enumerate(student_rows, start=1):

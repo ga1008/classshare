@@ -140,16 +140,16 @@ def normalize_attendance_term(year: Any, term: Any) -> tuple[str, int]:
     return y, int(t)
 
 
-def sign_attendance_source_option(teacher_id: int, source: dict) -> str:
+def sign_attendance_source_option(teacher_id: int, source: dict, *, purpose="attendance-source-v1") -> str:
     raw = base64.urlsafe_b64encode(_json({"owner": teacher_id, "exp": int(time.time()) + 1800, "source": source}).encode()).decode().rstrip("=")
-    digest = hmac.new(str(SECRET_KEY).encode(), ("attendance-source-v1:" + raw).encode(), hashlib.sha256).hexdigest()
+    digest = hmac.new(str(SECRET_KEY).encode(), (purpose + ":" + raw).encode(), hashlib.sha256).hexdigest()
     return raw + "." + digest
 
 
-def _decode_option(token: str, teacher_id: int) -> dict:
+def _decode_option(token: str, teacher_id: int, *, purpose="attendance-source-v1") -> dict:
     try:
         raw, supplied = token.rsplit(".", 1)
-        digest = hmac.new(str(SECRET_KEY).encode(), ("attendance-source-v1:" + raw).encode(), hashlib.sha256).hexdigest()
+        digest = hmac.new(str(SECRET_KEY).encode(), (purpose + ":" + raw).encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(digest, supplied):
             raise ValueError()
         payload = json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))

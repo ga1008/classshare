@@ -57,7 +57,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     const headingState = node('span');
     const elapsed = node('p', 'la-clock'); elapsed.setAttribute('aria-label', '本次上课时间');
     const summary = node('div', 'la-summary');
-    const stateCounts = node('div','la-actions'); stateCounts.setAttribute('aria-label','六种签到状态人数');
+    const stateCounts = node('div','la-actions'); stateCounts.setAttribute('aria-label','缺课、请假与迟到早退人数');
     const actions = node('div', 'la-actions');
     const settlementHost = node('section'); settlementHost.hidden = true;
     const secondary = node('details', 'lq-collapsible la-secondary');
@@ -94,7 +94,8 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         { value: '', label: '名单顺序' }, { value: 'access_desc', label: '登录跨度：长到短' }, { value: 'access_asc', label: '登录跨度：短到长' },
         { value: 'learning_desc', label: '学习时长：长到短' }, { value: 'learning_asc', label: '学习时长：短到长' },
     ] });
-    const metricHelp = node('p', 'la-metric-help', '登录跨度为本轮首末服务器接入之间的时间，不代表连续在线；学习时长来自有效学习记录。未完整记录的时长排在最后。');
+    const metricHelp = node('details', 'lq-collapsible la-metric-help');
+    metricHelp.append(node('summary', 'lq-collapsible__summary', '时长如何计算'), node('p', 'lq-collapsible__content', '登录跨度取首次至末次接入的间隔，不代表连续在线。学习时长累计有效学习记录，数据不完整的学生排在末尾。'));
     const selections = node('div', 'la-actions');
     const count = node('span', 'la-selection-count', '未选择学生');
     selections.append(button('全选当前筛选', () => { filtered().forEach(r => selected.set(r.student_id, r.revision)); dirty = true; paintGrid(); }),
@@ -106,9 +107,9 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     appendField(bulkFields, 'reason', 'textarea', '修改理由', '', { rows: 2, required: true, maxLength: 1000 });
     const apply = button('应用到已选学生', applySelected, 'prominent'); bulkFields.append(apply); bulk.append(bulkFields);
     const batch = node('details', 'lq-collapsible la-batch'); batch.append(node('summary', 'lq-collapsible__summary', '批量修改出勤状态'), selections);
-    listPane.append(searchbar, metricHelp, batch, bulk, grid, pager);
+    listPane.append(searchbar, batch, bulk, grid, pager, metricHelp);
     content.append(listPane); if (!teacher) content.append(detail);
-    shell.append(heading, guidance, notice, workflowHost, config, actions, settlementHost, summary, stateCounts, content, secondary);
+    shell.append(heading, notice, guidance, config, actions, settlementHost, summary, stateCounts, workflowHost, content, secondary);
     const cancelRequests = new Set();
     const disabledBeforeBusy = new WeakMap();
     const setNotice = (text = '', error = false) => { notice.textContent = text; notice.setAttribute('role', error ? 'alert' : 'status'); };
@@ -169,6 +170,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         if (!rows.length) grid.append(createContent('empty', { title: '没有匹配的学生', body: '可切换筛选或搜索条件。' }));
         pager.replaceChildren(button('上一页', () => { page--; paintGrid(); }, 'ghost'), node('span', '', `${rows.length} 人 · 第 ${page + 1} / ${Math.max(1, Math.ceil(rows.length / 40))} 页`), button('下一页', () => { page++; paintGrid(); }, 'ghost'));
         pager.firstChild.disabled = page <= 0; pager.lastChild.disabled = (page + 1) * 40 >= rows.length;
+        pager.hidden = rows.length <= 40;
         paintSelection();
     }
     batch.addEventListener('toggle', () => grid.querySelectorAll('.la-student-select').forEach(n => n.hidden = !batch.open));
@@ -236,14 +238,15 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         const context = historyOnly ? round?.context || {} : session || {};
         const originalClasses = [...new Set((round?.records||[]).map(r=>r.class_name).filter(Boolean))];
         const classLabel = context.class_name || context.teaching_class_name || (historyOnly ? originalClasses.slice(0,8).join('、') + (originalClasses.length>8?` 等 ${originalClasses.length} 个班`:'') : '');
-        heading.replaceChildren(node('h3', '', context.detail_title || context.session_title || context.title || context.course_name || '历史点名'), node('p', '', `${context.session_date || ''} ${context.academic_section_text || context.section_text || ''} ${classLabel} · 原课次`), headingState, elapsed);
+        const lessonMeta = [context.session_date, context.academic_section_text || context.section_text, classLabel].filter(Boolean).join(' ');
+        heading.replaceChildren(node('h3', '', context.detail_title || context.session_title || context.title || context.course_name || '历史点名'), node('p', '', historyOnly ? `${lessonMeta} · 原课次` : lessonMeta), headingState, elapsed);
         paintHeadingState(); paintClock();
         if (!teacher) { paintStudent(); return; }
         const readyToStart = !historyOnly && (!round || (round.state === 'void' && latestLessonRoundId === round.id));
-        guidance.textContent = historyOnly ? '已保存的历史点名。选择学生查看证据与历次记录。' : readyToStart ? '核对网络与时间后开始记录；下课自动结束。课次暂未对应也可以先完成本地点名。' : ['running', 'scheduled'].includes(round?.state) ? `正在自动记录课堂接入，预计 ${time(round.ends_at_ms)} 结束。关闭浮窗或离开页面后，后台仍继续记录。` : round?.state === 'settling' ? '本地点名已结束，处理阶段与进度如下。完成后即可同步与推送。' : '点名结果已生成。点击学生卡片查看详情或改签，确认后点击同步与推送。';
+        guidance.textContent = historyOnly ? '历史轮次，可查看学生凭据与改签记录。' : readyToStart ? '开始后按设定时长自动结束。' : ['running', 'scheduled'].includes(round?.state) ? `正在自动记录，预计 ${time(round.ends_at_ms)} 结束。` : '';
         const counts = round?.summary?.counts || {};
         summary.replaceChildren(...[['出勤', counts.PRESENT || 0], ['待确认', counts.PENDING || 0], ['应到', round?.summary?.expected ?? '—'], ['免考勤', round?.summary?.exempt ?? 0]].map(([label, value]) => createContent('card', { title: label, variant: 'stat', value })));
-        stateCounts.replaceChildren(...ATTENDANCE_STATES.map(([key,label])=>chip(`${label} ${counts[key]||0} 人`,key==='PRESENT'?'success':'neutral')));
+        stateCounts.replaceChildren(...ATTENDANCE_STATES.filter(([key]) => key !== 'PRESENT' && counts[key] > 0).map(([key, label]) => chip(`${label} ${counts[key]} 人`, key === 'ABSENT' ? 'warning' : 'neutral')));
         const settlementFocused = document.activeElement === settlement?.button;
         actions.replaceChildren(); secondaryActions.replaceChildren(button('刷新记录', () => load().catch(fail)), button('学期签到统计', openDashboard), button('历史点名', async event => { const trigger=event.currentTarget; trigger.disabled=true; try { const mod=await import('./login_attendance_history.js'); if(!closed && trigger.isConnected) mod.openAttendanceHistory({classOfferingId:offering,trigger,parentLayer:handle}); } catch(error){fail(error);} finally{if(trigger.isConnected)trigger.disabled=busy;} }));
         if (readyToStart) { const start = button('开始记录', createRound, 'prominent'); start.disabled = Boolean(data?.policy?.closed_at_ms); start.dataset.laDisabled = String(start.disabled); actions.append(start); }
@@ -401,7 +404,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     if (teacher && !historyOnly) {
         settlement = createAttendanceSettlement({ host: settlementHost, base, getRound: () => round, getLayer: () => handle, getServerNow: () => clock.now(), isBusy: () => busy || detailBusy, request: call,
             onAccepted: result => { if (!round || Number(result.revision) >= Number(round.revision)) { round = result; if (data) data.round = round; } paint(); workflow?.refresh().catch(() => {}); },
-            onCompleted: refreshSettlementResults, onStateChange: () => { workflow?.update(); paintHeadingState(); if (round?.state === 'settling') guidance.textContent = '本地点名已结束，处理阶段与进度如下。完成后即可同步与推送。'; } });
+            onCompleted: refreshSettlementResults, onStateChange: () => { workflow?.update(); paintHeadingState(); } });
         workflow = createAttendanceWorkflow({ host: workflowHost, base, sessionId: lesson, getRound: () => round, getLayer: () => handle, isLocalBusy: () => busy || detailBusy || settlement.isSubmitting(), isSettlementActive: () => settlement.isActive() });
     }
     dropdowns = enhanceDropdowns(shell);

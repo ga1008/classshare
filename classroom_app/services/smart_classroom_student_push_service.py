@@ -151,6 +151,17 @@ def _revoke_batch(conn, round_id):
         auto.schedule_due_auto_sync(conn, round_id, force=True)
 
 
+def revoke_for_local_changes(conn, round_id, student_ids):
+    """Revoke old write authority before a local-only decision, under the round lock."""
+    _revoke_batch(conn, round_id)
+    marks = ",".join("?" for _ in student_ids)
+    previous = conn.execute(f"""SELECT * FROM smart_attendance_student_corrections WHERE local_round_id=?
+        AND student_id IN ({marks}) AND mode='push' AND state NOT IN ('outcome_unknown','confirmed','superseded')""",
+        (str(round_id), *student_ids)).fetchall()
+    for intent in previous:
+        _set(conn, dict(intent), 'superseded', 'local_changed', '本地已保存更新的更正，旧目标不再发送。')
+
+
 def correct(conn, user, offering_id, round_id, student_id, payload):
     row, record = _context(conn, user, offering_id, round_id, student_id, lock=True)
     key = str(payload['idempotency_key'])
@@ -168,11 +179,7 @@ def correct(conn, user, offering_id, round_id, student_id, payload):
     if payload['mode'] == 'push' and (context is None or payload.get('expected_binding_revision') != gate['binding_revision']):
         context = None
         gate.update(code=gate['code'] if gate['code'] != 'checking' else 'alignment_changed', message=gate['message'] if gate['code'] != 'checking' else '课次对齐版本已变化，请刷新后再推送。')
-    _revoke_batch(conn, round_id)
-    # Supersede only unsent earlier authorizations for this student. A submitted
-    # operation keeps its exact target and can only be read back.
-    for previous_push in conn.execute("SELECT * FROM smart_attendance_student_corrections WHERE local_round_id=? AND student_id=? AND mode='push' AND state NOT IN ('outcome_unknown','confirmed','superseded')", (str(round_id), student_id)).fetchall():
-        _set(conn, dict(previous_push), 'superseded', 'local_changed', '本地已保存更新的更正，旧目标不再发送。')
+    revoke_for_local_changes(conn, round_id, [student_id])
     changed = local.change_records(conn, round_id, user, {'records': [{'student_id': student_id, 'status': payload['status'], 'revision': payload['revision']}], 'reason': payload['reason']})
     if changed['results'][0]['result'] != 'updated':
         raise _error('record_conflict', '该学生记录已更新，请刷新后核对。')

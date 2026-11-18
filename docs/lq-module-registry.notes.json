@@ -373,6 +373,14 @@
       "states": "学生无本人有效来源时隐藏入口及旧智慧面板；页面可见时一分钟一次轻量ID可见性查询，无全班轮询；加载/错误/空/多来源/未纳入/采集中/申诉待处理，来源CAS冲突保留说明。",
       "rules": "学生只读本人；本地和学校来源取舍、分母由后端判定，不以计划课次推算缺勤。LQ独占嵌套焦点/关闭否决；申诉保留学校原记录，批准只作用本地统计。深链精确学生课次，未知来源不猜替代记录。"
     },
+    "attendance-term-calendar": {
+      "title": "教师出勤日历 static/js/attendance_calendar.js",
+      "layer": "composite",
+      "summary": "从签到统计进入本课程本学期日历，按学生和课次查看出勤、补记或改签，并核对智慧课堂同步结果。",
+      "params": "复用 Dialog、Button、Chip 和原生表单控件。月历按星期排布，日期含多节课时逐课显示；数据色配合状态文字。",
+      "states": "未点名、待核对、出勤、缺课与请假，保存草稿、本地版本冲突、学校课次待对齐和远端回读结果。",
+      "rules": "日历的学生范围、课次范围、改签与学校推送都由教师选择。嵌套浮窗使用同一 LQ layer 焦点栈。"
+    },
     "attendance-immediate-settlement": {
       "title": "立即结算本地点名 static/js/login_attendance_settlement.js",
       "layer": "composite",

@@ -30,18 +30,24 @@ export function openAttendanceDashboard({ classOfferingId, userRole, trigger, se
     const base = `/api/classrooms/${offering}/login-attendance/dashboard`;
     let data = null, selectedStudent = teacher && Number(studentId) > 0 ? Number(studentId) : null;
     let view = 'sessions', page = 0, busy = false, closed = false, epoch = 0, request = null, handle, refreshPending = false;
-    let focusSession = Number(sessionId) || null, scopeSession = null, initialAppeal = Number(appealId) || null;
+    let focusSession = Number(sessionId) || null, scopeSession = teacher && !selectedStudent ? focusSession : null, initialAppeal = Number(appealId) || null;
     const body = n('div', 'la-workspace lad-workspace');
     const heading = n('div', 'la-heading'), notice = n('p', 'la-notice'); notice.setAttribute('role', 'status');
     const stats = n('div', 'la-summary'), statusCounts = n('div', 'la-actions');
-    const actions = n('div', 'la-actions'), filters = n('div', 'la-filters');
+    const header = n('header', 'lad-header'), headerActions = n('div', 'la-actions');
+    const actions = n('div', 'la-actions'), filters = n('div', 'la-filters lad-filters');
+    actions.setAttribute('role', 'group'); actions.setAttribute('aria-label', '统计视图');
     const searchField = createForm('input', { id: `lad-search-${crypto.randomUUID()}`, label: '搜索课次、姓名或学号', type: 'search', value: '' });
-    const search = searchField.querySelector('input'); filters.append(searchField);
+    const search = searchField.querySelector('input'); filters.append(actions, searchField);
     const list = n('div', 'lad-list'), pager = n('div', 'la-actions');
     const note = n('p', 'lad-note');
-    body.append(heading, notice, stats, statusCounts, actions, note, filters, list, pager);
+    header.append(heading, headerActions);
+    body.append(header, notice, stats, statusCounts, note, filters, list, pager);
     function fail(error) { if (!closed) { notice.textContent = error.message || '统计读取失败，请重试。'; notice.setAttribute('role', 'alert'); } }
-    function gate() { body.setAttribute('aria-busy', String(busy)); actions.querySelectorAll('button').forEach(el => { el.disabled = busy; }); }
+    function gate() {
+        body.setAttribute('aria-busy', String(busy));
+        for (const group of [headerActions, actions]) group.querySelectorAll('button').forEach(el => { el.disabled = busy; });
+    }
     async function load() {
         const generation = ++epoch; request?.abort(); request = new AbortController();
         const focused = document.activeElement, restoreListFocus = list.contains(focused);
@@ -68,12 +74,25 @@ export function openAttendanceDashboard({ classOfferingId, userRole, trigger, se
         }
         finally { window.clearTimeout(deadline); if (!closed && generation === epoch) { busy = false; gate(); } }
     }
-    const refresh = button('刷新统计', load);
+    const refresh = button('刷新统计', load, 'ghost');
+    const calendar = button('学期出勤日历', async event => {
+        const target = event.currentTarget;
+        if (target.disabled) return;
+        target.disabled = true;
+        try {
+            const { openAttendanceCalendar } = await import('./attendance_calendar.js');
+            if (!closed && target.isConnected) openAttendanceCalendar({ classOfferingId: offering, studentId: selectedStudent, sessionId: focusSession, trigger: target, parentLayer: handle });
+        } catch (error) { fail(error); }
+        finally { if (target.isConnected) target.disabled = busy; }
+    }, 'prominent');
+    calendar.setAttribute('aria-haspopup', 'dialog');
+    if (teacher) headerActions.append(calendar);
+    headerActions.append(refresh);
     const allStudents = button('课程总览', () => { selectedStudent = null; focusSession = null; scopeSession = null; page = 0; search.value = ''; void load(); });
     const lessonView = button('课次记录', () => { view = 'sessions'; page = 0; search.value = ''; paint(); });
-    const studentView = button('学生汇总', () => { view = 'students'; page = 0; focusSession = null; search.value = ''; paint(); });
+    const studentView = button('学生汇总', () => { view = 'students'; page = 0; focusSession = scopeSession; search.value = ''; paint(); });
     const allLessons = button('全部课次', () => { focusSession = null; page = 0; if (scopeSession) { scopeSession = null; void load(); } else paintRows(); }, 'ghost');
-    actions.append(refresh, allStudents, lessonView, studentView, allLessons);
+    actions.append(allStudents, allLessons, lessonView, studentView);
     function summaryCards(summary) {
         return [['出勤率', rate(summary.attendance_rate)], ['已统计课次', count(summary.recorded_session_count)], ['已确认人次', count(summary.confirmed)], ['待核对人次', count(summary.pending)]]
             .map(([title, value]) => createContent('card', { title: !teacher || selectedStudent ? title.replace('人次', '课次') : title, value, variant: 'stat' }));
@@ -82,7 +101,7 @@ export function openAttendanceDashboard({ classOfferingId, userRole, trigger, se
         const summary = data.summary || {}, person = data.student;
         heading.replaceChildren(n('h3', '', person ? `${person.name} · 本课程签到` : data.offering?.course_name || '课程签到统计'), n('p', '', [data.offering?.semester, person?.student_number].filter(Boolean).join(' · ')));
         stats.replaceChildren(...summaryCards(summary));
-        statusCounts.replaceChildren(...Object.entries(summary.counts || {}).map(([status, total]) => chip(`${statusLabel(status)} ${total}`, tone(status))));
+        statusCounts.replaceChildren(...Object.entries(summary.counts || {}).filter(([, total]) => total > 0).map(([status, total]) => chip(`${statusLabel(status)} ${total}`, tone(status))));
         if (summary.pending_appeals) statusCounts.append(chip(`待处理申诉 ${summary.pending_appeals}`, 'warning'));
         note.textContent = data.rate_note || summary.rate_note || '只统计已有有效签到记录的课次。待核对、免考勤和未开展点名的课次不计入出勤率分母；未开启不代表缺课。';
         allStudents.hidden = !teacher || !selectedStudent && !scopeSession;
@@ -90,6 +109,7 @@ export function openAttendanceDashboard({ classOfferingId, userRole, trigger, se
         studentView.textContent = scopeSession ? '本课学生' : '学生汇总';
         lessonView.hidden = !teacher || Boolean(selectedStudent);
         allLessons.hidden = !focusSession;
+        calendar.textContent = selectedStudent ? '个人出勤日历' : '学期出勤日历';
         lessonView.setAttribute('aria-pressed', String(view === 'sessions')); studentView.setAttribute('aria-pressed', String(view === 'students'));
         if (selectedStudent || !teacher) view = 'sessions';
         paintRows(); gate();
@@ -128,7 +148,7 @@ export function openAttendanceDashboard({ classOfferingId, userRole, trigger, se
         const summary = row.summary || {}, content = n('div', 'lad-session-body');
         content.append(n('strong', '', `${scopeSession ? '本课' : '本学期'}出勤率 ${rate(summary.attendance_rate)}`), n('p', '', `${count(summary.recorded_session_count)} 个课次 · 待核对 ${count(summary.pending)}`), n('small', '', Object.entries(summary.counts || {}).map(([status, total]) => `${statusLabel(status)} ${total}`).join(' · ')));
         if (summary.pending_appeals) content.append(chip(`待处理申诉 ${summary.pending_appeals}`, 'warning'));
-        const open = button('查看个人课次', () => { selectedStudent = Number(row.student_id); view = 'sessions'; page = 0; search.value = ''; void load(); }, 'ghost');
+        const open = button('查看个人课次', () => { selectedStudent = Number(row.student_id); focusSession = null; scopeSession = null; view = 'sessions'; page = 0; search.value = ''; void load(); }, 'ghost');
         return createContent('card', { title: row.name, meta: [row.student_number, row.class_name].filter(Boolean).join(' · ') }, { body: [content], actions: [open] });
     }
     function paintRows() {
@@ -136,10 +156,11 @@ export function openAttendanceDashboard({ classOfferingId, userRole, trigger, se
         const rows = (isStudents ? data?.students || [] : data?.sessions || []).filter(row => (isStudents || !focusSession || Number(row.session_id) === focusSession) && (!q || [row.title, row.date, row.name, row.student_number, row.class_name].filter(Boolean).join(' ').toLowerCase().includes(q)));
         page = Math.min(page, Math.max(0, Math.ceil(rows.length / 40) - 1));
         list.replaceChildren(...rows.slice(page * 40, (page + 1) * 40).map(isStudents ? studentCard : sessionCard));
-        if (!rows.length) list.append(createContent('empty', { title: q ? '没有匹配记录' : '暂无可统计的签到记录', description: teacher ? '只有已开启的本地点名或已同步并关联的学校签到才纳入统计，未使用签到的课次不会记为缺课。' : '可调整筛选或稍后刷新。' }));
+        if (!rows.length) list.append(createContent('empty', { title: q ? '没有匹配记录' : '暂无可统计的签到记录', description: q ? '可更换关键词。' : teacher ? '学期日历中可查看全部已排课日期。' : '' }));
         const previous = button('上一页', () => { page--; paintRows(); }, 'ghost'), next = button('下一页', () => { page++; paintRows(); }, 'ghost');
         previous.disabled = page === 0; next.disabled = (page + 1) * 40 >= rows.length;
         pager.replaceChildren(previous, n('span', '', `共 ${rows.length} 项 · 第 ${page + 1} / ${Math.max(1, Math.ceil(rows.length / 40))} 页`), next);
+        pager.hidden = rows.length <= 40;
         allLessons.hidden = !focusSession;
     }
     search.addEventListener('input', () => { page = 0; paintRows(); });

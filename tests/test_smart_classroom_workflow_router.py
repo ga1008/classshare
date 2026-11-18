@@ -26,7 +26,7 @@ from classroom_app.services import smart_classroom_miniapp_adapter as mini
 from classroom_app.services import smart_classroom_alignment_service as alignment
 
 
-class WorkflowRouterTests(unittest.TestCase):
+class WorkflowRouterFixture(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:", check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
@@ -74,6 +74,7 @@ class WorkflowRouterTests(unittest.TestCase):
         app = FastAPI()
         app.include_router(routes.router)
         app.include_router(routes.session_router)
+        app.include_router(routes.calendar_router)
         app.dependency_overrides[routes.get_current_teacher] = lambda: self.user
         self.client = self.enterContext(TestClient(app, base_url="https://platform.test"))
         self.base = "/api/classrooms/10/login-attendance/sessions/21/external"
@@ -103,14 +104,17 @@ class WorkflowRouterTests(unittest.TestCase):
         self.assertEqual("UNCHECKED", imported["status"], "School snapshot must be persisted before sending corrections")
         self.remote[number] = status
 
-    def seed_round(self):
-        ctx = flow._lesson(self.conn, self.user, 10, 21)
+    def seed_round(self, session_id=21, round_id=31):
+        ctx = flow._lesson(self.conn, self.user, 10, session_id)
         self.conn.execute("""INSERT INTO login_attendance_rounds(id,class_offering_id,session_id,teacher_id,request_key,state,starts_at_ms,ends_at_ms,window_start_ms,window_end_ms,settle_at_ms,created_at_ms,next_evaluation_ms,policy_json,context_json,ended_at_ms)
-            VALUES(31,10,21,7,'seed-round','published',1,2,1,2,3,1,3,'{}',?,2)""", (json.dumps(ctx),))
+            VALUES(?,10,?,7,?,'published',1,2,1,2,3,1,3,'{}',?,2)""",
+            (round_id, session_id, 'seed-round-'+str(round_id), json.dumps(ctx)))
         for sid, number, status in ((1, "S1", "PRESENT"), (2, "S2", "ABSENT")):
-            self.conn.execute("INSERT INTO login_attendance_records(round_id,student_id,student_number,name,status,manual_confirmed,decided_at_ms,updated_at_ms) VALUES(31,?,?,?,?,1,2,2)", (sid, number, number, status))
+            self.conn.execute("INSERT INTO login_attendance_records(round_id,student_id,student_number,name,status,manual_confirmed,decided_at_ms,updated_at_ms) VALUES(?,?,?,?,?,1,2,2)", (round_id, sid, number, number, status))
         self.conn.commit()
 
+
+class WorkflowRouterTests(WorkflowRouterFixture):
     def test_real_match_dispatch_import_readback_and_local_fact_preservation(self):
         initial = self.client.get(self.base + "/workflow")
         self.assertEqual(200, initial.status_code)

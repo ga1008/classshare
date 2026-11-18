@@ -75,6 +75,22 @@ test('LQ dashboard teacher course overview and individual course history preserv
     expect(errors).toEqual([]);
 });
 
+test('LQ dashboard opening a student from one lesson shows their full semester', async ({ page }) => {
+    const errors = await fixture(page, async (route, url) => {
+        if (url.endsWith('/dashboard/students/4')) return json(route, dashboard(true));
+        if (url.endsWith('/dashboard')) return json(route, dashboard());
+        return json(route, { detail: 'unexpected request' }, 500);
+    });
+    await page.getByRole('button', { name: '签到统计', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '课程签到统计' });
+    await expect(dialog.getByRole('button', { name: '学期出勤日历' })).toBeVisible();
+    await dialog.locator('[data-attendance-session-id="12"]').getByRole('button', { name: '查看该课学生' }).click();
+    await dialog.getByRole('button', { name: '查看个人课次' }).click();
+    await expect(dialog.getByRole('button', { name: '个人出勤日历' })).toBeVisible();
+    await expect(dialog.locator('[data-attendance-session-id]')).toHaveCount(2);
+    expect(errors).toEqual([]);
+});
+
 test('LQ dashboard school-only student appeal keeps failed draft and closes nested layer safely on mobile', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const paths: string[] = [], posted: any[] = []; let submitted = false;

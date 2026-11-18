@@ -1,6 +1,6 @@
 """Teacher-owned school synchronization with explicit authorization and readback."""
 import asyncio
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,6 +13,7 @@ from ..services import smart_classroom_attendance_adapter as adapter
 from ..services import smart_classroom_auto_sync_service as auto_sync
 from ..services import smart_classroom_workflow_service as workflow_service
 from ..services import smart_classroom_student_push_service as student_push
+from ..services import smart_classroom_calendar_sync_service as calendar_sync
 from ..services.smart_classroom_session_service import SmartClassroomSessionError
 from ..services.attendance_report_service import sign_attendance_source_option, _decode_option
 from ..services.trusted_network_service import require_same_origin
@@ -23,6 +24,7 @@ def _private_response(response:Response):
 
 router=APIRouter(prefix="/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external",tags=["login_attendance_external"],dependencies=[Depends(_private_response)])
 session_router=APIRouter(prefix="/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/external",tags=["login_attendance_external"],dependencies=[Depends(_private_response)])
+calendar_router=APIRouter(prefix="/api/classrooms/{offering_id}/login-attendance/calendar",tags=["login_attendance_external"],dependencies=[Depends(_private_response)])
 
 
 class Strict(BaseModel):
@@ -75,6 +77,62 @@ class WorkflowSync(Strict):
     idempotency_key:str=Field(min_length=8,max_length=100)
     expected_binding_revision:int=Field(ge=1)
     location:Location|None=None
+
+
+class CalendarPreview(Strict):
+    student_ids: list[Annotated[int, Field(strict=True, gt=0)]] | None = Field(default=None, min_length=1, max_length=500)
+
+
+class CalendarSync(Strict):
+    preview_token: str = Field(min_length=1, max_length=100_000)
+    idempotency_key: str = Field(min_length=8, max_length=100, pattern=r'^[A-Za-z0-9._:-]+$')
+
+
+class CalendarCreate(CalendarSync):
+    authorize_create: Literal[True]
+    location: Location
+
+
+@calendar_router.post('/align')
+async def align_semester(offering_id: int, request: Request, user: dict = Depends(get_current_teacher)):
+    require_same_origin(request)
+    return await _call(asyncio.wait_for(workflow_service.align_offering(user, offering_id), timeout=90))
+
+
+@session_router.post('/calendar-preview')
+async def preview_calendar_sync(offering_id: int, session_id: int, payload: CalendarPreview, request: Request,
+                                user: dict = Depends(get_current_teacher)):
+    require_same_origin(request)
+    return await _call(asyncio.wait_for(calendar_sync.preview(user, offering_id, session_id, payload.student_ids), timeout=90))
+
+
+@session_router.post('/calendar-sync', status_code=202)
+def submit_calendar_sync(offering_id: int, session_id: int, payload: CalendarSync, request: Request,
+                         user: dict = Depends(get_current_teacher)):
+    require_same_origin(request)
+    with get_db_connection() as conn:
+        return calendar_sync.dispatch(conn, user, offering_id, session_id, payload.preview_token, payload.idempotency_key)
+
+
+@session_router.post('/calendar-create', status_code=202)
+async def create_calendar_checkin(offering_id: int, session_id: int, payload: CalendarCreate, request: Request,
+                                  user: dict = Depends(get_current_teacher)):
+    require_same_origin(request)
+    return await _call(asyncio.wait_for(calendar_sync.create(user, offering_id, session_id, payload.preview_token,
+                                         payload.idempotency_key, payload.location.model_dump()), timeout=90))
+
+
+@session_router.get('/calendar-sync/{key}')
+def calendar_sync_status(offering_id: int, session_id: int, key: str, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        return calendar_sync.status(conn, user, offering_id, session_id, key)
+
+
+@session_router.post('/calendar-sync/{key}/readback')
+async def read_calendar_result(offering_id: int, session_id: int, key: str, request: Request,
+                               user: dict = Depends(get_current_teacher)):
+    require_same_origin(request)
+    return await _call(asyncio.wait_for(calendar_sync.readback(user, offering_id, session_id, key), timeout=90))
 
 
 class AlignmentConfirmation(Strict):

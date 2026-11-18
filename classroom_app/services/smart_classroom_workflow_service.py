@@ -207,16 +207,19 @@ async def dispatch_sync(user, offering_id, round_id, payload):
         return result
 
 
-def enqueue_sync(conn, user, offering_id, round_id, payload):
+def enqueue_sync(conn, user, offering_id, round_id, payload, *, calendar=None):
     ctx = ledger.load_read_context(conn, user, round_id, lock=True)
     if ctx["class_offering_id"] != offering_id:
         raise HTTPException(404, "点名不属于此课堂。")
     if ctx["state"] != "published" or not ctx.get("is_current") or ctx.get("closed"):
         raise HTTPException(409, "本轮须完成本地结算且仍有效，才能同步与推送。")
     fingerprint = ledger.result_fingerprint(ctx)
+    if calendar and (ctx['session_id'] != calendar['session_id'] or fingerprint != calendar['local_fingerprint']):
+        raise HTTPException(409, '本地点名已变化，请重新核对本课后推送。')
+    receipt_fingerprint = ledger._hash(calendar) if calendar else fingerprint
     receipt = conn.execute("SELECT * FROM smart_attendance_workflow_requests WHERE owner_teacher_id=? AND request_key=?", (user["id"], payload["idempotency_key"])).fetchone()
     if receipt:
-        if receipt["local_round_id"] != str(round_id) or receipt["context_fingerprint"] != fingerprint or receipt["binding_revision"] != payload["expected_binding_revision"]:
+        if receipt["local_round_id"] != str(round_id) or receipt["context_fingerprint"] != receipt_fingerprint or receipt["binding_revision"] != payload["expected_binding_revision"]:
             raise HTTPException(409, "该同步请求已处理，不能用旧请求标识提交另一课次或新版本；请刷新后重新点击。")
         return workflow(conn, user, offering_id, ctx["session_id"])
     from .smart_classroom_student_push_service import assert_no_active_push
@@ -231,10 +234,31 @@ def enqueue_sync(conn, user, offering_id, round_id, payload):
         raise HTTPException(409, "课次对应关系已变化，请刷新后重试。")
     source, slot = json.loads(link["source_json"]), json.loads(link["slot_json"])
     assert_current_alignment(conn, user, offering_id, ctx['session_id'], source, slot, payload['expected_binding_revision'])
+    if calendar:
+        if slot.get('remote_checkin_id') not in (None, calendar['remote_checkin_id']):
+            raise HTTPException(409, '学校点名目标已更换，请重新核对。')
+        slot['remote_checkin_id'] = calendar['remote_checkin_id']
+        if calendar['kind'] == 'attendance_calendar_create_v1':
+            slot['can_create'] = True
     slot["local_round_id"] = str(round_id)
     auto._validate_slot_context(ctx, source, slot)
     access = ledger._account_access(conn, user["id"], source["external_account_key"])
     old = conn.execute("SELECT * FROM smart_attendance_auto_sync WHERE local_round_id=?", (str(round_id),)).fetchone()
+    if old and old['last_run_id'] and conn.execute("SELECT 1 FROM smart_attendance_sync_operations WHERE run_id=? "
+                                                    "AND state='outcome_unknown' LIMIT 1", (old['last_run_id'],)).fetchone():
+        if calendar:
+            raise HTTPException(409, '本课有已提交请求尚未回读确认，请查询原回执。')
+        auto.schedule_due_auto_sync(conn, round_id, force=True)
+        return workflow(conn, user, offering_id, ctx['session_id'])
+    if calendar and calendar['kind'] == 'attendance_calendar_create_v1' and (
+            access['credential_generation'] != calendar['credential_generation'] or
+            (old and (old['remote_checkin_id'] or old['binding_id'])) or conn.execute(
+                "SELECT 1 FROM smart_attendance_write_bindings WHERE local_round_id=? AND state<>'released'",
+                (str(round_id),)).fetchone()):
+        raise HTTPException(409, '学校绑定或账号已变化，请重新核对。')
+    if calendar and old and (auto._lifecycle_unknown(old) or old['state'] == 'outcome_unknown' or
+                             (old['enabled'] and old['state'] in {'pending', 'running', 'reading', 'comparing'})):
+        raise HTTPException(409, '本课还有同步任务正在执行或等待回读，请先查看该任务。')
     key = payload["idempotency_key"]
     if old and old["request_key"] == key:
         return workflow(conn, user, offering_id, ctx["session_id"])
@@ -253,6 +277,8 @@ def enqueue_sync(conn, user, offering_id, round_id, payload):
     location = auto._location(payload.get("location")) if creating else None
     intent = {"manual_dispatch": True, "authorized_fingerprint": fingerprint, "allow_create": creating, "location": location,
               "binding_revision": link["revision"]}
+    if calendar:
+        intent['calendar_create' if creating else 'calendar'] = calendar
     now = ledger._now()
     # Reserve the teacher-scoped request before the plan's independent UNIQUE
     # constraint. Different classrooms hold different parent locks, so a late
@@ -261,7 +287,7 @@ def enqueue_sync(conn, user, offering_id, round_id, payload):
     if occupied and str(occupied["local_round_id"]) != str(round_id):
         raise HTTPException(409, "该操作标识已用于其他课次，请刷新核对后重试。")
     inserted = conn.execute("INSERT INTO smart_attendance_workflow_requests(owner_teacher_id,request_key,local_round_id,context_fingerprint,binding_revision,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(owner_teacher_id,request_key) DO NOTHING RETURNING request_key",
-                 (user["id"], key, str(round_id), fingerprint, link["revision"], now)).fetchone()
+                 (user["id"], key, str(round_id), receipt_fingerprint, link["revision"], now)).fetchone()
     if not inserted:
         raise HTTPException(409, "该操作标识已由另一同步请求使用，请刷新核对后重试。")
     conn.execute("""INSERT INTO smart_attendance_auto_sync(local_round_id,owner_teacher_id,class_offering_id,session_id,
@@ -293,7 +319,7 @@ def _timestamp_ms(value):
         return None
 
 
-def comparison_targets(ctx, snapshot):
+def comparison_targets(ctx, snapshot, *, selected_ids=None):
     """Compare source edit times, never fetch times or AI guesses.
 
     With unknown/remote-newer time only positive attendance can be added.
@@ -303,6 +329,8 @@ def comparison_targets(ctx, snapshot):
     students = {r["student_number"]: r for r in ctx["students"]}
     result, counts = [], Counter()
     for target in ledger._targets(ctx):
+        if selected_ids is not None and target['student_id'] not in selected_ids:
+            continue
         row = students[target["student_number"]]
         local_time = row.get("decided_at_ms") if row.get("manual_confirmed") else ctx.get("ended_at_ms")
         mode = "local_newer" if snapshot.get("new_remote_round") or (remote_time and local_time and int(local_time) > remote_time) else ("remote_newer" if remote_time and local_time else "unknown")
@@ -313,7 +341,7 @@ def comparison_targets(ctx, snapshot):
             counts["explicit_leave_corrections"] += 1
         if actual in ledger.REMOTE_STATUSES and desired and desired != actual and actual not in ledger.PROTECTED_STATUSES:
             if mode != "local_newer" and desired != "CHECKED":
-                target = {**target, "target_status": actual}
+                target = {**target, "target_status": actual, "preserved_remote": True}
                 counts["preserved_remote"] += 1
         counts[mode] += 1
         result.append(target)
@@ -324,6 +352,12 @@ def comparison_targets(ctx, snapshot):
 def persist_remote_snapshot(conn, user, ctx, source, snapshot):
     """Feed the existing school attendance projection, keeping local facts intact."""
     from . import smart_classroom_checkin_sync_service as imports
+    previous = conn.execute("SELECT class_offering_id,session_id FROM smart_classroom_checkin_sessions "
+                            "WHERE teacher_id=? AND platform_code=? AND remote_checkin_id=? AND match_status='matched'",
+                            (user['id'], imports.SMART_PLATFORM_CODE, str(snapshot['record']['id']))).fetchone()
+    if previous and (previous['class_offering_id'] not in (None, ctx['class_offering_id']) or
+                     previous['session_id'] not in (None, ctx['session_id'])):
+        raise HTTPException(409, {'code': 'alignment_changed', 'message': '该学校点名已属于另一课次，请核对原归属。'})
     candidates = imports._load_offering_candidates(conn, int(user["id"]))
     offering = next((c for c in candidates if c.id == ctx["class_offering_id"]), None)
     if offering is None:

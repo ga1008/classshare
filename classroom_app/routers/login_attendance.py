@@ -12,6 +12,7 @@ from ..dependencies import get_current_teacher, get_current_user
 from ..services import login_attendance_service as service
 from ..services import login_attendance_settlement_service as settlement
 from ..services import attendance_dashboard_service as dashboard_service
+from ..services import login_attendance_calendar_service as calendar_service
 from ..services import approval_workflow_service as workflow
 from ..services.trusted_network_service import client_network, require_same_origin
 
@@ -67,6 +68,13 @@ class ChangeRecords(BaseModel):
     reason: str = Field(min_length=1, max_length=1000)
 
 
+class CalendarChange(ChangeRecords):
+    model_config = {"extra": "forbid"}
+    round_id: int | None = Field(ge=1)
+    expected_slot_revision: str | None = Field(default=None, pattern="^[0-9a-f]{64}$")
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=100)
+
+
 class Appeal(BaseModel):
     reason: str = Field(min_length=1, max_length=1000)
 
@@ -104,6 +112,28 @@ def history(offering_id: int,before_id: int|None=None,limit: int=50,user: dict=D
 def dashboard_visibility(offering_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         return dashboard_service.visibility(conn, offering_id, user)
+
+
+@router.get("/calendar")
+def attendance_calendar(offering_id: int, student_id: int | None = None, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        return calendar_service.calendar(conn, offering_id, user, student_id)
+
+
+@router.get("/calendar/sessions/{session_id}")
+def calendar_session(offering_id: int, session_id: int, student_id: int | None = None, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        return calendar_service.session_detail(conn, offering_id, session_id, user, student_id)
+
+
+@router.patch("/calendar/sessions/{session_id}")
+def save_calendar_session(offering_id: int, session_id: int, body: CalendarChange, request: Request,
+                          user: dict = Depends(get_current_teacher)):
+    _origin(request)
+    with get_db_connection() as conn:
+        result = calendar_service.save(conn, offering_id, session_id, user, body.model_dump())
+        conn.commit()
+        return result
 
 
 @router.get("/dashboard")

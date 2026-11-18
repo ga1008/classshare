@@ -18,6 +18,8 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from classroom_app.db.schema_login_attendance import ensure_login_attendance_schema
+from classroom_app.db.schema_smart_classroom_auto_sync import ensure_smart_classroom_auto_sync_schema
+from classroom_app.db.schema_smart_classroom_write import ensure_smart_classroom_write_schema
 from classroom_app.db.postgres import LanSharePostgresConnection, sqlite_compatible_dict_row
 from classroom_app.services import approval_workflow_schema as schema
 from classroom_app.services import approval_workflow_service as workflow
@@ -76,6 +78,8 @@ class AttendanceAppealPostgresTests(unittest.TestCase):
             conn.execute("CREATE TABLE class_offering_sessions(id BIGINT PRIMARY KEY,class_offering_id BIGINT)")
             conn.execute("INSERT INTO class_offering_sessions VALUES(21,11)")
             ensure_login_attendance_schema(conn,engine="postgres")
+            ensure_smart_classroom_write_schema(conn, engine="postgres")
+            ensure_smart_classroom_auto_sync_schema(conn, engine="postgres")
             schema.ensure_approval_workflow_schema(conn)
             conn.execute("INSERT INTO login_attendance_rounds(id,class_offering_id,session_id,teacher_id,request_key,state,starts_at_ms,ends_at_ms,window_start_ms,window_end_ms,settle_at_ms,created_at_ms,ended_at_ms,next_evaluation_ms,policy_json,context_json) VALUES(31,11,21,1,'synthetic','published',?,?,?,?,?,?,?,?,?,?)",
                 (now-5400000,now-60000,now-6000000,now,now,now-5400000,now-60000,now,json.dumps({"appeal_days":7}),json.dumps({"class_offering_id":11,"session_id":21})))

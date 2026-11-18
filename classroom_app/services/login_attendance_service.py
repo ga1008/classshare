@@ -219,16 +219,24 @@ def create_round(conn, offering_id, session_id, user, payload, *, timestamp=None
     if previous:
         previous_manual = {r["student_id"]: dict(r) for r in conn.execute(
             "SELECT * FROM login_attendance_records WHERE round_id=? AND manual_confirmed=1", (previous["id"],)).fetchall()}
-    for row in roster:
-        inherited = previous_manual.get(row["id"], {})
-        conn.execute("INSERT INTO login_attendance_records(round_id,student_id,student_number,name,class_name,confirmed_retake,expected,"
-                     "status,manual_confirmed,reason,decided_by,decided_at_ms,updated_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                     (round_id, row["id"], row["student_id_number"] or "", row["name"], row["class_name"], int(row["confirmed_retake"]),
-                      0 if row["confirmed_retake"] else 1,inherited.get("status", "PENDING"), int(bool(inherited)), inherited.get("reason", ""),
-                      inherited.get("decided_by"), inherited.get("decided_at_ms"), now))
+    seed_records(conn, round_id, roster, now, previous_manual)
     _audit(conn, round_id, "created", user, after={"context": context, "policy": policy, "students": len(roster)})
     evaluate_round(conn, round_id, timestamp=now)
     return round_view(conn, round_id, user)
+
+
+def seed_records(conn, round_id, roster, now, previous_manual=None):
+    previous_manual = previous_manual or {}
+    rows = []
+    for row in roster:
+        inherited = previous_manual.get(row["id"], {})
+        rows.append((round_id, row["id"], row["student_id_number"] or "", row["name"], row["class_name"],
+                     int(row["confirmed_retake"]), int(row.get("expected", not row["confirmed_retake"])),
+                     inherited.get("status", "PENDING"), int(bool(inherited)), inherited.get("reason", ""),
+                     inherited.get("decided_by"), inherited.get("decided_at_ms"), now))
+    conn.executemany("""INSERT INTO login_attendance_records
+        (round_id,student_id,student_number,name,class_name,confirmed_retake,expected,status,manual_confirmed,
+         reason,decided_by,decided_at_ms,updated_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""", rows)
 
 
 def _records(conn, round_id):
@@ -238,7 +246,8 @@ def _records(conn, round_id):
 def evaluate_round(conn, round_id, *, timestamp=None):
     now = now_ms() if timestamp is None else timestamp
     row = load_round(conn, round_id)
-    if row["state"] == "void" or not row["is_current"] or not row["class_offering_id"]:
+    if (row["state"] == "void" or not row["is_current"] or not row["class_offering_id"]
+            or _load(row["context_json"]).get("time_source") == "manual_register"):
         return
     # All attendance writers use parent -> round -> record order.
     owner = conn.execute("SELECT teacher_id FROM class_offerings WHERE id=?",(row["class_offering_id"],)).fetchone()
@@ -476,7 +485,7 @@ def _cancel_appeals(conn, round_id, student_ids, user, reason):
                      (now_ms(),round_id,*args))
 
 
-def change_records(conn, round_id, user, payload, *, resolve_appeals=True):
+def change_records(conn, round_id, user, payload, *, resolve_appeals=True, include_round=True):
     row = load_round(conn, round_id, user, lock=True)
     if not _can_edit(row):
         raise HTTPException(409, "此轮已作废，请更正有效轮次。")
@@ -511,7 +520,19 @@ def change_records(conn, round_id, user, payload, *, resolve_appeals=True):
         if resolve_appeals:
             _cancel_appeals(conn,round_id,settled,user,"教师已更正本次考勤，请查看当前结果。")
         _schedule_school_sync(conn, round_id)
-    return {"results":results,"round":round_view(conn,round_id,user)}
+    result = {"results": results}
+    if include_round:
+        result["round"] = round_view(conn,round_id,user)
+    return result
+
+
+def confirmed_record_status(record, state):
+    if not record["manual_confirmed"]:
+        if not record["expected"]:
+            return "EXEMPT"
+        if state != "published" or record["status"] != "PRESENT":
+            return "PENDING"
+    return record["status"]
 
 
 def _public_record(record, *, teacher=False):

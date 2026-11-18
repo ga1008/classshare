@@ -1,6 +1,6 @@
 # LQ 模块使用记录本
 
-生成于 2026-11-16，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
+生成于 2026-11-18，命令 `python tools/ui/lq_module_registry.py`（源码只读扫描；设计说明来自 `docs/lq-module-registry.notes.json`，由人工维护）。
 
 ## 怎么用
 
@@ -18,7 +18,7 @@
 | [Control geometry 控件几何](#control-geometry) | foundation | — | 仅 CSS | 0 |
 | [Control states 控件状态配方](#control-states) | foundation | — | 仅 CSS | 0 |
 | [Declarative 显式声明与领域壳](#declarative) | foundation | `lq-disclosure-popover`, `lq-disclosure-trigger`, `lq-domain-choice`, `lq-domain-raised`, `lq-domain-region`, `lq-domain-toolbar` … | JS | 157 |
-| [Domain controls 领域控件就地接入](#domain-controls) | foundation | `lq-chip-group`, `lq-domain-graph-choice`, `lq-pagination` | JS | 54 |
+| [Domain controls 领域控件就地接入](#domain-controls) | foundation | `lq-chip-group`, `lq-domain-graph-choice`, `lq-pagination` | JS | 56 |
 | [Material boundaries 用户偏好终裁](#material-boundaries) | foundation | — | 仅 CSS | 0 |
 | [Materials 材质层（四层材质模型）](#materials) | foundation | `lq-glass`, `lq-material-accent`, `lq-material-control`, `lq-material-muted`, `lq-profile`, `lq-surface` | 仅 CSS | 185 |
 | [Motion 动效参数](#motion) | foundation | `lq-domain-popover` | 仅 CSS | 1 |
@@ -28,18 +28,18 @@
 | [Ability radar 六边形能力雷达](#ability-radar) | component | `lq-radar` | 仅 CSS | 3 |
 | [Business 业务呈现（DeadlineClock / JobStatus / QuestionNavigator）](#business) | component | `lq-clock`, `lq-job`, `lq-nav-grid` | 宏 / JS / Py | 1 |
 | [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 284 |
-| [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 41 |
+| [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 42 |
 | [ChipRow 芯片行](#chip-row) | component | `lq-chip-row` | 宏 / JS / Py | 10 |
-| [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 14 |
+| [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 16 |
 | [Composer 输入区](#composer) | component | `lq-composer` | 宏 / JS / Py | 5 |
 | [Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）](#content) | component | `lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list` … | 宏 / JS / Py / React | 182 |
 | [Cultivation emblem 境界标志与道印图案身份](#cultivation-emblem) | component | `lq-cultivation-emblem`, `lq-cultivation-emblem-img`, `lq-cultivation-host`, `cultivation-card__emblem` | 仅 CSS | 8 |
-| [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 41 |
+| [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 44 |
 | [EmojiPicker 表情选择器](#emoji-picker) | component | `.emoji-picker`, `.emoji-picker-item`, `.emoji-picker-grid`, `createEmojiPicker` | JS | 5 |
-| [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 186 |
+| [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 187 |
 | [Indicators 徽标 / 头像 / 进度 / 加载](#indicators) | component | `lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner` | 宏 / JS / Py / React | 23 |
 | [Insights 统计（AvatarStack / Ring / Bars / Meter）](#insights) | component | `lq-avatar-stack`, `lq-bars`, `lq-insight`, `lq-meter`, `lq-ring` | 宏 / JS / Py | 4 |
-| [Layer 层栈](#layers) | component | — | JS | 36 |
+| [Layer 层栈](#layers) | component | — | JS | 38 |
 | [Lightbox 灯箱](#lightbox) | component | `lq-lightbox` | JS | 1 |
 | [Menu / Popover 菜单与浮层](#menus) | component | `lq-menu` | 宏 / JS / Py | 12 |
 | [NavMenu 导航菜单](#nav-menu) | component | `lq-nav-menu` | 宏 / JS / Py | 6 |
@@ -47,7 +47,7 @@
 | [OverflowLabel 固定宽度长标签](#overflow-label) | component | — | JS | 1 |
 | [Search 搜索包装](#search) | component | `lq-search` | 仅 CSS | 12 |
 | [Selection / Dropdown 选择列表](#selection) | component | `lq-dropdown`, `lq-selection` | 宏 / JS / Py | 9 |
-| [Skeleton 骨架屏](#skeleton) | component | `lq-skeleton` | 宏 / JS / Py | 28 |
+| [Skeleton 骨架屏](#skeleton) | component | `lq-skeleton` | 宏 / JS / Py | 29 |
 | [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 24 |
 | [Table / Pager / BulkBar / ResultCount](#tables) | component | `lq-bulk-bar`, `lq-pager`, `lq-result-count`, `lq-table`, `lq-table-shell` | 宏 / JS / Py / React | 13 |
 | [Toast 通知](#toast) | component | `lq-toast`, `lq-toast-fallback`, `lq-toasts` | JS | 5 |
@@ -255,7 +255,7 @@
 - **规则**：不得在全页面 MutationObserver 里猜组件；数据色样只允许真实色值槽位 `data-lq-visual="color"`。 2026-11-12：assessment_editor.js 是作业/考试领域组合，消费者为试卷编辑、学生考试、普通作业与批改展示；按钮复用 createDomainButton，代码窗口复用 Dialog/layer，原生 textarea 是唯一表单与草稿真值。显式 mount/refresh/destroy，不做全站扫描；autoGrow 默认2行、上限16行，按输入帧更新且每窗口仅一个resize监听。代码弹层退出解除inert后才回写正文，取消不改答案；保留IME、撤销、maxlength、readonly、冲突与未提交草稿。正文对齐/代码颜色是内容数据，assessment-content.css不创建控件材质。见docs/assessment-editor-2026-11-12.md。 2026-11-15：assessment_questions.js 的纯函数 parseAnswerRecords 统一读取学生普通作业草稿与考试已提交/重做/草稿答案，兼容列表和字典、过滤无效列表条目、保留答案数组/编号/附件且不改存储格式；字典键优先作为题目身份。questionBlanks 仅在整个非空数组均为唯一正整数编号对象时启用新版填空，旧字符串/混合扩展保持整段旧答案，不部分启用。该共享数据模块其他消费者（出题、批改、试卷预览）沿用相同判定，无新增控件材质或页面扫描。 普通作业局部保留旧纯文本、JSON标量和字符串数组的读取/编辑合同，ordinaryAnswerText共用于显示和草稿恢复；考试不扩大为无题目身份的推测恢复。 考试通用附件首次mount复用服务器草稿恢复，跨页保留当前entries；删除/清空共用serverDraftWriteChain和原轮次令牌，失败还原、409停写，成功权威草稿对账响应丢失。submit.js唯一生产消费者为exam_take.html，未mount页尾也从服务器附件真值判断可交卷，最终仍校验删除状态。 重做入口先恢复本退回代次的LOCAL_DRAFT_KEY及更新时间，再调用既有controller比较服务器草稿，避免新补种的原答案覆盖较新的本地作答。 2026-11-16：assessment_editor 工具栏在试卷编辑、学生考试和普通作业三个交互入口统一为独立图标，保留原生 textarea、选择区、IME、撤销、草稿和代码弹层取消合同；预览切换同步更新 aria-label/aria-pressed 与图标。共享已有 bold/list/code/pencil，六个局部 Lucide SVG 路径沿用 lq-btn__icon 槽位，不扩全局图标包；按钮尺寸、触控命中和材质继续由 LQ 控制，仅领域 flex 布局允许换行。exam_board 附图工具栏复用既有 eraser SVG 与 aria-pressed，笔触1–32和橡皮4–120分别持久于实例，复用圆形光标；底图/笔画真实擦除后仍输出白底PNG，撤销/重做包括活动笔画，open generation阻止过期载图覆盖新画板。编辑器在mount绑定1000ms Tooltip，动作隐藏、destroy完整解绑；画板使用明确可见会话生命周期，close逐个destroy并清空bindings，下一次open只在空集合时重建，避免external parent关闭销毁子层后留下失效binding，不累加监听。 2026-11-16 编号修复：Tab/Shift+Tab与层级图标共用目标层兄弟上下文，新层从1起、同父同级续接、父层续写保留外层编号；空子项Enter按同规则退层。只修改选中行，逐层编号；跨代码围栏不操作，保留CRLF、选区边界、原生撤销和IME。既有答案在读取时不重排。
 - **根类**：`lq-chip-group`, `lq-domain-graph-choice`, `lq-pagination`
 - **JS 入口** `static/js/lq/domain-controls.js`：`adoptDomainContentSlot`, `adoptDomainControl`, `adoptDomainHandle`, `createDomainButton`, `createDomainPopoverSystem`, `domainButtonAttributes`
-- **消费者**：54 个文件
+- **消费者**：56 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -265,6 +265,8 @@
 - `static/js/assessment_appeal.js` ×2
 - `static/js/assessment_classification_batch.js` ×2
 - `static/js/assessment_editor.js` ×2
+- `static/js/attendance_calendar.js` ×2
+- `static/js/attendance_calendar_controls.js` ×2
 - `static/js/attendance_dashboard.js` ×2
 - `static/js/attendance_reports.js` ×2
 - `static/js/chat.js` ×2
@@ -929,7 +931,7 @@
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
 - **React 适配器**：`LqChipGroup`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：41 个文件
+- **消费者**：42 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -960,6 +962,7 @@
 - `static/js/manage_filter_chips.js` ×2
 - `static/js/message_center_blog.js` ×2
 - `templates/partials/profile/appearance.html` ×2
+- `static/js/attendance_calendar_controls.js` ×1
 - `static/js/attendance_dashboard.js` ×1
 - `static/js/course_schedule_styles.js` ×1
 - `static/js/login_attendance.js` ×1
@@ -1013,13 +1016,15 @@
 - **Jinja 宏** `templates/macros/lq/collapsible.html`：`lq_collapsible`
 - **JS 入口** `static/js/lq/collapsible.js`：`collapsibleMarkup`, `collapsibleProps`, `createCollapsible`, `enhanceCollapsible`, `html`
 - **Python props** `classroom_app/lq_collapsible.py`
-- **消费者**：14 个文件
+- **消费者**：16 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
+- `static/js/login_attendance.js` ×13
 - `static/js/cultivation_panel.js` ×10
-- `static/js/login_attendance.js` ×10
 - `templates/manage/system/wanderers.html` ×4
+- `static/js/attendance_calendar.js` ×3
+- `static/js/attendance_calendar_sync.js` ×3
 - `static/js/login_attendance_sync.js` ×3
 - `static/js/dashboard.js` ×2
 - `static/js/social/friends_modal.js` ×2
@@ -1295,7 +1300,7 @@
 - **Jinja 宏** `templates/macros/lq/dialogs.html`：`lq_dialog`
 - **JS 入口** `static/js/lq/dialogs.js`：`choiceProps`, `choose`, `confirm`, `createDialog`, `dialogMarkup`, `dialogProps`, `disposeDialog`, `openDialog`
 - **Python props** `classroom_app/lq_dialogs.py`
-- **消费者**：41 个文件
+- **消费者**：44 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1309,11 +1314,14 @@
 - `static/js/agent_workbench.js` ×4
 - `static/js/knowledge_tree/chrome.js` ×4
 - `static/js/academic_schedule_sync.js` ×3
+- `static/js/attendance_calendar_lesson.js` ×3
 - `static/js/session_knowledge_tree_manager.js` ×3
 - `frontend/src/components/ui/dialog.tsx` ×2
 - `static/js/ai_workspace_history.js` ×2
 - `static/js/assessment_appeal.js` ×2
 - `static/js/assessment_editor.js` ×2
+- `static/js/attendance_calendar.js` ×2
+- `static/js/attendance_calendar_sync.js` ×2
 - `static/js/attendance_dashboard.js` ×2
 - `static/js/course_schedule_editor.js` ×2
 - `static/js/knowledge_tree/editing.js` ×2
@@ -1376,7 +1384,7 @@
 - **JS 入口** `static/js/lq/forms.js`：`checkbox`, `createForm`, `enhanceForms`, `errorSummary`, `field`, `focusFirstError`, `formActions`, `formKinds`, `formMarkup`, `formProps`, `formSection`, `html`, `input`, `nativeSelect` …
 - **Python props** `classroom_app/lq_forms.py`
 - **React 适配器**：`LqField`, `LqNativeInput`, `LqNativeTextarea`, `LqNativeSelect`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：186 个文件
+- **消费者**：187 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1529,6 +1537,7 @@
 - `static/js/agent_workbench_render.js` ×2
 - `static/js/app_exams.js` ×2
 - `static/js/approval_workflow.js` ×2
+- `static/js/attendance_calendar_controls.js` ×2
 - `static/js/blog_moderation_ui.js` ×2
 - `static/js/classroom_materials.js` ×2
 - `static/js/classroom_retake.js` ×2
@@ -1639,7 +1648,7 @@
 - **设计摘要**：`getLayerSystem()` 唯一持有层级、焦点、背景 inert、滚动锁、嵌套顺序与关闭；可移植领域弹层显式注册。
 - **规则**：禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。 2026-10-28 close 的 beforeClose 自有确认子层沿祖先推进 pending 序号，成功关闭仍返回有效触发器；无关新层打断后不再恢复旧焦点请求。覆盖新开/重开/ordered external，保留新窗口防抢焦点与取消合同，见 social-dm-sidebar-2026-10-28 和 layer-core 浏览器回归。 2026-11-16：exam_board使用registerExternal(mode=ordered)登记既有画板，消费共享层级、将Tooltip置于其上；保留原画板开关和焦点owner，isPresent覆盖180ms退场直至root.hidden。close先销毁本次Tooltip绑定再refresh，open只重建已清空的绑定集合，destroy解除external登记；不硬改z-index、不增加扫描观察。
 - **JS 入口** `static/js/lq/layer.js`：`getLayerSystem`
-- **消费者**：36 个文件
+- **消费者**：38 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1650,6 +1659,8 @@
 - `static/js/assessment_appeal.js` ×2
 - `static/js/assessment_editor.js` ×2
 - `static/js/assessment_kind_controls.js` ×2
+- `static/js/attendance_calendar.js` ×2
+- `static/js/attendance_calendar_sync.js` ×2
 - `static/js/attendance_dashboard.js` ×2
 - `static/js/base_resource_modes.js` ×2
 - `static/js/career_path_app.js` ×2
@@ -1863,13 +1874,14 @@
 - **Jinja 宏** `templates/macros/lq/skeleton.html`：`lq_skeleton`
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
-- **消费者**：28 个文件
+- **消费者**：29 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
 - `static/js/academic_schedule_sync.js` ×2
 - `static/js/agent_workbench.js` ×2
 - `static/js/agent_workbench_render.js` ×2
+- `static/js/attendance_calendar_controls.js` ×2
 - `static/js/attendance_dashboard.js` ×2
 - `static/js/attendance_reports.js` ×2
 - `static/js/course_schedule_changes.js` ×2

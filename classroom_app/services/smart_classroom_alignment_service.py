@@ -33,9 +33,10 @@ def _course_link(conn, user, offering_id):
 
 
 def offering_alignment_context(conn, user, offering_id):
+    from .login_attendance_calendar_service import semester_sessions
     offering = local.require_teacher(conn, offering_id, user)
     course = dict(conn.execute('SELECT * FROM courses WHERE id=?', (offering['course_id'],)).fetchone())
-    all_rows = [dict(r) for r in conn.execute('SELECT * FROM class_offering_sessions WHERE class_offering_id=? ORDER BY session_date,order_index,id', (offering_id,)).fetchall()]
+    _, all_rows = semester_sessions(conn, offering)
     rows = [r for r in all_rows if r.get('schedule_status') not in {'cancelled', 'canceled', 'suspended'}]
     base = local._context(conn, offering, rows[0] if rows else {'id': 0, 'title': '', 'session_date': '', 'weekday': 0})
     contexts, sessions = {}, []
@@ -297,6 +298,7 @@ def _save_session(conn, user, offering_id, context, session, revision, source, c
         context_fingerprint=excluded.context_fingerprint,source_json=excluded.source_json,slot_json=excluded.slot_json,
         diagnostics_json=excluded.diagnostics_json,message=excluded.message,updated_at=excluded.updated_at,alignment_json=excluded.alignment_json,course_link_revision=excluded.course_link_revision""",
         (sid, offering_id, user['id'], 'matched' if chosen else 'review' if candidates else 'unmatched', flow._identity(context['contexts'][sid]), ledger._json(source), ledger._json(slot), ledger._json(chosen['reasons'] if chosen else []), message, ledger._now(), ledger._json(data), revision))
+    return chosen is not None
 
 
 def _mark_occupied_slots(conn, offering_id, session, context, source, options):
@@ -359,6 +361,9 @@ async def align_offering(user, offering_id, *, background=False, session_id=None
         before_course_revision = old['revision'] if old else 0
         before_session = flow._link(conn, user, session_id) if session_id else None
         before_session_revision = before_session['revision'] if before_session else 0
+        if session_id is None:
+            initial_revisions = {r['session_id']: r['revision'] for r in conn.execute(
+                'SELECT session_id,revision FROM smart_attendance_session_links WHERE class_offering_id=?', (offering_id,))}
         _busy(conn, offering_id)
         if background and old and old['state'] in {'matched', 'stale'}:
             local.require_teacher(conn, offering_id, user, lock=True)
@@ -414,6 +419,9 @@ async def align_offering(user, offering_id, *, background=False, session_id=None
         latest_session = flow._link(conn, user, session_id) if session_id else None
         if (latest['revision'] if latest else 0) != before_course_revision or (latest_session['revision'] if latest_session else 0) != before_session_revision:
             raise HTTPException(409, '另一操作已更新对齐结果，请刷新后核对。')
+        if session_id is None and initial_revisions != {r['session_id']: r['revision'] for r in conn.execute(
+                'SELECT session_id,revision FROM smart_attendance_session_links WHERE class_offering_id=?', (offering_id,))}:
+            raise HTTPException(409, '教师已更新课次对应，请刷新后重新对齐。')
         if roster_changed and not (confirmation and confirmation['scope']=='course'):
             message = _stale_roster(conn,user,offering_id,initial,old,candidates,ai)
             conn.commit()
@@ -441,11 +449,23 @@ async def align_offering(user, offering_id, *, background=False, session_id=None
             raise HTTPException(409, '原课程目标的学校证据已变化，请教师重新核对。')
         has_previous_course_target = bool(old and _load(old['source_json']))
         targets = [s for s in initial['sessions'] if (background_missing is None or s['id'] in background_missing) and (session_id is None or not has_previous_course_target or s['id'] == session_id)]
+        matched_sessions = 0
         for s in targets:
             options = _session_candidates(initial, s, chosen) if chosen else []
             _mark_occupied_slots(conn,offering_id,s,initial,source,options)
             exact = [c for c in options if c['eligible'] and c['evidence']['method'] == 'exact_slot']
             selected = exact[0] if len(exact) == 1 else None
+            previous = flow._link(conn, user, s['id'])
+            previous_slot = _load(previous['slot_json']) if previous else {}
+            if reuse and previous_slot.get('alignment_method') == 'manual' and not confirmation:
+                # A semester refresh must not replace a teacher's rescheduling
+                # decision with the first automatic match. Reuse only when the
+                # school target and sealed local lesson still exist unchanged.
+                old_id = _load(previous['alignment_json']).get('selected_id')
+                selected = next((c for c in options if c['eligible'] and c['id'] == old_id and
+                                 c['_slot']['local_session_identity'] == previous_slot.get('local_session_identity')), None)
+                if selected:
+                    selected['_slot']['alignment_method'] = 'manual'
             if confirmation and confirmation['scope'] == 'session' and s['id'] == session_id:
                 selected = next((c for c in options if c['eligible'] and c['id'] == confirmation['candidate_id']), None)
                 if not selected:
@@ -453,9 +473,21 @@ async def align_offering(user, offering_id, *, background=False, session_id=None
                 if selected['target'] != candidate['target']:
                     raise HTTPException(409, '学校课次记录已变化，请重新查看候选后确认。')
                 selected['_slot']['alignment_method'] = 'manual'
-            _save_session(conn, user, offering_id, initial, s, revision, source, options, selected)
+            if selected and reuse and previous and previous['course_link_revision'] == revision and (
+                    _load(previous['alignment_json']).get('selected_id') == selected['id'] and
+                    previous_slot.get('local_session_identity') == selected['_slot']['local_session_identity']):
+                if not selected['_slot'].get('remote_checkin_id'):
+                    selected['_slot']['remote_checkin_id'] = previous_slot.get('remote_checkin_id')
+            matched_sessions += _save_session(conn, user, offering_id, initial, s, revision, source, options, selected)
         conn.commit()
-        return flow.workflow(conn, user, offering_id, session_id) if session_id is not None else {'status': 'matched' if chosen else 'review' if candidates else 'unmatched', 'course_revision': revision, 'session_count': len(targets), 'message': message}
+        if session_id is not None:
+            return flow.workflow(conn, user, offering_id, session_id)
+        if chosen:
+            message = f'已对齐 {matched_sessions}/{len(targets)} 个课次。'
+            if matched_sessions < len(targets):
+                message += '请打开待核对的课次确认对应关系。'
+        return {'status': 'matched' if chosen else 'review' if candidates else 'unmatched', 'course_revision': revision,
+                'session_count': len(targets), 'matched_session_count': matched_sessions, 'message': message}
 
 
 async def confirm_alignment(user, offering_id, session_id, payload):

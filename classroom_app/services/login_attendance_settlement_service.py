@@ -74,6 +74,8 @@ def _gate(conn, row, task, *, timestamp=None):
     gate = {'can_start':False, 'can_restart':False, 'code':'ready', 'message':'立即结束记录并结算当前已收到的证据，不再等待补报。'}
     if not row['is_current'] or row['state'] == 'void' or not row['class_offering_id'] or not row['session_id']:
         return gate | {'code':'historical_round', 'message':'历史或作废轮次不能重新结算；人工更正仍按原权限保留。'}
+    if local._load(row['context_json']).get('time_source') == 'manual_register':
+        return gate | {'code':'manual_register', 'message':'本课次通过人工补记录入，可直接更正学生状态。'}
     if now < row['starts_at_ms']:
         return gate | {'code':'not_started', 'message':'尚未开始上课记录，开始后可立即结算。'}
     if now > row['window_end_ms']+7*86400_000:
@@ -104,7 +106,8 @@ def round_status(conn, row):
                       'message':'已结算，可查看每位同学的出勤情况。' if row['state']=='published' else '记录中，按服务器实际时间采集。'}
     return {'task':_public(task), 'gate':_gate(conn,row,task,timestamp=now), 'round_revision':row['revision'],
             'server_now_ms':now, 'processing':processing,
-            'needs_rule_upgrade':local._load(row['policy_json']).get('algorithm_version') != local.rules.ACTUAL_WINDOW_VERSION}
+            'needs_rule_upgrade':local._load(row['context_json']).get('time_source') != 'manual_register' and
+                                 local._load(row['policy_json']).get('algorithm_version') != local.rules.ACTUAL_WINDOW_VERSION}
 
 
 def status(conn, user, offering_id, round_id):

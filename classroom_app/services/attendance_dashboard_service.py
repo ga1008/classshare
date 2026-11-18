@@ -61,7 +61,7 @@ def _fingerprint(*parts):
     return hashlib.sha256(local._json(parts).encode()).hexdigest()
 
 
-def _local_rows(conn, offering_id, student_id, session_id):
+def _local_rows(conn, offering_id, student_id, session_id, dates=None):
     sql = """SELECT s.id AS source_id,s.student_id,s.name,s.student_number,s.class_name,s.status,s.expected,
         s.manual_confirmed,s.quality,s.revision,r.id AS round_id,r.session_id,r.state,r.policy_json,
         r.ended_at_ms,r.ends_at_ms FROM login_attendance_rounds r
@@ -69,6 +69,9 @@ def _local_rows(conn, offering_id, student_id, session_id):
         JOIN login_attendance_records s ON s.round_id=r.id
         WHERE r.class_offering_id=? AND r.is_current=1 AND r.state<>'void'"""
     params = [offering_id]
+    if dates:
+        sql += " AND lesson.session_date BETWEEN ? AND ?"
+        params.extend(dates)
     if student_id is not None:
         sql += " AND s.student_id=?"
         params.append(student_id)
@@ -78,11 +81,14 @@ def _local_rows(conn, offering_id, student_id, session_id):
     return conn.execute(sql, params).fetchall()
 
 
-def _smart_rows(conn, offering_id, teacher_id, student_id, session_id):
+def _smart_rows(conn, offering_id, teacher_id, student_id, session_id, dates=None):
     # Select the latest whole remote round before filtering to one student.
     # Missing students in that round do not inherit older same-lesson results.
     filters = " AND c.session_id=?" if session_id is not None else ""
     params = [offering_id, teacher_id, *([session_id] if session_id is not None else [])]
+    if dates:
+        filters += " AND lesson.session_date BETWEEN ? AND ?"
+        params.extend(dates)
     query = f"""WITH selected AS (
         SELECT c.id,c.session_id,c.remote_checkin_id,c.stop_time,c.synced_at,
             lesson.session_date,lesson.academic_section_text,lesson.academic_time_text,
@@ -103,12 +109,32 @@ def _smart_rows(conn, offering_id, teacher_id, student_id, session_id):
     if student_id is not None:
         query += " AND s.student_id=?"
         params.append(student_id)
-    return conn.execute(query, params).fetchall()
+    rows = [dict(row) for row in conn.execute(query, params)]
+    # Some school records have an explicit running/stopped flag but no stop
+    # timestamp. Read their JSON once per selected snapshot, never per student.
+    missing = sorted({row["source_run_id"] for row in rows if not row["stop_time"]})
+    flags = {}
+    for start in range(0, len(missing), 300):
+        ids = missing[start:start + 300]
+        marks = ",".join("?" for _ in ids)
+        for item in conn.execute(f"""SELECT id,metadata_json FROM smart_classroom_checkin_sessions
+            WHERE teacher_id=? AND class_offering_id=? AND id IN ({marks})""", (teacher_id, offering_id, *ids)):
+            snapshot = local._load(item["metadata_json"])
+            if isinstance(snapshot, dict):
+                record = snapshot.get("record")
+                if isinstance(record, dict) and type(record.get("isStop")) is bool:
+                    flags[item["id"]] = record["isStop"]
+    for row in rows:
+        row["school_stopped"] = flags.get(row["source_run_id"])
+    return rows
 
 
-def _pdf_rows(conn, offering_id, teacher_id, student_id, session_id):
+def _pdf_rows(conn, offering_id, teacher_id, student_id, session_id, dates=None):
     filters = " AND c.local_session_id=?" if session_id is not None else ""
     params = [offering_id, teacher_id, *([session_id] if session_id is not None else [])]
+    if dates:
+        filters += " AND lesson.session_date BETWEEN ? AND ?"
+        params.extend(dates)
     query = f"""WITH selected AS (
         SELECT c.id,c.local_session_id,c.parse_run_id,c.remote_checkin_id,
             RANK() OVER(PARTITION BY c.local_session_id ORDER BY l.is_grade_source DESC,
@@ -137,19 +163,15 @@ def _pdf_rows(conn, offering_id, teacher_id, student_id, session_id):
     return conn.execute(query, params).fetchall()
 
 
-def _source_rows(conn, offering, student_id, session_id=None):
+def _source_rows(conn, offering, student_id, session_id=None, dates=None):
     offering_id, teacher_id = offering["id"], offering["teacher_id"]
     candidates = defaultdict(dict)
-    for raw in _local_rows(conn, offering_id, student_id, session_id):
+    for raw in _local_rows(conn, offering_id, student_id, session_id, dates):
         row = dict(raw)
-        status = row["status"]
-        if not row["expected"] and not row["manual_confirmed"]:
-            status = "EXEMPT"
-        elif not row["manual_confirmed"] and (row["state"] != "published" or status != "PRESENT"):
-            status = "PENDING"
+        status = local.confirmed_record_status(row, row["state"])
         candidates[(row["session_id"], row["student_id"])]["local"] = {**row, "source": "local", "status": status}
-    for source, rows in (("confirmed_pdf", _pdf_rows(conn, offering_id, teacher_id, student_id, session_id)),
-                         ("smart_synced", _smart_rows(conn, offering_id, teacher_id, student_id, session_id))):
+    for source, rows in (("confirmed_pdf", _pdf_rows(conn, offering_id, teacher_id, student_id, session_id, dates)),
+                         ("smart_synced", _smart_rows(conn, offering_id, teacher_id, student_id, session_id, dates))):
         for raw in rows:
             row = dict(raw)
             status = SMART_STATUS.get(row["source_status"], "PENDING")
@@ -158,27 +180,32 @@ def _source_rows(conn, offering, student_id, session_id=None):
             state = "synced"
             if source == "smart_synced":
                 ended = _date_ms(row["stop_time"]) or _scheduled_end(row)
-                row["ended_at_ms"] = ended
                 synced = _date_ms(row["synced_at"])
                 now = local.now_ms()
-                if not ended or not synced or ended > min(synced, now):
+                if row["school_stopped"] is True and synced:
+                    ended = min(ended or synced, synced)
+                row["ended_at_ms"] = ended
+                if row["school_stopped"] is False or not ended or not synced or ended > min(synced, now):
                     # A snapshot taken during remote roll call is provisional
                     # until a fresh sync actually observes the ended round.
                     status = "PENDING"
-                    state = "running" if ended and ended > now else "settling"
+                    state = "running" if row["school_stopped"] is False or (ended and ended > now) else "settling"
+                    if row["school_stopped"] is False:
+                        row["ended_at_ms"] = None
             options = candidates[(row["session_id"], row["student_id"])]
             # Multiple source rows mapped to the same person are ambiguous.
             options[source] = None if source in options else {**row, "source": source, "status": status, "state": state}
     return candidates
 
 
-def _fact_rows(conn, offering, student_id, session_id=None):
+def _fact_rows(conn, offering, student_id, session_id=None, *, lessons=None, dates=None):
     offering_id, teacher_id = offering["id"], offering["teacher_id"]
-    lessons = conn.execute("SELECT id,title,session_date,week_index,academic_section_text,academic_time_text "
-        "FROM class_offering_sessions WHERE class_offering_id=?" + (" AND id=?" if session_id is not None else "") +
-        " ORDER BY session_date,id", (offering_id, session_id) if session_id is not None else (offering_id,)).fetchall()
+    if lessons is None:
+        lessons = conn.execute("SELECT id,title,session_date,week_index,academic_section_text,academic_time_text "
+            "FROM class_offering_sessions WHERE class_offering_id=?" + (" AND id=?" if session_id is not None else "") +
+            " ORDER BY session_date,id", (offering_id, session_id) if session_id is not None else (offering_id,)).fetchall()
     lessons = {row["id"]: dict(row) for row in lessons}
-    candidates = _source_rows(conn, offering, student_id, session_id)
+    candidates = _source_rows(conn, offering, student_id, session_id, dates)
     remote_appeal_days = None
     scheduled_ends = {}
     for (lesson_id, person_id), options in candidates.items():

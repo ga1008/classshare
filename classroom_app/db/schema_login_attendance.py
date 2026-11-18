@@ -107,6 +107,7 @@ def ensure_login_attendance_schema(conn, *, engine=None):
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_published_due ON login_attendance_rounds(next_evaluation_ms,created_at_ms,id) WHERE state='published'",
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_history ON login_attendance_rounds(class_offering_id,created_at_ms,id)",
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_student ON login_attendance_records(student_id,round_id)",
+        "CREATE INDEX IF NOT EXISTS idx_login_attendance_calendar_receipt ON login_attendance_audit(round_id,actor_id,reason) WHERE action='calendar_saved'",
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_access_window ON login_attendance_access(student_id,observed_at_ms)",
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_access_received ON login_attendance_access(student_id,received_at_ms)",
         "CREATE INDEX IF NOT EXISTS idx_login_attendance_access_cleanup ON login_attendance_access(received_at_ms)",
