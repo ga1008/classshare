@@ -26,6 +26,9 @@ class FakeCursor:
     def fetchall(self):
         return list(self._rows)
 
+    def __iter__(self):
+        return iter(self._rows)
+
     def fetchone(self):
         return self._rows[0] if self._rows else None
 

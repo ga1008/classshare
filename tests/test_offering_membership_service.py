@@ -319,6 +319,28 @@ class OfferingMembershipServiceTests(unittest.TestCase):
         self.assertEqual([item["class_name"] for item in roster], ["网工2401", "网工2402"])
         self.assertEqual({item["name"] for item in roster}, {"学生甲", "学生乙"})
 
+    def test_teacher_overview_and_student_rank_share_a_basis_and_tie_break(self):
+        from classroom_app.services import learning_progress_service as progress
+        with database.get_db_connection() as conn:
+            membership.replace_offering_class_links(conn, offering_id=self.offering_id,
+                teacher_id=self.teacher_id, class_ids=[self.class_a, self.class_b])
+            conn.execute("""INSERT INTO learning_certificates(class_offering_id,student_id,stage_key,level_key,
+                level_name,tier,title,certificate_code) VALUES(?,?,'qi_refining','qi_refining','炼气',1,'测试','T1')""",
+                (self.offering_id, self.student_b))
+            progress._check_next_cultivation_rank_scope(conn)
+            for student in (self.student_a, self.student_b):
+                progress.refresh_student_learning_state(conn, self.offering_id, student)
+            overview = progress.build_class_learning_overview(conn, self.offering_id)
+            position = progress.build_student_class_position(conn, self.offering_id, self.student_b)
+            self.assertEqual("ready", overview["class_position_status"])
+            self.assertEqual(position["leader"]["name"], overview["students"][0]["name"])
+            self.assertEqual(self.student_a, overview["students"][0]["id"])
+            conn.execute("UPDATE learning_progress_snapshots SET rank_basis='' WHERE student_id=?", (self.student_b,))
+            overview = progress.build_class_learning_overview(conn, self.offering_id)
+            self.assertEqual(("updating", [], None),
+                (overview["class_position_status"], overview["students"], overview["average_score"]))
+            self.assertEqual(2, len(overview["roster_students"]))
+
     def test_blog_class_post_visible_across_combined_offering(self):
         from classroom_app.services.blog_service import _can_view_post
 

@@ -260,6 +260,7 @@ def ensure_cultivation_progress_schema(conn: Any, *, engine: str | None = None) 
     version_columns = {
         "dirty_version": "INTEGER NOT NULL DEFAULT 0",
         "calculated_version": "INTEGER NOT NULL DEFAULT 0",
+        "rank_basis": "TEXT NOT NULL DEFAULT ''",
     }
     if db_engine == "postgres":
         for name, definition in version_columns.items():
@@ -270,6 +271,17 @@ def ensure_cultivation_progress_schema(conn: Any, *, engine: str | None = None) 
             if name not in existing:
                 conn.execute(f"ALTER TABLE learning_progress_snapshots ADD COLUMN {name} {definition}")
 
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS cultivation_rank_scopes (
+            class_offering_id INTEGER PRIMARY KEY REFERENCES class_offerings(id) ON DELETE CASCADE,
+            rank_basis TEXT NOT NULL,
+            next_check_at TEXT NOT NULL
+        )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_cultivation_rank_scopes_next_check "
+        "ON cultivation_rank_scopes (next_check_at, class_offering_id)"
+    )
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_learning_progress_snapshots_unique_student "
         "ON learning_progress_snapshots (class_offering_id, student_id)"

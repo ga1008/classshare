@@ -7,7 +7,7 @@ import os
 import re
 import time
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import quote
@@ -69,6 +69,10 @@ from .student_public_projection_service import (
 from ..db.savepoint import best_effort
 from .stage_exam_guidance_service import build_stage_exam_guidance_block, build_tier_profile
 from .cultivation_display_service import emblem_for_level, hidden_student_ids, is_cultivation_hidden
+from .cultivation_material_service import (
+    MATERIAL_SCORING_POLICY, legacy_scored_material_ids, load_material_scope, material_credit, material_scope_key,
+)
+from .cultivation_material_history import legacy_material_credit
 from .resource_access_service import student_can_read_assignment
 
 
@@ -588,47 +592,8 @@ def _load_student(conn, student_id: int) -> Optional[dict[str, Any]]:
     return dict(row) if row else None
 
 
-def _load_required_materials(conn, class_offering_id: int) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT DISTINCT m.id,
-               m.name,
-               m.root_id,
-               m.material_path,
-               m.preview_type,
-               m.check_questions_json,
-               m.check_questions_status,
-               MIN(s.order_index) AS order_index,
-               MIN(s.id) AS session_id
-        FROM course_materials m
-        JOIN (
-            SELECT learning_material_id AS material_id, order_index, id
-            FROM class_offering_sessions
-            WHERE class_offering_id = ? AND learning_material_id IS NOT NULL
-            UNION ALL
-            SELECT o.home_learning_material_id AS material_id, 99999 AS order_index, NULL AS id
-            FROM class_offerings o
-            WHERE o.id = ? AND o.home_learning_material_id IS NOT NULL
-            UNION ALL
-            SELECT cma.material_id, 90000 AS order_index, NULL AS id
-            FROM course_material_assignments cma
-            WHERE cma.class_offering_id = ?
-        ) s ON s.material_id = m.id
-        WHERE m.node_type = 'file'
-        GROUP BY m.id, m.name, m.root_id, m.material_path, m.preview_type, m.check_questions_json, m.check_questions_status
-        ORDER BY order_index, m.name COLLATE NOCASE
-        """,
-        (class_offering_id, class_offering_id, class_offering_id),
-    ).fetchall()
-    if not rows:
-        return []
-    publications, restricted = _learning_publication_context(conn, class_offering_id, rows)
-    return [
-        dict(row) for row in rows
-        if get_nearest_assignment_anchor(
-            conn, class_offering_id, row, publication_nodes=publications, restricted_paths=restricted,
-        )
-    ]
+def _load_required_materials(conn, class_offering_id: int, *, as_of=None) -> list[dict[str, Any]]:
+    return load_material_scope(conn, class_offering_id, as_of=as_of)[0]
 
 
 def _learning_publication_context(conn, class_offering_id, rows):
@@ -1172,6 +1137,76 @@ def _metric_weight(metrics: dict[str, Any] | None, key: str) -> float:
     return safe_float(_weights_from_metrics(metrics).get(key), safe_float(DEFAULT_CULTIVATION_WEIGHTS.get(key)))
 
 
+def _earned_material_credit(conn, class_offering_id, student_id, units, progress_rows):
+    previous = conn.execute(
+        "SELECT metrics_json, components_json, metadata_json, calculated_at FROM learning_progress_snapshots WHERE class_offering_id=? AND student_id=?",
+        (class_offering_id, student_id),
+    ).fetchone()
+    previous_metrics = json_loads(previous["metrics_json"], {}) if previous else {}
+    previous_material = previous_metrics.get("material") or {}
+    if "credit_watermarks" in previous_material:
+        return material_credit(units, previous_material)
+    if previous:
+        metadata = json_loads(previous["metadata_json"], {})
+        for key in ("weights", "weight_version"):
+            if key in metadata and key not in previous_metrics:
+                previous_metrics[key] = metadata[key]
+        if not previous_metrics.get("components"):
+            previous_metrics["components"] = json_loads(previous["components_json"], {})
+    legacy_credit = 0.0
+    legacy_consumed = {}
+    previous_points = (previous_metrics.get("components") or {}).get("material")
+    if previous_material or previous_points is not None:
+        legacy_ratio = safe_float(previous_material.get("ratio"))
+        old_weight = _metric_weight(previous_metrics, "material")
+        if previous_points is not None and old_weight and round(legacy_ratio * old_weight, 1) < safe_float(previous_points):
+            legacy_ratio = safe_float(previous_points) / old_weight
+        legacy_credit = max(legacy_ratio, legacy_material_credit(conn, class_offering_id, student_id, previous_metrics))
+        # An old published score may already include prep for a future lesson.
+        # Consume exactly the recorded unit where available. For truncated older
+        # item lists, use the factual last update at the publication cutoff.
+        if legacy_credit > 0:
+            cutoff = str(previous["calculated_at"] or "").replace(" ", "T")[:19]
+            recorded = {str(item["id"]): clamp(safe_float(item["unit_ratio"]))
+                        for item in previous_material.get("items", []) if item.get("id") and "unit_ratio" in item}
+            # Browsing alone never proves old membership. A complete old list
+            # also proves which new requirements have never earned credit.
+            unlisted = set(progress_rows) - {int(key) for key in recorded}
+            proven = set()
+            complete_list = previous_material.get("required_count") is not None and len(recorded) == safe_int(previous_material["required_count"])
+            if not complete_list:
+                proven = legacy_scored_material_ids(conn, class_offering_id, unlisted, cutoff)
+            for mid, progress in progress_rows.items():
+                updated = str(progress.get("updated_at") or progress.get("last_viewed_at") or "").replace(" ", "T")[:19]
+                first = str(progress.get("first_viewed_at") or "").replace(" ", "T")[:19]
+                if first and first > cutoff:
+                    continue
+                if str(mid) not in recorded and mid not in proven:
+                    if str(mid) not in units or complete_list:
+                        continue
+                    # This already-open file cannot be attributed to the old
+                    # period either way. Apply the known coverage floor without
+                    # an additional award for an unproved historical increment.
+                    unit = units[str(mid)]
+                elif str(mid) in recorded:
+                    unit = recorded[str(mid)]
+                    if updated and updated <= cutoff:
+                        unit = _material_unit_ratio(progress)
+                elif first and first <= cutoff:
+                    # Old snapshots only retain details for their first twelve
+                    # files. A mastery award dated later is provably new.
+                    mastered_at = str(progress.get("mastered_at") or "").replace(" ", "T")[:19]
+                    historical = {**progress, "mastered": 0} if mastered_at > cutoff else progress
+                    unit = _material_unit_ratio(historical)
+                elif updated and updated <= cutoff:
+                    unit = _material_unit_ratio(progress)
+                else:
+                    continue
+                if unit:
+                    legacy_consumed[str(mid)] = unit
+    return material_credit(units, previous_material, legacy_credit=legacy_credit, legacy_consumed=legacy_consumed)
+
+
 def _build_learning_metrics(
     conn,
     class_offering_id: int,
@@ -1210,7 +1245,11 @@ def _build_learning_metrics(
             "needs_mastery_check": bool(completed and check_ready and not mastered),
             "mastery_check": _public_mastery_check_context(material, progress),
         })
-    material_ratio = sum(material_ratios) / len(material_ratios) if material_ratios else 0.0
+    units = {str(item["id"]): unit for item, unit in zip(material_items, material_ratios)}
+    credit = _earned_material_credit(conn, class_offering_id, student_id, units, progress_rows)
+    material_ratio = credit["earned_ratio"]
+    for item in material_items:
+        item["credit_unit_ratio"] = credit["credit_watermarks"].get(str(item["id"]), 0.0)
     completed_material_count = sum(1 for item in material_items if item.get("completed"))
     mastered_material_count = sum(1 for value in material_ratios if value >= 0.94)
 
@@ -1234,7 +1273,8 @@ def _build_learning_metrics(
         "score": round(total_score, 1),
         "raw_score": round(raw_score, 1),
         "growth_exponent": round(exponent, 2),
-        "scoring_policy_version": "participation-facts-v1-2026-11-09",
+        "scoring_policy_version": MATERIAL_SCORING_POLICY,
+        "material_scope_key": material_scope_key(materials),
         "weights": weights,
         "weight_version": str(weight_config.get("version") or CULTIVATION_WEIGHT_VERSION_DEFAULT),
         "weight_source": str(weight_config.get("source") or "default"),
@@ -1245,10 +1285,11 @@ def _build_learning_metrics(
             "consistency": round(consistency_points, 1),
         },
         "material": {
+            **credit,
             "required_count": len(materials),
             "completed_count": completed_material_count,
             "mastered_count": mastered_material_count,
-            "ratio": round(material_ratio, 4),
+            "ratio": round(credit["coverage_ratio"], 4),
             "reading_ratio": round(_mean(reading_ratios), 4),
             "mastery_ratio": round(_mean(mastery_ratios), 4),
             "depth_ratio": round(_mean(depth_ratios), 4),
@@ -1281,9 +1322,12 @@ def build_score_opportunities(
     task_weight = _metric_weight(metrics, "task")
     interaction_weight = _metric_weight(metrics, "interaction")
     consistency_weight = _metric_weight(metrics, "consistency")
-    material_unit_points = material_weight / required_count if required_count else 0
+    if "next_unit_credit_ratio" in material:
+        material_unit_points = material_weight * max(0.0, safe_float(material["next_unit_credit_ratio"]))
+    else:
+        material_unit_points = material_weight / required_count if required_count else 0
     for item in material.get("items") or []:
-        unit_ratio = clamp(safe_float(item.get("unit_ratio")))
+        unit_ratio = clamp(safe_float(item.get("credit_unit_ratio", item.get("unit_ratio"))))
         if unit_ratio >= 0.94:
             continue
         estimated_delta = round(max(0.0, 1 - unit_ratio) * material_unit_points, 1)
@@ -1400,6 +1444,7 @@ def _record_cultivation_score_events(
     source_ref: str,
     created_at: str,
     metrics: dict[str, Any] | None = None,
+    material_policy_changed: bool = False,
 ) -> None:
     weight_version = str((metrics or {}).get("weight_version") or CULTIVATION_WEIGHT_VERSION_DEFAULT)
     weights = _weights_from_metrics(metrics)
@@ -1420,7 +1465,8 @@ def _record_cultivation_score_events(
             (
                 int(class_offering_id),
                 int(student_id),
-                _component_event_type(component, delta, source_ref),
+                ("material_credit_adjustment" if material_policy_changed and component == "material"
+                 else _component_event_type(component, delta, source_ref)),
                 delta,
                 component,
                 source_ref,
@@ -1593,6 +1639,7 @@ def _upsert_learning_progress_snapshot(
     student_id: int,
     state: dict[str, Any],
     calculated_at: str,
+    expected_metrics_json: str | None,
     expected_version: int | None = None,
 ) -> bool:
     metrics = state.get("metrics") or {}
@@ -1603,9 +1650,9 @@ def _upsert_learning_progress_snapshot(
         INSERT INTO learning_progress_snapshots (
             class_offering_id, student_id, score, progress_percent,
             components_json, metrics_json, level_key, next_stage_key,
-            calculated_at, dirty, dirty_at, metadata_json, dirty_version, calculated_version
+            calculated_at, dirty, dirty_at, metadata_json, dirty_version, calculated_version, rank_basis
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?)
         ON CONFLICT(class_offering_id, student_id)
         DO UPDATE SET
             score = excluded.score,
@@ -1618,8 +1665,10 @@ def _upsert_learning_progress_snapshot(
             dirty = 0,
             dirty_at = NULL,
             metadata_json = excluded.metadata_json,
-            calculated_version = excluded.calculated_version
+            calculated_version = excluded.calculated_version,
+            rank_basis = excluded.rank_basis
         WHERE learning_progress_snapshots.dirty_version = excluded.calculated_version
+          AND learning_progress_snapshots.metrics_json = ?
         """,
         (
             int(class_offering_id),
@@ -1641,12 +1690,15 @@ def _upsert_learning_progress_snapshot(
             ),
             int(expected_version or 0),
             int(expected_version or 0),
+            _snapshot_rank_basis(metrics),
+            expected_metrics_json,
         ),
     )
     return cursor.rowcount == 1
 
 
-def _publish_learning_metrics(conn, class_offering_id, student_id, metrics, *, expected_version, event_source_ref, require_dirty=True):
+def _publish_learning_metrics(conn, class_offering_id, student_id, metrics, *, expected_version,
+                              expected_metrics_json, event_source_ref, require_dirty=True):
     """Publish one version atomically, without waiting behind another publisher.
 
     Domain writes may already hold stage locks before calling this hook. A
@@ -1665,21 +1717,31 @@ def _publish_learning_metrics(conn, class_offering_id, student_id, metrics, *, e
     conn.execute("SAVEPOINT cultivation_projection")
     try:
         previous = _load_learning_progress_snapshot(conn, class_offering_id, student_id)
-        if previous and ((require_dirty and not safe_int(previous.get("dirty"))) or safe_int(previous.get("dirty_version")) != expected_version):
+        # Explicit business refreshes may publish without receiving a new dirty
+        # generation. Compare the full observed projection, including earned
+        # credit watermarks, even when both publications occur in one second.
+        if ((previous or {}).get("metrics_json") != expected_metrics_json
+                or (previous and ((require_dirty and not safe_int(previous.get("dirty")))
+                                  or safe_int(previous.get("dirty_version")) != expected_version))):
             conn.execute("ROLLBACK TO SAVEPOINT cultivation_projection")
             conn.execute("RELEASE SAVEPOINT cultivation_projection")
             return state, False
         state = _build_learning_state_from_metrics(
             conn, class_offering_id, student_id, metrics, persist_stage_status=True, timestamp=timestamp,
         )
+        previous_components = _snapshot_components(previous)
+        previous_metrics = json_loads(previous.get("metrics_json"), {}) if previous else {}
         _record_cultivation_score_events(
             conn, class_offering_id=class_offering_id, student_id=student_id,
-            previous_components=_snapshot_components(previous), current_components=metrics.get("components") or {},
+            previous_components=previous_components, current_components=metrics.get("components") or {},
             source_ref=event_source_ref, created_at=timestamp, metrics=metrics,
+            material_policy_changed=bool("material" in previous_components and metrics.get("material_scope_key")
+                and (previous_metrics or {}).get("scoring_policy_version") != metrics.get("scoring_policy_version")),
         )
         published = _upsert_learning_progress_snapshot(
             conn, class_offering_id=class_offering_id, student_id=student_id,
             state=state, calculated_at=timestamp, expected_version=expected_version,
+            expected_metrics_json=expected_metrics_json,
         )
         if not published:
             conn.execute("ROLLBACK TO SAVEPOINT cultivation_projection")
@@ -1705,11 +1767,13 @@ def refresh_student_learning_state(
     state, published = _publish_learning_metrics(
         conn, int(class_offering_id), int(student_id), metrics,
         expected_version=safe_int((previous_snapshot or {}).get("dirty_version")), event_source_ref=event_source_ref,
+        expected_metrics_json=(previous_snapshot or {}).get("metrics_json"),
         require_dirty=False,
     )
     if not published:
         mark_student_learning_progress_dirty(conn, class_offering_id, student_id, source_ref=event_source_ref)
-    state["snapshot_status"] = "ready" if published else "stale"
+        return get_student_learning_state(conn, class_offering_id, student_id)
+    state["snapshot_status"] = "ready"
     return state
 
 
@@ -1922,7 +1986,7 @@ def get_student_learning_state(
     snapshot = _load_learning_progress_snapshot(conn, int(class_offering_id), int(student_id))
     metrics = json_loads(snapshot.get("metrics_json"), {}) if snapshot else {}
     valid = isinstance(metrics, dict) and isinstance(metrics.get("components"), dict) and "score" in metrics
-    legacy = valid and metrics.get("growth_exponent") is None
+    legacy = valid and not snapshot.get("rank_basis")
     stale = bool(snapshot and safe_int(snapshot.get("dirty"))) or legacy or not valid
     if allow_recalculate and stale:
         return refresh_student_learning_state(conn, class_offering_id, student_id, event_source_ref="snapshot:explicit-refresh")
@@ -1950,6 +2014,64 @@ def get_student_learning_state(
     return state
 
 
+def _snapshot_rank_basis(metrics: dict[str, Any]) -> str:
+    scope = metrics.get("material_scope_key")
+    exponent = metrics.get("growth_exponent")
+    if metrics.get("scoring_policy_version") != MATERIAL_SCORING_POLICY or not scope or exponent is None:
+        return ""
+    config = [MATERIAL_SCORING_POLICY, scope, metrics.get("weight_version") or CULTIVATION_WEIGHT_VERSION_DEFAULT,
+              _weights_from_metrics(metrics), round(float(exponent), 2)]
+    return hashlib.sha256(json.dumps(config, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def _offering_rank_scope(conn, offering: int, now: datetime) -> tuple[str, datetime | None]:
+    weights = load_cultivation_weight_config(conn, offering)
+    materials, next_start = load_material_scope(conn, offering, as_of=now)
+    return _snapshot_rank_basis({
+        "material_scope_key": material_scope_key(materials),
+        "scoring_policy_version": MATERIAL_SCORING_POLICY, "growth_exponent": growth_curve_exponent(),
+        "weights": weights["weights"], "weight_version": weights["version"],
+    }), next_start
+
+
+def _check_next_cultivation_rank_scope(conn) -> None:
+    # A read-only ranking query never scans materials or calculates peer scores.
+    # Probe one classroom per scheduler tick, including classrooms with no recent
+    # learning activity. A due lesson or a rebind is discovered on its next turn.
+    now = datetime.now(timezone.utc)
+    row = conn.execute(
+        """SELECT o.id, r.next_check_at FROM class_offerings o
+           LEFT JOIN cultivation_rank_scopes r ON r.class_offering_id=o.id
+           WHERE r.next_check_at IS NULL OR r.next_check_at <= ?
+           ORDER BY COALESCE(r.next_check_at, ''), o.id LIMIT 1""",
+        (now.isoformat(timespec="seconds"),),
+    ).fetchone()
+    if row is None:
+        return
+    offering = int(row["id"])
+    next_check = now + timedelta(seconds=60)
+    conn.execute("SAVEPOINT cultivation_scope_check")
+    try:
+        basis, next_start = _offering_rank_scope(conn, offering, now)
+        if next_start:
+            next_check = min(next_check, next_start.astimezone(timezone.utc))
+        conn.execute("RELEASE SAVEPOINT cultivation_scope_check")
+    except Exception as exc:
+        # Keep a broken offering from starving the rest of the rotation. An
+        # unknown basis hides that ranking, and the next check retries the read.
+        conn.execute("ROLLBACK TO SAVEPOINT cultivation_scope_check")
+        conn.execute("RELEASE SAVEPOINT cultivation_scope_check")
+        basis = ""
+        print(f"[LEARNING_PROGRESS] rank scope {offering} deferred: {type(exc).__name__}")
+    conn.execute(
+        """INSERT INTO cultivation_rank_scopes(class_offering_id,rank_basis,next_check_at)
+           VALUES(?,?,?) ON CONFLICT(class_offering_id) DO UPDATE SET
+           rank_basis=excluded.rank_basis, next_check_at=excluded.next_check_at
+           WHERE cultivation_rank_scopes.next_check_at=?""",
+        (offering, basis, next_check.isoformat(timespec="seconds"), row["next_check_at"]),
+    )
+
+
 def _pending_learning_snapshot_keys(conn, *, limit: int = 100) -> list:
     """Discover initial/legacy projections outside page reads, in bounded work."""
     rows = conn.execute(
@@ -1965,9 +2087,10 @@ def _pending_learning_snapshot_keys(conn, *, limit: int = 100) -> list:
            ) SELECT members.class_offering_id, members.student_id FROM members
            LEFT JOIN learning_progress_snapshots p
              ON p.class_offering_id=members.class_offering_id AND p.student_id=members.student_id
-           WHERE p.id IS NULL OR (p.dirty=0 AND p.metrics_json NOT LIKE ?)
+           LEFT JOIN cultivation_rank_scopes r ON r.class_offering_id=members.class_offering_id
+           WHERE p.id IS NULL OR (p.dirty=0 AND r.rank_basis<>'' AND p.rank_basis<>r.rank_basis)
            ORDER BY members.class_offering_id DESC, members.student_id LIMIT ?""",
-        ('%"growth_exponent"%', max(1, min(int(limit), 500))),
+        (max(1, min(int(limit), 500)),),
     ).fetchall()
     return rows
 
@@ -1988,6 +2111,7 @@ def refresh_pending_learning_snapshots(
     if discovery_time_budget_seconds is not None:
         discovery_budget = min(discovery_budget, max(0.0, float(discovery_time_budget_seconds)))
     with get_db_connection() as conn:
+        _check_next_cultivation_rank_scope(conn)
         initial = _pending_learning_snapshot_keys(conn, limit=initial_limit)
     seeded = 0
     for row in initial:
@@ -2017,6 +2141,7 @@ def refresh_pending_learning_snapshots(
             with get_db_connection() as conn:
                 _, published = _publish_learning_metrics(
                     conn, offering, student, metrics, expected_version=version,
+                    expected_metrics_json=snapshot["metrics_json"],
                     event_source_ref=f"snapshot:version:{version}",
                 )
         except Exception as exc:
@@ -2959,7 +3084,8 @@ def list_cultivation_score_events(
             "delta": round(delta, 1),
             "delta_label": f"{delta:+.1f}",
             "component": component,
-            "component_label": labels.get(component, "修为"),
+                "component_label": ("材料修为校正" if item.get("event_type") == "material_credit_adjustment"
+                                    else labels.get(component, "修为")),
             "source_ref": item.get("source_ref") or "",
             "created_at": item.get("created_at"),
             "metadata": metadata if isinstance(metadata, dict) else {},
@@ -2974,47 +3100,41 @@ def _class_learning_score_rows(
     *,
     current_score: float | None = None,
 ) -> list[dict[str, Any]]:
-    offering = _load_offering(conn, int(class_offering_id))
-    if not offering:
-        return []
-    # Membership tables are installed at startup. The general membership helper
-    # also runs compatibility DDL, which must not run in a rank read transaction.
-    score_class_ids = offering_class_ids(conn, int(class_offering_id), ensure_schema=False) or [offering["class_id"]]
-    score_placeholders = ",".join("?" for _ in score_class_ids)
+    # Use the same primary + linked membership as background discovery, and
+    # capture those memberships, the common basis and every score together.
     rows = conn.execute(
-        f"""
+        """
         SELECT s.id,
                s.name,
-               s.student_id_number,
-               lps.score AS snapshot_score,
-               lps.dirty AS snapshot_dirty,
-               lps.metrics_json AS snapshot_metrics_json
+               s.student_id_number, c.name AS class_name,
+               CASE WHEN r.rank_basis<>'' AND lps.rank_basis=r.rank_basis THEN lps.score END AS snapshot_score
         FROM students s
+        LEFT JOIN classes c ON c.id=s.class_id
         LEFT JOIN learning_progress_snapshots lps
                ON lps.class_offering_id = ?
               AND lps.student_id = s.id
-        WHERE s.class_id IN ({score_placeholders})
+        LEFT JOIN cultivation_rank_scopes r ON r.class_offering_id=lps.class_offering_id
+        WHERE s.class_id IN (
+            SELECT class_id FROM class_offerings WHERE id=?
+            UNION ALL SELECT class_id FROM class_offering_class_links WHERE offering_id=?
+        )
           AND COALESCE(s.enrollment_status, 'active') = 'active'
         ORDER BY s.student_id_number, s.id
         """,
-        (int(class_offering_id), *score_class_ids),
+        (int(class_offering_id), int(class_offering_id), int(class_offering_id)),
     ).fetchall()
     score_rows: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)
         item_student_id = int(item["id"])
-        if item.get("snapshot_score") is None or '"growth_exponent"' not in str(item.get("snapshot_metrics_json") or ""):
-            # A missing/different-model peer has no comparable rank yet. Discovery
-            # and model upgrades belong to the background worker.
-            score = None
-        elif item_student_id == int(student_id) and current_score is not None:
-            score = safe_float(current_score)
-        else:
-            score = safe_float(item.get("snapshot_score"))
+        # The viewer and peers come from one SQL statement. An earlier request
+        # read can span a publication and cannot override the viewer's score here.
+        score = item.get("snapshot_score")
         score_rows.append({
             "id": item_student_id,
             "name": item.get("name") or "同学",
             "student_id_number": item.get("student_id_number"),
+            "class_name": item.get("class_name") or "",
             "score": round(score, 1) if score is not None else None,
             "is_self": item_student_id == int(student_id),
         })
@@ -3022,6 +3142,10 @@ def _class_learning_score_rows(
 
 
 SECT_RANKING_LIMIT = 5
+
+
+def _cultivation_rank_order(student):
+    return (-safe_float(student["score"]), str(student.get("student_id_number") or ""), int(student["id"]))
 
 
 def _offering_certificate_tiers(conn, class_offering_id: int, student_ids: set[int]) -> dict[int, int]:
@@ -3062,10 +3186,7 @@ def build_student_class_position(
     if not score_rows or any(item["score"] is None for item in score_rows):
         return None
 
-    ranked = sorted(
-        score_rows,
-        key=lambda item: (-safe_float(item.get("score")), str(item.get("student_id_number") or ""), int(item["id"])),
-    )
+    ranked = sorted(score_rows, key=_cultivation_rank_order)
     total = len(ranked)
     for index, item in enumerate(ranked, start=1):
         item["rank"] = index
@@ -3224,6 +3345,7 @@ def serialize_student_learning_progress(conn, class_offering_id: int, student_id
         int(student_id),
         current_score=state.get("score"),
     )
+    state["class_position_status"] = "ready" if state["class_position"] is not None else "updating"
     state["recent_score_events"] = list_cultivation_score_events(
         conn,
         int(class_offering_id),
@@ -3482,19 +3604,7 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
     if not offering:
         return {"student_count": 0, "average_score": 0, "distribution": [], "students": []}
     weight_settings = get_class_cultivation_weight_settings(conn, int(class_offering_id))
-    overview_class_ids = offering_class_ids(conn, int(class_offering_id), ensure_schema=False) or [offering["class_id"]]
-    overview_placeholders = ",".join("?" for _ in overview_class_ids)
-    rows = conn.execute(
-        f"""
-        SELECT s.id, s.name, s.student_id_number, c.name AS class_name
-        FROM students s
-        JOIN classes c ON c.id = s.class_id
-        WHERE s.class_id IN ({overview_placeholders})
-          AND COALESCE(s.enrollment_status, 'active') = 'active'
-        ORDER BY c.name, s.student_id_number, s.id
-        """,
-        tuple(overview_class_ids),
-    ).fetchall()
+    rows = _class_learning_score_rows(conn, int(class_offering_id), 0)
     student_ids = [int(row["id"]) for row in rows]
     behavior_state_by_student: dict[int, dict[str, Any]] = {}
     behavior_event_by_student: dict[int, dict[str, Any]] = {}
@@ -3594,7 +3704,7 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
         material_metrics = metrics.get("material") or {}
         assignment_metrics = metrics.get("assignments") or {}
         interaction_metrics = metrics.get("interactions") or {}
-        score_total += safe_float(progress.get("score"))
+        score_total += safe_float(student["score"])
         current_key = normalize_level_key(progress["current_level"].get("level_key") or "mortal")
         distribution[current_key] = distribution.get(current_key, 0) + 1
         challenge_ready_count += 1 if progress.get("eligible_stage") else 0
@@ -3661,9 +3771,9 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
             "name": student["name"],
             "student_id_number": student.get("student_id_number"),
             "class_name": student.get("class_name") or "",
-            "score": progress["score"],
+            "score": student["score"],
             "progress_percent": progress["progress_percent"],
-            "snapshot_status": progress["snapshot_status"],
+            "snapshot_status": progress["snapshot_status"] if student["score"] is not None else "building",
             "current_level": progress["current_level"],
             "next_stage": progress["next_stage"],
             "certificate_count": len(progress.get("certificates") or []),
@@ -3722,8 +3832,8 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
     roster_class_names = list(dict.fromkeys(
         str(item.get("class_name") or "") for item in roster_students if item.get("class_name")
     ))
-    students.sort(key=lambda item: (item["score"] is not None, safe_float(item["score"]), item["certificate_count"]), reverse=True)
     pending_snapshot_count = sum(item["score"] is None for item in students)
+    leaders = [] if pending_snapshot_count else sorted(students, key=_cultivation_rank_order)[:12]
     average_material_percent = round(material_percent_total / student_count) if student_count else 0
     average_material_mastery_percent = round(material_mastery_percent_total / student_count) if student_count else 0
     average_task_percent = round(task_percent_total / student_count) if student_count else 0
@@ -3794,7 +3904,8 @@ def build_class_learning_overview(conn, class_offering_id: int) -> dict[str, Any
         "trend_summary": trend_summary,
         "personal_stage_exam_stats": personal_stats,
         "distribution": distribution_items,
-        "students": students[:12],
+        "students": leaders,
+        "class_position_status": "updating" if pending_snapshot_count else "ready",
         "roster_students": roster_students,
         "roster_class_names": roster_class_names,
         "is_combined_roster": len(roster_class_names) > 1,

@@ -16,6 +16,8 @@ def _metrics(score: float, *, material: float = 0, task: float = 0, interaction:
         "score": score,
         "raw_score": score,
         "growth_exponent": 1.0,
+        "scoring_policy_version": service.MATERIAL_SCORING_POLICY,
+        "material_scope_key": "synthetic-material-scope",
         "components": {
             "material": material,
             "task": task,
@@ -248,7 +250,7 @@ class LearningProgressSnapshotTests(unittest.TestCase):
         expected = self.conn.execute("SELECT dirty_version FROM learning_progress_snapshots").fetchone()[0]
         service.mark_student_learning_progress_dirty(self.conn, 1, 2, source_ref="newer")
         _, published = service._publish_learning_metrics(
-            self.conn, 1, 2, _metrics(9, material=9), expected_version=expected, event_source_ref="older",
+            self.conn, 1, 2, _metrics(9, material=9), expected_version=expected, expected_metrics_json="{}", event_source_ref="older",
         )
         self.assertFalse(published)
         row = self.conn.execute("SELECT dirty,dirty_version,calculated_version FROM learning_progress_snapshots").fetchone()

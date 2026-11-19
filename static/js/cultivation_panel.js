@@ -632,7 +632,9 @@ function renderBreakdown(progress) {
         const list = el('ul', { class: 'lq-cultivation__signals' }, (row.signals || []).map((signal) => el('li', { title: signal.hint || '' }, [
             el('span', { class: 'lq-cultivation__signal-label', text: signal.label }),
             el('span', { class: 'lq-cultivation__signal-bar', 'aria-hidden': 'true' }, [el('i', { style: `--ratio:${clamp01(signal.ratio)}` })]),
-            el('span', { class: 'lq-cultivation__signal-value', text: `${signal.value_label || `${signal.percent}%`} · ${fmt(signal.points)}/${fmt(signal.max_points)}` }),
+            el('span', { class: 'lq-cultivation__signal-value', text: row.key === 'material'
+                ? (signal.value_label || `${signal.percent}%`)
+                : `${signal.value_label || `${signal.percent}%`} · ${fmt(signal.points)}/${fmt(signal.max_points)}` }),
         ])));
         card.append(el('details', { class: 'lq-collapsible lq-cultivation__signal-details', 'data-lq-component': 'collapsible' }, [
             el('summary', { class: 'lq-collapsible__summary' }, [
@@ -683,6 +685,12 @@ function renderTrend(progress) {
 
 function renderSect(progress, ctx) {
     const position = progress.class_position;
+    if (!position && progress.class_position_status === 'updating') {
+        return el('section', { class: 'lq-surface lq-cultivation__sect', 'data-lq-component': 'surface', 'data-lq-surface': 'embedded' }, [
+            el('h3', { text: '宗门实力排行' }),
+            el('p', { class: 'lq-cultivation__empty', role: 'status', text: '正在按本班已开课材料更新修为。全班更新完成后显示名次。' }),
+        ]);
+    }
     if (!position?.current || !position?.leader || !position?.mountain) return null;
     const leader = position.leader;
     const current = position.current;
@@ -899,7 +907,8 @@ function createPanel(root) {
             panel.teardown();
             try {
                 renderBody(body, progress, createContext(panel, current.options));
-                if (['building', 'stale'].includes(progress.snapshot_status) && current.pendingRefreshes < 12) {
+                const updating = ['building', 'stale'].includes(progress.snapshot_status) || progress.class_position_status === 'updating';
+                if (updating && current.pendingRefreshes < 12) {
                     current.pendingRefreshes += 1;
                     const timer = window.setTimeout(() => { if (!root.hidden && !document.hidden) void panel.reload(); }, 10000 + Math.random() * 2000);
                     panel.cleanups.push(() => window.clearTimeout(timer));

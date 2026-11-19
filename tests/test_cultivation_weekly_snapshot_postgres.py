@@ -122,6 +122,35 @@ class WeeklySnapshotPostgresTests(unittest.TestCase):
                 "WHERE class_offering_id=? AND student_id=? AND material_id=?",
                 (self.offering, self.students[0], self.material)).fetchone())
 
+    def test_earned_material_survives_expansion_and_rank_waits_for_both_members(self):
+        first, second = self.students
+        with self.connect() as conn:
+            before = progress.refresh_student_learning_state(conn, self.offering, first)
+            progress.refresh_student_learning_state(conn, self.offering, second)
+            old_points = before["metrics"]["components"]["material"]
+            self.assertGreater(old_points, 0)
+            another = self.material + 101
+            conn.execute("""INSERT INTO course_materials(id,teacher_id,root_id,material_path,name,node_type,
+                preview_type,mime_type,file_ext,scope_level,owner_role,owner_user_pk)
+                VALUES(?,?,?,'second.md','Second','file','markdown','text/markdown','.md','public','teacher',?)""",
+                (another, self.offering, another, self.offering))
+            conn.execute("""INSERT INTO course_material_assignments(material_id,class_offering_id,
+                assigned_by_teacher_id,publication_mode) VALUES(?,?,?,'explicit')""",
+                (another, self.offering, self.offering))
+            for _ in range(12):
+                progress._check_next_cultivation_rank_scope(conn)
+                if conn.execute("SELECT 1 FROM cultivation_rank_scopes WHERE class_offering_id=?",
+                                (self.offering,)).fetchone():
+                    break
+            updated = progress.refresh_student_learning_state(conn, self.offering, first)
+            self.assertEqual(2, updated["metrics"]["material"]["required_count"])
+            self.assertEqual(old_points, updated["metrics"]["components"]["material"])
+            self.assertIsNone(progress.build_student_class_position(conn, self.offering, first))
+            progress.refresh_student_learning_state(conn, self.offering, second)
+            board = progress.build_student_class_position(conn, self.offering, first)
+            self.assertEqual(1, board["current"]["rank"])
+            self.assertEqual(2, board["total"])
+
     def race(self, *, short_transactions):
         entered, release = Event(), Event()
         original = progress._build_learning_metrics

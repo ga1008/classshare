@@ -2202,8 +2202,10 @@ REQUIRED_POSTGRES_COLUMNS = {
         "dirty_at",
         "dirty_version",
         "calculated_version",
+        "rank_basis",
         "metadata_json",
     ),
+    "cultivation_rank_scopes": ("class_offering_id", "rank_basis", "next_check_at"),
     "cultivation_score_events": (
         "id",
         "class_offering_id",

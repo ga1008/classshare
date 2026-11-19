@@ -46,7 +46,7 @@ POSITION = {**fields("total hidden_count self_hidden"), "current": RANK_PERSON, 
 TREND = {**fields("weeks has_enough_data total_delta total_delta_label weekly_delta weekly_delta_label"),
          "points": [{**fields("week_start week_end score progress_percent level_key"), "components": COMPONENTS}],
          "sparkline": fields("points area_points view_box min max")}
-STATE = {**fields("score progress_percent snapshot_status calculated_at"),
+STATE = {**fields("score progress_percent snapshot_status calculated_at class_position_status"),
          "current_level": CERTIFICATE, "next_stage": STAGE, "eligible_stage": STAGE,
          "stages": [STAGE], "certificates": [CERTIFICATE], "latest_certificate": CERTIFICATE,
          "latest_unrevealed_certificate": CERTIFICATE, "metrics": METRICS,

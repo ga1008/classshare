@@ -133,7 +133,7 @@ SIGNAL_CAPS = {
 }
 
 COMPONENT_DESCRIPTIONS = {
-    "material": "读完并真正掌握每一份必读学习文档",
+    "material": "课次材料从上课时起计入。新增材料时保留已获修为，继续研读和掌握可积累剩余分数。",
     "task": "按时、高质量地完成每一次作业与考试",
     "interaction": "提问、讨论、互助与课堂活动参与",
     "consistency": "每天都来、专注投入的稳定节奏",

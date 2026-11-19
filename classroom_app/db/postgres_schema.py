@@ -809,6 +809,7 @@ REQUIRED_POSTGRES_TABLES = (
     "emoji_usage_stats",
     "learning_material_progress",
     "learning_progress_snapshots",
+    "cultivation_rank_scopes",
     "cultivation_score_events",
     "cultivation_score_event_archives",
     "cultivation_weekly_snapshots",

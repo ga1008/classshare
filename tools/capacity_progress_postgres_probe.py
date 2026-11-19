@@ -179,12 +179,14 @@ def run(args):
                 return LanSharePostgresConnection(raw)
 
             stack.enter_context(patch.object(service, "get_db_connection", connect))
+            rank_basis = service._snapshot_rank_basis(_metrics(0))
+            stack.enter_context(patch.object(service, "_offering_rank_scope", return_value=(rank_basis, None)))
             with connect() as conn:
-                ensure_cultivation_progress_schema(conn, engine="postgres")
                 conn.execute("CREATE TABLE classes(id INTEGER PRIMARY KEY,name TEXT)")
                 conn.execute("CREATE TABLE teachers(id INTEGER PRIMARY KEY,name TEXT)")
                 conn.execute("CREATE TABLE courses(id INTEGER PRIMARY KEY,name TEXT,sect_name TEXT,description TEXT,credits INTEGER)")
                 conn.execute("CREATE TABLE class_offerings(id INTEGER PRIMARY KEY,class_id INTEGER,teacher_id INTEGER,course_id INTEGER)")
+                ensure_cultivation_progress_schema(conn, engine="postgres")
                 conn.execute("CREATE TABLE students(id INTEGER PRIMARY KEY,class_id INTEGER,name TEXT,student_id_number TEXT,enrollment_status TEXT DEFAULT 'active')")
                 conn.execute("CREATE TABLE class_offering_class_links(id INTEGER PRIMARY KEY,offering_id INTEGER,class_id INTEGER,is_primary INTEGER)")
                 conn.execute("CREATE TABLE cultivation_display_settings(student_id INTEGER PRIMARY KEY,hide_cultivation INTEGER,updated_at TEXT)")
@@ -243,7 +245,8 @@ def run(args):
             # A new generation commits after stage/event writes, before CAS.
             # Every old projection side effect must roll back, not the marker.
             with connect() as conn:
-                version = conn.execute("SELECT dirty_version FROM learning_progress_snapshots WHERE student_id=1").fetchone()[0]
+                observed = service._load_learning_progress_snapshot(conn, 1, 1)
+                version = observed["dirty_version"]
                 prior_events = counts(conn)[2]
             recorded = service._record_cultivation_score_events
             arrived = threading.Event()
@@ -253,7 +256,8 @@ def run(args):
                     service.mark_student_learning_progress_dirty(other, 1, 1, source_ref="late:committed")
                 arrived.set()
             with patch.object(service, "_record_cultivation_score_events", side_effect=add_late_event), connect() as conn:
-                _, published = service._publish_learning_metrics(conn, 1, 1, _metrics(70, task=70), expected_version=version, event_source_ref="old")
+                _, published = service._publish_learning_metrics(conn, 1, 1, _metrics(70, task=70), expected_version=version,
+                    expected_metrics_json=observed["metrics_json"], event_source_ref="old")
                 assert not published and arrived.is_set()
             with connect() as conn:
                 row = conn.execute("SELECT score,dirty,dirty_version FROM learning_progress_snapshots WHERE student_id=1").fetchone()
@@ -276,7 +280,8 @@ def run(args):
             with connect() as owner:
                 owner.execute("SELECT pg_advisory_xact_lock(?)", (key,))
                 with connect() as contender:
-                    _, published = service._publish_learning_metrics(contender, 1, 1, _metrics(99, task=99), expected_version=version + 1, event_source_ref="contender")
+                    _, published = service._publish_learning_metrics(contender, 1, 1, _metrics(99, task=99), expected_version=version + 1,
+                        expected_metrics_json=observed["metrics_json"], event_source_ref="contender")
                     assert not published
 
             # A grading transaction already owns a later stage row while a

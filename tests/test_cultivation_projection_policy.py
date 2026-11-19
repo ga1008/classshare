@@ -28,6 +28,8 @@ class ProjectionBudgetAndDiscoveryTests(unittest.TestCase):
         fixture.setUp()
         self.addCleanup(fixture.tearDown)
         self.conn = fixture.conn
+        basis = progress._snapshot_rank_basis(snapshot_fixture._metrics(0))
+        self.enterContext(patch.object(progress, "_offering_rank_scope", return_value=(basis, None)))
         self.conn.execute("INSERT INTO class_offerings(id,class_id,course_id,teacher_id) VALUES(1,1,1,1)")
         self.conn.executemany("INSERT INTO students(id,class_id,name,student_id_number) VALUES(?,1,?,?)",
                               [(student, f"Synthetic {student}", f"S{student}") for student in range(1, 201)])
