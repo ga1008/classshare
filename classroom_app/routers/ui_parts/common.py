@@ -43,6 +43,7 @@ from ...services.ai_grading_attachments import AI_GRADING_UPLOAD_EXTENSIONS, AI_
 from ...services.dashboard_service import build_dashboard_context
 from ...services.exam_json_service import strip_exam_scoring_for_student
 from ...services.classroom_page_service import build_classroom_page_context
+from ...services.approval_workflow_service import count_assignment_applicants
 from ...services.academic_course_exam_sync_service import (
     load_classroom_course_exam_status_for_user,
     merge_course_exams_into_teaching_plan,
@@ -379,6 +380,7 @@ def _attach_teacher_assignment_card_metrics(
     conn,
     assignments: list[dict[str, Any]],
     classroom: dict[str, Any],
+    user: dict[str, Any],
 ) -> None:
     if not assignments:
         return
@@ -433,9 +435,11 @@ def _attach_teacher_assignment_card_metrics(
         tuple(assignment_ids),
     ).fetchall()
     metrics_by_assignment = {int(row["assignment_id"]): dict(row) for row in rows}
+    applicants_by_assignment = count_assignment_applicants(conn, user, assignment_ids)
 
     for assignment in assignments:
         row = metrics_by_assignment.get(_safe_int(assignment.get("id")), {})
+        applicants = applicants_by_assignment.get(str(assignment["id"]), {})
         submitted_count = _safe_int(row.get("submitted_count"))
         pending_grade_count = _safe_int(row.get("pending_grade_count"))
         grading_count = _safe_int(row.get("grading_count"))
@@ -449,6 +453,8 @@ def _attach_teacher_assignment_card_metrics(
             "total_students": total_students,
             "submitted_count": submitted_count,
             "pending_grade_count": pending_grade_count,
+            "pending_applicant_count": applicants.get("pending_applicant_count", 0),
+            "processed_applicant_count": applicants.get("processed_applicant_count", 0),
             "grading_count": grading_count,
             "graded_count": graded_count,
             "returned_count": returned_count,

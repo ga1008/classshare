@@ -86,11 +86,12 @@
     "title": "Chip 芯片",
     "layer": "component",
     "summary": "筛选/标签/状态胶囊：`kind=filter` 时是可按下的 toggle（aria-pressed），其余为只读标签；tone 六色成对填充与前景。",
-    "params": "`label, kind(label|filter), tone, size, pressed, icon, attrs`。",
+    "params": "`label, kind(status|tag|filter), tone, size, pressed, removable, removeLabel, id, attrs, disabled, href`。教师作业列表用只读 status 展示申请人数，待处理用 warning，已处理用 success，仅显示人数大于零的状态。",
     "states": "pressed / hover / focus-visible / disabled。",
     "entries": {
       "react": [
-        "LqChipGroup"
+        "LqChipGroup",
+        "LqStatusChip"
       ]
     },
     "rules": "芯片是单行胶囊：不换行，过长标签以省略号截断（2026-10-24）。"

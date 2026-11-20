@@ -13,9 +13,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from ..database import get_db_connection
-from ..dependencies import get_current_user
+from ..dependencies import get_current_teacher, get_current_user
 from ..services import approval_workflow_service as workflow
 from ..services.approval_workflow_service import ApprovalWorkflowError
+from ..services.resource_access_service import teacher_can_manage_assignment
 
 router = APIRouter(prefix="/api/approvals")
 
@@ -72,6 +73,19 @@ def list_requests(
             email_channel = approval_email_channel_status(conn, user.get("id"))
         conn.commit()
     return {"items": items, "pending_count": pending, "email_channel": email_channel}
+
+
+@router.get("/assignments/{assignment_id}/applicant-counts", response_class=JSONResponse)
+def assignment_applicant_counts(assignment_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        if not teacher_can_manage_assignment(conn, user["id"], assignment_id):
+            raise HTTPException(404, "作业不存在或无权查看")
+        counts = workflow.count_assignment_applicants(conn, user, [assignment_id])
+    return JSONResponse(
+        {"assignment_id": assignment_id,
+         **counts.get(str(assignment_id), {"pending_applicant_count": 0, "processed_applicant_count": 0})},
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.post("", response_class=JSONResponse)

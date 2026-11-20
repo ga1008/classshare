@@ -76,6 +76,15 @@ describe('classroom workspace task semantics', () => {
     const result = taskPreview([task({ id: 1, status: 'new' }), task({ id: 2, pendingGrade: 3 }), task({ id: 3, grading: 2 })], true, 4, now);
     expect(result.rows.map(item => item.id)).toEqual([2, 1]); expect(result.totalCount).toBe(3);
   });
+  it('keeps a closed task in the teacher queue until its last applicant has been handled', () => {
+    const pending = task({ status: 'closed', deadlinePhase: 'closed', accepting: false, pendingApplicants: 1, processedApplicants: 2 });
+    const handled = { ...pending, pendingApplicants: 0, processedApplicants: 3 };
+    expect(taskPreview([pending], true, 4, now).actionableCount).toBe(1);
+    expect(taskMatchesFilter(pending, true, 'actionable', '', now)).toBe(true);
+    expect(taskMatchesFilter(pending, false, 'actionable', '', now)).toBe(false);
+    expect(taskMatchesFilter(handled, true, 'actionable', '', now)).toBe(false);
+    expect(taskMatchesFilter(handled, true, 'all', '', now)).toBe(true);
+  });
   it('searches titles in the full list and does not misclassify unopened tasks as closed', () => {
     expect(taskMatchesFilter(task({ accepting: false, deadlinePhase: 'none' }), false, 'closed', '')).toBe(false);
     expect(taskMatchesFilter(task({ submissionStatus: 'graded' }), false, 'submitted', '网络')).toBe(true);

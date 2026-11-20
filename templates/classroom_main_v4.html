@@ -4,6 +4,7 @@
 {% from "macros/lq/icons.generated.html" import lq_icon %}
 {% from "macros/lq/navigation.html" import lq_tabs %}
 {% from "macros/classroom_menus.html" import classroom_more_menu, classroom_personal_menu %}
+{% from "macros/assignment_applicants.html" import applicant_chips %}
 {% from "macros/ui_explanation.html" import explain_attrs %}
 {% from "partials/social_entry.html" import social_entry %}
 
@@ -453,6 +454,9 @@
                                     {% endif %}
                                     {% if assignment.is_group_assignment %}
                                     <span class="badge badge-outline">小组</span>
+                                    {% endif %}
+                                    {% if user_info.role == 'teacher' %}
+                                    <span class="cw-applicant-chips" data-applicant-chips>{{ applicant_chips(teacher_metrics.pending_applicant_count, teacher_metrics.processed_applicant_count) }}</span>
                                     {% endif %}
                                     {% if user_info.role == 'student' and assignment.group_pending %}
                                     <span class="badge badge-warning">待组内揭晓</span>

@@ -148,6 +148,36 @@ class CorrectionAppealTests(unittest.TestCase):
             return [dict(row) for row in conn.execute(sql, params).fetchall()]
 
     # ------------------------------------------------------------------ tests
+    def test_classroom_applicant_counts_http_reflect_current_decision_for_teacher(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from classroom_app.dependencies import get_current_user
+        from classroom_app.routers.approval_workflow import router
+
+        app = FastAPI()
+        app.include_router(router)
+        viewer = TEACHER
+        app.dependency_overrides[get_current_user] = lambda: viewer
+        url = f"/api/approvals/assignments/{ASSIGNMENT_ID}/applicant-counts"
+        with TestClient(app) as client:
+            def assert_counts(pending, processed):
+                response = client.get(url)
+                self.assertEqual(200, response.status_code)
+                self.assertEqual("private, no-store", response.headers["Cache-Control"])
+                self.assertEqual({"assignment_id": int(ASSIGNMENT_ID), "pending_applicant_count": pending,
+                                  "processed_applicant_count": processed}, response.json())
+
+            assert_counts(0, 0)
+            self._submission()
+            item = self._create()
+            assert_counts(1, 0)
+            self._decide(item["id"], "reject", note="保留原提交")
+            assert_counts(0, 1)
+            viewer = STUDENT
+            self.assertEqual(403, client.get(url).status_code)
+            viewer = {"role": "teacher", "id": 7199}
+            self.assertEqual(404, client.get(url).status_code)
+
     def _teacher_return(self):
         from classroom_app.routers.homework_parts import submissions as route
         from tests.test_mp_grade_safety import JsonRequest

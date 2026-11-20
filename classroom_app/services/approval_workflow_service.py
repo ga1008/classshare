@@ -16,6 +16,7 @@ reviewers cannot both win.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable, Mapping, Optional
@@ -459,6 +460,41 @@ def count_pending_requests(conn, user: Mapping[str, Any], *, assignment_id: Any 
         params.append(str(assignment_id))
     row = conn.execute(sql, tuple(params)).fetchone()
     return int((row["n"] if hasattr(row, "keys") else row[0]) or 0)
+
+
+def count_assignment_applicants(
+    conn, user: Mapping[str, Any], assignment_ids: Sequence[int | str],
+) -> dict[str, dict[str, int]]:
+    """Count each student once per assignment in the teacher's incoming requests."""
+    role, user_pk = _identity(user)
+    if role != "teacher" or user_pk <= 0 or not assignment_ids:
+        return {}
+    ensure_approval_workflow_schema(conn)
+    scope, scope_params = _incoming_scope(role, user_pk)
+    placeholders = ",".join("?" for _ in assignment_ids)
+    rows = conn.execute(
+        f"""
+        SELECT assignment_id, SUM(has_pending) AS pending_applicant_count,
+               COUNT(*) - SUM(has_pending) AS processed_applicant_count
+        FROM (
+            SELECT r.assignment_id, r.applicant_user_pk,
+                   MAX(CASE WHEN r.status = 'pending' THEN 1 ELSE 0 END) AS has_pending
+            FROM approval_requests r
+            WHERE r.assignment_id IN ({placeholders}) AND r.applicant_role = 'student'
+              AND r.status IN ('pending', 'approved', 'rejected') AND {scope}
+            GROUP BY r.assignment_id, r.applicant_user_pk
+        ) applicants
+        GROUP BY assignment_id
+        """,
+        (*map(str, assignment_ids), *scope_params),
+    )
+    return {
+        row["assignment_id"]: {
+            "pending_applicant_count": int(row["pending_applicant_count"]),
+            "processed_applicant_count": int(row["processed_applicant_count"]),
+        }
+        for row in rows
+    }
 
 
 def get_request(conn, user: Mapping[str, Any], request_id: int | str) -> dict[str, Any]:

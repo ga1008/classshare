@@ -13,8 +13,8 @@
     "旧代码可删除"
   ],
   "coverage": {
-    "templateCount": 209,
-    "entryCount": 230,
+    "templateCount": 210,
+    "entryCount": 231,
     "unresolvedTemplates": [
       "error.html",
       "macros/lq/dialogs.html",
@@ -46,7 +46,7 @@
         "routePattern": "/student/login",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 535,
+        "line": 537,
         "endpoint": "handle_student_login",
         "templates": [
           "student_login_v4.html",
@@ -60,7 +60,7 @@
         "routePattern": "/teacher/login",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 597,
+        "line": 599,
         "endpoint": "handle_teacher_login",
         "templates": [
           "student_login_v4.html",
@@ -383,9 +383,12 @@
       "layout": "base.html 直接派生（immersive/自定义）",
       "assets": [
         "css/assessment-appeal.css",
+        "css/assessment-editor.css",
         "css/assessment-student-material.css",
         "css/assignment-student.css",
         "js/assessment_appeal.js",
+        "js/assessment_editor.js",
+        "js/assessment_questions.js",
         "js/assignment_time.js",
         "js/behavior_tracker.js",
         "js/feedback.js",
@@ -482,7 +485,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "bd363fd63931c875b989b7e4709bc0a2d761b74d7e1304569d21f0c80a6687f8",
+      "inventorySourceSha256": "e3e199d90aefe4a9a9938ec6fcafcad5ddf8ffe2b31cee5f0ab22efa26e69059",
       "before": {
         "sourceSha256": "4f017a1ad05e4d9b868b8be81be482912d97810c23e6601e1e64a84241dd573f",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/assignment_detail_student.html",
@@ -1857,6 +1860,7 @@
         "css/classroom_group_qr.css",
         "css/classroom_members.css",
         "css/classroom_workspace.css",
+        "css/login_attendance.css",
         "css/materials_library.css",
         "css/ordinary_grade_kind_controls.css",
         "css/session_knowledge_tree.css",
@@ -1878,8 +1882,10 @@
       "templateReferences": [
         "base.html",
         "macros/app_topbar.html",
+        "macros/assignment_applicants.html",
         "macros/classroom_menus.html",
         "macros/lq/button.html",
+        "macros/lq/icons.generated.html",
         "macros/lq/navigation.html",
         "macros/ui_explanation.html",
         "macros/user_ui_preferences.html",
@@ -2072,12 +2078,15 @@
         "course-popover-kicker",
         "course-popover-overlay",
         "course-popover-title",
+        "cw-attendance-dashboard",
+        "cw-attendance-history",
         "cw-course-identity",
         "cw-current-session",
         "cw-knowledge-manager",
         "cw-primary-content",
         "cw-session-back",
         "cw-session-detail-meta",
+        "cw-session-knowledge-status",
         "cw-session-material-status",
         "cw-tasks-preview",
         "cw-workspace-flow",
@@ -2143,6 +2152,7 @@
         "smartAttendanceTableWrap",
         "smartAttendanceWeekChart",
         "teaching-plan-widget",
+        "teachingSessionAutoAttendanceBtn",
         "teachingSessionCheckinBtn",
         "teachingSessionCheckinMessage",
         "teachingSessionCheckinPanel",
@@ -2232,7 +2242,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "075e9df6156e6c088066c089e2bbc7ad782d373b93e1af4bebe7220d624ceac0",
+      "inventorySourceSha256": "d10280213bd4315cdfc19a9897a049e44faf626df98ed76e4aacc4aea5294ee2",
       "before": {
         "sourceSha256": "ec29712f658cb457a5d71151554e77d61dc4c069b850f6e24c906c8b7b137e68",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/classroom_main_v4.html",
@@ -3372,7 +3382,7 @@
         "routePattern": "/exam/{exam_id}/edit",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/exam_pages.py",
-        "line": 185,
+        "line": 187,
         "endpoint": "exam_editor_page",
         "templates": [
           "exam_editor.html"
@@ -3389,12 +3399,16 @@
       "resourceScope": "由路由依赖推导：get_current_teacher；资源归属待迁移时人工核对",
       "layout": "独立完整文档（无 extends；lq-editor 族或独立页）",
       "assets": [
+        "css/assessment-editor.css",
         "css/exam_editor.css",
         "css/exam_paper_preview.css",
+        "js/assessment_editor.js",
+        "js/assessment_questions.js",
         "js/auth.js",
         "js/exam_paper_preview.js",
-        "js/grading_feedback.js",
+        "js/lq/dialogs.js",
         "js/lq/domain-modal.js",
+        "js/lq/dropdown.js",
         "js/prompt_pool.js",
         "js/ui.js"
       ],
@@ -3429,9 +3443,13 @@
         "static/js/user_ui_preferences.js"
       ],
       "domHooks": [
+        "ai-exam-analysis",
         "ai-exam-assessment-kind",
         "ai-exam-attachment-requirements",
+        "ai-exam-boolean",
         "ai-exam-checkbox",
+        "ai-exam-code",
+        "ai-exam-comprehensive",
         "ai-exam-difficulty",
         "ai-exam-files",
         "ai-exam-form",
@@ -3508,7 +3526,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "6c462a22f1872531745d01b22cca737fb3c8af5c3253c4282404abd3524862d3",
+      "inventorySourceSha256": "9d25dd3c0b309b5a9449b75442c432aac4c089e213129a66751dc27687e0a96f",
       "before": {
         "sourceSha256": "28d557d7474a4d8ee525911a4380ebf23857caa7285744797a794102b5ffc788",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/exam_editor.html",
@@ -3554,7 +3572,7 @@
         "routePattern": "/exam/new",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/exam_pages.py",
-        "line": 219,
+        "line": 221,
         "endpoint": "exam_new_page",
         "templates": [
           "exam_editor.html"
@@ -3571,12 +3589,16 @@
       "resourceScope": "由路由依赖推导：get_current_teacher；资源归属待迁移时人工核对",
       "layout": "独立完整文档（无 extends；lq-editor 族或独立页）",
       "assets": [
+        "css/assessment-editor.css",
         "css/exam_editor.css",
         "css/exam_paper_preview.css",
+        "js/assessment_editor.js",
+        "js/assessment_questions.js",
         "js/auth.js",
         "js/exam_paper_preview.js",
-        "js/grading_feedback.js",
+        "js/lq/dialogs.js",
         "js/lq/domain-modal.js",
+        "js/lq/dropdown.js",
         "js/prompt_pool.js",
         "js/ui.js"
       ],
@@ -3611,9 +3633,13 @@
         "static/js/user_ui_preferences.js"
       ],
       "domHooks": [
+        "ai-exam-analysis",
         "ai-exam-assessment-kind",
         "ai-exam-attachment-requirements",
+        "ai-exam-boolean",
         "ai-exam-checkbox",
+        "ai-exam-code",
+        "ai-exam-comprehensive",
         "ai-exam-difficulty",
         "ai-exam-files",
         "ai-exam-form",
@@ -3690,7 +3716,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "6c462a22f1872531745d01b22cca737fb3c8af5c3253c4282404abd3524862d3",
+      "inventorySourceSha256": "9d25dd3c0b309b5a9449b75442c432aac4c089e213129a66751dc27687e0a96f",
       "before": {
         "sourceSha256": "28d557d7474a4d8ee525911a4380ebf23857caa7285744797a794102b5ffc788",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/exam_editor.html",
@@ -3750,7 +3776,7 @@
         "routePattern": "/exam/take/{assignment_id}",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/exam_pages.py",
-        "line": 241,
+        "line": 243,
         "endpoint": "exam_take_page",
         "templates": [
           "exam_take.html",
@@ -3770,10 +3796,13 @@
       "layout": "独立完整文档（无 extends；lq-editor 族或独立页）",
       "assets": [
         "css/assessment-appeal.css",
+        "css/assessment-editor.css",
         "css/assessment-student-material.css",
         "css/exam-take.css",
         "js/api.js",
         "js/assessment_appeal.js",
+        "js/assessment_editor.js",
+        "js/assessment_questions.js",
         "js/assignment_time.js",
         "js/auth.js",
         "js/behavior_tracker.js",
@@ -3926,7 +3955,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "47866f2bf63834ae976075c92cc043becc27dcd739e39a888a60ae8ba6140f1b",
+      "inventorySourceSha256": "ec0a1fa5597d3d70802faad6641535784ef332ad605d9bb341d0b72f994e2dd8",
       "before": {
         "sourceSha256": "3834c7a4c48dcc1dce66bea580e01fce6f861167e1e8ccc7e63d423f1b5ad456",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/exam_take.html",
@@ -4672,6 +4701,51 @@
       "notes": []
     },
     {
+      "id": "template::macros/assignment_applicants.html",
+      "routePattern": null,
+      "method": null,
+      "template": "templates/macros/assignment_applicants.html",
+      "kind": "macro",
+      "ownerRoutes": [
+        "/classroom/{class_offering_id}"
+      ],
+      "routeEvidence": null,
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [],
+      "islands": [],
+      "templateReferences": [
+        "macros/lq/chip.html"
+      ],
+      "controller": [],
+      "domHooks": [],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "52efdb586bf4ca015a7b2742022e20079538646135fe7ffceeec97663a89475a",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/macros/assignment_applicants.html"
+        ],
+        "assets": [],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
+    },
+    {
       "id": "template::macros/classroom_menus.html",
       "routePattern": null,
       "method": null,
@@ -4959,6 +5033,7 @@
       "kind": "macro",
       "ownerRoutes": [
         "/achievements",
+        "/classroom/{class_offering_id}",
         "/dev/lq",
         "/manage",
         "/manage/academic/classrooms",
@@ -5025,7 +5100,8 @@
       "ownerRoutes": [
         "/dashboard",
         "/dev/lq",
-        "/manage/system/wanderers"
+        "/manage/system/wanderers",
+        "/wanderers/{slug}"
       ],
       "routeEvidence": null,
       "roles": [
@@ -8591,7 +8667,7 @@
         "routePattern": "/manage/library/exams",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/exam_pages.py",
-        "line": 13,
+        "line": 15,
         "endpoint": "manage_exams_page",
         "templates": [
           "manage/exams.html"
@@ -13789,7 +13865,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "2fc0d589f0749fdab09360ca77f28c4127808e602ccd2006903e0548d6f6b10a",
+      "inventorySourceSha256": "60aa8228215d3fcc61fc99bd092992afec568db67b8e3776a636416cd69ceab5",
       "before": {
         "sourceSha256": "767b1beef3093890e6b8e94e52c65f9c58cbefb3a24bf961c3c187f184e00a62",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/manage/system/smart_classroom_integrations.html",
@@ -14174,6 +14250,7 @@
       "resourceScope": "待人工核对端点及服务端权限",
       "layout": "待核对",
       "assets": [
+        "css/lq/pages/wanderer-world.css",
         "css/lq/pages/wanderers.css",
         "js/manage_wanderers.js"
       ],
@@ -14206,25 +14283,27 @@
         "wd-settings-title",
         "wd-summary",
         "wd-tabs",
-        "wd-tabs--lq-panel-actions",
+        "wd-tabs--lq-panel-activity",
+        "wd-tabs--lq-panel-conversations",
+        "wd-tabs--lq-panel-identity",
         "wd-tabs--lq-panel-memory",
         "wd-tabs--lq-panel-overview",
-        "wd-tabs--lq-panel-persona",
-        "wd-tabs--lq-panel-reviews",
-        "wd-tabs--lq-panel-social",
-        "wd-tabs--lq-tab-actions",
+        "wd-tabs--lq-panel-relations",
+        "wd-tabs--lq-panel-resources",
+        "wd-tabs--lq-tab-activity",
+        "wd-tabs--lq-tab-conversations",
+        "wd-tabs--lq-tab-identity",
         "wd-tabs--lq-tab-memory",
         "wd-tabs--lq-tab-overview",
-        "wd-tabs--lq-tab-persona",
-        "wd-tabs--lq-tab-reviews",
-        "wd-tabs--lq-tab-social",
+        "wd-tabs--lq-tab-relations",
+        "wd-tabs--lq-tab-resources",
         "wd-tick-btn"
       ],
       "apis": [],
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "19802e614f72c630942e8d1ec5a4cdf4e55bb072cd3634eb93eb0b0ede2b5fdd",
+      "inventorySourceSha256": "8e3b1d0c1ea3615d50cbd703f53cd1eb2c5398ffce5149205ca6df100fd26a4b",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -15014,6 +15093,7 @@
       "resourceScope": "由路由依赖推导：get_current_user；资源归属待迁移时人工核对",
       "layout": "base.html 直接派生（immersive/自定义）",
       "assets": [
+        "js/behavior_tracker.js",
         "js/material_reader_return.js",
         "js/material_render_shell.js",
         "js/teacher_whiteboard.js"
@@ -15106,7 +15186,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "93e841fd60b6fc1d3d2a75801a7205aa50112ce7c86243eb4bb13abbd6ff8d0a",
+      "inventorySourceSha256": "a91e22166eba147f58091bc9fb7b2e2f4b88a0505678fb671a5799d6bc6a66fd",
       "before": {
         "sourceSha256": "0bcd6235dfac7e6caf2e11bf5142db416ce73ce2b3e4420e32505ebeabbfef3a",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/material_render_shell.html",
@@ -15168,6 +15248,7 @@
       "resourceScope": "由路由依赖推导：get_current_user；资源归属待迁移时人工核对",
       "layout": "base.html 直接派生（immersive/自定义）",
       "assets": [
+        "js/behavior_tracker.js",
         "js/material_reader_return.js",
         "js/material_viewer.js",
         "js/teacher_whiteboard.js"
@@ -15267,7 +15348,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "8d6fd17ca448bd7138de1347434dd7323b9b9f680b0375d9aaeeae0fa4d54720",
+      "inventorySourceSha256": "ef2c9c44926e728ee99c14f1c9fa70bdfaa7f0d721d080f5e2ff6dbef5be89df",
       "before": {
         "sourceSha256": "7b95d496a8df4248e4e2104b6ec7dca0c9774dc1b303963dcd16ea4a7023b52f",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/material_viewer.html",
@@ -15815,7 +15896,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "cbe827a2b3117eb14df12a6bb5159edf79e21ea527fb5e31bda0d7522ce3b78d",
+      "inventorySourceSha256": "09434c98552cccdcb137f253473b23b80c9e13ac9ce4e4849cc62aef09866a18",
       "before": {
         "sourceSha256": "2c062df39791d7dd1afb63c1aa64a628a1e4dfca7f4a7b1c3dbe405b885581e7",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/partials/ai_workspace_widget.html",
@@ -16680,6 +16761,7 @@
       "assets": [],
       "islands": [],
       "templateReferences": [
+        "macros/assignment_applicants.html",
         "macros/ui_explanation.html"
       ],
       "controller": [],
@@ -16688,7 +16770,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "1256cbc758f2cea2af2c6f087d7d137a21cabda9024013da2841d1f248da4e92",
+      "inventorySourceSha256": "252158c2b87753d0fa3fa8a84370fd16e8ca95c5b8b5883c711f872e58b42fea",
       "before": {
         "sourceSha256": "16421a673dd07914e8ac67a8f1310eef1d006916c90dec79840cbb6bbf34cfd9",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/partials/classroom_task_preview.html",
@@ -17224,7 +17306,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "819ca12cdd78ca1ca8766b5af2c3ef8dadbda10bce273ffb31ecda82121ed669",
+      "inventorySourceSha256": "bccef8270fa5660feb5a25c386e02619237f5cb3584012baea9905d27c214f29",
       "before": {
         "sourceSha256": "18969a9cae7b748d3b91abb62ffdc98c165c6eff0106441ac755404da196b92f",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/partials/exams/scripts.html",
@@ -20900,7 +20982,9 @@
       ],
       "resourceScope": "无显式依赖（匿名或在处理函数内自行校验）；资源归属待迁移时人工核对",
       "layout": "片段/宏（无 extends，随宿主页渲染）",
-      "assets": [],
+      "assets": [
+        "js/login_attendance_attention.js"
+      ],
       "islands": [
         "app-shell",
         "blog-topbar-sync",
@@ -20919,7 +21003,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "4d8198ee6f1b76c2da625417e66463f5d3d4a9aa01e27789876450e881a8509c",
+      "inventorySourceSha256": "e5355cd121bdfd6b0bdc05a564b82505d8abcb08dfa8a66e1a439ac8306a3cf8",
       "before": {
         "sourceSha256": "ee4dc71906656bb7f5b508a7050ad8a1509a8f87875d8a4c74813cd4e343047d",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/partials/vite_islands.html",
@@ -22503,7 +22587,7 @@
         "routePattern": "/teacher/register",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 581,
+        "line": 583,
         "endpoint": "handle_teacher_register",
         "templates": [
           "status.html"
@@ -22572,7 +22656,7 @@
         "routePattern": "/exam/take/{assignment_id}",
         "method": "GET",
         "source": "classroom_app/routers/ui_parts/exam_pages.py",
-        "line": 241,
+        "line": 243,
         "endpoint": "exam_take_page",
         "templates": [
           "exam_take.html",
@@ -23054,7 +23138,7 @@
         "routePattern": "/student/login",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 535,
+        "line": 537,
         "endpoint": "handle_student_login",
         "templates": [
           "student_login_v4.html",
@@ -23177,7 +23261,7 @@
         "routePattern": "/teacher/login",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 597,
+        "line": 599,
         "endpoint": "handle_teacher_login",
         "templates": [
           "student_login_v4.html",
@@ -23319,9 +23403,12 @@
       "layout": "base.html 直接派生（immersive/自定义）",
       "assets": [
         "css/assessment-appeal.css",
+        "css/assessment-editor.css",
         "css/submission_detail.css",
         "js/api.js",
         "js/approval_workflow.js",
+        "js/assessment_editor.js",
+        "js/assessment_questions.js",
         "js/feedback.js",
         "js/file_preview.js",
         "js/grading_feedback.js",
@@ -23438,7 +23525,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "c107a5114571f0186264274204e198f26a3bdd3ab50f43bb0d2ffccef5ef685f",
+      "inventorySourceSha256": "511a5cabd67718a1f5e450919ac4e53508b54ef7715f03a604f52c10813481fb",
       "before": {
         "sourceSha256": "0f54c4042d51c56d0af8fa73e1d2ce6f0d4932e0ae9369e62f6b5abb4278a2fc",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/submission_detail.html",
@@ -23759,7 +23846,7 @@
         "routePattern": "/student/login",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 535,
+        "line": 537,
         "endpoint": "handle_student_login",
         "templates": [
           "student_login_v4.html",
@@ -23852,7 +23939,7 @@
         "routePattern": "/teacher/login",
         "method": "POST",
         "source": "classroom_app/routers/ui_parts/auth.py",
-        "line": 597,
+        "line": 599,
         "endpoint": "handle_teacher_login",
         "templates": [
           "student_login_v4.html",
@@ -23998,7 +24085,7 @@
         "routePattern": "/wanderers/{slug}",
         "method": "GET",
         "source": "classroom_app/routers/wanderers.py",
-        "line": 381,
+        "line": 464,
         "endpoint": "wanderer_home_page",
         "templates": [
           "wanderers/home.html"
@@ -24013,27 +24100,33 @@
       "resourceScope": "待人工核对端点及服务端权限",
       "layout": "待核对",
       "assets": [
-        "css/lq/pages/wanderer-home.css"
+        "css/lq/pages/wanderer-home.css",
+        "css/lq/pages/wanderer-world.css",
+        "js/wanderer_home.js"
       ],
       "islands": [],
       "templateReferences": [
         "base_navbar.html",
+        "macros/lq/button.html",
         "macros/lq/chip.html",
+        "macros/lq/collapsible.html",
         "macros/lq/content.html",
         "macros/lq/indicators.html"
       ],
       "controller": [],
       "domHooks": [
         "wh-actions-title",
+        "wh-memory-title",
         "wh-next-title",
         "wh-posts-title",
+        "wh-resource-title",
         "wh-reviews-title"
       ],
       "apis": [],
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "3834cf8b71a8b26063241d725dbd3a0f4b5a306857573f9590b40a2167f98669",
+      "inventorySourceSha256": "25473c0932a9e4eaad5c0df833512dd3a3b738b9ffa6694a0677701f7facfe02",
       "before": {
         "sourceSha256": null,
         "screenshots": [],

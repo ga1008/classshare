@@ -28,7 +28,7 @@
 | [Ability radar 六边形能力雷达](#ability-radar) | component | `lq-radar` | 仅 CSS | 3 |
 | [Business 业务呈现（DeadlineClock / JobStatus / QuestionNavigator）](#business) | component | `lq-clock`, `lq-job`, `lq-nav-grid` | 宏 / JS / Py | 1 |
 | [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 284 |
-| [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 42 |
+| [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 43 |
 | [ChipRow 芯片行](#chip-row) | component | `lq-chip-row` | 宏 / JS / Py | 10 |
 | [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 18 |
 | [Composer 输入区](#composer) | component | `lq-composer` | 宏 / JS / Py | 5 |
@@ -46,7 +46,7 @@
 | [Navigation Tabs / Segment](#navigation) | component | `lq-segment`, `lq-tabs` | 宏 / JS / Py | 21 |
 | [OverflowLabel 固定宽度长标签](#overflow-label) | component | — | JS | 1 |
 | [Search 搜索包装](#search) | component | `lq-search` | 仅 CSS | 12 |
-| [Selection / Dropdown 选择列表](#selection) | component | `lq-dropdown`, `lq-selection` | 宏 / JS / Py | 9 |
+| [Selection / Dropdown 选择列表](#selection) | component | `lq-dropdown`, `lq-selection` | 宏 / JS / Py | 10 |
 | [Skeleton 骨架屏](#skeleton) | component | `lq-skeleton` | 宏 / JS / Py | 29 |
 | [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 24 |
 | [Table / Pager / BulkBar / ResultCount](#tables) | component | `lq-bulk-bar`, `lq-pager`, `lq-result-count`, `lq-table`, `lq-table-shell` | 宏 / JS / Py / React | 13 |
@@ -923,15 +923,15 @@
 **Chip 芯片** · 层：component · CSS：`static/css/lq/components/chip.css`
 
 - **设计摘要**：筛选/标签/状态胶囊：`kind=filter` 时是可按下的 toggle（aria-pressed），其余为只读标签；tone 六色成对填充与前景。
-- **参数 / 变体**：`label, kind(label|filter), tone, size, pressed, icon, attrs`。
+- **参数 / 变体**：`label, kind(status|tag|filter), tone, size, pressed, removable, removeLabel, id, attrs, disabled, href`。教师作业列表用只读 status 展示申请人数，待处理用 warning，已处理用 success，仅显示人数大于零的状态。
 - **状态**：pressed / hover / focus-visible / disabled。
 - **规则**：芯片是单行胶囊：不换行，过长标签以省略号截断（2026-10-24）。
 - **根类**：`lq-chip`
 - **Jinja 宏** `templates/macros/lq/chip.html`：`lq_chip`
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
-- **React 适配器**：`LqChipGroup`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：42 个文件
+- **React 适配器**：`LqChipGroup`, `LqStatusChip`（`frontend/src/components/lq-presentation.tsx`）
+- **消费者**：43 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -941,6 +941,7 @@
 - `static/js/course_schedule_deck.js` ×6
 - `static/js/cultivation_panel.js` ×6
 - `templates/manage/system/wanderers.html` ×6
+- `frontend/src/islands/classroom-workspace.tsx` ×5
 - `static/js/materials_explorer.js` ×5
 - `static/js/materials_manage.js` ×4
 - `static/js/message_center.js` ×4
@@ -951,7 +952,6 @@
 - `static/js/social/friends_discover.js` ×3
 - `templates/achievements.html` ×3
 - `templates/partials/materials/library_card.html` ×3
-- `frontend/src/islands/classroom-workspace.tsx` ×2
 - `frontend/src/islands/dashboard-workspace.tsx` ×2
 - `static/js/course_schedule_changes.js` ×2
 - `static/js/course_schedule_editor_styles.js` ×2
@@ -961,6 +961,7 @@
 - `static/js/manage_classrooms.js` ×2
 - `static/js/manage_filter_chips.js` ×2
 - `static/js/message_center_blog.js` ×2
+- `templates/macros/assignment_applicants.html` ×2
 - `templates/partials/profile/appearance.html` ×2
 - `static/js/attendance_calendar_controls.js` ×1
 - `static/js/attendance_dashboard.js` ×1
@@ -1849,7 +1850,7 @@
 - **JS 入口** `static/js/lq/selection.js`：`bindSelection`, `createSelection`, `selectionKinds`, `selectionMarkup`, `selectionOptions`, `selectionProps`
 - **JS 入口** `static/js/lq/dropdown.js`：`bindDropdown`, `dropdownResults`, `enhanceDropdowns`, `getDropdown`, `installDropdowns`
 - **Python props** `classroom_app/lq_selection.py`
-- **消费者**：9 个文件
+- **消费者**：10 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1860,6 +1861,7 @@
 - `static/js/student_dashboard_schedule.js` ×2
 - `static/js/ui_preferences_panel.js` ×2
 - `templates/dev/lq_data.html` ×2
+- `frontend/src/islands/classroom-workspace.tsx` ×1
 - `static/js/signature_multi_select.js` ×1
 - `templates/classroom_main_v4.html` ×1
 

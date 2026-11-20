@@ -232,7 +232,7 @@ def classroom_main(
             assignments.append(assignment)
 
         if user['role'] == 'teacher':
-            _attach_teacher_assignment_card_metrics(conn, assignments, offering_data)
+            _attach_teacher_assignment_card_metrics(conn, assignments, offering_data, user)
 
         session_rows = conn.execute(
             """

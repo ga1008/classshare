@@ -3,7 +3,7 @@ import path from 'node:path';
 
 // The caller starts serve_ui_v3.py explicitly on an asserted synthetic fixture.
 // Never fall back to the production application or its startup workers.
-const output = path.resolve(process.env.UI_V3_OUTPUT || 'artifacts/home-classroom-ui-v3-2026-09-07/e2e');
+const output = path.resolve(process.env.UI_V3_OUTPUT || 'test-results/ui-v3');
 export default defineConfig({
   testDir: './specs', testMatch: [
     'ui-motion.spec.ts',

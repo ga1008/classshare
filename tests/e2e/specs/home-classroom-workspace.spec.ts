@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
-import { loginStudent, readFixture } from '../fixtures/p03';
+import { expect, test, type Locator } from '@playwright/test';
+import { expectHealthUsesRuntimeDb, loginStudent, loginTeacher, readFixture } from '../fixtures/p03';
 
 test('homepage complete items retain paging and show a usable empty filter', async ({ page }) => {
   const fixture = readFixture();
@@ -30,6 +30,122 @@ test('homepage complete items retain paging and show a usable empty filter', asy
   await expect(dialog.locator('.ls-agenda-row')).toHaveCount(0);
   await dialog.getByRole('button', { name: '清除筛选' }).click();
   await expect(dialog.locator('.ls-list-summary')).toContainText(`共 ${workspace.filtered_total} 项`);
+});
+
+test('teacher task lists show applicant counts and update on return from a decision', async ({ page, browser, baseURL }, testInfo) => {
+  const fixture = readFixture();
+  const classroom = `/classroom/${fixture.classOfferingId}`;
+  const pendingId = fixture.aiStopAssignmentId;
+  const processedId = fixture.aiSuccessAssignmentId;
+  const student = await browser.newPage({ baseURL });
+  try {
+    await loginStudent(student, fixture);
+    await expectHealthUsesRuntimeDb(student, fixture);
+    await loginTeacher(page, fixture);
+    await expectHealthUsesRuntimeDb(page, fixture);
+
+    async function apply(assignmentId: number) {
+      const response = await student.request.post('/api/approvals', { data: {
+        request_type: 'submission_correction', subject_id: `${assignmentId}:${fixture.student.id}`,
+        reason: '合成验收，请核对提交内容。',
+      } });
+      await expect(response).toBeOK();
+      return (await response.json()).request.id as number;
+    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const id = await apply(processedId);
+      await expect(await page.request.post(`/api/approvals/${id}/reject`, { data: { note: '合成验收，保留原提交。' } })).toBeOK();
+    }
+    await expect(await page.request.post(`/api/submissions/${fixture.aiStopSubmissionId}/grade`, {
+      data: { score: 90, feedback_md: '合成验收，批改已完成。' },
+    })).toBeOK();
+    const pendingRequest = await apply(pendingId);
+    const preview = page.locator('#cw-tasks-preview');
+    const dialog = page.getByRole('dialog', { name: '全部课堂任务' });
+    const card = (list: Locator, id: number) => list.locator(`[data-lq-component="surface"][data-assignment-id="${id}"]`);
+    const pending = '申请待处理 1 人', processed = '申请已处理 1 人';
+    const countText = /申请(?:待处理|已处理)\s*\d+\s*人/;
+
+    await student.goto(classroom);
+    const studentPreview = student.locator('#cw-tasks-preview');
+    await studentPreview.getByRole('button', { name: /^全部\s*\d/ }).click();
+    await expect(card(studentPreview, pendingId)).toBeVisible();
+    await expect(studentPreview.getByText(countText)).toHaveCount(0);
+    await studentPreview.getByRole('button', { name: /全部任务/ }).click();
+    const studentList = student.getByRole('dialog', { name: '全部课堂任务' });
+    await expect(card(studentList, pendingId)).toBeVisible();
+    await expect(studentList.getByText(countText)).toHaveCount(0);
+
+    const detailRequests: string[] = [];
+    page.on('request', request => {
+      if (new URL(request.url()).pathname === '/api/approvals') detailRequests.push(request.url());
+    });
+    await page.goto(classroom);
+    await expect(card(preview, pendingId).getByText(pending, { exact: true })).toBeVisible();
+    await preview.getByRole('button', { name: /^全部\s*\d/ }).click();
+    async function checkCounts(list: Locator) {
+      const waiting = card(list, pendingId).getByText(pending, { exact: true });
+      const done = card(list, processedId).getByText(processed, { exact: true });
+      await expect(waiting).toBeVisible();
+      await expect(done).toBeVisible();
+      await expect(card(list, fixture.studentSubmissionAssignmentId).getByText(countText)).toHaveCount(0);
+      const colors: string[] = [];
+      for (const badge of [waiting, done]) {
+        colors.push(await badge.evaluate(el => {
+          const style = getComputedStyle(el);
+          return [style.color, style.backgroundColor, style.borderColor].join(' ');
+        }));
+        const bounds = await badge.boundingBox();
+        expect(bounds!.x).toBeGreaterThanOrEqual(0);
+        expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+      }
+      expect(colors[0]).not.toBe(colors[1]);
+    }
+    for (const [width, appearance] of [[1440, 'light'], [390, 'dark']] as const) {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 980 });
+      await page.emulateMedia({ colorScheme: appearance });
+      await expect(page.locator('html')).toHaveAttribute('data-appearance', appearance);
+      await checkCounts(preview);
+      await testInfo.attach(`preview-${width}`, { body: await card(preview, pendingId).screenshot(), contentType: 'image/png' });
+      await preview.getByRole('button', { name: /全部任务/ }).click();
+      await checkCounts(dialog);
+      await testInfo.attach(`collection-${width}`, { body: await card(dialog, processedId).screenshot(), contentType: 'image/png' });
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+    }
+    expect(detailRequests).toEqual([]);
+    await preview.getByRole('button', { name: /全部任务/ }).click();
+    await card(dialog, pendingId).locator('.assignment-card-primary-link').click();
+    await page.locator('.apr-drawer-toggle').click();
+    await page.locator(`[data-apr-open="${pendingRequest}"]`).click();
+    await page.locator('[data-apr-field="note"]').fill('合成验收，保留原提交。');
+    await page.locator('[data-apr-decide="reject"]').click();
+    await expect(page.locator('[data-apr-modal-body]')).toContainText('处理结果');
+    await page.goBack();
+    await expect(card(dialog, pendingId).getByText(processed, { exact: true })).toBeVisible();
+    await expect(card(dialog, pendingId).getByText(pending, { exact: true })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(card(preview, pendingId).getByText(processed, { exact: true })).toBeVisible();
+
+    // Keep this document in place to exercise the persisted pageshow branch even
+    // when the headless browser excludes a websocket page from its back/forward cache.
+    await page.locator('#classroom-activity-tab-discussion').click();
+    await page.locator('#chat-input').fill('还未发送的课堂草稿');
+    await card(preview, processedId).locator('.cw-task-title').evaluate(link => {
+      link.addEventListener('click', event => event.preventDefault(), { once: true });
+      (link as HTMLAnchorElement).click();
+    });
+    await apply(processedId);
+    const refresh = page.waitForResponse(response =>
+      response.url().endsWith(`/api/approvals/assignments/${processedId}/applicant-counts`));
+    await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+    expect((await refresh).status()).toBe(200);
+    await expect(card(preview, processedId).getByText(pending, { exact: true })).toBeVisible();
+    await expect(card(preview, processedId).getByText(processed, { exact: true })).toHaveCount(0);
+    await expect(page.locator('#chat-input')).toHaveValue('还未发送的课堂草稿');
+  } finally {
+    await student.close();
+  }
 });
 
 test('classroom reopens one task surface without multiplying listeners or sockets and restores task navigation', async ({ page, context }) => {

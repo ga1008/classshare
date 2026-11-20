@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { LqButton, LqCardFrame, LqChipGroup, LqEmpty, LqNativeInput, LqNativeSelect, LqStatus } from '@/components/lq-presentation';
+import { LqButton, LqCardFrame, LqChipGroup, LqEmpty, LqNativeInput, LqNativeSelect, LqStatus, LqStatusChip } from '@/components/lq-presentation';
 import { classroomReadiness } from '@/lib/classroom-bootstrap-ready';
 import { parseClassroomDate, taskCategoryLabel, taskConstraintLabel, taskDeadlineLabel, taskMatchesFilter, taskPresentation, taskPreview, taskHistory, type ClassroomSession, type ClassroomTask } from '@/lib/classroom-workspace';
+import { createComponent } from '../../../static/js/lq/components.js';
 // @ts-expect-error Shared native module is also used by the legacy classroom controller.
 import { resolveClassroomSessionLink } from '../../../static/js/classroom_workspace.js';
 // @ts-expect-error Shared native parser keeps exact attendance intent identical in both hosts.
@@ -17,6 +18,13 @@ const sources: Partial<Record<Panel, string>> = {
   'session-detail': '#teachingSessionModal .teaching-session-modal-body',
   'material-detail': '#classroom-material-detail-modal .modal-content',
 };
+
+function applicantChips({ pendingApplicants, processedApplicants }: Pick<ClassroomTask, 'pendingApplicants' | 'processedApplicants'>) {
+  const chips: { tone: 'warning' | 'success'; label: string }[] = [];
+  if (pendingApplicants && pendingApplicants > 0) chips.push({ tone: 'warning', label: `申请待处理 ${pendingApplicants} 人` });
+  if (processedApplicants && processedApplicants > 0) chips.push({ tone: 'success', label: `申请已处理 ${processedApplicants} 人` });
+  return chips;
+}
 
 function WorkspaceExplanation({ title, text }: { title: string; text: string }) {
   return <LqButton variant="ghost" icon="circle-question-mark" className="ui-explain-trigger cw-explain-button"
@@ -85,6 +93,7 @@ export function ClassroomWorkspace() {
   const storageKey = `classroom-workspace:${teacher ? 'teacher' : 'student'}:${classroomId}:${(config.userInfo as { id?: number })?.id || ''}`;
   const saved = useRef<SavedState>({});
   const [tasks, setTasks] = useState<ClassroomTask[]>((config.assignmentWorkspaceItems || []) as ClassroomTask[]);
+  const applicantFocus = useRef<{ card: HTMLElement; fallback: HTMLElement | null } | null>(null);
   const [session, setSession] = useState<ClassroomSession | null>(explicitSession.current.kind === 'invalid' ? null : explicitSession.current.session || plan?.anchor_session || sessions.find(item => item.is_anchor) || sessions[0] || null);
   const [panel, setPanel] = useState<Panel | null>(null);
   const activePanel = useRef(panel);
@@ -150,7 +159,14 @@ export function ClassroomWorkspace() {
     document.querySelectorAll('[data-cw-loading]').forEach(node => node.remove());
   }, []);
 
-
+  useLayoutEffect(() => {
+    const focus = applicantFocus.current;
+    applicantFocus.current = null;
+    if (focus && (!focus.card.isConnected || focus.card.hidden) &&
+        (document.activeElement === document.body || focus.card.contains(document.activeElement))) {
+      focus.fallback?.focus({ preventScroll: true });
+    }
+  }, [tasks]);
 
   const open = (next: Panel, trigger?: HTMLElement | null) => {
     cancelEditorIntent();
@@ -229,19 +245,56 @@ export function ClassroomWorkspace() {
         : task));
     };
     window.addEventListener('lanshare:assessment-kind-updated', classificationChanged);
+    let applicantRequest: AbortController | undefined;
+    const cancelApplicantRequest = () => applicantRequest?.abort();
+    const refreshApplicants = async (taskId: string) => {
+      cancelApplicantRequest();
+      const request = new AbortController();
+      applicantRequest = request;
+      try {
+        const response = await fetch(`/api/approvals/assignments/${encodeURIComponent(taskId)}/applicant-counts`, { signal: request.signal });
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        if (request.signal.aborted) return;
+        const counts = { pendingApplicants: data.pending_applicant_count, processedApplicants: data.processed_applicant_count };
+        if (String(data.assignment_id) !== taskId || !Object.values(counts).every(value => Number.isSafeInteger(value) && value >= 0)) throw new Error();
+
+        const cardSelector = `[data-assignment-id="${CSS.escape(taskId)}"]`;
+        const slot = document.querySelector(`[data-assignment-task-card]${cardSelector} [data-applicant-chips]`);
+        slot?.replaceChildren(...applicantChips(counts).map(chip => createComponent('chip', { kind: 'status', size: 'sm', ...chip })));
+        const card = document.activeElement?.closest<HTMLElement>(`:is(.cw-task-card, [data-assignment-task-card])${cardSelector}`);
+        if (card) {
+          const dialog = card.closest('.cw-dialog');
+          const fallback = dialog
+            ? dialog.querySelector<HTMLElement>('.cw-filterbar .lq-dropdown__trigger') || dialog.querySelector<HTMLElement>('.cw-filterbar select')
+            : document.querySelector<HTMLElement>('#cw-tasks-preview .cw-task-tabs [aria-pressed="true"]');
+          applicantFocus.current = { card, fallback };
+        }
+        setTasks(previous => previous.map(task => String(task.id) === taskId ? { ...task, ...counts } : task));
+      } catch {
+        if (!request.signal.aborted) window.UI?.showToast?.('申请人数刷新失败，请刷新页面重试。', 'error');
+      }
+    };
     const pageShown = (event: PageTransitionEvent) => {
-      if (!event.persisted || explicitSession.current.kind !== 'none' || hasAttendanceIntent) return;
+      if (!event.persisted) return;
       try { const previous = JSON.parse(sessionStorage.getItem(storageKey) || '{}') as SavedState;
+        if (teacher && previous.restore && previous.panel === 'tasks' && previous.taskId) {
+          void refreshApplicants(previous.taskId);
+        }
+        if (explicitSession.current.kind !== 'none' || hasAttendanceIntent) return;
         if (previous.restore && previous.panel === 'session-detail') document.dispatchEvent(new CustomEvent('classroom:select-session', { detail: { order: previous.sessionOrder, resume: true } }));
       } catch { /* optional */ }
       consumeReturnState();
     };
+    window.addEventListener('pagehide', cancelApplicantRequest);
     window.addEventListener('pageshow', pageShown);
     return () => {
       cancelled = true;
+      cancelApplicantRequest();
       document.removeEventListener('classroom:session-selected', selected);
       document.removeEventListener('classroom:assignment-time-states', times);
       window.removeEventListener('lanshare:assessment-kind-updated', classificationChanged);
+      window.removeEventListener('pagehide', cancelApplicantRequest);
       window.removeEventListener('pageshow', pageShown);
     };
   }, [storageKey]);
@@ -325,7 +378,25 @@ export function ClassroomWorkspace() {
       <p className="cw-task-scope">整个课堂 · 共 {tasks.length} 项</p>
       <LqChipGroup className="cw-task-tabs" label="任务筛选" value={previewFilter} onChange={setPreviewFilter} items={[["actionable", "待处理"], [teacher ? 'draft' : 'submitted', teacher ? '草稿' : '已提交与结果'], ['all', '全部']].map(([value, label]) => ({ value, label, count: tasks.filter(task => taskMatchesFilter(task, teacher, value, '')).length }))} />
       {!previewTasks.length ? <LqEmpty className="cw-empty"  title={!tasks.length ? teacher ? '尚未布置课堂任务。' : '老师尚未发布课堂任务。' : previewFilter === 'actionable' ? '目前没有待处理任务，已提交与历史记录仍可查看。' : '当前筛选没有任务，可切换全部或查看历史。'} />
-        : <ul className="cw-task-cards" key={previewFilter}>{previewTasks.map(task => { const state = taskPresentation(task, teacher); const deadline = taskDeadlineLabel(task); const href = `/assignment/${task.id}`; return <LqCardFrame as="li" title={task.title} className="cw-task-card" key={task.id} attrs={{ "data-assignment-id": task.id }}><div className="cw-task-card-head"><span className="cw-task-kind">{taskCategoryLabel(task)}</span><LqStatus family={teacher ? 'assignment' : 'submission'} state={teacher ? task.status === 'new' ? 'draft' : task.status === 'closed' || task.deadlinePhase === 'closed' ? 'closed' : 'published' : task.submissionStatus} label={state.status} /></div><a className="cw-task-title" data-assignment-link={href} href={href}>{task.title}</a><div className="cw-task-card-foot"><div><span className="cw-meta">{deadline ? `${deadline} ${task.canResubmit ? '重交截止' : '截止'}` : '未设置截止时间'}</span>{taskConstraintLabel(task) && <p className="cw-constraint">{taskConstraintLabel(task)}</p>}</div><LqButton variant={state.actionable ? "prominent" : "soft"} className={`cw-button${state.actionable ? ' is-primary' : ''}`} href={href} attrs={{ "data-assignment-link": href }}>{state.action} →</LqButton></div></LqCardFrame>; })}</ul>}
+        : <ul className="cw-task-cards" key={previewFilter}>{previewTasks.map(task => {
+          const state = taskPresentation(task, teacher);
+          const deadline = taskDeadlineLabel(task);
+          const href = `/assignment/${task.id}`;
+          return <LqCardFrame as="li" title={task.title} className="cw-task-card" key={task.id} attrs={{ "data-assignment-id": task.id }}>
+            <div className="cw-task-card-head">
+              <div className="cw-task-card-tags">
+                <span className="cw-task-kind">{taskCategoryLabel(task)}</span>
+                {teacher && applicantChips(task).map(chip => <LqStatusChip key={chip.tone} {...chip} />)}
+              </div>
+              <LqStatus family={teacher ? 'assignment' : 'submission'} state={teacher ? task.status === 'new' ? 'draft' : task.status === 'closed' || task.deadlinePhase === 'closed' ? 'closed' : 'published' : task.submissionStatus} label={state.status} />
+            </div>
+            <a className="cw-task-title" data-assignment-link={href} href={href}>{task.title}</a>
+            <div className="cw-task-card-foot">
+              <div><span className="cw-meta">{deadline ? `${deadline} ${task.canResubmit ? '重交截止' : '截止'}` : '未设置截止时间'}</span>{taskConstraintLabel(task) && <p className="cw-constraint">{taskConstraintLabel(task)}</p>}</div>
+              <LqButton variant={state.actionable ? "prominent" : "soft"} className={`cw-button${state.actionable ? ' is-primary' : ''}`} href={href} attrs={{ "data-assignment-link": href }}>{state.action} →</LqButton>
+            </div>
+          </LqCardFrame>;
+        })}</ul>}
       {previewFilter === 'actionable' && preview.urgentOverflow > 0 && <LqButton variant="soft" type="button" className="cw-overflow" onClick={() => { setFilter('urgent'); setQuery(''); open('tasks'); }} attrs={{ "data-lq-shape": "surface" }}>还有 {preview.urgentOverflow} 项将在 24 小时内截止，查看紧急任务</LqButton>}
       <div className="cw-secondary-actions"><LqButton variant="soft" type="button" className="cw-button" onClick={() => { setFilter(previewFilter); setQuery(''); open('tasks'); }} attrs={{ "data-cw-task-collection": "" }}>全部任务（{previewCount}） →</LqButton>
       {teacher && <><LqButton variant="prominent" type="button" className="cw-button is-primary" disabled={pendingEditor !== null} loading={pendingEditor === '[data-cw-create-assignment]'} onClick={() => void openEditor('[data-cw-create-assignment]')}>新建作业</LqButton><LqButton variant="soft" type="button" className="cw-button" disabled={pendingEditor !== null} loading={pendingEditor === '[data-cw-assign-exam]'} onClick={() => void openEditor('[data-cw-assign-exam]')}>从试卷库添加</LqButton>{pendingEditor && <span className="cw-meta" role="status">正在准备编辑工具…</span>}</>}

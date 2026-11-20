@@ -389,6 +389,8 @@ main.classroom-workspace-v2 { max-width: 1440px; padding: 24px clamp(16px, 3vw, 
 .cw-task-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; animation: cw-content-in var(--transition-normal); }
 .cw-task-card { padding: 15px; }
 .cw-task-card-head, .cw-task-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+.cw-task-card-tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ls-s-1) var(--ls-s-2); }
+.cw-applicant-chips { display: contents; }
 .cw-task-kind, .cw-task-card .cw-task-status { padding: 3px 8px; border-radius: 6px; background: var(--cw-soft); color: var(--cw-muted); font-size: 12px; max-width: none; }
 .cw-task-card .cw-task-status.is-attention { background: var(--warning-bg, hsl(var(--ls-tone-warning-soft))); color: var(--warning-text, hsl(var(--ls-tone-warning-fg))); }
 .cw-task-title { display: block; padding: 10px 0 12px; color: var(--cw-ink); font-size: 16px; line-height: 1.6; font-weight: 650; text-decoration: none; overflow-wrap: anywhere; }

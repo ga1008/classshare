@@ -68,6 +68,23 @@ class ClassroomWorkspaceProjectionTests(unittest.TestCase):
         self.assertEqual(preview['rows'], [])
         self.assertEqual((preview['total_count'], preview['actionable_count'], preview['submitted_count']), (3, 0, 1))
 
+    def test_ssr_includes_pending_applicants_without_overriding_assignment_state(self):
+        rows = [
+            {'id': 1, 'status': 'closed', 'teacher_submission_metrics': {'pending_applicant_count': 2}},
+            {'id': 2, 'teacher_submission_metrics': {'processed_applicant_count': 4}},
+            {'id': 3, 'teacher_submission_metrics': {'pending_applicant_count': 1, 'grading_count': 2}},
+            {'id': 4, 'teacher_submission_metrics': {'pending_applicant_count': 1, 'pending_grade_count': 2}},
+        ]
+        preview = self._preview(rows, role='teacher')
+        self.assertEqual(3, preview['actionable_count'])
+        self.assertEqual([(row['task']['id'], row['status'], row['action']) for row in preview['rows']],
+                         [(4, '待批改 2', '去批改'), (3, '批改中 2', '查看进度'), (1, '已截止', '查看任务')])
+        teacher_items = build_assignment_workspace_items(role='teacher', assignments=rows)
+        self.assertEqual([(item['pendingApplicants'], item['processedApplicants']) for item in teacher_items],
+                         [(2, 0), (0, 4), (1, 0), (1, 0)])
+        for item in build_assignment_workspace_items(role='student', assignments=rows):
+            self.assertFalse({'pendingApplicants', 'processedApplicants'} & item.keys())
+
     def test_ssr_preview_uses_personal_deadline_and_retains_supplement_penalty(self):
         preview = self._preview([
             {'id': 1, 'is_accepting_submissions': True, 'is_late_submission_open': True, 'late_policy_label': '补交扣10分', 'countdown_at': '2026-09-07 12:00:00'},

@@ -171,6 +171,8 @@ def build_assignment_workspace_items(*, role: str, assignments: list[dict[str, A
         }
         if role == "teacher":
             item.update(pendingGrade=_safe_int(metrics.get("pending_grade_count")),
+                        pendingApplicants=_safe_int(metrics.get("pending_applicant_count")),
+                        processedApplicants=_safe_int(metrics.get("processed_applicant_count")),
                         grading=_safe_int(metrics.get("grading_count")),
                         returned=_safe_int(metrics.get("returned_count")))
         items.append(item)
@@ -209,9 +211,11 @@ def build_assignment_workspace_preview(*, role: str, items: list[dict[str, Any]]
                 return True, 0, f"待批改 {task['pendingGrade']}", "去批改"
             if task.get("status") == "new":
                 return True, 3, "草稿", "继续编辑"
+            pending_applicants = task.get("pendingApplicants", 0) > 0
             if task.get("grading", 0) > 0:
-                return False, 4, f"批改中 {task['grading']}", "查看进度"
-            return False, 5, "已截止" if task.get("status") == "closed" or task.get("deadlinePhase") == "closed" else "已发布", "查看任务"
+                return pending_applicants, 1 if pending_applicants else 4, f"批改中 {task['grading']}", "查看进度"
+            closed = task.get("status") == "closed" or task.get("deadlinePhase") == "closed"
+            return pending_applicants, 1 if pending_applicants else 5, "已截止" if closed else "已发布", "查看任务"
         resubmission = parse_datetime(task.get("resubmissionDueAt"))
         if resubmission and resubmission.tzinfo is None:
             resubmission = resubmission.replace(tzinfo=CHINA_TZ)

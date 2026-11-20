@@ -1,0 +1,6 @@
+{% from 'macros/lq/chip.html' import lq_chip %}
+
+{% macro applicant_chips(pending, processed) -%}
+    {%- if pending %}{{ lq_chip('申请待处理 ' ~ pending ~ ' 人', tone='warning', size='sm') }}{% endif -%}
+    {%- if processed %}{{ lq_chip('申请已处理 ' ~ processed ~ ' 人', tone='success', size='sm') }}{% endif -%}
+{%- endmacro %}

@@ -3,6 +3,7 @@ export type ClassroomTask = {
   accepting: boolean; lateOpen: boolean; deadlinePhase: string; countdownAt: string;
   serverNow: string; canResubmit: boolean; resubmissionDueAt: string; groupPending: boolean;
   pendingGrade?: number; grading?: number; returned?: number;
+  pendingApplicants?: number; processedApplicants?: number;
   latePolicyLabel?: string;
   startsAt?: string;
   createdAt?: string;
@@ -33,8 +34,9 @@ export function taskPresentation(task: ClassroomTask, teacher: boolean, now = Da
   if (teacher) {
     if ((task.pendingGrade || 0) > 0) return { actionable: true, rank: 0, status: `待批改 ${task.pendingGrade}`, action: '去批改' };
     if (task.status === 'new') return { actionable: true, rank: 3, status: '草稿', action: '继续编辑' };
-    if ((task.grading || 0) > 0) return { actionable: false, rank: 4, status: `批改中 ${task.grading}`, action: '查看进度' };
-    return { actionable: false, rank: 5, status: task.status === 'closed' || task.deadlinePhase === 'closed' ? '已截止' : '已发布', action: '查看任务' };
+    const actionable = (task.pendingApplicants || 0) > 0;
+    if ((task.grading || 0) > 0) return { actionable, rank: actionable ? 1 : 4, status: `批改中 ${task.grading}`, action: '查看进度' };
+    return { actionable, rank: actionable ? 1 : 5, status: task.status === 'closed' || task.deadlinePhase === 'closed' ? '已截止' : '已发布', action: '查看任务' };
   }
   const resubmit = task.canResubmit && (!task.resubmissionDueAt || parseClassroomDate(task.resubmissionDueAt) > now);
   if (task.submissionStatus === 'returned') return resubmit

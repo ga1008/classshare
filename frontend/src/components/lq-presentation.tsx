@@ -169,6 +169,9 @@ export function LqStatus({ family, state, label, className }: { family: string; 
   tree.attrs.class = [tree.attrs.class, className].filter(Boolean).join(' ');
   return renderTree(tree);
 }
+export function LqStatusChip({ label, tone }: { label: string; tone: 'warning' | 'success' }) {
+  return renderTree(componentTree('chip', { kind: 'status', size: 'sm', label, tone }));
+}
 /** Adopt the native Card root for a domain composition that already owns its
  * semantic sections. In particular, list items keep their original list DOM. */
 export function LqCardFrame({ as = 'article', title, attrs, className, children }: {

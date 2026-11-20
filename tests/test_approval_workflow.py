@@ -180,6 +180,42 @@ class ApprovalWorkflowTests(unittest.TestCase):
         self.assertEqual(400, error.exception.status_code)
 
     # ------------------------------------------------------------------ listing / access
+    def test_assignment_applicants_count_each_visible_student_once_with_pending_precedence(self):
+        records = [
+            ("hw1", 20, "approved", 7), ("hw1", 20, "pending", 7),
+            ("hw1", 21, "rejected", 7), ("hw1", 21, "approved", 7),
+            ("hw1", 22, "cancelled", 7), ("hw1", 23, "expired", 7),
+            ("hw1", 24, "pending", 8), ("final1", 20, "rejected", 7),
+            ("outside", 21, "pending", 7),
+        ]
+        for assignment_id, student_id, status, reviewer_id in records:
+            request_id = self.conn.execute(
+                """INSERT INTO approval_requests (assignment_id, applicant_role, applicant_user_pk, status, request_type)
+                   VALUES (?, 'student', ?, ?, 'submission_correction')""",
+                (assignment_id, student_id, status),
+            ).lastrowid
+            self.conn.execute(
+                "INSERT INTO approval_request_reviewers (request_id, reviewer_role, reviewer_user_pk) VALUES (?, 'teacher', ?)",
+                (request_id, reviewer_id),
+            )
+        ids = ["hw1", "final1", "empty"]
+        statements = []
+        self.conn.set_trace_callback(statements.append)
+        counts = workflow.count_assignment_applicants(self.conn, TEACHER, ids)
+        self.conn.set_trace_callback(None)
+        self.assertEqual(1, len(statements))
+        self.assertEqual({
+            "hw1": {"pending_applicant_count": 1, "processed_applicant_count": 1},
+            "final1": {"pending_applicant_count": 0, "processed_applicant_count": 1},
+        }, counts)
+        self.assertEqual({}, workflow.count_assignment_applicants(self.conn, STUDENT, ids))
+        self.assertEqual({}, workflow.count_assignment_applicants(self.conn, ADMIN, ids))
+        self.assertEqual({}, workflow.count_assignment_applicants(self.conn, TEACHER, []))
+
+        self.conn.execute("UPDATE approval_requests SET status='approved' WHERE applicant_user_pk=20 AND status='pending'")
+        self.assertEqual({"pending_applicant_count": 0, "processed_applicant_count": 2},
+                         workflow.count_assignment_applicants(self.conn, TEACHER, ids)["hw1"])
+
     def test_incoming_and_mine_scopes_and_detail_permissions(self):
         item = self._create()
         self.conn.commit()

@@ -1,6 +1,7 @@
 {# Same card surfaces as the live workspace; SSR holds real content until the
    client atomically replaces this wrapper, preventing activity-layout jumps. #}
 {% from "macros/ui_explanation.html" import explain_button %}
+{% from "macros/assignment_applicants.html" import applicant_chips %}
 {% set preview = classroom_page.assignment_workspace_preview %}
 {% set teacher = user_info.role == 'teacher' %}
 <div data-cw-loading>
@@ -18,7 +19,13 @@
     <ul class="cw-task-cards">
         {% for row in preview.rows %}{% set task = row.task %}
         <li data-lq-component="surface" class="lq-surface cw-task-card" data-assignment-id="{{ task.id }}">
-            <div class="cw-task-card-head"><span class="cw-task-kind">{{ task.assessment_kind_label or '历史任务' }}</span><span class="cw-task-status is-attention">{{ row.status }}</span></div>
+            <div class="cw-task-card-head">
+                <div class="cw-task-card-tags">
+                    <span class="cw-task-kind">{{ task.assessment_kind_label or '历史任务' }}</span>
+                    {% if teacher %}{{ applicant_chips(task.pendingApplicants, task.processedApplicants) }}{% endif %}
+                </div>
+                <span class="cw-task-status is-attention">{{ row.status }}</span>
+            </div>
             <a class="cw-task-title" data-assignment-link="/assignment/{{ task.id }}" href="/assignment/{{ task.id }}">{{ task.title }}</a>
             <div class="cw-task-card-foot">
                 <div><span class="cw-meta">{% if row.deadline_label %}{{ row.deadline_label }} {{ '重交截止' if task.canResubmit else '截止' }}{% else %}未设置截止时间{% endif %}</span>{% if row.constraint %}<p class="cw-constraint">{{ row.constraint }}</p>{% endif %}</div>
