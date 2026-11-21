@@ -12,6 +12,7 @@ from classroom_app.database import get_db_connection
 from classroom_app.routers import ai as ai_router
 from classroom_app.services import chat_action_service as actions
 from classroom_app.services import chat_platform_query_service as views
+from classroom_app.services import collaboration_service as groups
 from classroom_app.services.poll_service import ORIGIN_CLASSROOM, create_poll
 from classroom_app.services.teacher_classroom_brief_service import build_teacher_classroom_brief, load_roster
 from tests.sqlite_database_fixture import isolated_sqlite_database
@@ -166,6 +167,37 @@ class ClassroomBriefTests(_ClassroomFixture):
 
 
 class ClassroomViewTests(_ClassroomFixture):
+    def test_group_detail_and_brief_share_eligible_roster_and_historical_members(self):
+        with get_db_connection() as conn:
+            conn.execute("INSERT INTO classroom_retake_students(class_offering_id, student_id, status) VALUES (?,?,'confirmed')",
+                         (OFFERING, STUDENTS[-1]))
+            scheme = groups.create_group_scheme(conn, OFFERING, TEACHER_USER,
+                {"name": "期末项目", "min_members": 2, "max_members": 4, "group_count": 2})
+            gid = scheme["groups"][0]["id"]
+            groups.teacher_assign_to_scheme_group(conn, gid, TEACHER_USER, STUDENTS[0])
+
+            def detail():
+                return views.run_platform_view(conn, teacher_id=TEACHER, view="group_scheme_detail",
+                                               params={}, context_class_offering_id=OFFERING)
+
+            self.assertNotIn("孙八", detail()["note"])
+            self.assertIn("已分 1 人，未分 4 人", build_teacher_classroom_brief(conn, TEACHER_USER, OFFERING))
+            groups.teacher_assign_to_scheme_group(conn, gid, TEACHER_USER, STUDENTS[-1])
+            self.assertIn("孙八", detail()["rows"][0]["成员"])
+            self.assertIn("已分 2 人，未分 4 人", build_teacher_classroom_brief(conn, TEACHER_USER, OFFERING))
+            groups.close_group_scheme(conn, scheme["id"], TEACHER_USER)
+            conn.execute("UPDATE students SET enrollment_status='inactive' WHERE id=?", (STUDENTS[0],))
+            history = detail()
+            self.assertIn("张三", history["rows"][0]["成员"])
+            self.assertIn("已存成员 2 人", history["note"])
+            self.assertNotIn("未分组", history["note"])
+            self.assertIn("已存成员 2 人", build_teacher_classroom_brief(conn, TEACHER_USER, OFFERING))
+            with patch.object(groups, "_load_scheme_members", side_effect=RuntimeError("synthetic roster failure")):
+                broken = build_teacher_classroom_brief(conn, TEACHER_USER, OFFERING)
+            self.assertIn("分组成员", broken)
+            self.assertIn("【分组方案】数据不可用", broken)
+            conn.rollback()
+
     def test_student_profile_and_submissions_scoped_to_context_offering(self):
         with get_db_connection() as conn:
             profile = views.run_platform_view(conn, teacher_id=TEACHER, view="student_profile", params={"student_keyword": "李四"}, context_class_offering_id=OFFERING)

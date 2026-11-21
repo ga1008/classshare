@@ -13,18 +13,18 @@ Student:
 from .common import *  # noqa: F401,F403  (shared FastAPI + db imports)
 
 from ...services import group_assignment_service as ga
-from ...services.collaboration_service import create_group_scheme
+from ...services.collaboration_service import create_group_scheme, _scheme_is_expired
 
 
 router = APIRouter()
 
 
-def _scheme_options(conn, class_offering_id: int) -> list[dict[str, Any]]:
-    """Active group schemes for a class offering with assigned-member counts."""
+def _scheme_options(conn, class_offering_id: int, bound_scheme_id: int | None = None) -> list[dict[str, Any]]:
+    """Open schemes and reusable rosters from this classroom, including the current binding."""
     rows = conn.execute(
         """
         SELECT s.id, s.name, s.status, s.group_count, s.min_members, s.max_members,
-               s.created_at,
+               s.created_at, s.expires_at,
                (
                    SELECT COUNT(*)
                    FROM study_group_members m
@@ -33,13 +33,16 @@ def _scheme_options(conn, class_offering_id: int) -> list[dict[str, Any]]:
                ) AS assigned_count
         FROM group_schemes s
         WHERE s.class_offering_id = ?
-          AND s.status = 'active'
         ORDER BY s.created_at DESC, s.id DESC
         """,
         (int(class_offering_id),),
     ).fetchall()
-    return [
-        {
+    options = []
+    for row in rows:
+        history = row["status"] != "active" or _scheme_is_expired(row["expires_at"])
+        if history and not row["assigned_count"] and row["id"] != bound_scheme_id:
+            continue
+        options.append({
             "id": int(row["id"]),
             "name": str(row["name"] or "随机分组"),
             "status": str(row["status"] or ""),
@@ -47,10 +50,10 @@ def _scheme_options(conn, class_offering_id: int) -> list[dict[str, Any]]:
             "min_members": int(row["min_members"] or 0),
             "max_members": int(row["max_members"] or 0),
             "assigned_count": int(row["assigned_count"] or 0),
+            "is_history": history,
             "created_at": str(row["created_at"] or ""),
-        }
-        for row in rows
-    ]
+        })
+    return options
 
 
 @router.get("/assignments/{assignment_id}/group-config", response_class=JSONResponse)
@@ -67,13 +70,15 @@ async def get_group_config(assignment_id: str, user: dict = Depends(get_current_
                 "schemes": [],
             }
         binding = ga.get_assignment_group_binding(conn, assignment_id)
-        schemes = _scheme_options(conn, int(class_offering_id))
+        schemes = _scheme_options(conn, int(class_offering_id), binding["scheme_id"] if binding else None)
+        locked = ga.assignment_has_grouping_activity(conn, assignment_id)
         conn.commit()
     return {
         "status": "success",
         "supported": True,
         "class_offering_id": int(class_offering_id),
         "binding": binding,
+        "lock_reason": ga.GROUP_CONFIG_LOCK_REASON if locked else "",
         "schemes": schemes,
     }
 
@@ -90,7 +95,10 @@ async def set_group_config(assignment_id: str, request: Request, user: dict = De
         class_offering_id = int(class_offering_id)
 
         if action == "unbind":
-            ga.unbind_assignment(conn, assignment_id=assignment_id)
+            try:
+                ga.unbind_assignment(conn, assignment_id=assignment_id)
+            except ValueError as exc:
+                raise HTTPException(409, str(exc)) from exc
             conn.commit()
             return {"status": "success", "binding": None}
 
@@ -116,6 +124,8 @@ async def set_group_config(assignment_id: str, request: Request, user: dict = De
                 scheme_id=int(scheme_id),
                 teacher_id=int(user["id"]),
             )
+        except ga.GroupConfigurationConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         conn.commit()
@@ -128,6 +138,8 @@ async def get_peer_eval(assignment_id: str, user: dict = Depends(get_current_stu
         if not student_can_access_assignment(conn, assignment_id, int(user["id"])):
             raise HTTPException(403, "无权访问该作业")
         context = ga.get_student_group_context(conn, assignment_id, int(user["id"]))
+        group = (context or {}).get("group")
+        my_ratings = ga.get_reviewer_ratings(conn, assignment_id, group["id"], int(user["id"])) if group else {}
         conn.commit()
     if context is None:
         return {"status": "success", "is_group": False}
@@ -137,6 +149,7 @@ async def get_peer_eval(assignment_id: str, user: dict = Depends(get_current_stu
         "in_group": bool(context.get("in_group")),
         "group": context.get("group"),
         "peers": context.get("peers", []),
+        "my_ratings": my_ratings,
     }
 
 

@@ -21,3 +21,15 @@ class MaterialRenderGrantTests(unittest.TestCase):
         with patch.object(grants, "get_user_session") as lookup:
             self.assertIsNone(grants.resolve_material_render_grant("not-signed"))
         lookup.assert_not_called()
+
+    def test_project_render_grant_requires_its_own_audience_and_current_session(self):
+        user = {"id": 7, "role": "student", "session_id": "synthetic-session"}
+        scope = {"classroom": 3, "kind": "activity", "id": 23, "topic": "project-a", "revision": 1}
+        grant = grants.issue_topic_render_grant(user, scope)
+        self.assertIsNone(decode_token_payload(grant))
+        with patch.object(grants, "get_user_session", return_value={"session_id": "synthetic-session"}):
+            self.assertEqual(grants.resolve_topic_render_grant(grant), (scope, {"id": 7, "role": "student"}))
+            self.assertIsNone(grants.resolve_material_render_grant(grant))
+            self.assertIsNone(grants.resolve_topic_render_grant(grants.issue_material_render_grant(23, user)))
+        with patch.object(grants, "get_user_session", return_value={"session_id": "after-sign-out"}):
+            self.assertIsNone(grants.resolve_topic_render_grant(grant))

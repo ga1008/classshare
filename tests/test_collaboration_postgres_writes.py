@@ -25,7 +25,7 @@ class FakeConnection:
 
 
 def _group():
-    return {"id": 10, "name": "Group", "class_offering_id": 20, "assignment_id": None, "teacher_id": 3}
+    return {"id": 10, "name": "Group", "status": "active", "class_offering_id": 20, "assignment_id": None, "teacher_id": 3}
 
 
 class CollaborationPostgresWriteTests(unittest.TestCase):
@@ -116,7 +116,7 @@ class CollaborationPostgresWriteTests(unittest.TestCase):
     def test_upsert_group_submission_uses_insert_returning_helper(self):
         conn = FakeConnection()
 
-        with patch.object(service, "_ensure_group_access", return_value=_group()), patch.object(
+        with patch.object(service, "_lock_group_memberships", return_value=_group()), patch.object(
             service,
             "_can_manage_group",
             return_value=True,
@@ -160,7 +160,7 @@ class CollaborationPostgresWriteTests(unittest.TestCase):
     def test_submit_peer_review_uses_insert_returning_helper(self):
         conn = FakeConnection()
 
-        with patch.object(service, "_ensure_group_access", return_value=_group()), patch.object(
+        with patch.object(service, "_lock_group_memberships", return_value=_group()), patch.object(
             service,
             "_is_active_member",
             return_value=True,

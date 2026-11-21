@@ -23,6 +23,7 @@ from ...services.assignment_lifecycle_service import (
 )
 from ...services.exam_json_service import strip_exam_scoring_for_student
 from ...services.group_assignment_service import (
+    get_reviewer_ratings,
     get_student_display_state,
     get_student_group_context,
 )
@@ -319,19 +320,7 @@ def _build_group_payload(conn: Any, assignment_id: str, student_id: int) -> Opti
             payload["peers"] = context.get("peers", [])
             group = context.get("group") or {}
             if group.get("id"):
-                rows = conn.execute(
-                    """
-                    SELECT reviewee_student_id, contribution_points
-                    FROM peer_reviews
-                    WHERE group_id = ? AND assignment_id = ? AND reviewer_student_id = ?
-                    """,
-                    (int(group["id"]), str(assignment_id), student_id),
-                ).fetchall()
-                payload["my_ratings"] = {
-                    str(row["reviewee_student_id"]): row["contribution_points"]
-                    for row in rows
-                    if row["contribution_points"] is not None
-                }
+                payload["my_ratings"] = get_reviewer_ratings(conn, assignment_id, group["id"], student_id)
         return payload
     except Exception as exc:
         print(f"[WECHAT_MP] 小组载荷加载失败 assignment={assignment_id}: {exc}")

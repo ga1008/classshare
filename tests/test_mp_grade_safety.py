@@ -567,6 +567,11 @@ class NativePostgresGradeSafetyTests(ManualGradeSafetyTests):
             from psycopg import sql
             conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(self.schema)))
         super().setUp()
+        # Every test owns a new schema. A prior test's process-wide DDL cache
+        # cannot supply the approval records consulted during resubmission.
+        from classroom_app.services.approval_workflow_schema import ensure_approval_workflow_schema
+        with self.connection() as conn:
+            ensure_approval_workflow_schema(conn, engine="postgres", force=True)
 
     @contextmanager
     def connection(self):

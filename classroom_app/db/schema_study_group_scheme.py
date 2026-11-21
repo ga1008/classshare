@@ -71,6 +71,12 @@ def ensure_study_group_scheme_schema(conn: Any) -> None:
         "CREATE INDEX IF NOT EXISTS idx_group_schemes_offering "
         "ON group_schemes (class_offering_id, status, created_at DESC, id DESC)"
     )
+    _add_column(conn, "group_schemes", "request_id", "TEXT", engine=engine)
+    _add_column(conn, "group_schemes", "admission_open", "INTEGER NOT NULL DEFAULT 1", engine=engine)
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_group_schemes_request "
+        "ON group_schemes (class_offering_id, created_by_teacher_id, request_id)"
+    )
 
     # Extend study_groups so an existing group can belong to a scheme and carry
     # a shared goal + progress. These are nullable / defaulted so legacy

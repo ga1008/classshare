@@ -39,7 +39,7 @@ def build_capabilities(RequestCapability, spec, ID):
         RequestCapability('http.todos.classroom.delete','删除自己的课堂待办','DELETE','/api/classrooms/{class_offering_id}/todos/{todo_id}','learning','delete_classroom_todo',
             '5d809c7d8b32a95b0ef8f8f084f1d851312775a324e81108c12665ed1d4d3d99',{'path':{'class_offering_id':ID,'todo_id':ID}}),
         RequestCapability('http.collaboration.snapshot','读取可访问课堂的协作状态与自己的邀请','GET','/api/collaboration/classrooms/{class_offering_id}/snapshot','collaboration','collaboration_snapshot',
-            'a9699ebc8af111a0c834090c5e79ede697c787824c29327836b6847111112f7a',{'path':{'class_offering_id':ID}},mutates=False),
+            '1049eef5e83bdde34d62009d8260a4b30ce6bd541dd8882aa058bbd80ca3ce52',{'path':{'class_offering_id':ID}},mutates=False),
         # group_id deliberately omitted: the original candidate query doesn't
         # authorize an arbitrary group before using its membership to filter.
         RequestCapability('http.collaboration.invite_candidates','读取当前课堂可邀请的同学','GET','/api/collaboration/classrooms/{class_offering_id}/invite-candidates','collaboration','get_invite_candidates',

@@ -75,7 +75,7 @@
     "summary": "所有操作入口：`lq-btn` + 变体 + 尺寸 + 可选图标/徽标/加载态；原生 button/a 语义与 type、form、href 保留。",
     "params": "`label, variant(prominent|glass|soft|ghost|destructive|link), size(sm|md|lg), icon, href, type, disabled, aria_disabled, loading, badge, attrs`；纯图标按钮必须给 aria-label。soft 操作按钮可显式透传 `data-lq-action-tone=warning|success` 表示需要处理/已完成状态；未使用槽位的消费者保持原配色。",
     "states": "default / hover / focus-visible / active 按压 / disabled（native）/ aria-disabled / loading（保留名称，防重复提交）。",
-    "rules": "禁止 div 模拟按钮；颜色只来自变体及显式语义槽位，不传任意色；固定宽度长标签用 overflow-label。课次详情的操作共用 LQ Button 规格，知识树等状态另行显示，窄屏允许操作组换行。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。2026-11-12 对齐课次使用 soft 的 warning/success 槽位，动作保持原生 Button，不借用 filter Chip 的 toggle 语义；共享禁用/忙碌/强制颜色配方继续生效。",
+    "rules": "禁止 div 模拟按钮；颜色只来自变体及显式语义槽位，不传任意色；固定宽度长标签用 overflow-label。课次详情的操作共用 LQ Button 规格，知识树等状态另行显示，窄屏允许操作组换行。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。2026-11-12 对齐课次使用 soft 的 warning/success 槽位，动作保持原生 Button，不借用 filter Chip 的 toggle 语义；共享禁用/忙碌/强制颜色配方继续生效。 课堂分组与派题共用 Lucide 图标和 Button。发布、抽组保留短标签，刷新、返回、下载等图标按钮提供可访问名称；触屏仍有独立命中区。",
     "entries": {
       "react": [
         "LqButton"
@@ -154,7 +154,7 @@
     "layer": "component",
     "summary": "平台 select 的共享呈现：`data-lq-dropdown` 由 Dropdown 接管展示，原生 select 继续独占值、表单与校验；combobox/listbox 用于可搜索选择。",
     "params": "`data-lq-dropdown`、`data-lq-selection-owner`（已有 owner）、`data-lq-dropdown-manual`（React 显式生命周期）、`searchable`。",
-    "rules": "同一 select 只能有一个呈现 owner；动态领域 owner 调 `enhanceDropdowns(root)`。",
+    "rules": "同一 select 只能有一个呈现 owner；动态领域 owner 调 `enhanceDropdowns(root)`。课堂分组创建表单保持原生字段和草稿，分组大屏用可搜索的学生选择器区分待分配与需手动加入的学生，重绘或关闭大屏时销毁旧绑定。课堂项目题包沿用同一选择器核对源文件、绑定组与题；切换当前编辑的题目保存字段，局部重绘与 Dialog 退出时释放对应选择器。",
     "entries": {
       "js": [
         "static/js/lq/dropdown.js"

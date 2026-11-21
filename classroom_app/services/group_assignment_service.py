@@ -34,7 +34,7 @@ import hashlib
 import json
 from typing import Any, Optional
 
-from ..db.connection import execute_insert_returning_id, get_configured_db_engine
+from ..db.connection import begin_immediate_transaction, execute_insert_returning_id, get_configured_db_engine
 from ..db.schema_study_group_scheme import ensure_study_group_scheme_schema
 from .grading_revision_service import activate_submission_grade_revision
 
@@ -85,6 +85,14 @@ def _lock_group_grading(conn, assignment_id: Any, group_id: int) -> None:
         ))
 
 
+def _lock_assignment_configuration(conn, assignment_id: str, *, shared: bool = False) -> None:
+    if get_configured_db_engine() == "postgres":
+        function = "pg_advisory_xact_lock_shared" if shared else "pg_advisory_xact_lock"
+        conn.execute(f"SELECT {function}(hashtext(?))", (f"group-config:{assignment_id}",))
+    elif not conn.in_transaction:
+        begin_immediate_transaction(conn)
+
+
 def lock_group_grading_for_student(conn, assignment_id: Any, student_pk_id: int) -> None:
     lock_group_grading_for_students(conn, assignment_id, [student_pk_id])
 
@@ -102,6 +110,7 @@ def lock_group_grading_for_students(conn, assignment_id: Any, student_pk_ids: li
     student_ids = sorted({int(value) for value in student_pk_ids})
     if not student_ids:
         return
+    _lock_assignment_configuration(conn, assignment_id, shared=True)
     placeholders = ",".join("?" for _ in student_ids)
     rows = conn.execute(
         f"""SELECT g.id AS group_id FROM assignment_group_bindings b
@@ -155,6 +164,60 @@ def is_group_assignment(conn, assignment_id: Any) -> bool:
     return get_assignment_group_binding(conn, assignment_id) is not None
 
 
+def assignment_has_grouping_activity(conn, assignment_id: str) -> bool:
+    row = conn.execute(
+        """SELECT 1 WHERE EXISTS (SELECT 1 FROM submissions WHERE assignment_id = ?)
+           OR EXISTS (SELECT 1 FROM peer_reviews WHERE assignment_id = ? AND contribution_points IS NOT NULL)
+           OR EXISTS (SELECT 1 FROM group_assignment_member_results WHERE assignment_id = ?)""",
+        (assignment_id, assignment_id, assignment_id),
+    ).fetchone()
+    return row is not None
+
+
+def scheme_assignment_activity_groups(conn, scheme_id: int, *, lock: bool = False) -> set[int]:
+    """Groups whose roster participates in an existing submission, rating or result.
+
+    Membership writes already own the classroom lock. In PostgreSQL they also
+    lock the scheme before enumerating bindings, then each configuration key
+    before reading activity. Submissions/peer reviews share the same keys.
+    """
+    if lock and get_configured_db_engine() == "postgres":
+        conn.execute("SELECT id FROM group_schemes WHERE id = ? FOR UPDATE", (scheme_id,)).fetchone()
+    bindings = conn.execute(
+        "SELECT assignment_id FROM assignment_group_bindings WHERE scheme_id = ? AND status = 'active' ORDER BY assignment_id",
+        (scheme_id,),
+    ).fetchall()
+    if not bindings:
+        return set()
+    if lock and get_configured_db_engine() == "postgres":
+        for row in bindings:
+            _lock_assignment_configuration(conn, str(row["assignment_id"]))
+    rows = conn.execute(
+        """SELECT DISTINCT m.group_id
+           FROM assignment_group_bindings b JOIN submissions s ON s.assignment_id = b.assignment_id
+           JOIN study_groups g ON g.scheme_id = b.scheme_id
+           JOIN study_group_members m ON m.group_id = g.id AND m.student_id = s.student_pk_id AND m.status = 'active'
+           WHERE b.scheme_id = ? AND b.status = 'active'
+           UNION
+           SELECT p.group_id FROM assignment_group_bindings b JOIN peer_reviews p ON p.assignment_id = b.assignment_id
+           JOIN study_groups g ON g.id = p.group_id AND g.scheme_id = b.scheme_id
+           WHERE b.scheme_id = ? AND b.status = 'active' AND p.contribution_points IS NOT NULL
+           UNION
+           SELECT r.group_id FROM assignment_group_bindings b JOIN group_assignment_member_results r ON r.assignment_id = b.assignment_id
+           JOIN study_groups g ON g.id = r.group_id AND g.scheme_id = b.scheme_id
+           WHERE b.scheme_id = ? AND b.status = 'active'""",
+        (scheme_id, scheme_id, scheme_id),
+    ).fetchall()
+    return {int(row["group_id"]) for row in rows}
+
+
+GROUP_CONFIG_LOCK_REASON = "已有作业提交、组员互评或成绩记录，分组配置已锁定。"
+
+
+class GroupConfigurationConflict(ValueError):
+    """Changing the scoring roster would invalidate existing student work."""
+
+
 def bind_assignment_to_scheme(
     conn,
     *,
@@ -173,8 +236,12 @@ def bind_assignment_to_scheme(
     scheme_id = int(scheme_id)
     class_offering_id = int(class_offering_id)
 
+    postgres = get_configured_db_engine() == "postgres"
+    if not postgres:
+        _lock_assignment_configuration(conn, assignment_id)
+    scheme_lock = " FOR SHARE" if postgres else ""
     scheme = conn.execute(
-        "SELECT id, class_offering_id, status FROM group_schemes WHERE id = ? LIMIT 1",
+        "SELECT id, class_offering_id, status, expires_at FROM group_schemes WHERE id = ?" + scheme_lock,
         (scheme_id,),
     ).fetchone()
     if scheme is None:
@@ -182,6 +249,22 @@ def bind_assignment_to_scheme(
     if int(scheme["class_offering_id"]) != class_offering_id:
         raise ValueError("分组方案不属于当前课堂")
 
+    if postgres:
+        _lock_assignment_configuration(conn, assignment_id)
+    binding = get_assignment_group_binding(conn, assignment_id)
+    if binding and int(binding["scheme_id"]) == scheme_id:
+        return binding
+    if assignment_has_grouping_activity(conn, assignment_id):
+        raise GroupConfigurationConflict(GROUP_CONFIG_LOCK_REASON)
+    from .collaboration_service import _scheme_is_expired
+
+    if scheme["status"] != "active" or _scheme_is_expired(scheme["expires_at"]):
+        has_members = conn.execute(
+            """SELECT 1 FROM study_groups g JOIN study_group_members m ON m.group_id = g.id
+               WHERE g.scheme_id = ? AND m.status = 'active' LIMIT 1""", (scheme_id,),
+        ).fetchone()
+        if not has_members:
+            raise ValueError("已结束的分组方案没有成员，请选择其他方案。")
     now = _now_iso()
     existing = conn.execute(
         "SELECT id FROM assignment_group_bindings WHERE assignment_id = ? LIMIT 1",
@@ -216,6 +299,11 @@ def unbind_assignment(conn, *, assignment_id: Any) -> bool:
     """Remove the group binding for an assignment (keeps history rows)."""
     ensure_study_group_scheme_schema(conn)
     assignment_id = _normalize_assignment_id(assignment_id)
+    _lock_assignment_configuration(conn, assignment_id)
+    if not get_assignment_group_binding(conn, assignment_id):
+        return False
+    if assignment_has_grouping_activity(conn, assignment_id):
+        raise GroupConfigurationConflict(GROUP_CONFIG_LOCK_REASON)
     cursor = conn.execute(
         "UPDATE assignment_group_bindings SET status = ?, updated_at = ? WHERE assignment_id = ? AND status = ?",
         (BINDING_STATUS_REMOVED, _now_iso(), assignment_id, BINDING_STATUS_ACTIVE),
@@ -304,6 +392,16 @@ def get_student_group_context(conn, assignment_id: Any, student_pk_id: int) -> O
 # =============================================================================
 # Peer contribution ratings (stored in peer_reviews.contribution_points)
 # =============================================================================
+def get_reviewer_ratings(conn, assignment_id: str, group_id: int, reviewer_id: int) -> dict[str, int]:
+    rows = conn.execute(
+        """SELECT reviewee_student_id, contribution_points FROM peer_reviews
+           WHERE group_id = ? AND assignment_id = ? AND reviewer_student_id = ?
+           AND contribution_points IS NOT NULL""",
+        (int(group_id), str(assignment_id), int(reviewer_id)),
+    ).fetchall()
+    return {str(row["reviewee_student_id"]): int(row["contribution_points"]) for row in rows}
+
+
 def _upsert_contribution(
     conn,
     *,
@@ -315,11 +413,12 @@ def _upsert_contribution(
     points: int,
     is_auto: bool,
     only_if_missing: bool = False,
-) -> None:
+) -> bool:
+    """Return whether this rating changed the effective points for settlement."""
     now = _now_iso()
     existing = conn.execute(
         """
-        SELECT id, contribution_points FROM peer_reviews
+        SELECT id, contribution_points, is_auto_default FROM peer_reviews
         WHERE group_id = ? AND assignment_id = ?
           AND reviewer_student_id = ? AND reviewee_student_id = ?
         LIMIT 1
@@ -329,7 +428,10 @@ def _upsert_contribution(
     if existing:
         # Never overwrite an existing rating when we're only filling defaults.
         if only_if_missing and existing["contribution_points"] is not None:
-            return
+            return False
+        same_points = existing["contribution_points"] == int(points)
+        if same_points and bool(existing["is_auto_default"]) == is_auto:
+            return False
         conn.execute(
             """
             UPDATE peer_reviews
@@ -338,7 +440,7 @@ def _upsert_contribution(
             """,
             (int(points), 1 if is_auto else 0, now, int(existing["id"])),
         )
-        return
+        return not same_points
     execute_insert_returning_id(
         conn,
         """
@@ -356,6 +458,7 @@ def _upsert_contribution(
             int(points), 1 if is_auto else 0, now, now,
         ),
     )
+    return True
 
 
 def ensure_default_peer_contributions(
@@ -416,6 +519,8 @@ def submit_peer_contributions(
     assignment. Validates group membership server-side. Any teammate omitted
     from ``ratings`` is filled with the fair default."""
     assignment_id = _normalize_assignment_id(assignment_id)
+    if get_configured_db_engine() == "sqlite":
+        _lock_assignment_configuration(conn, assignment_id, shared=True)
     lock_group_grading_for_student(conn, assignment_id, int(reviewer_id))
     context = get_student_group_context(conn, assignment_id, int(reviewer_id))
     if not context or not context.get("in_group"):
@@ -424,11 +529,12 @@ def submit_peer_contributions(
     class_offering_id = _group_class_offering_id(conn, group_id)
     peer_ids = {int(p["student_id"]) for p in context["peers"]}
     saved = 0
+    scores_changed = False
     for reviewee_id, points in (ratings or {}).items():
         rid = _safe_int(reviewee_id)
         if rid is None or rid not in peer_ids:
             continue
-        _upsert_contribution(
+        changed = _upsert_contribution(
             conn,
             class_offering_id=class_offering_id,
             group_id=group_id,
@@ -438,11 +544,18 @@ def submit_peer_contributions(
             points=clamp_peer_points(points),
             is_auto=False,
         )
+        scores_changed = scores_changed or changed
         saved += 1
     # Fill defaults for any teammate the student skipped.
     ensure_default_peer_contributions(
         conn, assignment_id=assignment_id, group_id=group_id, reviewer_id=int(reviewer_id)
     )
+    # Grading can finish before the last submitter's peer-evaluation dialog.
+    # Reconcile an already revealed group with the ratings we just accepted.
+    if scores_changed:
+        result = _load_member_result(conn, assignment_id, int(reviewer_id))
+        if result and result.get("revealed") and int(result["group_id"]) == group_id:
+            try_finalize_group(conn, assignment_id=assignment_id, group_id=group_id)
     return {"saved": saved, "group_id": group_id, "peer_count": len(peer_ids)}
 
 

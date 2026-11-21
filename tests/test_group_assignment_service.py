@@ -5,6 +5,11 @@ modules so the SQL is exercised end to end."""
 import os
 import sqlite3
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from threading import Event
 
 os.environ.setdefault("DB_ENGINE", "sqlite")
 
@@ -40,6 +45,7 @@ class GroupAssignmentLifecycleTests(unittest.TestCase):
                 id INTEGER PRIMARY KEY,
                 name TEXT,
                 student_id_number TEXT,
+                email TEXT,
                 avatar_file_hash TEXT,
                 enrollment_status TEXT DEFAULT 'active'
             )
@@ -132,6 +138,108 @@ class GroupAssignmentLifecycleTests(unittest.TestCase):
                 scheme_id=SCHEME_ID,
                 teacher_id=7,
             )
+
+    def test_finished_scheme_can_be_reused_by_a_later_assignment(self):
+        from classroom_app.routers.homework_parts.group_assignments import _scheme_options
+
+        for sid in (1, 2):
+            self._add_student(sid, f"成员{sid}")
+        self._make_group(900, 1, [1, 2])
+        self.conn.execute("UPDATE group_schemes SET status = 'closed' WHERE id = ?", (SCHEME_ID,))
+        self.conn.executemany(
+            """INSERT INTO group_schemes (id, class_offering_id, name, status, created_by_teacher_id)
+               VALUES (?, ?, '另一方案', 'closed', 7)""",
+            [(501, CLASS_OFFERING_ID), (502, CLASS_OFFERING_ID + 1)],
+        )
+        self.assertEqual(
+            [(s["id"], s["is_history"], s["assigned_count"]) for s in _scheme_options(self.conn, CLASS_OFFERING_ID)],
+            [(SCHEME_ID, True, 2)],
+        )
+        with self.assertRaisesRegex(ValueError, "没有成员"):
+            ga.bind_assignment_to_scheme(self.conn, assignment_id=ASSIGNMENT_ID,
+                class_offering_id=CLASS_OFFERING_ID, scheme_id=501, teacher_id=7)
+        self._bind()
+        self.assertEqual(ga.get_student_group_context(self.conn, ASSIGNMENT_ID, 1)["peers"][0]["student_id"], 2)
+
+    def test_configuration_changes_cannot_reinterpret_existing_work(self):
+        for sid in (1, 2, 3):
+            self._add_student(sid, f"成员{sid}")
+        self._make_group(900, 1, [1, 2])
+        self._make_group(901, 2, [3])
+        self.conn.execute(
+            """INSERT INTO group_schemes (id, class_offering_id, name, status, created_by_teacher_id)
+               VALUES (501, ?, '另一方案', 'active', 7)""", (CLASS_OFFERING_ID,),
+        )
+        self._bind()
+        self.assertEqual(ga.scheme_assignment_activity_groups(self.conn, SCHEME_ID), set())
+        ga.submit_peer_contributions(self.conn, assignment_id=ASSIGNMENT_ID, reviewer_id=1, ratings={2: 18})
+        self.assertEqual(ga.scheme_assignment_activity_groups(self.conn, SCHEME_ID), {900})
+        with self.assertRaisesRegex(ValueError, "锁定"):
+            ga.unbind_assignment(self.conn, assignment_id=ASSIGNMENT_ID)
+        self._submit_and_grade(3, 70)
+        self.assertEqual(ga.scheme_assignment_activity_groups(self.conn, SCHEME_ID), {900, 901})
+        with self.assertRaisesRegex(ValueError, "锁定"):
+            ga.bind_assignment_to_scheme(self.conn, assignment_id=ASSIGNMENT_ID,
+                class_offering_id=CLASS_OFFERING_ID, scheme_id=501, teacher_id=7)
+        self._bind()  # Retrying a successful save is harmless even after work starts.
+
+    def test_cannot_convert_existing_individual_submission_to_group(self):
+        self._submit_and_grade(1, 70)
+        with self.assertRaisesRegex(ValueError, "锁定"):
+            self._bind()
+        self.assertFalse(ga.is_group_assignment(self.conn, ASSIGNMENT_ID))
+
+    def test_last_submitters_peer_rating_matches_published_grade_and_revision(self):
+        for sid in (1, 2):
+            self._add_student(sid, f"成员{sid}")
+        self._make_group(900, 1, [1, 2])
+        self._bind()
+        for sid in (1, 2):
+            ga.record_member_work_score(self.conn, self._submit_and_grade(sid, 80))
+        self.assertEqual(self._member_result(1)["final_score"], 80)
+        for _ in range(2):
+            ga.submit_peer_contributions(self.conn, assignment_id=ASSIGNMENT_ID, reviewer_id=2, ratings={1: 19})
+        self.assertEqual(ga.get_reviewer_ratings(self.conn, ASSIGNMENT_ID, 900, 2), {"1": 19})
+        self.assertEqual(ga.get_reviewer_ratings(self.conn, ASSIGNMENT_ID, 900, 1), {"2": 16})
+        self.assertEqual(self._member_result(1)["final_score"], 83)
+        row = self.conn.execute(
+            """SELECT s.score, r.score FROM submissions s JOIN submission_grade_revisions r
+               ON r.id = s.active_grade_revision_id WHERE s.student_pk_id = 1""",
+        ).fetchone()
+        self.assertEqual(tuple(row), (83, 83))
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM submission_grade_revisions").fetchone()[0], 3)
+
+    def test_peer_evaluation_waits_for_last_grade_transaction(self):
+        for sid in (1, 2):
+            self._add_student(sid, f"成员{sid}")
+        self._make_group(900, 1, [1, 2])
+        self._bind()
+        ga.record_member_work_score(self.conn, self._submit_and_grade(1, 80))
+        last = self._submit_and_grade(2, None, status="submitted")
+        db_path = Path(self.enterContext(TemporaryDirectory())) / "assessment.sqlite3"
+        waiting = Event()
+
+        def rate_from_student_page():
+            with closing(sqlite3.connect(db_path)) as peer:
+                peer.row_factory = sqlite3.Row
+                peer.set_trace_callback(lambda sql: waiting.set() if sql == "BEGIN IMMEDIATE" else None)
+                ga.submit_peer_contributions(peer, assignment_id=ASSIGNMENT_ID, reviewer_id=2, ratings={1: 19})
+                peer.commit()
+
+        with closing(sqlite3.connect(db_path)) as grader:
+            grader.row_factory = sqlite3.Row
+            self.conn.backup(grader)
+            grader.execute("UPDATE submissions SET score=80, status='graded' WHERE id=?", (last,))
+            self.assertTrue(ga.record_member_work_score(grader, last)["finalized"])
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                student = pool.submit(rate_from_student_page)
+                try:
+                    self.assertTrue(waiting.wait(3))
+                    self.assertFalse(student.done())
+                finally:
+                    grader.commit()
+                student.result(timeout=5)
+            self.assertEqual(ga.get_student_display_state(grader, ASSIGNMENT_ID, 1)["final_score"], 83)
 
     def test_blended_score_and_gating(self):
         for sid, name in [(1, "甲"), (2, "乙"), (3, "丙")]:

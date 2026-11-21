@@ -9,6 +9,7 @@ from ...services.base_resource_modes_service import (
     build_mode_permissions,
 )
 from ...services.material_attributes_service import update_material_attributes
+from ...services.material_zip_service import extract_zip_upload_entries as _extract_zip_upload_entries
 from ...services.material_publication_service import (
     get_classroom_publication_nodes_for_offerings,
     get_restricted_material_paths,
@@ -22,86 +23,6 @@ from ...services.ordinary_grade_record_service import classify_ordinary_grade_as
 
 
 router = APIRouter()
-
-# zip 自动解压护栏：压缩包 ≤200MB，解压后总量 ≤500MB、单文件 ≤100MB、条目 ≤3000。
-ZIP_UPLOAD_MAX_COMPRESSED_BYTES = 200 * 1024 * 1024
-ZIP_UPLOAD_MAX_TOTAL_BYTES = 500 * 1024 * 1024
-ZIP_UPLOAD_MAX_FILE_BYTES = 100 * 1024 * 1024
-ZIP_UPLOAD_MAX_ENTRY_COUNT = 3000
-_ZIP_IGNORED_SEGMENTS = {"__macosx", ".ds_store", ".git", "thumbs.db"}
-
-
-def _decode_zip_member_name(info: zipfile.ZipInfo) -> str:
-    """zip 条目名编码兜底：无 UTF-8 标记时按 GBK 还原中文文件名。"""
-    name = info.filename
-    if info.flag_bits & 0x800:
-        return name
-    try:
-        return name.encode("cp437").decode("gbk")
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        return name
-
-
-def _extract_zip_upload_entries(zip_name: str, payload: bytes) -> list[dict]:
-    """把上传的 zip 解压成上传条目列表（内存解压 + 路径/体积护栏）。
-
-    返回 [{"relative_path": str, "payload": bytes, "content_type": None}]。
-    """
-    if len(payload) > ZIP_UPLOAD_MAX_COMPRESSED_BYTES:
-        raise HTTPException(400, f"压缩包 {zip_name} 超过 {ZIP_UPLOAD_MAX_COMPRESSED_BYTES // (1024 * 1024)}MB 限制")
-
-    import io
-
-    try:
-        archive = zipfile.ZipFile(io.BytesIO(payload))
-    except zipfile.BadZipFile:
-        raise HTTPException(400, f"压缩包 {zip_name} 无法解析，请确认是有效的 .zip 文件")
-
-    stem = Path(zip_name).stem.strip() or "archive"
-    raw_entries: list[tuple[str, zipfile.ZipInfo]] = []
-    total_bytes = 0
-    with archive:
-        for info in archive.infolist():
-            if info.is_dir():
-                continue
-            member_name = _decode_zip_member_name(info).replace("\\", "/").strip("/")
-            if not member_name:
-                continue
-            segments = [seg for seg in member_name.split("/") if seg and seg != "."]
-            if not segments:
-                continue
-            if any(seg == ".." for seg in segments):
-                raise HTTPException(400, f"压缩包 {zip_name} 含有非法路径（..）")
-            if any(seg.lower() in _ZIP_IGNORED_SEGMENTS for seg in segments):
-                continue
-            if re.match(r"^[a-zA-Z]:", segments[0]):
-                raise HTTPException(400, f"压缩包 {zip_name} 含有非法路径（盘符）")
-            if info.file_size > ZIP_UPLOAD_MAX_FILE_BYTES:
-                raise HTTPException(400, f"压缩包内文件 {member_name} 超过单文件大小限制")
-            total_bytes += int(info.file_size)
-            if total_bytes > ZIP_UPLOAD_MAX_TOTAL_BYTES:
-                raise HTTPException(400, f"压缩包 {zip_name} 解压后总体积超过限制")
-            raw_entries.append(("/".join(segments), info))
-            if len(raw_entries) > ZIP_UPLOAD_MAX_ENTRY_COUNT:
-                raise HTTPException(400, f"压缩包 {zip_name} 文件数量超过 {ZIP_UPLOAD_MAX_ENTRY_COUNT} 限制")
-
-        if not raw_entries:
-            raise HTTPException(400, f"压缩包 {zip_name} 中没有可导入的文件")
-
-        # 若 zip 内已有唯一顶层目录则直接使用；否则用压缩包名做顶层目录。
-        top_levels = {path.split("/", 1)[0] for path, _info in raw_entries}
-        wrap_with_stem = len(top_levels) != 1
-
-        entries: list[dict] = []
-        for member_path, info in raw_entries:
-            relative_path = f"{stem}/{member_path}" if wrap_with_stem else member_path
-            with archive.open(info) as handle:
-                data = handle.read(ZIP_UPLOAD_MAX_FILE_BYTES + 1)
-            if len(data) > ZIP_UPLOAD_MAX_FILE_BYTES:
-                raise HTTPException(400, f"压缩包内文件 {member_path} 超过单文件大小限制")
-            entries.append({"relative_path": relative_path, "payload": data, "content_type": None})
-    return entries
-
 
 def _save_payload_bytes_globally(payload: bytes) -> dict:
     """按内容哈希落盘（与 save_file_globally 同一存储布局），返回 {hash, size}。"""

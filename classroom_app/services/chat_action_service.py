@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import json
 import math
-import random
 import re
 import secrets
 from datetime import datetime, timedelta
@@ -106,18 +105,9 @@ def _load_offering(conn: Any, user: dict[str, Any], class_offering_id: int) -> d
 
 
 def _eligible_students(conn: Any, class_offering_id: int, *, include_retake: bool) -> list[dict[str, Any]]:
-    from .offering_membership_service import load_offering_students
+    from .collaboration_service import _scheme_class_students
 
-    students = load_offering_students(conn, int(class_offering_id), active_only=True)
-    if include_retake or not students:
-        return students
-    try:
-        from .classroom_retake_service import get_confirmed_retake_students
-
-        retake_ids = {int(item.get("student_id") or 0) for item in get_confirmed_retake_students(conn, class_offering_id=int(class_offering_id))}
-    except Exception:  # noqa: BLE001 — retake registry is optional
-        retake_ids = set()
-    return [s for s in students if int(s["id"]) not in retake_ids]
+    return [s for s in _scheme_class_students(conn, class_offering_id) if include_retake or not s["exempt"]]
 
 
 def _as_int(value: Any, default: int | None = None) -> int | None:
@@ -328,36 +318,17 @@ def _execute_create_random_groups(conn: Any, user: dict[str, Any], offering: dic
             "min_members": max(1, base),
             "max_members": min(12, base + (1 if rem else 0)),
             "group_count": group_count,
+            "allocation_mode": "all",
+            "include_retake": bool(params.get("include_retake")),
         },
     )
     scheme_id = int(scheme["id"])
-    groups = collab._scheme_group_rows(conn, scheme_id)  # noqa: SLF001 — same placement path as redistribute_scheme_groups
-    pool = [int(s["id"]) for s in students]
-    random.shuffle(pool)
-    now = _iso(_now())
-    cursor = 0
-    for position, group in enumerate(groups[:group_count]):
-        size = base + (1 if position < rem else 0)
-        chunk = pool[cursor : cursor + size]
-        cursor += size
-        for student_id in chunk:
-            collab._upsert_member(  # noqa: SLF001
-                conn,
-                group_id=int(group["id"]),
-                student_id=int(student_id),
-                member_role="member",
-                added_by_role="teacher",
-                added_by_user_pk=int(user["id"]),
-            )
-        conn.execute("UPDATE study_groups SET updated_at = ? WHERE id = ?", (now, int(group["id"])))
-    collab._cleanup_empty_scheme_groups(conn, scheme_id)  # noqa: SLF001
     leaders_assigned = 0
+    detail = scheme
     if params.get("auto_leaders", True):
-        try:
-            leaders_assigned = int(collab.auto_assign_scheme_leaders(conn, scheme_id, user).get("assigned") or 0)
-        except HTTPException:
-            leaders_assigned = 0
-    detail = collab._serialize_scheme(conn, collab._load_scheme(conn, scheme_id), user)  # noqa: SLF001
+        result = collab.auto_assign_scheme_leaders(conn, scheme_id, user)
+        leaders_assigned = int(result["assigned"])
+        detail = result["scheme"]
     group_lines = []
     for group in detail.get("groups") or []:
         names = [f"{m.get('name')}{'(组长)' if m.get('is_leader') else ''}" for m in group.get("members") or []]

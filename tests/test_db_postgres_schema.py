@@ -420,6 +420,8 @@ class PostgresSchemaValidationTests(unittest.TestCase):
             "schema_session_learning_materials.py",
             "schema_smart_schedule.py",
             "schema_study_group_scheme.py",
+            "schema_project_topic_packages.py",
+            "schema_project_topic_dispatch.py",
             "schema_teacher_evaluations.py",
             "schema_wechat_mp.py",
         }

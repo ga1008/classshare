@@ -6,6 +6,7 @@ from unittest.mock import patch
 import uuid
 
 from classroom_app.db import schema_scheduler, schema_study_group_scheme
+from classroom_app.db.schema_retake import ensure_retake_schema
 from classroom_app.routers import learning, collaboration
 from classroom_app.services import agent_platform_request_registry as registry
 from classroom_app.services.agent_platform_request_learning import build_capabilities
@@ -29,6 +30,7 @@ class LearningRequestFixture(PlatformRequestFixture):
         self.patched('classroom_app.services.todo_service.china_now',return_value=fixed)
         self.patched('classroom_app.services.collaboration_service._now_iso',return_value=fixed.isoformat())
         with self.connection() as conn:
+            ensure_retake_schema(conn, engine="sqlite", force=True)
             conn.executescript("""
               ALTER TABLE students ADD COLUMN avatar_file_hash TEXT DEFAULT '';
               ALTER TABLE class_offerings ADD COLUMN semester_id INTEGER;

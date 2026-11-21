@@ -171,6 +171,7 @@ const answeredCount = computed(
 
 /** 组员互评（20 分制）本地评分表 */
 const peerRatings = reactive<Record<string, number>>({});
+const defaultPeerPoints = 16;
 const peerSaving = ref(false);
 
 const showPeerEval = computed(
@@ -212,7 +213,7 @@ function initPeerRatings(): void {
   for (const peer of group.peers) {
     const key = String(peer.student_id);
     const existing = group.my_ratings?.[key];
-    peerRatings[key] = typeof existing === "number" ? existing : 15;
+    peerRatings[key] = typeof existing === "number" ? existing : defaultPeerPoints;
   }
 }
 
@@ -230,7 +231,7 @@ async function submitPeerRatings(): Promise<void> {
       data: {
         ratings: detail.value.group.peers.map((peer) => ({
           reviewee_student_id: peer.student_id,
-          points: peerRatings[String(peer.student_id)] ?? 15,
+          points: peerRatings[String(peer.student_id)] ?? defaultPeerPoints,
         })),
       },
     });
@@ -955,13 +956,13 @@ onUnload(() => {
         <!-- 组员互评（20 分制，仅教师可见结果） -->
         <view v-if="showPeerEval" class="peer-card glass-card">
           <text class="section-title">组员互评 · {{ detail.group?.group_name }}</text>
-          <text class="peer-card__hint">给每位组员的本次贡献打分（0-20 分），仅教师可见，可随时修改。</text>
+          <text class="peer-card__hint">给每位组员的本次贡献打 1–20 分。未填写按 16 分计入，组员之间互评保密。</text>
           <view v-for="peer in detail.group?.peers" :key="peer.student_id" class="peer-row">
             <text class="peer-row__name">{{ peer.name }}</text>
             <slider
               class="peer-row__slider"
-              :value="peerRatings[String(peer.student_id)] ?? 15"
-              :min="0"
+              :value="peerRatings[String(peer.student_id)] ?? defaultPeerPoints"
+              :min="1"
               :max="20"
               :step="1"
               show-value

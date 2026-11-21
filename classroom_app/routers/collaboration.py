@@ -5,6 +5,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from ..config import MAX_UPLOAD_SIZE_BYTES
 from ..database import get_db_connection
@@ -23,6 +24,8 @@ from ..services.collaboration_service import (
     create_group_scheme,
     create_group_submission_blog_draft,
     create_student_group,
+    ensure_group_chat_writable,
+    fill_scheme_groups,
     invite_to_group,
     join_group,
     leave_group,
@@ -39,6 +42,7 @@ from ..services.collaboration_service import (
     resolve_group_chat_attachment_download,
     resolve_group_file_download,
     set_group_goal_progress,
+    set_scheme_admission,
     submit_peer_review,
     teacher_assign_to_scheme_group,
     update_group,
@@ -91,7 +95,7 @@ def _group_class_offering_id(conn, group_id: int) -> int:
 
 
 @router.get("/classrooms/{class_offering_id}/snapshot", response_class=JSONResponse)
-async def collaboration_snapshot(class_offering_id: int, user: dict = Depends(get_current_user)):
+def collaboration_snapshot(class_offering_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         snapshot = load_collaboration_snapshot(conn, class_offering_id, user)
     return {"status": "ok", "snapshot": snapshot}
@@ -110,19 +114,32 @@ def _scheme_class_offering_id(conn, scheme_id: int) -> int:
 @router.post("/classrooms/{class_offering_id}/schemes", response_class=JSONResponse)
 async def create_random_group_scheme(class_offering_id: int, request: Request, user: dict = Depends(get_current_user)):
     payload = await _json_payload(request)
+    return await run_in_threadpool(_create_scheme_response, class_offering_id, user, payload)
+
+
+def _create_scheme_response(class_offering_id, user, payload):
     with get_db_connection() as conn:
         scheme = create_group_scheme(conn, class_offering_id, user, payload)
-        snapshot = load_collaboration_snapshot(conn, class_offering_id, user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, class_offering_id, user)
     return {"status": "ok", "message": "分组方案已创建", "scheme": scheme, "snapshot": snapshot}
 
 
+@router.post("/schemes/{scheme_id}/fill", response_class=JSONResponse)
+def fill_random_group_scheme(scheme_id: int, user: dict = Depends(get_current_user)):
+    with get_db_connection() as conn:
+        count = fill_scheme_groups(conn, scheme_id, user)
+        conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
+    return {"status": "ok", "message": f"已随机分配 {count} 名学生" if count else "参与学生均已分组", "snapshot": snapshot}
+
+
 @router.post("/schemes/{scheme_id}/random-join", response_class=JSONResponse)
-async def random_join_group_scheme(scheme_id: int, user: dict = Depends(get_current_user)):
+def random_join_group_scheme(scheme_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         result = random_join_scheme(conn, scheme_id, user)
-        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
     return {
         "status": "ok",
         "message": f"已加入「{result['group_name']}」",
@@ -172,6 +189,8 @@ async def upload_group_chat_attachments(
         raise HTTPException(400, "请选择要上传的文件")
     if len(files) > MAX_GROUP_CHAT_ATTACHMENTS:
         raise HTTPException(400, f"单条消息最多上传 {MAX_GROUP_CHAT_ATTACHMENTS} 个附件")
+    with get_db_connection() as conn:
+        ensure_group_chat_writable(conn, group_id, user)
     payloads = []
     for file in files:
         if not file.filename:
@@ -240,6 +259,18 @@ async def download_group_chat_attachment(
     )
 
 
+@router.put("/schemes/{scheme_id}/admission")
+def change_scheme_admission(scheme_id: int, payload: dict, user: dict = Depends(get_current_user)):
+    is_open = payload.get("open")
+    if not isinstance(is_open, bool):
+        raise HTTPException(400, "请选择开启或暂停学生抽组")
+    with get_db_connection() as conn:
+        set_scheme_admission(conn, scheme_id, user, is_open)
+        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
+        conn.commit()
+    return {"status": "ok", "message": "学生抽组已开启" if is_open else "学生抽组已暂停", "snapshot": snapshot}
+
+
 @router.post("/schemes/{scheme_id}/close", response_class=JSONResponse)
 async def close_random_group_scheme(scheme_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
@@ -268,7 +299,7 @@ async def redistribute_random_scheme_groups(scheme_id: int, user: dict = Depends
         redistribute_scheme_groups(conn, scheme_id, user)
         snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
         conn.commit()
-    return {"status": "ok", "message": "已重新分配少人组，所有小组人数均已达标", "snapshot": snapshot}
+    return {"status": "ok", "message": "各组人数已达标，组数和原有组长已保留", "snapshot": snapshot}
 
 
 @router.post("/groups/{group_id}/assign-leader", response_class=JSONResponse)

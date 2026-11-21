@@ -1,5 +1,6 @@
 import sqlite3
 import sys
+from contextlib import closing
 
 from .. import config
 from .connection import get_db_connection
@@ -63,6 +64,8 @@ from .schema_career_path import ensure_career_path_schema
 from .schema_scheduler import ensure_scheduler_schema
 from .schema_gongwen import ensure_gongwen_schema
 from .schema_study_group_scheme import ensure_study_group_scheme_schema
+from .schema_project_topic_packages import ensure_project_topic_packages_schema
+from .schema_project_topic_dispatch import ensure_project_topic_dispatch_schema
 from .seeds import init_default_exam_paper
 from .startup_lock import postgres_schema_startup_guard
 
@@ -210,6 +213,10 @@ def _init_database_unlocked():
             print("[DB] PostgreSQL study-group scheme tables ensured")
         except Exception as exc:
             print(f"[DB] PostgreSQL study-group scheme schema step skipped: {exc}")
+        with closing(get_db_connection()) as topic_conn:
+            ensure_project_topic_packages_schema(topic_conn)
+            ensure_project_topic_dispatch_schema(topic_conn)
+            topic_conn.commit()
         # The poll / vote tables follow the same runtime-managed, engine-aware
         # pattern (shared cross-class vote data lives here).
         try:
@@ -471,6 +478,8 @@ def _init_database_unlocked():
             ensure_grade_publication_schema(conn, engine="sqlite")
             ensure_classroom_activity_schema(conn)
             ensure_study_group_scheme_schema(conn)
+            ensure_project_topic_packages_schema(conn)
+            ensure_project_topic_dispatch_schema(conn)
             ensure_poll_schema(conn)
             ensure_wanderer_schema(conn, allow_schema_changes=True)
             ensure_wanderer_world_schema(conn, allow_schema_changes=True)

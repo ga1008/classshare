@@ -890,7 +890,7 @@ def _view_group_scheme_detail(conn, teacher_id: int, params: dict[str, Any]) -> 
     keyword = _kw(params, "scheme_keyword")
     scheme = conn.execute(
         """
-        SELECT id, name, status, min_members, max_members FROM group_schemes
+        SELECT id, name, status, min_members, max_members, expires_at, metadata_json FROM group_schemes
         WHERE class_offering_id = ? AND (? = '' OR lower(name) LIKE ? ESCAPE '\\')
         ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, created_at DESC, id DESC LIMIT 1
         """,
@@ -898,31 +898,24 @@ def _view_group_scheme_detail(conn, teacher_id: int, params: dict[str, Any]) -> 
     ).fetchone()
     if not scheme:
         return {"title": "分组方案明细", "rows": [], "note": f"{_offering_label(offering)} 没有匹配的分组方案。"}
-    groups = conn.execute(
-        "SELECT id, name, leader_student_id FROM study_groups WHERE scheme_id = ? AND status = 'active' ORDER BY group_index, id",
-        (int(scheme["id"]),),
-    ).fetchall()
-    from .offering_membership_service import load_offering_students
+    from .teacher_classroom_brief_service import load_scheme_rosters
 
-    students = {int(s["id"]): s for s in load_offering_students(conn, int(offering["id"]), active_only=True)}
-    grouped: set[int] = set()
+    detail = load_scheme_rosters(conn, int(offering["id"]), [dict(scheme)])[0]
     rows = []
-    for group in groups:
-        members = conn.execute(
-            "SELECT student_id FROM study_group_members WHERE group_id = ? AND status = 'active' ORDER BY joined_at, id",
-            (int(group["id"]),),
-        ).fetchall()
-        names = []
-        for member in members:
-            sid = int(member["student_id"])
-            grouped.add(sid)
-            name = str((students.get(sid) or {}).get("name") or f"学生{sid}")
-            names.append(f"{name}(组长)" if group["leader_student_id"] and int(group["leader_student_id"]) == sid else name)
+    for group in detail["groups"]:
+        names = [m["name"] + ("(组长)" if m["student_id"] == group["leader_student_id"] else "")
+                 for m in group["roster"]]
         rows.append({"小组": str(group["name"]), "人数": len(names), "成员": "、".join(names) or "（空）"})
-    ungrouped = [str(s.get("name") or "") for sid, s in students.items() if sid not in grouped][:60]
+    if detail["is_history"]:
+        membership = f"已存成员 {detail['grouped']} 人"
+    else:
+        ungrouped = detail["ungrouped_students"]
+        names = "、".join(s["name"] for s in ungrouped[:60]) or "无"
+        remaining = f"（另有 {len(ungrouped) - 60} 人）" if len(ungrouped) > 60 else ""
+        membership = f"未分组：{names}{remaining}"
     note = (
-        f"方案「{scheme['name']}」状态 {scheme['status']}，每组 {scheme['min_members']}-{scheme['max_members']} 人，共 {len(groups)} 组；"
-        f"未分组：{'、'.join(ungrouped) if ungrouped else '无'}（方案ID {scheme['id']}）"
+        f"方案「{scheme['name']}」状态 {detail['status']}，每组 {scheme['min_members']}-{scheme['max_members']} 人，共 {len(rows)} 组；"
+        f"{membership}（方案ID {scheme['id']}）"
     )
     return {"title": f"分组方案：{scheme['name']}", "rows": rows, "note": note}
 

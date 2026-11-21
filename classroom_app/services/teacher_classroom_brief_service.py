@@ -312,40 +312,71 @@ def load_polls(conn: Any, class_offering_id: int, *, errors: list[str] | None = 
     return polls
 
 
-def load_group_schemes(conn: Any, class_offering_id: int, roster_size: int, *, errors: list[str] | None = None) -> list[dict[str, Any]]:
+def load_scheme_rosters(conn: Any, class_offering_id: int, schemes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Read the group members once for these schemes and apply the classroom's participation rules."""
+    from . import collaboration_service as collab
+
+    if not schemes:
+        return []
+    scheme_ids = [int(s["id"]) for s in schemes]
+    marks = ",".join("?" for _ in scheme_ids)
+    rows = conn.execute(
+        f"SELECT id, scheme_id, name, leader_student_id FROM study_groups "
+        f"WHERE class_offering_id = ? AND scheme_id IN ({marks}) ORDER BY scheme_id, group_index, id",
+        (int(class_offering_id), *scheme_ids),
+    ).fetchall()
+    members = collab._load_scheme_members(conn, [int(row["id"]) for row in rows])
+    by_scheme = {sid: [] for sid in scheme_ids}
+    for row in rows:
+        group = dict(row)
+        group["roster"] = members.get(int(group["id"]), [])
+        group["members"] = len(group["roster"])
+        by_scheme[int(group["scheme_id"])].append(group)
+
+    classroom_students = None
+    result = []
+    for scheme in schemes:
+        groups = by_scheme[int(scheme["id"])]
+        assigned = {m["student_id"] for g in groups for m in g["roster"]}
+        expired = collab._scheme_is_expired(scheme.get("expires_at"))
+        history = expired or scheme["status"] != collab.SCHEME_STATUS_ACTIVE
+        ungrouped = []
+        grouped = len(assigned)
+        if not history:
+            if classroom_students is None:
+                classroom_students = collab._scheme_class_students(conn, class_offering_id)
+            eligible = collab._scheme_roster(conn, scheme, grouped_ids=assigned, classroom_students=classroom_students)
+            ungrouped = [s for s in eligible if s["id"] not in assigned]
+            grouped = len(eligible) - len(ungrouped)
+        result.append({
+            **scheme, "status": "expired" if expired and scheme["status"] == collab.SCHEME_STATUS_ACTIVE else scheme["status"],
+            "is_history": history, "groups": groups, "grouped": grouped,
+            "ungrouped": None if history else len(ungrouped), "ungrouped_students": ungrouped,
+            "leaderless": sum(1 for g in groups if not g["leader_student_id"] and g["members"]),
+        })
+    return result
+
+
+def load_group_schemes(conn: Any, class_offering_id: int, roster_size: int | None = None, *, errors: list[str] | None = None) -> list[dict[str, Any]]:
     schemes = _rows(
         conn,
         """
-        SELECT id, name, status, min_members, max_members, group_count, expires_at, created_at
-        FROM group_schemes
-        WHERE class_offering_id = ?
-        ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, created_at DESC, id DESC
-        LIMIT ?
+        SELECT id, name, status, min_members, max_members, group_count, expires_at, created_at, metadata_json
+        FROM group_schemes WHERE class_offering_id = ?
+        ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, created_at DESC, id DESC LIMIT ?
         """,
-        (int(class_offering_id), MAX_SCHEME_ROWS),
-        errors=errors,
-        label="分组方案",
+        (int(class_offering_id), MAX_SCHEME_ROWS), errors=errors, label="分组方案",
     )
-    for scheme in schemes:
-        scheme["name"] = _clean(scheme.get("name"), 40)
-        groups = _rows(
-            conn,
-            """
-            SELECT g.id, g.name, g.leader_student_id,
-                   (SELECT COUNT(*) FROM study_group_members m WHERE m.group_id = g.id AND m.status = 'active') AS members
-            FROM study_groups g
-            WHERE g.scheme_id = ? AND g.status = 'active'
-            ORDER BY g.group_index, g.id
-            """,
-            (int(scheme["id"]),),
-            errors=errors,
-            label="分组成员",
-        )
-        scheme["groups"] = groups
-        scheme["grouped"] = sum(int(g.get("members") or 0) for g in groups)
-        scheme["ungrouped"] = max(0, roster_size - scheme["grouped"])
-        scheme["leaderless"] = sum(1 for g in groups if not g.get("leader_student_id") and int(g.get("members") or 0) > 0)
-    return schemes
+    if not schemes:
+        return []
+    try:
+        with best_effort(conn, "classroom_brief_groups", log_prefix="[CLASSROOM-BRIEF]"):
+            return load_scheme_rosters(conn, class_offering_id, schemes)
+    except Exception as exc:  # savepoint setup or recovery itself failed
+        print(f"[CLASSROOM-BRIEF] group roster query failed: {type(exc).__name__}: {str(exc)[:120]}")
+    if errors is not None:
+        errors.append("分组成员")
+    return []
 
 
 def load_interaction_summary(conn: Any, class_offering_id: int, *, errors: list[str] | None = None) -> dict[str, Any]:
@@ -478,9 +509,10 @@ def _section_schemes(schemes: list[dict[str, Any]], failed: bool) -> list[str]:
         return ["【分组方案】暂无。可在教师授意下按名册随机分组。"]
     lines = ["【分组方案】（ID · 名称 · 状态 · 组数 · 每组人数范围 · 已分/未分 · 缺组长的组）"]
     for scheme in schemes:
+        counts = f"已存成员 {scheme['grouped']} 人" if scheme["is_history"] else f"已分 {scheme['grouped']} 人，未分 {scheme['ungrouped']} 人"
         lines.append(
             f"  {scheme['id']} · {str(scheme.get('name') or '')[:30]} · {scheme.get('status')} · {len(scheme.get('groups') or [])} 组"
-            f" · {scheme.get('min_members')}-{scheme.get('max_members')} 人 · {scheme['grouped']}/{scheme['ungrouped']} · {scheme['leaderless']}"
+            f" · {scheme.get('min_members')}-{scheme.get('max_members')} 人 · {counts} · {scheme['leaderless']}"
         )
     return lines
 
@@ -525,7 +557,7 @@ def build_teacher_classroom_brief(
     sessions = load_sessions(conn, int(class_offering_id), errors=errors)
     assessments = load_assessments(conn, int(class_offering_id), len(roster), errors=errors)
     polls = load_polls(conn, int(class_offering_id), errors=errors)
-    schemes = load_group_schemes(conn, int(class_offering_id), len(roster), errors=errors)
+    schemes = load_group_schemes(conn, int(class_offering_id), errors=errors)
     interaction = load_interaction_summary(conn, int(class_offering_id), errors=errors)
 
     today = datetime.now().date().isoformat()
@@ -553,7 +585,7 @@ def build_teacher_classroom_brief(
         sections.append(_section_roster(roster, "学生名册" in errors))
         sections.append(_section_assessments(assessments, "作业与考试" in errors))
         sections.append(_section_polls(polls, len(roster), "投票" in errors))
-        sections.append(_section_schemes(schemes, "分组方案" in errors))
+        sections.append(_section_schemes(schemes, "分组方案" in errors or "分组成员" in errors))
         sections.append([interaction_line])
     else:
         sections.append([
@@ -571,7 +603,7 @@ def classroom_overview_rows(conn: Any, class_offering_id: int) -> dict[str, Any]
     roster = load_roster(conn, int(class_offering_id))
     assessments = load_assessments(conn, int(class_offering_id), len(roster))
     polls = load_polls(conn, int(class_offering_id))
-    schemes = load_group_schemes(conn, int(class_offering_id), len(roster))
+    schemes = load_group_schemes(conn, int(class_offering_id))
     rows = [
         {"项目": "学生人数", "值": len(roster)},
         {"项目": "作业/考试数", "值": len(assessments)},

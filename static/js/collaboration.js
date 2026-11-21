@@ -1,5 +1,9 @@
 import { apiFetch } from './api.js';
 import { getLayerSystem } from './lq/layer.js';
+import { enhanceDropdowns } from './lq/dropdown.js';
+import { componentMarkup } from './lq/components.js';
+import { iconMarkup } from './lq/icons.js';
+import { openProjectTopics } from './project_topics.js';
 import { showToast, escapeHtml, formatSize, formatDate } from './ui.js';
 
 const SCORE_OPTIONS = [5, 4, 3, 2, 1];
@@ -459,6 +463,7 @@ function snapshotFromResponse(response) {
 function applySnapshot(state, response) {
     const snapshot = snapshotFromResponse(response);
     if (snapshot && snapshot.groups) {
+        state.snapshotVersion++;
         state.snapshot = snapshot;
         const selected = selectGroup(snapshot, state.selectedGroupId);
         state.selectedGroupId = selected ? String(selected.id) : '';
@@ -469,10 +474,15 @@ function applySnapshot(state, response) {
 // Random grouping scheme UI (随机分组方案)
 // ============================================================================
 
-function schemeDeadlineLabel(scheme) {
-    if (!scheme.expires_at) return '长期有效';
-    if (scheme.is_expired) return '已过期';
-    return `截止 ${formatDate(scheme.expires_at)}`;
+function schemeButton(label, icon, attrs, variant = 'glass') {
+    return componentMarkup('button', { label, icon, variant, size: 'sm', attrs });
+}
+
+function groupProgress(group) {
+    const progress = Math.max(0, Math.min(100, Number(group.progress_percent) || 0));
+    if (!progress && !group.goal_text) return '';
+    return `<div class="collab-scheme-group__progress" role="progressbar" aria-label="任务进度" aria-valuenow="${progress}" aria-valuemin="0" aria-valuemax="100">
+        <span style="width:${progress}%"></span></div><small class="collab-scheme-group__progress-label">进度 ${progress}%</small>`;
 }
 
 function renderSchemeMemberAvatar(member) {
@@ -486,10 +496,10 @@ function renderSchemeMemberAvatar(member) {
             data-score="${escapeHtml(scoreAttr)}"
             data-avatar="${escapeHtml(member.avatar_url || '/api/profile/avatar')}"
             data-leader="${member.is_leader ? '1' : '0'}"
-            title="${escapeHtml(member.name)}">
+            title="${escapeHtml(member.name)}${member.is_leader ? '（组长）' : ''}" aria-label="${escapeHtml(member.name)}${member.is_leader ? '，组长' : ''}">
             <span class="collab-scheme-member__avatar">
                 <img src="${escapeHtml(member.avatar_url || '/api/profile/avatar')}" alt="" loading="lazy">
-                ${member.is_leader ? '<span class="collab-scheme-member__crown" aria-hidden="true">★</span>' : ''}
+                ${member.is_leader ? `<span class="collab-scheme-member__crown" aria-hidden="true">${iconMarkup('crown')}</span>` : ''}
             </span>
             <span class="collab-scheme-member__name">${escapeHtml(member.name)}</span>
         </button>
@@ -498,24 +508,21 @@ function renderSchemeMemberAvatar(member) {
 
 function renderSchemeGroupCard(group, scheme) {
     const mine = Boolean(group.my_membership);
-    const progress = Math.max(0, Math.min(100, Number(group.progress_percent) || 0));
     const fullClass = group.is_full ? ' is-full' : ' is-open';
-    const leaderName = (group.members.find((m) => m.is_leader) || {}).name || '待举荐';
     return `
-        <article data-lq-component="surface" class="lq-surface collab-scheme-group${mine ? ' is-mine' : ''}${fullClass}"
-            ${mine && scheme.is_active ? `data-collab-scheme-group-open="${group.id}" role="button" tabindex="0"` : ''}>
+        <article data-lq-component="surface" class="lq-surface collab-scheme-group${mine ? ' is-mine' : ''}${fullClass}"${mine ? ` data-collab-group-card="${group.id}"` : ''}>
             <div class="collab-scheme-group__top">
                 <strong>${escapeHtml(group.name)}</strong>
                 <span class="collab-scheme-group__count">${group.member_count}/${group.max_members}</span>
             </div>
-            <div class="collab-scheme-group__progress" aria-label="任务进度 ${progress}%">
-                <span style="width:${progress}%"></span>
-            </div>
-            <div class="collab-scheme-group__progress-label">进度 ${progress}% · 组长 ${escapeHtml(leaderName)}</div>
+            ${groupProgress(group)}
             <div class="collab-scheme-group__members">
-                ${group.members.length ? group.members.map(renderSchemeMemberAvatar).join('') : '<span class="collaboration-muted">还没有成员</span>'}
+                ${group.members.map(renderSchemeMemberAvatar).join('')}
             </div>
-            ${mine ? '<span class="collab-scheme-group__badge">我的小组</span>' : (scheme.is_active ? '' : '')}
+            ${mine ? `<div class="collab-scheme-card__actions">
+                ${schemeButton('本组题目', 'book-open', {'data-project-topics-open':'', 'data-pt-scheme':scheme.id, 'aria-haspopup':'dialog'})}
+                ${schemeButton('查看我的小组', 'users', {'data-collab-scheme-group-open':group.id, 'aria-haspopup':'dialog'}, 'ghost')}
+            </div>` : ''}
         </article>
     `;
 }
@@ -528,15 +535,20 @@ function renderSchemeCard(scheme, snapshot) {
         if (!a.my_membership && b.my_membership) return 1;
         return (a.group_index || 0) - (b.group_index || 0);
     });
-    const statusChip = scheme.is_expired
-        ? '<span class="collab-scheme-chip is-expired">已过期</span>'
-        : (scheme.is_active ? '<span class="collab-scheme-chip is-active">进行中</span>' : '<span class="collab-scheme-chip">已结束</span>');
+    const status = scheme.is_expired ? '已过期' : !scheme.is_active ? '已归档' :
+        scheme.admission_open === false ? '入组已暂停' : '进行中';
+    const statusChip = componentMarkup('chip', {label: status, kind: 'status', size: 'sm',
+        tone: !scheme.is_active ? 'neutral' : scheme.admission_open === false ? 'warning' : 'success'});
     const studentAction = (!isTeacher && scheme.can_random_join)
-        ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-collab-scheme-random-join="${scheme.id}">随机分组</button>`
-        : (!isTeacher && scheme.my_group_id ? '<span class="collab-scheme-chip is-active">已分组</span>' : '');
-    const teacherAction = isTeacher
-        ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-collab-scheme-board="${scheme.id}">分组大屏</button>${scheme.can_close ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-collab-scheme-close="${scheme.id}">结束方案</button>` : ''}`
-        : '';
+        ? schemeButton('随机入组', 'shuffle', {'data-collab-scheme-random-join': scheme.id}, 'prominent') : '';
+    const paused = scheme.admission_open === false;
+    const teacherActions = isTeacher ? [
+        schemeButton('分组大屏', 'layout-dashboard', {'data-collab-scheme-board':scheme.id, 'aria-haspopup':'dialog'}),
+        scheme.is_active ? schemeButton(paused ? '恢复入组' : '暂停入组', paused ? 'play' : 'pause',
+            {'data-collab-admission':scheme.id, 'data-open':String(paused)}, 'ghost') : '',
+        scheme.can_close ? schemeButton('', 'archive', {'data-collab-scheme-close':scheme.id,
+            'aria-label':'结束方案', 'title':'结束方案并归档'}, 'ghost') : '',
+    ].join('') : '';
     return `
         <section data-lq-component="surface" class="lq-surface collab-scheme-card" data-collab-scheme="${scheme.id}">
             <header class="collab-scheme-card__head">
@@ -544,13 +556,13 @@ function renderSchemeCard(scheme, snapshot) {
                     <strong>${escapeHtml(scheme.name)}</strong>
                     ${statusChip}
                 </div>
-                <div class="collab-scheme-card__actions">${studentAction}${teacherAction}</div>
+                ${studentAction || teacherActions ? `<div class="collab-scheme-card__actions">${studentAction}${teacherActions}</div>` : ''}
             </header>
             <div class="collab-scheme-card__meta">
                 <span>每组 ${scheme.min_members}-${scheme.max_members} 人</span>
                 <span>${scheme.group_count} 组</span>
-                <span>已分组 ${scheme.grouped_count}/${scheme.total_students}</span>
-                <span>${schemeDeadlineLabel(scheme)}</span>
+                <span>${scheme.is_history ? `已归档 ${scheme.grouped_count} 人` : `已分组 ${scheme.grouped_count}/${scheme.total_students}`}</span>
+                ${scheme.expires_at ? `<span>截止 ${formatDate(scheme.expires_at)}</span>` : ''}
             </div>
             ${scheme.description ? `<p class="collab-scheme-card__desc">${escapeHtml(scheme.description)}</p>` : ''}
             <div class="collab-scheme-grid">
@@ -560,23 +572,26 @@ function renderSchemeCard(scheme, snapshot) {
     `;
 }
 
-function renderSchemeBuilder(snapshot, open) {
-    if (snapshot.role !== 'teacher' || !open) return '';
+function renderSchemeBuilder() {
     return `
         <section class="collab-scheme-builder">
             <div class="collab-scheme-builder__head">
                 <strong>创建随机分组方案</strong>
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collaboration-close-btn" data-collab-scheme-create-close aria-label="关闭">×</button>
+                ${schemeButton('', 'x', {'data-collab-scheme-create-close':'','aria-label':'关闭','title':'关闭'}, 'ghost')}
             </div>
             <form class="collab-scheme-form" data-collab-scheme-form>
-                <input data-lq-component="input" class="lq-input" name="name" type="text" maxlength="60" placeholder="方案名称，例如：第 3 章项目分组" value="随机分组">
+                <label class="collab-scheme-form__full"><span>方案名称</span><input data-lq-component="input" class="lq-input" name="name" type="text" maxlength="60" placeholder="例如：Python 期末大作业" value="随机分组"></label>
+                <label class="collab-scheme-form__full"><span>分配方式</span><select data-lq-dropdown data-lq-component="select" class="lq-select" name="allocation_mode">
+                    <option value="all">立即随机分配全班</option><option value="self">学生自行随机加入</option>
+                </select></label>
+                <p class="collaboration-muted" data-collab-scheme-roster></p>
                 <div class="collab-scheme-form__row">
-                    <label><span>每组最小人数</span><input data-lq-component="input" class="lq-input" name="min_members" type="number" min="1" max="12" value="3"></label>
-                    <label><span>每组最大人数</span><input data-lq-component="input" class="lq-input" name="max_members" type="number" min="1" max="12" value="5"></label>
+                    <label><span>每组最小人数</span><input data-lq-component="input" class="lq-input" name="min_members" type="number" min="1" max="12" value="3" required></label>
+                    <label><span>每组最大人数</span><input data-lq-component="input" class="lq-input" name="max_members" type="number" min="1" max="12" value="5" required></label>
                     <label><span>组数（可选）</span><input data-lq-component="input" class="lq-input" name="group_count" type="number" min="1" max="60" placeholder="自动"></label>
                 </div>
                 <label class="collab-scheme-form__full"><span>时效日期（可选，过期后只读）</span><input data-lq-component="input" class="lq-input" name="expires_at" type="datetime-local"></label>
-                <textarea data-lq-component="textarea" class="lq-textarea" name="description" rows="2" maxlength="600" placeholder="方案说明、分组目标或注意事项（可选）"></textarea>
+                <label class="collab-scheme-form__full"><span>方案说明（可选）</span><textarea data-lq-component="textarea" class="lq-textarea" name="description" rows="2" maxlength="600" placeholder="分组目标或注意事项"></textarea></label>
                 <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">开始分组</button>
             </form>
         </section>
@@ -606,12 +621,12 @@ function renderStudentForm(snapshot, state) {
         <section class="collab-scheme-builder">
             <div class="collab-scheme-builder__head">
                 <strong>发起分组 · 邀请同学</strong>
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collaboration-close-btn" data-collab-student-create-close aria-label="关闭">×</button>
+                ${schemeButton('', 'x', {'data-collab-student-create-close':'','aria-label':'关闭','title':'关闭'}, 'ghost')}
             </div>
             <form class="collab-scheme-form" data-collab-student-form>
                 <input data-lq-component="input" class="lq-input" name="name" type="text" maxlength="60" placeholder="分组名称，例如：算法学习小队" required>
                 <div class="collab-invite-pick">
-                    <span class="collab-invite-pick__label">邀请同学（单击头像选择，可多选）</span>
+                    <span class="collab-invite-pick__label">邀请同学（可多选）</span>
                     ${candidates.length ? renderInvitePicker(candidates) : '<span class="collaboration-muted">正在加载同学名单…</span>'}
                 </div>
                 <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">发起并邀请</button>
@@ -637,20 +652,17 @@ function renderInvitationCard(invitation) {
 }
 
 function renderStudentGroupCard(group) {
-    const progress = Math.max(0, Math.min(100, Number(group.progress_percent) || 0));
-    const leaderName = (group.members.find((m) => m.is_leader) || {}).name || '组长';
     return `
-        <article data-lq-component="surface" class="lq-surface collab-scheme-group is-mine is-open" data-collab-scheme-group-open="${group.id}" role="button" tabindex="0">
+        <article data-lq-component="surface" class="lq-surface collab-scheme-group is-mine is-open" data-collab-group-card="${group.id}">
             <div class="collab-scheme-group__top">
                 <strong>${escapeHtml(group.name)}</strong>
                 <span class="collab-scheme-group__count">${group.member_count} 人</span>
             </div>
-            <div class="collab-scheme-group__progress"><span style="width:${progress}%"></span></div>
-            <div class="collab-scheme-group__progress-label">进度 ${progress}% · 组长 ${escapeHtml(leaderName)}${group.is_owner ? ' · 我发起' : ''}</div>
+            ${groupProgress(group)}
             <div class="collab-scheme-group__members">
                 ${group.members.map(renderSchemeMemberAvatar).join('')}
             </div>
-            <span class="collab-scheme-group__badge">${group.is_owner ? '我发起的' : '我加入的'}</span>
+            ${schemeButton('查看我的小组', 'users', {'data-collab-scheme-group-open':group.id,'aria-haspopup':'dialog'})}
         </article>
     `;
 }
@@ -668,12 +680,11 @@ function renderSchemes(snapshot, state) {
         const list = tab === 'history' ? historySchemes : currentSchemes;
         return `
             <div class="collab-scheme-section">
-                ${renderSchemeBuilder(snapshot, state.schemeCreateOpen)}
                 <div data-lq-component="tab" class="lq-tabs__list collab-scheme-tabs" role="tablist" aria-label="分组方案切换">
                     <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collab-scheme-tab${tab === 'current' ? ' is-active' : ''}" data-collab-scheme-tab="current" role="tab" aria-selected="${tab === 'current'}">现分组 (${currentSchemes.length})</button>
                     <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collab-scheme-tab${tab === 'history' ? ' is-active' : ''}" data-collab-scheme-tab="history" role="tab" aria-selected="${tab === 'history'}">历史组 (${historySchemes.length})</button>
                 </div>
-                ${list.length ? list.map((scheme) => renderSchemeCard(scheme, snapshot)).join('') : `<div class="collaboration-empty"><strong>${tab === 'history' ? '还没有历史方案' : '还没有进行中的方案'}</strong><p>${tab === 'history' ? '结束的方案会归档到这里。' : '点击上方“创建分组方案”开始随机分组。'}</p></div>`}
+                ${list.length ? list.map((scheme) => renderSchemeCard(scheme, snapshot)).join('') : `<div class="collaboration-empty"><strong>${tab === 'history' ? '暂无归档方案' : '暂无进行中的方案'}</strong></div>`}
             </div>
         `;
     }
@@ -694,11 +705,11 @@ function renderSchemes(snapshot, state) {
                 ${invitations.length ? `<div class="collab-invitation-list">${invitations.map(renderInvitationCard).join('')}</div>` : ''}
                 ${currentMine.length ? `<section class="collab-mine-section"><h4>我的分组</h4><div class="collab-scheme-grid">${currentMine.map(renderStudentGroupCard).join('')}</div></section>` : ''}
                 ${currentSchemes.map((scheme) => renderSchemeCard(scheme, snapshot)).join('')}
-                ${currentEmpty ? '<div class="collaboration-empty"><strong>还没有进行中的分组</strong><p>等待老师发起分组，或点击“发起分组”邀请同学组队。</p></div>' : ''}
+                ${currentEmpty ? '<div class="collaboration-empty"><strong>暂无进行中的分组</strong></div>' : ''}
             ` : `
                 ${historyMine.length ? `<section class="collab-mine-section"><h4>历史分组</h4><div class="collab-scheme-grid">${historyMine.map(renderStudentGroupCard).join('')}</div></section>` : ''}
                 ${historySchemes.map((scheme) => renderSchemeCard(scheme, snapshot)).join('')}
-                ${historyEmpty ? '<div class="collaboration-empty"><strong>还没有历史分组</strong><p>结束的分组会归档到这里。</p></div>' : ''}
+                ${historyEmpty ? '<div class="collaboration-empty"><strong>暂无归档分组</strong></div>' : ''}
             `}
         </div>
     `;
@@ -719,9 +730,8 @@ function findSchemeGroup(snapshot, groupId) {
 
 const collaborationOverlays = new Set();
 
-function showOverlay(html, { onMount, onClose } = {}) {
+function showOverlay(html, { onMount, onClose, trigger = document.activeElement, returnFocus } = {}) {
     const layers = getLayerSystem(document);
-    const trigger = document.activeElement;
     const parentLayer = layers.top();
     let handle = null;
     let disposed = false;
@@ -752,7 +762,7 @@ function showOverlay(html, { onMount, onClose } = {}) {
         collaborationOverlays.add(close);
         handle = layers.open(overlay, {
             type: 'modal', surface: overlay.querySelector('.collab-overlay__card'), trigger, parentLayer,
-            onClose: finish, onDestroy: finish,
+            onClose: finish, onDestroy: finish, returnFocus,
         });
     }
     return { overlay, close };
@@ -763,12 +773,10 @@ function confirmRandomJoin(scheme) {
         let accepted = false;
         showOverlay(`
             <div class="collab-confirm">
-                <span class="collab-confirm__icon" aria-hidden="true">🎲</span>
-                <strong>即将随机分配小组</strong>
-                <p>系统会把你随机分配到「${escapeHtml(scheme.name)}」中一个还未满员的小组。分配后可以查看组员、设置目标并参与协作。</p>
+                <strong>加入「${escapeHtml(scheme.name)}」？</strong>
                 <div class="collab-confirm__actions">
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-collab-overlay-close>再想想</button>
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-collab-confirm-yes>随机加入</button>
+                    ${schemeButton('取消', 'x', {'data-collab-overlay-close':''}, 'ghost')}
+                    ${schemeButton('随机加入', 'shuffle', {'data-collab-confirm-yes':''}, 'prominent')}
                 </div>
             </div>
         `, {
@@ -793,7 +801,7 @@ function showMemberInfo(button) {
         <div class="collab-member-info">
             <span class="collab-member-info__avatar${isLeader ? ' is-leader' : ''}">
                 <img src="${escapeHtml(dataset.avatar || '/api/profile/avatar')}" alt="">
-                ${isLeader ? '<span class="collab-member-info__crown" aria-hidden="true">★</span>' : ''}
+                ${isLeader ? `<span class="collab-member-info__crown" aria-hidden="true">${iconMarkup('crown')}</span>` : ''}
             </span>
             <strong>${escapeHtml(name)}${isLeader ? ' · 组长' : ''}</strong>
             ${dataset.number ? `<small>学号 ${escapeHtml(dataset.number)}</small>` : ''}
@@ -852,22 +860,23 @@ function groupDetailHtml(group, scheme) {
             <header class="collab-group-detail__head">
                 <strong>${escapeHtml(group.name)}</strong>
                 <span>${group.uncapped ? `${group.member_count} 人` : `${group.member_count}/${group.max_members} 人`}</span>
-                <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button>
+                ${schemeButton('', 'x', {'data-collab-overlay-close':'','aria-label':'关闭','title':'关闭'}, 'ghost')}
             </header>
             <section class="collab-group-detail__goal">
+                ${group.my_membership && scheme.id ? schemeButton('本组题目', 'book-open', {'data-project-topics-open':'', 'data-pt-scheme':scheme.id, 'aria-haspopup':'dialog'}) : ''}
                 <h4>小组目标与进度</h4>
                 ${goalBlock}
             </section>
             <section class="collab-group-detail__members">
-                <h4>组员（点击查看修为值）</h4>
-                ${group.has_leader ? '' : '<p class="collaboration-muted">本组还没有组长，可以举荐一位组员担任。</p>'}
+                <h4>组员</h4>
                 <div class="collab-group-member-list">${members}</div>
                 ${group.can_invite ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm collab-invite-more-btn" data-collab-invite-more="${group.id}">邀请同学加入</button>` : ''}
             </section>
             ${group.my_membership ? `
-            <section class="collab-group-detail__chat" data-group-chat-drop>
+            <section class="collab-group-detail__chat"${scheme.is_active ? ' data-group-chat-drop' : ''}>
                 <h4>组内对话 <small>只有本组成员可见</small></h4>
                 <div class="group-chat-messages" data-group-chat-messages></div>
+                ${scheme.is_active ? `
                 <div class="group-chat-dropmask" data-group-chat-dropmask aria-hidden="true">松开以添加附件</div>
                 <div class="group-chat-pending" data-group-chat-pending hidden></div>
                 <form class="group-chat-form" data-group-chat-form="${group.id}">
@@ -879,6 +888,7 @@ function groupDetailHtml(group, scheme) {
                     <input data-lq-component="input" type="text" class="lq-input group-chat-text" maxlength="800" placeholder="给组员发条消息…" autocomplete="off">
                     <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">发送</button>
                 </form>
+                ` : ''}
             </section>
             ` : ''}
         </div>
@@ -968,7 +978,7 @@ function initGroupChat(overlay, groupId) {
             return;
         }
         const body = message.content ? `<span class="group-chat-msg__body">${escapeHtml(message.content)}</span>` : '';
-        const recall = message.is_mine ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass group-chat-recall" data-group-chat-recall title="撤回">撤回</button>' : '';
+        const recall = form && message.is_mine ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass group-chat-recall" data-group-chat-recall title="撤回">撤回</button>' : '';
         row.innerHTML = `<span class="group-chat-msg__name">${escapeHtml(message.sender_name || '成员')}${message.sender_role === 'teacher' ? ' · 老师' : ''}</span>${body}${renderChatAttachments(message.attachments)}${recall}`;
     };
     const append = (messages) => {
@@ -1022,14 +1032,6 @@ function initGroupChat(overlay, groupId) {
     };
     poll();
     const timer = window.setInterval(poll, 4000);
-    const observer = new MutationObserver(() => {
-        if (!document.body.contains(overlay)) {
-            stopped = true;
-            window.clearInterval(timer);
-            observer.disconnect();
-        }
-    });
-    observer.observe(document.body, { childList: true });
 
     const sendSticker = async (emojiId) => {
         try {
@@ -1123,18 +1125,20 @@ function initGroupChat(overlay, groupId) {
                 append([data.message]);
             } catch (error) {
                 pending = sending;
+                if (textInput && !textInput.value) textInput.value = text;
                 renderPending();
                 showToast(error.message || '发送失败', 'error');
             }
         });
     }
+    return () => { stopped = true; window.clearInterval(timer); };
 }
 
 function updateMyGroupBadge(snapshot) {
     const badge = document.querySelector('[data-my-group-badge]');
     if (!badge) return;
     let myGroup = null;
-    for (const scheme of (snapshot.schemes || [])) {
+    for (const scheme of (snapshot.schemes || []).filter(item => item.is_active)) {
         if (scheme.my_group_id) {
             const found = (scheme.groups || []).find((group) => String(group.id) === String(scheme.my_group_id));
             if (found) { myGroup = found; break; }
@@ -1151,43 +1155,49 @@ function updateMyGroupBadge(snapshot) {
 function showGroupDetail(snapshot, groupId) {
     const found = findSchemeGroup(snapshot, groupId);
     if (!found) return null;
+    let stopChat;
     return showOverlay(groupDetailHtml(found.group, found.scheme), {
         onMount(overlay) {
-            if (found.group.my_membership) initGroupChat(overlay, groupId);
+            if (found.group.my_membership) stopChat = initGroupChat(overlay, groupId);
         },
+        onClose: () => stopChat?.(),
     });
 }
 
 function renderBoardGroupCard(group) {
-    const progress = Math.max(0, Math.min(100, Number(group.progress_percent) || 0));
-    const leaderName = (group.members.find((m) => m.is_leader) || {}).name || '待举荐';
     const canAssign = Boolean(group.can_assign_leader);
     return `
         <article class="collab-board-group${group.is_full ? ' is-full' : ' is-open'}"
-            data-collab-board-group="${group.id}" data-group-max="${group.max_members}" data-group-count="${group.member_count}">
+            data-collab-board-group="${group.id}"${!group.roster_locked && !group.is_full ? ' data-collab-board-available' : ''}>
             <div class="collab-board-group__top">
                 <strong>${escapeHtml(group.name)}</strong>
                 <span>${group.member_count}/${group.max_members}</span>
             </div>
-            <div class="collab-scheme-group__progress"><span style="width:${progress}%"></span></div>
-            <small>组长 ${escapeHtml(leaderName)} · 进度 ${progress}%</small>
+            ${groupProgress(group)}
             <ul class="collab-board-group__members">
                 ${group.members.map((m) => `<li>
-                    <span class="collab-board-group__member-name">${escapeHtml(m.name)}${m.is_leader ? ' <em>组长</em>' : ''}</span>
-                    <span class="collab-board-group__member-no">${escapeHtml(m.student_id_number || '')}</span>
-                    ${canAssign && !m.is_leader ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collab-board-set-leader" data-collab-assign-leader="${group.id}" data-candidate="${m.student_id}">设为组长</button>` : ''}
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collab-board-remove" data-collab-board-remove="${group.id}" data-student-id="${m.student_id}" title="移出该成员（将变为未分组）" aria-label="移出${escapeHtml(m.name)}">移出</button>
+                    <div class="collab-board-group__identity">
+                        <strong>${escapeHtml(m.name)}${m.is_leader ? ' <em>组长</em>' : ''}</strong>
+                        <small class="collab-board-group__member-no">${escapeHtml(m.student_id_number || '')}</small>
+                    </div>
+                    ${canAssign && !m.is_leader ? schemeButton('', 'crown', {'data-collab-assign-leader':group.id,
+                        'data-candidate':m.student_id, 'aria-label':`指定${m.name}为组长`, title:'设为组长'}, 'ghost') : ''}
+                    ${group.can_remove_members ? schemeButton('', 'user-x', {'data-collab-board-remove':group.id,
+                        'data-student-id':m.student_id, 'aria-label':`移出${m.name}`, title:'移出小组'}, 'ghost') : ''}
                 </li>`).join('') || '<li class="collaboration-muted">空</li>'}
             </ul>
         </article>
     `;
 }
 
-function showSchemeBoard(snapshot, schemeId) {
-    const scheme = (snapshot.schemes || []).find((item) => String(item.id) === String(schemeId));
-    if (!scheme) return null;
+function renderSchemeBoard(scheme) {
     const ungrouped = scheme.ungrouped_students || [];
-    const html = `
+    const exempt = scheme.exempt_students || [];
+    const openGroups = scheme.groups.filter(group => !group.is_full && !group.roster_locked);
+    const editable = scheme.is_active;
+    const canAssignStudent = editable && openGroups.length > 0 && (ungrouped.length > 0 || exempt.length > 0);
+    const studentOption = student => `<option value="${student.student_id}">${escapeHtml(student.name)} · ${escapeHtml(student.student_id_number || '')}</option>`;
+    return `
         <div class="collab-board" data-scheme-id="${scheme.id}">
             <header class="collab-board__head">
                 <div>
@@ -1195,50 +1205,123 @@ function showSchemeBoard(snapshot, schemeId) {
                     <span>每组 ${scheme.min_members}-${scheme.max_members} 人 · ${scheme.group_count} 组</span>
                 </div>
                 <div class="collab-board__head-actions">
-                    ${scheme.is_active && scheme.needs_redistribute ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-warning btn-sm" data-collab-redistribute="${scheme.id}" title="将少于最低人数的小组成员打散，重新分配到合理的小组">少人组重新分配 (${scheme.deficient_group_count || 0})</button>` : ''}
-                    ${scheme.is_active && scheme.leaderless_group_count > 0 ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-collab-auto-leaders="${scheme.id}">一键配置组长 (${scheme.leaderless_group_count})</button>` : ''}
-                    <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass collaboration-close-btn" data-collab-overlay-close aria-label="关闭">×</button>
+                    ${editable && scheme.can_fill ? schemeButton(`随机补齐 ${scheme.ungrouped_count} 人`, 'shuffle', {'data-collab-fill':scheme.id}, 'prominent') : ''}
+                    ${editable && scheme.needs_redistribute ? schemeButton(`调整少人组 (${scheme.deficient_group_count})`, 'users', {'data-collab-redistribute':scheme.id}) : ''}
+                    ${scheme.is_active && scheme.leaderless_group_count > 0 ? schemeButton('自动选组长', 'crown', {'data-collab-auto-leaders':scheme.id}) : ''}
+                    ${schemeButton('', 'x', {'data-collab-overlay-close':'','aria-label':'关闭','title':'关闭'}, 'ghost')}
                 </div>
             </header>
             <div class="collab-board__stats">
+                ${scheme.is_history ? `<div><strong>${scheme.grouped_count}</strong><span>已归档成员</span></div>` : `
                 <div><strong>${scheme.grouped_count}</strong><span>已分组</span></div>
                 <div><strong>${scheme.ungrouped_count}</strong><span>未分组</span></div>
-                <div><strong>${scheme.total_students}</strong><span>本班人数</span></div>
+                <div><strong>${scheme.total_students}</strong><span>总人数</span></div>`}
                 <div><strong>${scheme.groups.filter((g) => g.is_full).length}/${scheme.group_count}</strong><span>满员组</span></div>
             </div>
+            ${editable && scheme.groups.some(group => group.roster_locked) ? '<p class="collaboration-muted">已有作业记录的小组已锁定成员名单。</p>' : ''}
             <div class="collab-board__grid">
                 ${scheme.groups.map(renderBoardGroupCard).join('')}
             </div>
-            <div class="collab-board__pool">
-                <h4>未分组学生（${ungrouped.length}）<small>拖动到未满小组完成手动分组</small></h4>
-                <div class="collab-board__pool-list">
-                    ${ungrouped.length ? ungrouped.map((s) => `<span class="collab-board-chip" draggable="true" data-collab-pool-student="${s.student_id}">${escapeHtml(s.name)} <small>${escapeHtml(s.student_id_number || '')}</small></span>`).join('') : '<span class="collaboration-muted">全部学生已分组</span>'}
-                </div>
-            </div>
+            ${editable && (ungrouped.length || canAssignStudent) ? `<div class="collab-board__pool">
+                <h4>${ungrouped.length ? `未分组学生（${ungrouped.length}）` : `可手动加入的重修／免修学生（${exempt.length}）`}</h4>
+                ${canAssignStudent ? `<form class="collab-board__assign" data-collab-board-assign>
+                    <label>学生<select name="student_id" data-lq-dropdown data-lq-searchable data-lq-component="select" class="lq-select" required>
+                        <option value="">选择学生</option>
+                        ${ungrouped.length ? `<optgroup label="待分配">${ungrouped.map(studentOption).join('')}</optgroup>` : ''}
+                        ${exempt.length ? `<optgroup label="已确认重修／免修 · 仅手动加入">${exempt.map(studentOption).join('')}</optgroup>` : ''}
+                    </select></label>
+                    <label>目标小组<select name="group_id" data-lq-dropdown data-lq-component="select" class="lq-select" required>
+                        <option value="">选择小组</option>${openGroups.map(group => `<option value="${group.id}">${escapeHtml(group.name)}（${group.member_count}/${group.max_members}）</option>`).join('')}
+                    </select></label>
+                    <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm lq-btn--glass">分配到该组</button>
+                </form>` : ''}
+                ${ungrouped.length ? `<div class="collab-board__pool-list">
+                    ${ungrouped.map((s) => `<span class="collab-board-chip" draggable="true" data-collab-pool-student="${s.student_id}">${escapeHtml(s.name)} <small>${escapeHtml(s.student_id_number || '')}</small></span>`).join('')}
+                </div>` : ''}
+            </div>` : ''}
         </div>
     `;
-    return showOverlay(html, { onMount(overlay) { bindBoardDragDrop(overlay, schemeId); } });
 }
 
-// Drag-and-drop manual assignment on the teacher big screen.
-function bindBoardDragDrop(overlay, schemeId) {
-    let draggedId = null;
-    overlay.querySelectorAll('[data-collab-pool-student]').forEach((chip) => {
-        chip.addEventListener('dragstart', () => { draggedId = chip.dataset.collabPoolStudent; chip.classList.add('is-dragging'); });
-        chip.addEventListener('dragend', () => { draggedId = null; chip.classList.remove('is-dragging'); });
-    });
-    overlay.querySelectorAll('[data-collab-board-group]').forEach((card) => {
-        const isFull = Number(card.dataset.groupCount) >= Number(card.dataset.groupMax);
-        if (isFull) return;
-        card.addEventListener('dragover', (event) => { event.preventDefault(); card.classList.add('is-drop'); });
-        card.addEventListener('dragleave', () => card.classList.remove('is-drop'));
-        card.addEventListener('drop', async (event) => {
-            event.preventDefault();
-            card.classList.remove('is-drop');
-            if (!draggedId) return;
-            const groupId = card.dataset.collabBoardGroup;
-            window.dispatchEvent(new CustomEvent('collab:board-assign', { detail: { groupId, studentId: draggedId, schemeId } }));
-        });
+function showSchemeBoard(root, state, schemeId) {
+    const currentScheme = () => state.snapshot.schemes.find(item => String(item.id) === String(schemeId));
+    const scheme = currentScheme();
+    if (!scheme) return;
+    let dropdowns = [];
+    showOverlay(renderSchemeBoard(scheme), {
+        // Saving refreshes the card that opened this board. Keep the layer on
+        // the stable classroom panel and resolve its current button on close.
+        trigger: root,
+        returnFocus: () => root.querySelector(`[data-collab-scheme-board="${schemeId}"]`) || root.querySelector('[data-collab-refresh]'),
+        onClose: () => dropdowns.forEach(binding => binding.destroy()),
+        onMount(overlay) {
+            const surface = overlay.querySelector('.collab-overlay__card');
+            surface.setAttribute('aria-label', '分组大屏');
+            dropdowns = enhanceDropdowns(overlay);
+            let pending = false;
+            const mutate = async (url, options = {}) => {
+                if (pending) return;
+                pending = true;
+                surface.setAttribute('aria-busy', 'true');
+                const trigger = document.activeElement;
+                try {
+                    const response = await apiFetch('/api/collaboration/' + url, { method: 'POST', silent: true, ...options });
+                    applyAndRender(root, state, response);
+                    showToast(response.message || '分组已更新', 'success');
+                    if (!overlay.isConnected || !currentScheme()) return;
+                    dropdowns.forEach(binding => binding.destroy());
+                    surface.innerHTML = renderSchemeBoard(currentScheme());
+                    dropdowns = enhanceDropdowns(surface);
+                    if (!trigger?.isConnected) surface.querySelector('[data-collab-overlay-close]')?.focus();
+                } catch (error) {
+                    showToast(error.message || '调整分组失败', 'error');
+                } finally {
+                    pending = false;
+                    surface.removeAttribute('aria-busy');
+                }
+            };
+            const assign = (groupId, studentId) => mutate(`groups/${groupId}/scheme-assign`, { body: { student_id: Number(studentId) } });
+            overlay.addEventListener('submit', event => {
+                const form = event.target.closest('[data-collab-board-assign]');
+                if (!form) return;
+                event.preventDefault();
+                const values = formValues(form);
+                if (values.group_id && values.student_id) void assign(values.group_id, values.student_id);
+            });
+            overlay.addEventListener('click', event => {
+                const button = event.target.closest('button');
+                if (!button || pending) return;
+                const action = button.dataset;
+                if (action.collabFill) void mutate(`schemes/${schemeId}/fill`);
+                if (action.collabAutoLeaders) void mutate(`schemes/${schemeId}/auto-leaders`);
+                if (action.collabRedistribute && window.confirm('将调整部分成员以补足少人组，保留原组数和组长。确定继续？')) {
+                    void mutate(`schemes/${schemeId}/redistribute`);
+                }
+                if (action.collabBoardRemove) void mutate(`groups/${action.collabBoardRemove}/members/${action.studentId}`, { method: 'DELETE' });
+                if (action.collabAssignLeader) void mutate(`groups/${action.collabAssignLeader}/assign-leader`, { body: { candidate_student_id: Number(action.candidate) } });
+            });
+            let dragged = null;
+            overlay.addEventListener('dragstart', event => {
+                dragged = event.target.closest('[data-collab-pool-student]');
+                if (!dragged) return;
+                event.dataTransfer?.setData('text/plain', dragged.dataset.collabPoolStudent);
+                dragged.classList.add('is-dragging');
+            });
+            overlay.addEventListener('dragend', () => { dragged?.classList.remove('is-dragging'); dragged = null; });
+            const targetGroup = event => dragged && event.target.closest('[data-collab-board-available]');
+            overlay.addEventListener('dragover', event => {
+                const card = targetGroup(event);
+                if (card) { event.preventDefault(); card.classList.add('is-drop'); }
+            });
+            overlay.addEventListener('dragleave', event => targetGroup(event)?.classList.remove('is-drop'));
+            overlay.addEventListener('drop', event => {
+                const card = targetGroup(event);
+                if (!card) return;
+                event.preventDefault();
+                card.classList.remove('is-drop');
+                void assign(card.dataset.collabBoardGroup, dragged.dataset.collabPoolStudent);
+            });
+        },
     });
 }
 
@@ -1254,17 +1337,52 @@ function render(root, state) {
     if (!content) return;
 
     content.hidden = false;
+    for (const entry of root.querySelectorAll('.collab-entry-actions button:disabled')) {
+        entry.disabled = false;
+        entry.classList.remove('is-disabled');
+        entry.removeAttribute('aria-disabled');
+        entry.removeAttribute('data-lq-disabled');
+    }
+    const createEntry = root.querySelector('[data-collab-create-primary]');
+    createEntry?.setAttribute('aria-expanded', String(Boolean(state.schemeCreateOpen || state.studentCreateOpen)));
     dispatchActivitySidebarCounts(state.snapshot);
     updateMyGroupBadge(state.snapshot);
     // The legacy assignment-based 小组 workbench has been retired — the unified
     // 分组 system (teacher random schemes + student invite groups) is the only
     // collaboration surface now.
-    content.innerHTML = renderSchemes(state.snapshot, state);
+    if (state.snapshot.role === 'teacher') {
+        let list = content.querySelector('[data-collab-scheme-list]');
+        if (!list) {
+            list = document.createElement('div');
+            list.dataset.collabSchemeList = '';
+            content.replaceChildren(list);
+        }
+        let builder = content.querySelector('.collab-scheme-builder');
+        if (state.schemeCreateOpen) {
+            if (!builder) {
+                list.insertAdjacentHTML('beforebegin', renderSchemeBuilder());
+                builder = content.querySelector('.collab-scheme-builder');
+                state.builderDropdowns = enhanceDropdowns(builder);
+            }
+            const count = state.snapshot.scheme_student_count ?? state.snapshot.students?.length ?? 0;
+            const exempt = state.snapshot.scheme_exempt_count || 0;
+            builder.querySelector('[data-collab-scheme-roster]').textContent = `参与 ${count} 人${exempt ? ` · ${exempt} 名重修／免修学生可手动加入` : ''}`;
+        } else if (builder) {
+            state.builderDropdowns.forEach(binding => binding.destroy());
+            state.builderDropdowns = [];
+            builder.remove();
+        }
+        list.innerHTML = renderSchemes(state.snapshot, state);
+    } else {
+        content.innerHTML = renderSchemes(state.snapshot, state);
+    }
 }
 
 async function refresh(root, state, silent = false) {
+    const version = state.snapshotVersion;
     const classOfferingId = root.dataset.classOfferingId || window.APP_CONFIG?.classOfferingId;
     const response = await apiFetch(`/api/collaboration/classrooms/${classOfferingId}/snapshot`, { silent });
+    if (version !== state.snapshotVersion) return;
     applySnapshot(state, response);
     render(root, state);
 }
@@ -1399,6 +1517,7 @@ function applyAndRender(root, state, response) {
 }
 
 async function handleSchemeCreate(root, state, form) {
+    if (state.schemeCreating) return;
     const classOfferingId = root.dataset.classOfferingId || window.APP_CONFIG?.classOfferingId;
     const values = formValues(form);
     const payload = {
@@ -1408,14 +1527,36 @@ async function handleSchemeCreate(root, state, form) {
         max_members: Number(values.max_members || 0),
         group_count: values.group_count ? Number(values.group_count) : null,
         expires_at: values.expires_at || '',
+        allocation_mode: values.allocation_mode,
     };
-    const response = await apiFetch(`/api/collaboration/classrooms/${classOfferingId}/schemes`, {
-        method: 'POST',
-        body: payload,
-    });
-    state.schemeCreateOpen = false;
-    applyAndRender(root, state, response);
-    showToast(response.message || '分组方案已创建', 'success');
+    const fingerprint = JSON.stringify(payload);
+    if (state.schemeIntent?.fingerprint !== fingerprint) {
+        const id = globalThis.crypto?.randomUUID?.() || `group-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        state.schemeIntent = { id, fingerprint };
+    }
+    state.schemeCreating = true;
+    const submit = form.querySelector('[type="submit"]');
+    submit.disabled = true;
+    form.inert = true;
+    form.setAttribute('aria-busy', 'true');
+    try {
+        const response = await apiFetch(`/api/collaboration/classrooms/${classOfferingId}/schemes`, {
+            method: 'POST',
+            silent: true,
+            body: { ...payload, request_id: state.schemeIntent.id },
+        });
+        state.schemeCreateOpen = false;
+        state.schemeTab = 'current';
+        state.schemeIntent = null;
+        applyAndRender(root, state, response);
+        const scheme = response.scheme;
+        showToast(scheme ? `已创建「${scheme.name}」，共 ${scheme.group_count} 组，已分配 ${scheme.grouped_count} 人` : (response.message || '分组方案已创建'), 'success');
+    } finally {
+        state.schemeCreating = false;
+        submit.disabled = false;
+        form.inert = false;
+        form.removeAttribute('aria-busy');
+    }
 }
 
 async function handleStudentCreate(root, state, form) {
@@ -1498,6 +1639,13 @@ async function handleGoalSave(root, state, form, groupId) {
 
 function bindOverlayEvents(root, state) {
     document.addEventListener('click', async (event) => {
+        const topicTrigger = event.target.closest('[data-project-topics-open]');
+        if (topicTrigger && state.snapshot) {
+            openProjectTopics({ classId: root.dataset.classOfferingId, getSnapshot: () => state.snapshot, trigger: topicTrigger,
+                findJoinButton: id => root.querySelector(`[data-collab-scheme-random-join="${CSS.escape(String(id))}"]`),
+                schemeId: topicTrigger.dataset.ptScheme, refreshGroups: () => refresh(root, state, true) });
+            return;
+        }
         const memberBtn = event.target.closest('[data-collab-member-info]');
         if (memberBtn) {
             showMemberInfo(memberBtn);
@@ -1534,71 +1682,6 @@ function bindOverlayEvents(root, state) {
             }
             return;
         }
-        const autoBtn = event.target.closest('[data-collab-auto-leaders]');
-        if (autoBtn) {
-            const schemeId = autoBtn.dataset.collabAutoLeaders;
-            try {
-                const response = await apiFetch(`/api/collaboration/schemes/${schemeId}/auto-leaders`, { method: 'POST' });
-                applyAndRender(root, state, response);
-                showToast(response.message || '已配置组长', 'success');
-                closeOverlays();
-                showSchemeBoard(state.snapshot, schemeId);
-            } catch (error) {
-                showToast(error.message || '配置失败', 'error');
-            }
-            return;
-        }
-        const redistributeBtn = event.target.closest('[data-collab-redistribute]');
-        if (redistributeBtn) {
-            const schemeId = redistributeBtn.dataset.collabRedistribute;
-            if (!window.confirm('将把所有未达最低人数的小组成员打散，重新随机分配到合理人数的小组（原组长需重新配置），确定继续？')) return;
-            redistributeBtn.disabled = true;
-            try {
-                const response = await apiFetch(`/api/collaboration/schemes/${schemeId}/redistribute`, { method: 'POST' });
-                applyAndRender(root, state, response);
-                showToast(response.message || '已重新分配少人组', 'success');
-                closeOverlays();
-                showSchemeBoard(state.snapshot, schemeId);
-            } catch (error) {
-                redistributeBtn.disabled = false;
-                showToast(error.message || '重新分配失败', 'error');
-            }
-            return;
-        }
-        const boardRemoveBtn = event.target.closest('[data-collab-board-remove]');
-        if (boardRemoveBtn) {
-            const groupId = boardRemoveBtn.dataset.collabBoardRemove;
-            const studentId = boardRemoveBtn.dataset.studentId;
-            const found = findSchemeGroup(state.snapshot, groupId);
-            const schemeId = found ? found.scheme.id : null;
-            try {
-                const response = await apiFetch(`/api/collaboration/groups/${groupId}/members/${studentId}`, { method: 'DELETE' });
-                applyAndRender(root, state, response);
-                showToast(response.message || '成员已移出，已变为未分组', 'success');
-                closeOverlays();
-                if (schemeId != null) showSchemeBoard(state.snapshot, schemeId);
-            } catch (error) {
-                showToast(error.message || '移出失败', 'error');
-            }
-            return;
-        }
-        const assignBtn = event.target.closest('[data-collab-assign-leader]');
-        if (assignBtn) {
-            const groupId = assignBtn.dataset.collabAssignLeader;
-            try {
-                const response = await apiFetch(`/api/collaboration/groups/${groupId}/assign-leader`, {
-                    method: 'POST',
-                    body: { candidate_student_id: Number(assignBtn.dataset.candidate) },
-                });
-                applyAndRender(root, state, response);
-                showToast(response.message || '已指定组长', 'success');
-                const found = findSchemeGroup(state.snapshot, groupId);
-                closeOverlays();
-                if (found) showSchemeBoard(state.snapshot, found.scheme.id);
-            } catch (error) {
-                showToast(error.message || '指定失败', 'error');
-            }
-        }
     });
     document.addEventListener('input', (event) => {
         const range = event.target.closest('[data-collab-progress-range]');
@@ -1618,32 +1701,17 @@ function bindOverlayEvents(root, state) {
             }
         }
     });
-    window.addEventListener('collab:board-assign', async (event) => {
-        const { groupId, studentId, schemeId } = event.detail || {};
-        if (!groupId || !studentId) return;
-        try {
-            const response = await apiFetch(`/api/collaboration/groups/${groupId}/scheme-assign`, {
-                method: 'POST',
-                body: { student_id: Number(studentId) },
-            });
-            applyAndRender(root, state, response);
-            showToast(response.message || '已分配到小组', 'success');
-            closeOverlays();
-            showSchemeBoard(state.snapshot, schemeId);
-        } catch (error) {
-            showToast(error.message || '分配失败', 'error');
-        }
-    });
+
 }
 
 function bindEvents(root, state) {
     // Scheme group cards are <article> elements (not buttons) — handle their
     // click separately so own-group cards open the detail overlay.
     root.addEventListener('click', (event) => {
-        if (event.target.closest('[data-collab-member-info]')) return;
-        const openCard = event.target.closest('[data-collab-scheme-group-open]');
+        if (event.target.closest('[data-collab-member-info], [data-project-topics-open]')) return;
+        const openCard = event.target.closest('[data-collab-group-card]');
         if (openCard) {
-            showGroupDetail(state.snapshot, openCard.dataset.collabSchemeGroupOpen);
+            showGroupDetail(state.snapshot, openCard.dataset.collabGroupCard);
         }
     });
 
@@ -1652,9 +1720,12 @@ function bindEvents(root, state) {
         if (!target) return;
         try {
             if (target.matches('[data-collab-create-primary]')) {
-                if (state.snapshot?.role === 'teacher') {
+                if (!state.snapshot || state.schemeCreating) return;
+                if (state.snapshot.role === 'teacher') {
+                    state.schemeIntent = null;
                     state.schemeCreateOpen = !state.schemeCreateOpen;
                     render(root, state);
+                    if (state.schemeCreateOpen) root.querySelector('[data-collab-scheme-form] [name=name]')?.focus();
                 } else {
                     const limits = state.snapshot?.invite_limits || {};
                     if (Number(limits.active_group_count || 0) >= Number(limits.max_active_groups || 5)) {
@@ -1673,20 +1744,41 @@ function bindEvents(root, state) {
                     } catch (error) { state.inviteCandidates = []; }
                     state.studentCreateOpen = true;
                     render(root, state);
+                    root.querySelector('[data-collab-student-form] [name=name]')?.focus();
                 }
             } else if (target.matches('[data-collab-scheme-create-open]')) {
+                if (state.schemeCreating) return;
+                state.schemeIntent = null;
                 state.schemeCreateOpen = true;
                 render(root, state);
             } else if (target.matches('[data-collab-scheme-create-close]')) {
+                if (state.schemeCreating) return;
+                state.schemeIntent = null;
                 state.schemeCreateOpen = false;
                 render(root, state);
+                root.querySelector('[data-collab-create-primary]')?.focus();
             } else if (target.dataset.collabSchemeRandomJoin) {
                 await handleRandomJoin(root, state, target.dataset.collabSchemeRandomJoin);
             } else if (target.dataset.collabSchemeBoard) {
-                showSchemeBoard(state.snapshot, target.dataset.collabSchemeBoard);
+                showSchemeBoard(root, state, target.dataset.collabSchemeBoard);
             } else if (target.dataset.collabSchemeTab) {
                 state.schemeTab = target.dataset.collabSchemeTab;
                 render(root, state);
+                root.querySelector('[data-collab-scheme-tab][aria-selected=true]')?.focus({preventScroll:true});
+            } else if (target.dataset.collabAdmission) {
+                const restoreFocus = document.activeElement === target;
+                target.disabled = true;
+                try {
+                    const response = await apiFetch(`/api/collaboration/schemes/${target.dataset.collabAdmission}/admission`, {
+                        method: 'PUT', silent: true, body: { open: target.dataset.open === 'true' },
+                    });
+                    applyAndRender(root, state, response);
+                    if (restoreFocus && document.activeElement === document.body) {
+                        root.querySelector(`[data-collab-admission="${target.dataset.collabAdmission}"]`)?.focus({preventScroll:true});
+                    }
+                } finally {
+                    target.disabled = false;
+                }
             } else if (target.dataset.collabSchemeClose) {
                 if (!window.confirm('确定结束该分组方案吗？结束后学生将无法再加入或修改，方案会归档到“历史组”。')) return;
                 const response = await apiFetch(`/api/collaboration/schemes/${target.dataset.collabSchemeClose}/close`, { method: 'POST' });
@@ -1703,6 +1795,7 @@ function bindEvents(root, state) {
             } else if (target.matches('[data-collab-student-create-close]')) {
                 state.studentCreateOpen = false;
                 render(root, state);
+                root.querySelector('[data-collab-create-primary]')?.focus();
             } else if (target.dataset.collabInviteAccept) {
                 const response = await apiFetch(`/api/collaboration/invitations/${target.dataset.collabInviteAccept}/accept`, { method: 'POST' });
                 applyAndRender(root, state, response);
@@ -1787,10 +1880,14 @@ export function initCollaborationPanel() {
     if (!root) return;
     const state = {
         snapshot: null,
+        snapshotVersion: 0,
         selectedGroupId: '',
         detailTab: 'members',
         createOpen: false,
         schemeCreateOpen: false,
+        schemeCreating: false,
+        schemeIntent: null,
+        builderDropdowns: [],
         schemeTab: 'current',
         studentCreateOpen: false,
         inviteCandidates: [],

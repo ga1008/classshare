@@ -9,6 +9,8 @@ export default defineConfig({
     'ui-motion.spec.ts',
     'home-classroom-ui-v3.spec.ts', 'home-classroom-workspace.spec.ts',
     'dashboard-schedule.spec.ts', 'classroom.spec.ts', 'assignment-submission.spec.ts',
+    'classroom-grouping.synthetic.ts',
+    'classroom-project-topics.synthetic.ts',
   ],
   workers: 1, fullyParallel: false, timeout: 60000,
   expect: { timeout: 10000 },

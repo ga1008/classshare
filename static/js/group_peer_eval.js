@@ -33,18 +33,18 @@ function finishClose() {
   }
 }
 
-function pointButtons(peerId) {
+function pointButtons(peerId, selectedPoints) {
   let row1 = '';
   let row2 = '';
   for (let i = 1; i <= MAX_POINTS; i += 1) {
-    const selected = i === DEFAULT_POINTS ? ' is-selected' : '';
-    const btn = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass peer-eval-pt${selected}" data-peer-id="${peerId}" data-points="${i}">${i}</button>`;
+    const selected = i === selectedPoints;
+    const btn = `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass peer-eval-pt${selected ? ' is-selected' : ''}" aria-pressed="${selected}" data-peer-id="${peerId}" data-points="${i}">${i}</button>`;
     if (i <= 10) row1 += btn; else row2 += btn;
   }
   return `<div class="peer-eval-scale"><div class="peer-eval-scale__row">${row1}</div><div class="peer-eval-scale__row">${row2}</div></div>`;
 }
 
-function peerBlock(peer) {
+function peerBlock(peer, selectedPoints) {
   return `
     <div class="peer-eval-item" data-peer-block="${peer.student_id}">
       <div class="peer-eval-item__head">
@@ -53,15 +53,18 @@ function peerBlock(peer) {
           <strong>你觉得「${escapeHtml(peer.name || '组员')}」的贡献度高吗？</strong>
           <span>给 TA 在本次小组作业的表现打分（1-20 分，分数越高表示贡献越大）</span>
         </div>
-        <span class="peer-eval-item__value" data-peer-value="${peer.student_id}">${DEFAULT_POINTS}</span>
+        <span class="peer-eval-item__value" data-peer-value="${peer.student_id}">${selectedPoints}</span>
       </div>
-      ${pointButtons(peer.student_id)}
+      ${pointButtons(peer.student_id, selectedPoints)}
     </div>`;
 }
 
-function render(assignmentId, peers, trigger) {
+function render(assignmentId, peers, myRatings, trigger) {
   const selections = {};
-  peers.forEach((p) => { selections[p.student_id] = DEFAULT_POINTS; });
+  for (const peer of peers) {
+    const saved = myRatings[peer.student_id];
+    selections[peer.student_id] = Number.isInteger(saved) && saved >= 1 && saved <= MAX_POINTS ? saved : DEFAULT_POINTS;
+  }
 
   overlayEl = document.createElement('div');
   overlayEl.className = 'lq-domain-region peer-eval-overlay';
@@ -76,7 +79,7 @@ function render(assignmentId, peers, trigger) {
         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass peer-eval-modal__close" data-peer-close aria-label="关闭">&times;</button>
       </header>
       <div class="peer-eval-modal__body">
-        ${peers.map(peerBlock).join('')}
+        ${peers.map((peer) => peerBlock(peer, selections[peer.student_id])).join('')}
       </div>
       <footer class="peer-eval-modal__footer">
         <span class="peer-eval-modal__hint">未填写将自动按 ${DEFAULT_POINTS} 分计入</span>
@@ -99,7 +102,11 @@ function render(assignmentId, peers, trigger) {
       selections[peerId] = points;
       overlayEl
         .querySelectorAll(`.peer-eval-pt[data-peer-id="${peerId}"]`)
-        .forEach((el) => el.classList.toggle('is-selected', Number(el.getAttribute('data-points')) === points));
+        .forEach((el) => {
+          const selected = Number(el.getAttribute('data-points')) === points;
+          el.classList.toggle('is-selected', selected);
+          el.setAttribute('aria-pressed', String(selected));
+        });
       const valueEl = overlayEl.querySelector(`[data-peer-value="${peerId}"]`);
       if (valueEl) valueEl.textContent = String(points);
     }
@@ -154,7 +161,7 @@ window.openGroupPeerEval = async function openGroupPeerEval(assignmentId) {
     }
     return await new Promise((resolve) => {
       resolveOpen = resolve;
-      render(assignmentId, peers, trigger);
+      render(assignmentId, peers, data.my_ratings || {}, trigger);
     });
   } catch (err) {
     return { submitted: false, skipped: true };

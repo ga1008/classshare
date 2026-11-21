@@ -48,8 +48,10 @@ class CollaborationMembershipPostgresTests(unittest.TestCase):
     def setUp(self):
         for target, value in (
             ("classroom_app.db.connection.get_configured_db_engine", "postgres"),
+            ("classroom_app.services.collaboration_service.get_configured_db_engine", "postgres"),
             ("classroom_app.db.schema_study_group_scheme.get_configured_db_engine", "postgres"),
             ("classroom_app.db.schema_retake.get_configured_db_engine", "postgres"),
+            ("classroom_app.services.group_assignment_service.get_configured_db_engine", "postgres"),
         ):
             item = patch(target, return_value=value)
             item.start()
@@ -193,6 +195,29 @@ class CollaborationMembershipPostgresTests(unittest.TestCase):
         self.assertEqual((200, 400), (a[0], b[0]))
         self.assertEqual({7, 8}, self.members())
 
+    def test_replayed_whole_class_create_uses_one_scheme(self):
+        settings = {"name": "QA", "allocation_mode": "all", "group_count": 2,
+                    "min_members": 2, "max_members": 2, "request_id": "same-form"}
+        def create(conn):
+            return service.create_group_scheme(conn, 1, self.teacher(), settings)
+        first, retry = self.race(create, create, gate_sql="INSERT INTO group_schemes")
+        self.assertEqual((200, 200), (first[0], retry[0]))
+        self.assertEqual(first[1]["id"], retry[1]["id"])
+        self.assertEqual([2, 2], [g["member_count"] for g in retry[1]["groups"]])
+        self.assertEqual(1, self.conn.execute("SELECT COUNT(*) FROM group_schemes").fetchone()[0])
+
+    def test_fill_racing_a_student_keeps_their_seat_and_fills_once(self):
+        self.scheme()
+        self.group(scheme=1, policy=service.SCHEME_JOIN_POLICY, members=())
+        self.group(group_id=2, scheme=1, policy=service.SCHEME_JOIN_POLICY, members=())
+        first, fill = self.race(lambda c: service.random_join_scheme(c, 1, self.student(7)),
+                                lambda c: service.fill_scheme_groups(c, 1, self.teacher()))
+        self.assertEqual((200, 200), (first[0], fill[0]))
+        self.assertEqual(3, fill[1])
+        self.assertIn(7, self.members(first[1]["group_id"]))
+        self.assertEqual({7, 8, 9, 10}, self.members(1) | self.members(2))
+        self.assertFalse(self.members(1) & self.members(2))
+
     def test_two_invite_acceptances_cannot_overfill_and_loser_remains_pending(self):
         self.group(policy="invite")
         self.conn.execute("INSERT INTO group_invitations(id,group_id,class_offering_id,inviter_student_id,invitee_student_id) VALUES(1,1,1,7,8),(2,1,1,7,9)")
@@ -228,6 +253,33 @@ class CollaborationMembershipPostgresTests(unittest.TestCase):
         self.assertEqual({7, 10}, self.members(1))
         self.assertEqual({8}, self.members(2))
 
+    def test_first_submission_freezes_only_its_group_before_roster_removal(self):
+        from classroom_app.services import group_assignment_service as grading
+
+        self.scheme()
+        self.group(policy=service.SCHEME_JOIN_POLICY, scheme=1, members=(7, 8))
+        self.group(group_id=2, policy=service.SCHEME_JOIN_POLICY, scheme=1, members=(9,))
+        self.conn.execute("""
+            CREATE TABLE submissions(assignment_id TEXT, student_pk_id BIGINT);
+            ALTER TABLE peer_reviews ADD COLUMN assignment_id TEXT, ADD COLUMN group_id BIGINT;
+            INSERT INTO assignment_group_bindings(assignment_id,class_offering_id,scheme_id,created_by_teacher_id)
+            VALUES('final-project',1,1,1);
+        """)
+        self.conn.commit()
+
+        def submit(conn):
+            grading.lock_group_grading_for_student(conn, "final-project", 7)
+            conn.execute("INSERT INTO submissions VALUES('final-project',7)")
+
+        submitted, removal = self.race(
+            submit, lambda conn: service.remove_group_member(conn, 1, self.teacher(), 8),
+            gate_sql="INSERT INTO submissions",
+        )
+        self.assertEqual((submitted[0], removal[0]), (200, 409))
+        self.assertEqual(self.members(), {7, 8})
+        service.teacher_assign_to_scheme_group(self.conn, 2, self.teacher(), 10)
+        self.assertEqual(self.members(2), {9, 10})
+
     def test_scheme_assignment_competes_for_one_slot_without_overfill(self):
         self.scheme()
         self.group(policy=service.SCHEME_JOIN_POLICY, scheme=1)
@@ -261,8 +313,9 @@ class CollaborationMembershipPostgresTests(unittest.TestCase):
 
     def test_redistribution_and_member_removal_share_classroom_first_lock_order(self):
         self.scheme()
-        self.group(policy=service.SCHEME_JOIN_POLICY, scheme=1, members=(7, 8))
-        self.group(group_id=2, policy=service.SCHEME_JOIN_POLICY, scheme=1, members=(9, 10))
+        self.conn.execute("UPDATE group_schemes SET min_members=2, max_members=3 WHERE id=1")
+        self.group(policy=service.SCHEME_JOIN_POLICY, scheme=1, cap=3, members=(7, 8, 9))
+        self.group(group_id=2, policy=service.SCHEME_JOIN_POLICY, scheme=1, cap=3, members=(10,))
         a, b = self.race(lambda c: service.redistribute_scheme_groups(c, 1, self.teacher()),
                          lambda c: service.remove_group_member(c, 2, self.teacher(), 10),
                          gate_sql="UPDATE study_group_members SET status = 'removed'")

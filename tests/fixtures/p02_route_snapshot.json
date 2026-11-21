@@ -616,6 +616,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/approvals/assignments/{assignment_id}/applicant-counts",
+    "methods": [
+      "GET"
+    ],
+    "name": "assignment_applicant_counts",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/approvals/types",
     "methods": [
       "GET"
@@ -2545,6 +2553,38 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{offering_id}/login-attendance/calendar",
+    "methods": [
+      "GET"
+    ],
+    "name": "attendance_calendar",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/calendar/align",
+    "methods": [
+      "POST"
+    ],
+    "name": "align_semester",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/calendar/sessions/{session_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "calendar_session",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/calendar/sessions/{session_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "save_calendar_session",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{offering_id}/login-attendance/dashboard",
     "methods": [
       "GET"
@@ -2753,6 +2793,46 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/students/{student_id}/corrections",
+    "methods": [
+      "POST"
+    ],
+    "name": "correct_student",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/students/{student_id}/push",
+    "methods": [
+      "GET"
+    ],
+    "name": "student_push_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/students/{student_id}/push/check",
+    "methods": [
+      "POST"
+    ],
+    "name": "check_student_push",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/students/{student_id}/push/{intent_id}/retry",
+    "methods": [
+      "POST"
+    ],
+    "name": "retry_student_push",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/external/sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "sync_workflow",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/recalculate",
     "methods": [
       "POST"
@@ -2766,6 +2846,22 @@
       "PATCH"
     ],
     "name": "change",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/settlement",
+    "methods": [
+      "GET"
+    ],
+    "name": "settlement_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/rounds/{round_id}/settlement",
+    "methods": [
+      "POST"
+    ],
+    "name": "request_settlement",
     "include_in_schema": true
   },
   {
@@ -2793,6 +2889,78 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/external/calendar-create",
+    "methods": [
+      "POST"
+    ],
+    "name": "create_calendar_checkin",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/external/calendar-preview",
+    "methods": [
+      "POST"
+    ],
+    "name": "preview_calendar_sync",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/external/calendar-reconcile",
+    "methods": [
+      "POST"
+    ],
+    "name": "reconcile_calendar",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/external/calendar-sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "submit_calendar_sync",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/external/calendar-sync/{key}",
+    "methods": [
+      "GET"
+    ],
+    "name": "calendar_sync_status",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/external/calendar-sync/{key}/readback",
+    "methods": [
+      "POST"
+    ],
+    "name": "read_calendar_result",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/external/confirm",
+    "methods": [
+      "POST"
+    ],
+    "name": "confirm_alignment",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/external/match",
+    "methods": [
+      "POST"
+    ],
+    "name": "match_lesson",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/external/workflow",
+    "methods": [
+      "GET"
+    ],
+    "name": "workflow",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{offering_id}/login-attendance/sessions/{session_id}/me",
     "methods": [
       "GET"
@@ -2807,6 +2975,142 @@
     ],
     "name": "create",
     "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/activities",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_topic_dispatches",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/activities",
+    "methods": [
+      "POST"
+    ],
+    "name": "publish_topic_dispatch",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/activities/{activity_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_topic_dispatch",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/activities/{activity_id}/change",
+    "methods": [
+      "POST"
+    ],
+    "name": "change_topic_dispatch",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/activities/{activity_id}/export.csv",
+    "methods": [
+      "GET"
+    ],
+    "name": "export_topic_dispatch",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/activities/{activity_id}/export.xlsx",
+    "methods": [
+      "GET"
+    ],
+    "name": "export_topic_workbook",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/activities/{activity_id}/files/{path:path}",
+    "methods": [
+      "GET"
+    ],
+    "name": "read_common_topic_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/activities/{activity_id}/topics/{topic_key}/files/{path:path}",
+    "methods": [
+      "GET"
+    ],
+    "name": "read_assigned_topic_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/packages",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_topic_packages",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/packages/import",
+    "methods": [
+      "POST"
+    ],
+    "name": "import_topic_package",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/packages/{package_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_topic_package",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/packages/{package_id}/dispatch-draft",
+    "methods": [
+      "GET"
+    ],
+    "name": "get_topic_dispatch_draft",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/packages/{package_id}/dispatch-draft",
+    "methods": [
+      "PUT"
+    ],
+    "name": "save_topic_dispatch_draft",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/packages/{package_id}/files/{path:path}",
+    "methods": [
+      "GET"
+    ],
+    "name": "preview_private_topic_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/packages/{package_id}/map",
+    "methods": [
+      "POST"
+    ],
+    "name": "map_topic_package",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/preview",
+    "methods": [
+      "POST"
+    ],
+    "name": "preview_topic_dispatch",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/project-topics/render/{grant}/{path:path}",
+    "methods": [
+      "GET"
+    ],
+    "name": "render_project_topic_asset",
+    "include_in_schema": false
   },
   {
     "path": "/api/classrooms/{offering_id}/smart-attendance/records/{source_key}",
@@ -3049,6 +3353,14 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/collaboration/schemes/{scheme_id}/admission",
+    "methods": [
+      "PUT"
+    ],
+    "name": "change_scheme_admission",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/collaboration/schemes/{scheme_id}/auto-leaders",
     "methods": [
       "POST"
@@ -3062,6 +3374,14 @@
       "POST"
     ],
     "name": "close_random_group_scheme",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/collaboration/schemes/{scheme_id}/fill",
+    "methods": [
+      "POST"
+    ],
+    "name": "fill_random_group_scheme",
     "include_in_schema": true
   },
   {

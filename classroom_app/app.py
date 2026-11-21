@@ -93,7 +93,7 @@ from .time_utils import app_timezone_name, local_iso
 from .database import get_db_connection
 
 # 导入所有 V4.0 路由
-from .routers import ui, files, homework, ai, materials, emoji, behavior, message_center, profile, learning, review, learning_path, collaboration, classroom_interactions, agent_tasks, agent_bridge, smart_classroom, signatures
+from .routers import ui, files, homework, ai, materials, emoji, behavior, message_center, profile, learning, review, learning_path, collaboration, classroom_interactions, agent_tasks, agent_bridge, smart_classroom, signatures, project_topics
 from .routers import user_ui_preferences
 from .routers import approval_workflow as approval_workflow_router
 from .services import approval_request_types  # noqa: F401  registers approval request types
@@ -850,6 +850,7 @@ app.include_router(learning.router)
 app.include_router(review.router)
 app.include_router(learning_path.router)
 app.include_router(collaboration.router)
+app.include_router(project_topics.router)
 app.include_router(career_path.router)
 app.include_router(calendar_feed.router)
 app.include_router(wrong_book.router)

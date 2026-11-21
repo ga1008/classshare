@@ -44,13 +44,14 @@ function schemeRow(scheme, boundSchemeId) {
       <input data-lq-component="radio" class="lq-radio" type="radio" name="ga-scheme" value="${scheme.id}" ${checked} />
       <span class="ga-scheme-option__body">
         <span class="ga-scheme-option__name">${escapeHtml(scheme.name || '随机分组')}</span>
-        <span class="ga-scheme-option__meta">${scheme.group_count || 0} 个小组 · 已分配 ${assigned} 人 · 每组 ${scheme.min_members || 0}-${scheme.max_members || 0} 人</span>
+        <span class="ga-scheme-option__meta">${scheme.is_history ? '已结束' : '进行中'} · ${scheme.group_count || 0} 个小组 · 已分配 ${assigned} 人 · 每组 ${scheme.min_members || 0}-${scheme.max_members || 0} 人</span>
       </span>
     </label>`;
 }
 
 function render(assignmentId, title, data, trigger) {
   const binding = data.binding;
+  const locked = Boolean(data.lock_reason);
   const schemes = data.schemes || [];
   const boundSchemeId = binding ? binding.scheme_id : null;
   const schemeListHtml = schemes.length
@@ -70,7 +71,9 @@ function render(assignmentId, title, data, trigger) {
         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass ga-modal__close" data-ga-close aria-label="关闭">&times;</button>
       </header>
       <div class="ga-modal__body">
-        ${binding ? `<div class="ga-current"><span class="ga-current__dot"></span>当前已按「${escapeHtml(binding.scheme_name || '分组方案')}」完成</div>` : ''}
+        ${binding ? `<div class="ga-current"><span class="ga-current__dot"></span>当前方案为「${escapeHtml(binding.scheme_name || '分组方案')}」</div>` : ''}
+        ${locked ? `<p class="ga-hint">${escapeHtml(data.lock_reason)}</p>` : `
+        <p class="ga-hint">按小组完成时，每人单独提交。综合表现分为个人作业得分 × 80% 加同组成员互评均分（满分 20 分）。</p>
         <section class="ga-section">
           <h4 class="ga-section__title">选择已有分组方案</h4>
           <div class="ga-scheme-list">${schemeListHtml}</div>
@@ -99,15 +102,15 @@ function render(assignmentId, title, data, trigger) {
                 <input data-lq-component="input" class="lq-input" type="number" data-ga-new-count min="1" max="60" placeholder="自动" />
               </label>
             </div>
-            <p class="ga-hint">新建后学生可在课堂互动区随机加入小组；也可由你在大屏拖拽分配。</p>
+            <p class="ga-hint">学生可在课堂分组页随机入组。教师也可在分组大屏分配成员。</p>
           </div>
-        </section>
+        </section>`}
       </div>
       <footer class="ga-modal__footer">
-        ${binding ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass ga-btn-danger" data-ga-unbind>取消按小组</button>' : '<span></span>'}
+        ${binding && !locked ? '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass ga-btn-danger" data-ga-unbind>取消按小组</button>' : '<span></span>'}
         <div class="ga-modal__footer-right">
           <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost" data-ga-close>关闭</button>
-          <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" data-ga-save>保存配置</button>
+          ${locked ? '' : '<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" data-ga-save>保存配置</button>'}
         </div>
       </footer>
     </div>`;
@@ -127,6 +130,7 @@ function render(assignmentId, title, data, trigger) {
     if (event.target === overlayEl) closeModal();
   });
   overlayEl.querySelectorAll('[data-ga-close]').forEach((el) => el.addEventListener('click', closeModal));
+  if (locked) return;
 
   const newForm = overlayEl.querySelector('[data-ga-newscheme-form]');
   overlayEl.querySelector('[data-ga-newscheme-toggle]').addEventListener('click', () => {
