@@ -81,26 +81,37 @@ def _option(option_id: str, text: str) -> dict[str, str]:
     return {"id": option_id, "text": text}
 
 
-def _unique_options(correct_text: str, distractors: list[str]) -> list[dict[str, str]]:
+def _unique_options(correct_text: str, distractors: list[str], *, seed_key: str = "") -> tuple[list[dict[str, str]], str]:
+    import hashlib
+
     options: list[str] = []
-    for item in [correct_text, *distractors]:
+    clean_correct = _clean_text(correct_text, limit=88)
+    for item in [clean_correct, *distractors]:
         text = _clean_text(item, limit=88)
         if text and text not in options:
             options.append(text)
         if len(options) >= 4:
             break
     generic = [
-        "只停留在页面位置和字数，不建立概念联系",
-        "跳过材料证据，直接等待标准答案",
-        "把材料当作无关背景，不联系课堂任务",
-        "只记住个别词语，不追问适用场景",
+        "仅记住个别术语定义，未梳理概念之间的前后关联",
+        "直接套用经验结论，跳过材料中的前提条件与例证",
+        "只关注局部细节，未结合课程目标判断适用范围",
+        "把不同场景下的步骤混为一谈，未区分关键差异",
     ]
     for item in generic:
         if len(options) >= 4:
             break
         if item not in options:
             options.append(item)
-    return [_option(option_id, text) for option_id, text in zip(OPTION_IDS, options)]
+    # 确定性轮换正确选项位置，避免每道题答案固定在 A
+    if len(options) > 1 and seed_key:
+        digest = int(hashlib.sha256(seed_key.encode("utf-8")).hexdigest()[:8], 16)
+        correct_index = digest % len(options)
+        if correct_index != 0:
+            options[0], options[correct_index] = options[correct_index], options[0]
+    rendered = [_option(option_id, text) for option_id, text in zip(OPTION_IDS, options)]
+    answer_id = next((opt["id"] for opt in rendered if opt["text"] == clean_correct), rendered[0]["id"])
+    return rendered, answer_id
 
 
 def _question(
@@ -110,13 +121,13 @@ def _question(
     distractors: list[str],
     explanation: str,
 ) -> dict[str, Any]:
-    options = _unique_options(correct_text, distractors)
+    options, answer_id = _unique_options(correct_text, distractors, seed_key=f"{question_id}:{prompt}:{correct_text}")
     return {
         "id": question_id,
         "type": "single_choice",
         "prompt": _clean_text(prompt, limit=140),
         "options": options,
-        "answer": options[0]["id"],
+        "answer": answer_id,
         "explanation": _clean_text(explanation, limit=180),
     }
 
@@ -156,14 +167,14 @@ def build_material_mastery_check_payload(
         questions.append(
             _question(
                 "q1",
-                f"以下哪一项最贴近《{material_label}》的核心内容？",
-                f"围绕“{summary}”建立理解",
+                f"以下哪一项最准确概括了《{material_label}》的核心主线？",
+                f"围绕“{summary}”建立理解与联系",
                 [
-                    "只把材料当作课后阅读，不联系课堂问题",
-                    "优先记住文件名和目录位置",
-                    "略过材料中的例证和关键词",
+                    "仅记忆零散定义，无需关联具体案例与应用场景",
+                    "将材料内容当作固定结论直接照搬，不分析前提条件",
+                    "只关注局部操作步骤，忽略概念之间的因果逻辑",
                 ],
-                f"本题检验你是否抓住材料主线：{summary}",
+                f"本题用于确认你是否抓住材料主线：{summary}",
             )
         )
 
@@ -172,14 +183,14 @@ def build_material_mastery_check_payload(
         questions.append(
             _question(
                 "q2",
-                "研读完成后，最应该用哪组关键词回扣本材料？",
+                "复盘这份材料时，哪一组关键词最能串联起其中的核心知识点？",
                 keyword_text,
                 [
-                    "签到、下载、翻页",
-                    "分数、排名、提交时间",
-                    "文件格式、页面尺寸、附件名称",
+                    "通用背景、泛化结论、课外拓展",
+                    "常规格式、排版规范、篇幅要求",
+                    "课前预习、课堂笔记、课后归档",
                 ],
-                f"关键词能帮助你把零散内容收束成可复述的知识点：{keyword_text}",
+                f"抓住核心关键词（{keyword_text}）有助于把零散内容串成可迁移的知识框架。",
             )
         )
 
@@ -188,14 +199,14 @@ def build_material_mastery_check_payload(
         questions.append(
             _question(
                 "q3",
-                "如果要把这份材料用于课堂任务，第一步最合理的做法是？",
-                f"先围绕“{focus}”整理证据和例子",
+                "把这份材料运用到后续课堂任务时，第一步更稳妥的做法是？",
+                f"先围绕“{focus}”梳理关键依据与典型例子",
                 [
-                    "先完成页面滚动，再决定是否理解",
-                    "直接照搬结论，不核对材料依据",
-                    "只看最后一段，跳过前后逻辑",
+                    "直接套用以往类似题目的结论，不核对本课材料前提",
+                    "先跳过核心概念，等做到具体题目时再临时回查",
+                    "只摘抄最后一段总结，省略推导与论证过程",
                 ],
-                f"掌握材料不只是读完，而是能围绕“{focus}”组织证据并应用。",
+                f"真正掌握材料，意味着能围绕“{focus}”拿出依据、讲清逻辑并应用到新情境。",
             )
         )
 

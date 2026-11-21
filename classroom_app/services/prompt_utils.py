@@ -14,7 +14,7 @@ from typing import Any, Optional
 # 礼貌称呼
 # ---------------------------------------------------------------------------
 
-# 中文姓氏集合（常见 100 姓，足以覆盖大多数场景）
+# 中文常见单姓集合（直接按单字拆成集合）
 _COMMON_SURNAMES: frozenset[str] = frozenset(
     "赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜"
     "戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳酆鲍史唐"
@@ -28,43 +28,51 @@ _COMMON_SURNAMES: frozenset[str] = frozenset(
     "谭贡劳逄姬申扶堵冉宰郦雍卻璩桑桂濮牛寿通边扈燕冀郏浦尚农温别庄晏柴"
     "瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄"
     "阙东欧殳沃利蔚越夔隆师巩厍聂晁勾敖融冷訾辛阚那简饶空曾母沙乜养鞠须"
-    "丰巢关蒯相查后荆红游竺权逯盖益桓公".split()
+    "丰巢关蒯相查后荆红游竺权逯盖益桓公"
 )
+
+_COMPOUND_SURNAMES: frozenset[str] = frozenset({
+    "欧阳", "司马", "上官", "诸葛", "令狐", "东方", "西门", "南宫", "皇甫", "尉迟",
+    "公孙", "慕容", "长孙", "宇文", "独孤", "端木", "百里", "轩辕", "太叔", "申屠",
+})
+
+
+def _is_cjk_char(ch: str) -> bool:
+    return bool(ch) and "\u4e00" <= ch <= "\u9fff"
 
 
 def _extract_surname(name: str) -> str:
-    """尝试提取中文姓名中的姓氏（支持单姓/复姓）。"""
+    """尝试提取中文姓名中的姓氏（支持单姓/复姓）；非中文姓名返回空串以免误截断。"""
     name = (name or "").strip()
     if not name:
         return ""
-    # 尝试复姓
-    if len(name) >= 3 and name[:2] in {
-        "欧阳", "司马", "上官", "诸葛", "令狐", "东方", "西门", "南宫", "皇甫", "尉迟",
-        "公孙", "慕容", "长孙", "宇文", "独孤", "端木", "百里", "轩辕", "太叔", "申屠",
-    }:
+    if len(name) >= 3 and name[:2] in _COMPOUND_SURNAMES:
         return name[:2]
-    # 单姓
     if name[0] in _COMMON_SURNAMES:
         return name[0]
-    # 非中文/无匹配 —— 取前两个字符作为 fallback
-    return name[:1]
+    if _is_cjk_char(name[0]):
+        return name[0]
+    return ""
 
 
 def polite_address(name: str, role: str = "student") -> str:
     """
     将直呼其名转换为礼貌称呼。
 
-    - 教师 → "张老师"
-    - 学生 → "王同学"
-    - 无法判断时保持原样
+    - 教师 → "张老师"（非中文名如 "Alice" → "Alice 老师"）
+    - 学生 → "王同学"（非中文名如 "Alice" → "Alice 同学"）
+    - 已带“老师/同学”后缀时避免重复拼接
     """
     name = (name or "").strip()
+    suffix = "老师" if role == "teacher" else "同学"
     if not name:
-        return "同学" if role == "student" else "老师"
+        return suffix
+    if name.endswith(suffix):
+        return name
     surname = _extract_surname(name)
-    if role == "teacher":
-        return f"{surname}老师" if surname else name
-    return f"{surname}同学" if surname else name
+    if surname:
+        return f"{surname}{suffix}"
+    return f"{name} {suffix}"
 
 
 # ---------------------------------------------------------------------------
@@ -145,11 +153,41 @@ def build_time_context_text(now: Optional[datetime] = None) -> str:
 
 
 def build_system_info_text() -> str:
-    """生成面向 AI 的平台系统简介，供 system prompt 注入。"""
+    """生成面向 AI 的平台简介，供 system prompt 注入。"""
     return (
-        "平台信息：高校智慧课堂系统，功能包括课程管理、作业考试、"
-        "即时讨论、AI 助教、内部个性化学习支持等。"
+        "平台信息：高校课堂互动教学平台，涵盖课程与资料管理、学习文档、作业考试、"
+        "课堂研讨、消息通知与 AI 教学辅助。"
     )
+
+
+def build_natural_voice_rules(scene: str = "general") -> str:
+    """
+    全平台统一的 AI 自然表达原则：温和、清醒、克制、有深度，去 AI 腔与空套话。
+    注意：严禁包含任何隐私/内部标识词，可安全注入公开对话与教学场景。
+    """
+    base = (
+        "表达要求：\n"
+        "- 像一位靠谱、真诚、分寸得体的大学同事或助教那样说话：温和但不讨好，专业但不端着，简练但不冷漠。\n"
+        "- 开门见山回应重点；少用“好问题”“很高兴为您解答”“值得注意的是”“综上所述”“不难发现”等套话，不用“赋能/抓手/闭环/维度”等空洞热词。\n"
+        "- 结尾自然收住，不要无故加一段总结、鸡汤或“希望以上内容对你有所帮助，如有问题欢迎继续提问”。\n"
+        "- 信息有把握就直接给结论和依据，把握不足就诚实说明边界，不编造事实。"
+    )
+    if scene == "discussion":
+        return (
+            base
+            + "\n- 研讨室公开回复默认控制在 1–3 句，像顺手接话一样自然；只有在问题本身较复杂时才分段或列点。"
+        )
+    if scene == "grading":
+        return (
+            base
+            + "\n- 评语紧扣这份作业的具体作答：先肯定真正做对的地方，再指出具体卡点和可立即动手修改的一步，不写放之四海而皆准的空鼓励。"
+        )
+    if scene == "teaching_doc":
+        return (
+            base
+            + "\n- 教学文档、教案与分析材料用准确平实的学科语言撰写，讲清逻辑和实操细节，不堆砌宏大口号或模板套话。"
+        )
+    return base
 
 
 # ---------------------------------------------------------------------------

@@ -14,39 +14,39 @@ from typing import Any
 # The pedagogy rulebook — kept faithful to the teacher's 教案编写提示.md so the
 # generated 教学内容及过程 reads like the hand-written 第16章 samples.
 PEDAGOGY_SPEC = """\
-你是资深高校课程教学设计专家，精通 OBE 成果导向、"两性一度"(高阶性/创新性/挑战度) 与课程思政融入。
-请严格遵循以下教案编写规范：
+你是资深高校课程教学设计顾问，熟悉 OBE 成果导向、“两性一度”（高阶性/创新性/挑战度）与课程思政的自然融入。
+请严格遵循以下教案编写规范，并根据当前课程所属学科选用贴合本学科的真实案例、工具与术语，不要生搬硬套无关学科的例子：
 
 【核心理念】
-- 成果导向(OBE)：由"教学目的和要求"(学生学完能做什么)逆向驱动；学生为中心，教师是引导者；成果可观测。
+- 成果导向（OBE）：由“教学目的和要求”（学生学完能做什么）逆向驱动；学生为主体，教师为引导者；学习成果可观察、可检验。
 - 两性一度：
-  · 高阶性——超越"是什么"，聚焦"为什么/怎么办"；善用强类比(如 DNS 是电话簿、SELinux 是安全标签)；以"排错"为核心教学环节。
-  · 创新性——优先 PBL(问题驱动)、案例法、引导发现法；融合信息技术(Mermaid 图、AI 辅助)。
-  · 挑战度——作业分层，为学有余力者设计综合性/研究性/架构性的 Pro 版作业。
-- 思政融入：与专业知识自然结合(数字中国/数字主权/工匠精神/网络安全责任)，导入处立意、小结处升华，拒绝生硬。
+  · 高阶性——超越“是什么”，聚焦“为什么/怎么做”；善用贴合本学科的清晰类比；围绕真实易错点或典型误区设计辨析与排错环节。
+  · 创新性——优先采用 PBL（问题驱动）、案例分析、情景演练、引导发现等方法；合理融入图示、数字工具或 AI 辅助教学。
+  · 挑战度——作业分层设计：基础版巩固核心知识，进阶版（Pro 版）面向学有余力的学生，强调综合应用、思辨或项目拓展。
+- 思政融入：紧扣本课程学科语境自然融入（如科学精神、工匠精神、文化自信、职业伦理、家国情怀等），导入处点题、小结处呼应，不喊空洞口号、不生硬拔高。
 
-【教学内容及过程(process)必须包含且按顺序】
-先写清课时说明：1课时=1小节=40分钟；若本次课是2课时，则必须拆成第1小节(40分钟)和第2小节(40分钟)，不能笼统写成一个80分钟段落；各环节分钟数相加必须等于本次课总分钟数。
-一、教学导入(约8-10分钟，需标明属于第几小节)：回顾(承上启下)→引入(PBL/情景案例)→思政融入→目标(OBE)。
-二、讲授新课：按40分钟小节组织，每个小节给出"核心理念"和精确分钟分配，并【必须用 Markdown 表格】，表头固定为：
+【教学内容及过程（process）必须包含且按顺序】
+先写清课时说明：1课时=1小节=40分钟；若本次课是2课时，必须拆成第1小节（40分钟）和第2小节（40分钟），不能笼统写成一个80分钟段落；各环节分钟数相加必须等于本次课总分钟数。
+一、教学导入（约8–10分钟，标明属于第几小节）：回顾（承上启下）→引入（问题或真实案例）→思政融入→目标（OBE）。
+二、讲授新课：按40分钟小节组织，每个小节给出“核心理念”和精确分钟分配，并【必须用 Markdown 表格】，表头固定为：
    | 教学环节 | 教学活动（教师引导） | 学生活动（主体） | 设计意图（OBE & 两性一度） |
-   表格内用"手把手/演示/提问/创设情景"描述教师活动，用"动手实践/自主排错/成果输出/结对协作"描述学生活动；
-   适当主动设置"陷阱"(如 SELinux/防火墙/语法错误)引导排错；复杂流程/架构可附 Mermaid 代码块。
-三、教学小结(约10分钟)：知识梳理(是什么/为什么/怎么做) + 反思与展望(呼应导入思政点、引出下次课)。
-四、作业布置：作业(基础版-覆盖核心知识点，全体完成) + 作业 Pro 版(高阶性&挑战度，选做)，均写明"主题/要求/提交物"。
+   表格内用具体动作描述教师引导（示范/设问/情境创设/巡回点拨）与学生活动（案例拆解/实践演练/自主纠错/同伴讨论/成果输出）；
+   适当设计本学科典型易错点或反例引导学生辨析；复杂流程或结构可按需附 Mermaid 图示。
+三、教学小结（约10分钟）：知识梳理（是什么/为什么/怎么做）+ 反思与展望（呼应导入立意、衔接下次课）。
+四、作业布置：作业（基础版——覆盖核心知识点，全体完成）+ 作业 Pro 版（高阶性与挑战度，选做），均写明“主题/要求/提交物”。
 
-【用语】教案是正式材料，用语专业严谨。
+【用语】教案是正式教学归档材料，表达专业、平实、具体，少用空泛套话与宣传口号。
 """
 
 # JSON shape every per-session generation must return.
 SESSION_OUTPUT_SCHEMA = {
-    "objectives": "教学目的和要求：分『知识目标/能力目标/素养目标』三段，知识目标用『了解/掌握』，能力目标用『能够/熟练掌握』，素养目标用『培养…/树立…』。可用换行分隔。",
-    "key_points": "教学重点：2-3 点，本次课必须掌握的核心技能或配置。",
-    "difficulties": "教学难点：2-3 点，学生最易混淆/出错/需排错之处。",
-    "methods": "教学方法：如 PBL项目驱动法、案例法、强类比法、引导发现法、手把手实践法 等(顿号分隔)。",
-    "means": "教学手段：如 思维导图、Mermaid流程图、虚拟机、Xshell、AI辅助工具、PPT 等(顿号分隔)。",
-    "process": "教学内容及过程：完整 Markdown，严格包含 一、教学导入 / 二、讲授新课(含规定表头的 Markdown 表格) / 三、教学小结 / 四、作业布置(基础版+Pro版)。",
-    "side_notes": "旁批：教师课前准备提示与课堂注意事项(如『提前准备…镜像/确认虚拟化已开启』)，1-4 条，换行分隔；可留空。",
+    "objectives": "教学目的和要求：分『知识目标/能力目标/素养目标』三段，知识目标用『了解/掌握』，能力目标用『能够/熟练运用』，素养目标用『培养…/树立…』。可用换行分隔。",
+    "key_points": "教学重点：2–3 点，本次课必须掌握的核心概念、方法或技能。",
+    "difficulties": "教学难点：2–3 点，学生最易混淆、出错或需重点演练之处。",
+    "methods": "教学方法：如 PBL项目驱动法、案例分析法、类比启发法、引导发现法、实践指导法等（顿号分隔）。",
+    "means": "教学手段：按当前课程学科据实填写，如 PPT、思维导图、课程材料、课堂演示、案例库、实验环境等（顿号分隔）。",
+    "process": "教学内容及过程：完整 Markdown，严格包含 一、教学导入 / 二、讲授新课（含规定表头的 Markdown 表格） / 三、教学小结 / 四、作业布置（基础版+Pro版）。",
+    "side_notes": "旁批：教师课前准备提示与课堂注意事项（贴合本课程实际），1–4 条，换行分隔；可留空。",
 }
 
 
@@ -175,23 +175,21 @@ def build_import_system_prompt(extra_hint: str = "") -> str:
 
 def build_json_repair_system_prompt(schema_hint: dict[str, Any]) -> str:
     return (
-        "You are a JSON repair worker. Extract useful data from the user's malformed AI output "
-        "and return exactly one valid JSON object matching the target structure. Do not invent "
-        "business content that is not present. Use empty strings or empty arrays when uncertain. "
-        "Return JSON only, with no markdown fence or explanation.\n\n"
-        "Target structure:\n"
+        "你是 JSON 修复助手。请从用户提供的残缺或不规范输出中提取已有有效内容，"
+        "整理为严格符合目标结构的单个合法 JSON 对象。严禁编造原文未出现的内容，"
+        "不确定或缺失的字段填空字符串或空数组。只输出 JSON 本体，不要 Markdown 代码块或任何解释。\n\n"
+        "目标结构：\n"
         + json.dumps(schema_hint or {"cover": {}, "sessions": []}, ensure_ascii=False, indent=2)
     )
 
 
 def build_session_draft_system_prompt() -> str:
     return (
-        "You are a course-session planning assistant. Based on the teacher's topic hint, "
-        "course context, and neighboring sessions, create one concise session card that can be "
-        "inserted into a semester lesson plan. Return exactly one JSON object with keys: "
-        "chapter, material_outline, prompt_hint. chapter <= 40 Chinese chars; "
-        "material_outline 200-500 Chinese chars; prompt_hint <= 120 Chinese chars. "
-        "Return JSON only."
+        "你是高校课程课次规划助手。请结合教师的主题提示、课程信息与前后课次，"
+        "拟定一条可插入学期教案的新课次卡片。只输出一个合法 JSON 对象，键固定为："
+        "chapter、material_outline、prompt_hint。"
+        "要求：chapter 不超过 40 字；material_outline 200–500 字，写清知识要点与教学脉络；"
+        "prompt_hint 不超过 120 字，说明备课与课堂组织建议。不要输出 JSON 以外的任何内容。"
     )
 
 
@@ -204,12 +202,12 @@ def build_session_draft_user_message(
 ) -> str:
     return "\n".join(
         [
-            f"Course: {cover.get('course_name') or ''}",
-            f"Class: {cover.get('class_name') or ''}",
-            f"Textbook: {cover.get('textbook') or ''}",
-            f"Teacher hint: {prompt or 'Please bridge the neighboring sessions naturally.'}",
-            f"Previous session: {previous_context or '(none)'}",
-            f"Next session: {next_context or '(none)'}",
-            "Return the new session card JSON.",
+            f"课程名称：{cover.get('course_name') or '（未填写）'}",
+            f"授课班级：{cover.get('class_name') or '（未填写）'}",
+            f"使用教材：{cover.get('textbook') or '（未填写）'}",
+            f"教师主题提示：{prompt or '请自然衔接前后课次，补齐承上启下的教学内容。'}",
+            f"前一课次：{previous_context or '（无）'}",
+            f"后一课次：{next_context or '（无）'}",
+            "请返回新课次卡片 JSON。",
         ]
     )

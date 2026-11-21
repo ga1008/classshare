@@ -46,12 +46,12 @@ def get_current_mp_user(request: Request) -> dict:
 def get_current_mp_student(request: Request) -> dict:
     user = get_current_mp_user(request)
     if user.get("role") != "student":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该接口仅限学生使用。")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="当前功能仅限学生账号使用。")
     return user
 
 
 def get_current_mp_teacher(request: Request) -> dict:
     user = get_current_mp_user(request)
     if user.get("role") != "teacher":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该接口仅限教师使用。")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="当前功能仅限教师账号使用。")
     return user

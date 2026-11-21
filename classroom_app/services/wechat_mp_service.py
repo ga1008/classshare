@@ -68,7 +68,7 @@ def exchange_code_for_openid(code: str) -> dict[str, str]:
     """
     normalized_code = str(code or "").strip()
     if not normalized_code:
-        raise WechatMpError("缺少微信登录凭据（code）。")
+        raise WechatMpError("未获取到微信登录状态，请重新进入小程序。")
     appid, secret = get_wechat_mp_credentials()
     try:
         response = httpx.get(
@@ -98,7 +98,7 @@ def exchange_code_for_openid(code: str) -> dict[str, str]:
 
     openid = str(payload.get("openid") or "").strip()
     if not openid:
-        raise WechatMpError("微信登录失败：未获取到用户标识。")
+        raise WechatMpError("微信登录未能完成，请退出后重新进入小程序。")
     return {"openid": openid, "unionid": str(payload.get("unionid") or "").strip()}
 
 

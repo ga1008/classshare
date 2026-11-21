@@ -82,6 +82,7 @@ from ..services.learning_progress_service import (
     handle_stage_exam_grading_complete,
     refresh_student_learning_state,
 )
+from ..services.student_ai_tutor_context_service import build_tutor_context_block
 from ..services.student_support_service import build_student_support_signal_prompt
 from ..services.platform_knowledge_service import (
     build_platform_overview_block,
@@ -301,11 +302,13 @@ async def ai_generate_assignment(request: Request, user: dict = Depends(get_curr
         response.raise_for_status()
         return response.json()
     except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="AI 助手服务未运行，请先启动 ai_assistant.py。")
+        raise HTTPException(status_code=503, detail="AI 服务暂时不可用，请稍后重试。")
     except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail=f"AI 服务错误: {e.response.text}")
+        print(f"[AI_GENERATE_ASSIGNMENT] 上游 HTTP {e.response.status_code}: {e.response.text[:300]}")
+        raise HTTPException(status_code=e.response.status_code, detail="AI 生成作业暂时失败，请稍后重试。")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI 请求失败: {e}")
+        print(f"[AI_GENERATE_ASSIGNMENT] 生成异常: {e}")
+        raise HTTPException(status_code=500, detail="AI 生成作业时遇到问题，请稍后重试。")
 
 
 @router.post("/submissions/{submission_id}/regrade", response_class=JSONResponse)
@@ -1313,16 +1316,15 @@ def format_system_prompt_teacher(user_id: int, class_offering_id: int) -> str:
             course_names = ", ".join([row['name'] for row in courses_taught])
             prompt_parts.append(f"- 教授的课程(示例): {course_names}")
 
-    # 添加时间上下文与平台认知
-    prompt_parts.append(f"\n--- 当前环境信息 ---")
-    prompt_parts.append(build_time_context_text())
+    # 添加平台简介与路由认知（当前实时时间由最终 system prompt 统一注入，避免会话缓存过期）
+    prompt_parts.append(f"\n--- 平台环境 ---")
     prompt_parts.append(build_system_info_text())
     prompt_parts.append("")
-    prompt_parts.append(build_platform_overview_block("teacher"))
+    prompt_parts.append(build_platform_overview_block("teacher", include_time=False))
 
-    prompt_parts.append("\n请根据以上信息，辅助教师进行教学管理、课程答疑或内容生成。")
-    prompt_parts.append("给跳转建议时直接用站内路径的 Markdown 链接，如 [公文中心](/manage/academic/gongwen)。")
-    prompt_parts.append('称呼用户时请使用"X老师"的格式（X为姓氏），不要直呼全名。语气可以自然轻松、偶尔幽默。')
+    prompt_parts.append("\n请结合以上信息协助教师开展教学管理、课程答疑或材料准备。")
+    prompt_parts.append("给出站内跳转建议时，直接使用相对路径的 Markdown 链接，如 [公文中心](/manage/academic/gongwen)。")
+    prompt_parts.append("称呼规范：使用上方的“礼貌称呼”（X老师），不直呼全名；语气尊重、干练、自然。")
     return "\n".join(prompt_parts)
 
 
@@ -1424,15 +1426,14 @@ def format_system_prompt_student(user_id: int, class_offering_id: int) -> str:
                 prompt_parts.append("")
                 prompt_parts.append(support_signal_prompt)
 
-    # 添加时间上下文与平台认知
-    prompt_parts.append(f"\n--- 当前环境信息 ---")
-    prompt_parts.append(build_time_context_text())
+    # 添加平台简介与路由认知（当前实时时间由最终 system prompt 统一注入）
+    prompt_parts.append(f"\n--- 平台环境 ---")
     prompt_parts.append(build_system_info_text())
     prompt_parts.append("")
-    prompt_parts.append(build_platform_overview_block("student"))
+    prompt_parts.append(build_platform_overview_block("student", include_time=False))
 
-    prompt_parts.append("\n请根据以上信息，并结合你掌握的课程大纲和知识点（RAG材料）来回答问题。")
-    prompt_parts.append('称呼用户时请优先使用上方“修仙称呼”（例如“炼气修士张三”“筑基修士张三”），不要直呼全名；语气要像陪伴修行的课堂助教，轻松鼓励但不夸张。')
+    prompt_parts.append("\n请结合以上信息以及课程材料与知识点来回答问题。")
+    prompt_parts.append("称呼规范：优先使用上方的“修仙称呼”（如无则用“X同学”），不直呼全名；语气像靠谱的学伴与课堂助教，真诚、清晰、不居高临下。")
     return "\n".join(prompt_parts)
 
 
@@ -2724,7 +2725,7 @@ async def handle_ai_workspace_chat(
         classroom_context_prompt="平台个人助手：课堂、材料等上下文以当前页面授权信息为准。",
         allow_private_context=user_role == "teacher")
     try:
-        platform_block = build_platform_overview_block(user_role)
+        platform_block = build_platform_overview_block(user_role, include_time=False)
         with get_db_connection() as _pk_conn:
             user_block = build_user_knowledge_block(_pk_conn, user_pk, user_role)
         system_prompt += "\n\n" + platform_block
@@ -2733,7 +2734,7 @@ async def handle_ai_workspace_chat(
     except Exception as exc:
         print(f"[AI_WORKSPACE_CHAT] 平台认知注入失败（已降级）: {exc}")
     if deep_thinking:
-        system_prompt += "本轮已开启深度思考，请进行更充分的推理、校验和风险检查，但最终回答仍要简洁清楚。"
+        system_prompt += "\n本轮已开启深度思考，请先充分核对依据与边界，再给出简明清楚的结论。"
     if extra_context:
         system_prompt += (
             "\n\n--- 当前页面上下文 ---\n"
@@ -2751,7 +2752,7 @@ async def handle_ai_workspace_chat(
     cleaned_page_text = clean_page_text(page_text)
     if cleaned_page_text:
         system_prompt += build_page_text_block(cleaned_page_text)
-    # 课堂全知：页面处于某个课堂时注入课程/教材信息；教师另加课堂全景简报（名册/修为/作业/投票/分组/课次）。
+    # 课堂全知：页面处于某个课堂时注入课程/教材信息；教师另加课堂全景简报；学生同步注入学伴材料引用与进行中任务守卫。
     context_offering_id = _extract_workspace_context_id(extra_context, "class_offering_id")
     if context_offering_id > 0:
         try:
@@ -2760,6 +2761,21 @@ async def handle_ai_workspace_chat(
                 system_prompt += classroom_blocks
         except Exception as exc:  # noqa: BLE001
             print(f"[AI_WORKSPACE_CHAT] 课堂全景注入失败（已降级）: {exc}")
+        if user_role == "student":
+            try:
+                def _load_workspace_tutor_block():
+                    with get_db_connection() as _tutor_conn:
+                        return build_tutor_context_block(
+                            _tutor_conn,
+                            class_offering_id=context_offering_id,
+                            query=cleaned_message,
+                            user_role=user_role,
+                        )
+                tutor_block = await asyncio.to_thread(_load_workspace_tutor_block)
+                if tutor_block:
+                    system_prompt += "\n\n" + tutor_block
+            except Exception as exc:  # noqa: BLE001
+                print(f"[AI_WORKSPACE_CHAT] 学伴上下文注入失败（已降级）: {exc}")
 
     chat_payload = {
         "system_prompt": system_prompt,
@@ -2976,12 +2992,16 @@ async def handle_ai_chat(
     message = str(message or "").strip()
     if not message and not files:
         raise HTTPException(400, "请输入消息或上传附件")
-    message = message or "请根据当前附件回答，并说明图片中的关键内容。"
     # A missing/unreadable attachment aborts before persisting or calling AI.
     uploads = await _prepare_chat_uploads(files or [])
     base64_urls = uploads["base64_urls"]
     user_attachments = uploads["attachments"]
     file_texts = uploads["file_texts"]
+    if not message:
+        if base64_urls:
+            message = "请结合我上传的图片内容帮我分析或回答。"
+        else:
+            message = "请结合我上传的附件内容帮我分析或回答。"
     model_capability: Literal["standard", "thinking", "vision"] = "thinking" if deep_thinking else "standard"
     if base64_urls:
         model_capability = "vision"
@@ -3090,6 +3110,21 @@ async def handle_ai_chat(
                 final_system_prompt += classroom_brief
         except Exception as exc:  # noqa: BLE001
             print(f"[AI_CHAT] 课堂全景注入失败（已降级）: {exc}")
+    else:
+        try:
+            def _load_chat_tutor_block():
+                with get_db_connection() as _tutor_conn:
+                    return build_tutor_context_block(
+                        _tutor_conn,
+                        class_offering_id=int(class_offering_id),
+                        query=message,
+                        user_role=user_role,
+                    )
+            tutor_block = await asyncio.to_thread(_load_chat_tutor_block)
+            if tutor_block:
+                final_system_prompt += "\n\n" + tutor_block
+        except Exception as exc:  # noqa: BLE001
+            print(f"[AI_CHAT] 学伴上下文注入失败（已降级）: {exc}")
 
     # 7. 准备发送给 ai_assistant 的数据
     chat_payload = {
@@ -3107,107 +3142,7 @@ async def handle_ai_chat(
         "web_search_enabled": should_enable_web_search(model_capability),
     }
 
-    # 8. [!!! 核心修改 2: 创建流式生成器 !!!]
-    async def stream_and_save_generator():
-        """
-        这个内部生成器负责:
-        1. 流式调用 ai_assistant
-        2. 将 AI 响应(chunk) yield 给前端
-        3. 在流结束后，将完整响应保存到数据库
-        4. 按调度规则更新内部个性化支持摘要
-        """
-        full_response_text = ""
-        thinking_content = ""
-        final_answer = ""
-        is_thinking = False
-
-        try:
-            # 11.1. 流式调用 ai_assistant
-            async with ai_client.stream(
-                    "POST",
-                    "/api/ai/chat-stream",  # [!!] 调用新的流式端点
-                    json=chat_payload,
-                    timeout=180.0
-            ) as response:
-
-                # 检查 HTTP 级别的错误
-                if not response.is_success:
-                    # 读取错误详情
-                    error_detail = await response.aread()
-                    error_msg = f"AI 助手服务连接失败 (状态码 {response.status_code}): {error_detail.decode('utf-8', errors='ignore')}"
-                    print(f"[ERROR] {error_msg}")
-                    yield error_msg  # 将错误信息流式传输给前端
-                    full_response_text = error_msg  # (确保下面保存的是错误信息)
-
-                else:
-                    # 11.2. 迭代 stream, 转发 chunk
-                    async for chunk in response.aiter_text():
-                        full_response_text += chunk
-                        chunk_for_state = chunk
-
-                        # 实时解析思考过程
-                        if "【思考过程开始】" in chunk_for_state:
-                            is_thinking = True
-                            # 移除标记，只保留内容
-                            chunk_for_state = chunk_for_state.replace("【思考过程开始】", "")
-                        if "【思考过程结束】" in chunk_for_state:
-                            is_thinking = False
-                            chunk_for_state = chunk_for_state.replace("【思考过程结束】", "")
-
-                        if is_thinking:
-                            thinking_content += chunk_for_state
-                        else:
-                            final_answer += chunk_for_state
-
-                        yield chunk  # 保留原始标记，交给前端解析思考过程
-
-        except httpx.ConnectError:
-            error_msg = "无法连接到 AI 助教服务。"
-            print(f"[ERROR] {error_msg}")
-            yield error_msg
-            full_response_text = error_msg
-        except Exception as e:
-            error_msg = f"AI 流式传输中发生未知错误: {e}"
-            print(f"[ERROR] {error_msg}")
-            yield error_msg
-            full_response_text = error_msg
-
-        # 8.3. [!!! 核心修改: 流结束后保存 !!!]
-
-        # 确保 full_response_text 不为空, 避免存入空数据
-        if not full_response_text or full_response_text.isspace():
-            print("[WARN] AI 返回了空响应，将保存占位符。")
-            full_response_text = "（AI 没有返回有效内容）"
-            # (如果流中没有 yield 任何东西, 我们在这里 yield 一次)
-            # (但通常错误处理已经 yield 过了, 所以这里只用于DB保存)
-
-        try:
-            parsed_thinking, parsed_answer = _split_streaming_response(full_response_text)
-            stored_thinking = thinking_content.strip() or parsed_thinking
-            stored_final_answer = final_answer.strip() or parsed_answer or full_response_text.strip()
-
-            with get_db_connection() as conn:
-                conn.execute(
-                    """
-                    INSERT INTO ai_chat_messages (session_id, role, message, thinking_content, final_answer)
-                    VALUES (?, 'assistant', ?, ?, ?)
-                    """,
-                    (
-                        session_db_id,
-                        stored_final_answer,
-                        stored_thinking or None,
-                        stored_final_answer,
-                    )
-                )
-                conn.commit()
-            print(f"[CHAT] 成功保存流式响应 (Session: {session_db_id}, Length: {len(full_response_text)})")
-        except Exception as e:
-            print(f"[ERROR] 保存 AI 流式响应失败: {e}")
-            # (此时流已结束，无法再通知前端)
-
-        # 8.4. 内部个性化支持摘要已改为全局定时调度，这里不再按对话轮次触发。
-
-    # 9. [!!! 核心修改: 返回 StreamingResponse !!!]
+    # 8. 创建结构化流式响应生成器
     async def structured_stream_and_save_generator():
         thinking_content = ""
         final_answer = ""
@@ -3244,11 +3179,11 @@ async def handle_ai_chat(
             ) as response:
                 if not response.is_success:
                     error_detail = await response.aread()
-                    error_message = (
-                        f"AI 助手服务连接失败 (状态码 {response.status_code}): "
-                        f"{error_detail.decode('utf-8', errors='ignore')}"
+                    print(
+                        f"[ERROR] AI 助手服务连接失败 (状态码 {response.status_code}): "
+                        f"{error_detail.decode('utf-8', errors='ignore')[:400]}"
                     )
-                    print(f"[ERROR] {error_message}")
+                    error_message = "AI 助教暂时没有响应，请稍后重试。"
                     yield _encode_stream_event("error", message=error_message)
                     yield _encode_stream_event("done", has_thinking=False)
                 else:
@@ -3312,23 +3247,24 @@ async def handle_ai_chat(
                     if not done_sent:
                         yield _encode_stream_event("done", has_thinking=bool(thinking_content.strip()))
         except httpx.ConnectError:
-            error_message = "无法连接到 AI 助教服务。"
-            print(f"[ERROR] {error_message}")
+            error_message = "AI 助教服务暂时不可用，请稍后重试。"
+            print("[ERROR] 无法连接到 AI 助教服务。")
             yield _encode_stream_event("error", message=error_message)
             yield _encode_stream_event("done", has_thinking=False)
         except Exception as e:
-            error_message = f"AI 流式传输中发生未知错误：{e}"
-            print(f"[ERROR] {error_message}")
+            print(f"[ERROR] AI 流式传输中发生未知错误：{e}")
+            error_message = "AI 回复暂时中断，请稍后重试。"
             yield _encode_stream_event("error", message=error_message)
             yield _encode_stream_event("done", has_thinking=bool(thinking_content.strip()))
 
         try:
             stored_thinking = sanitize_hidden_profile_leaks(thinking_content.strip()) or None
-            stored_final_answer = (
-                sanitize_hidden_profile_leaks(final_answer.strip())
-                or error_message
-                or "（AI 没有返回有效内容）"
-            )
+            stored_final_answer = sanitize_hidden_profile_leaks(final_answer.strip())
+            if not stored_final_answer:
+                if error_message:
+                    print(f"[CHAT] 本轮回复失败，不写入助手历史消息 (Session: {session_db_id})")
+                    return
+                stored_final_answer = "（本次未生成有效回复）"
 
             with get_db_connection() as conn:
                 conn.execute(
@@ -3640,34 +3576,11 @@ async def generate_exam_questions_async(
 
         print(f"[AI_GEN] 生成超时 (Task: {task_id})")
     except httpx.ConnectError:
+        connect_error_text = "AI 服务暂时不可用，请稍后重试。"
         async with _exam_gen_tasks_lock:
             if task_id in _exam_gen_tasks and _exam_gen_tasks[task_id]['status'] != ExamGenTaskStatus.CANCELLED:
                 _exam_gen_tasks[task_id]['status'] = ExamGenTaskStatus.FAILED
-                _exam_gen_tasks[task_id]['error'] = "AI助手服务未运行，请先启动 ai_assistant.py。"
-                _exam_gen_tasks[task_id]['completed_at'] = datetime.now().isoformat()
-                paper_id = _exam_gen_tasks[task_id].get('paper_id')
-
-        if paper_id:
-            try:
-                with get_db_connection() as conn:
-                    conn.execute(
-                        """UPDATE exam_papers
-                           SET ai_gen_status = 'failed', ai_gen_error = 'AI助手服务未运行，请先启动 ai_assistant.py。', updated_at = ?
-                           WHERE id = ?""",
-                        (datetime.now().isoformat(), paper_id)
-                    )
-                    conn.commit()
-            except Exception as e:
-                print(f"[WARN] 更新数据库连接失败状态失败: {e}")
-
-        print(f"[AI_GEN] 连接AI服务失败 (Task: {task_id})")
-    except Exception as e:
-        print(f"[AI_GEN] 生成异常 (Task: {task_id}): {e}")
-        traceback.print_exc()
-        async with _exam_gen_tasks_lock:
-            if task_id in _exam_gen_tasks and _exam_gen_tasks[task_id]['status'] != ExamGenTaskStatus.CANCELLED:
-                _exam_gen_tasks[task_id]['status'] = ExamGenTaskStatus.FAILED
-                _exam_gen_tasks[task_id]['error'] = f"AI生成过程中发生错误: {str(e)}"
+                _exam_gen_tasks[task_id]['error'] = connect_error_text
                 _exam_gen_tasks[task_id]['completed_at'] = datetime.now().isoformat()
                 paper_id = _exam_gen_tasks[task_id].get('paper_id')
 
@@ -3678,7 +3591,32 @@ async def generate_exam_questions_async(
                         """UPDATE exam_papers
                            SET ai_gen_status = 'failed', ai_gen_error = ?, updated_at = ?
                            WHERE id = ?""",
-                        (f"AI生成过程中发生错误: {str(e)}", datetime.now().isoformat(), paper_id)
+                        (connect_error_text, datetime.now().isoformat(), paper_id)
+                    )
+                    conn.commit()
+            except Exception as e:
+                print(f"[WARN] 更新数据库连接失败状态失败: {e}")
+
+        print(f"[AI_GEN] 连接AI服务失败 (Task: {task_id})")
+    except Exception as e:
+        print(f"[AI_GEN] 生成异常 (Task: {task_id}): {e}")
+        traceback.print_exc()
+        generic_error_text = "AI 生成试卷时遇到异常，请稍后重试。"
+        async with _exam_gen_tasks_lock:
+            if task_id in _exam_gen_tasks and _exam_gen_tasks[task_id]['status'] != ExamGenTaskStatus.CANCELLED:
+                _exam_gen_tasks[task_id]['status'] = ExamGenTaskStatus.FAILED
+                _exam_gen_tasks[task_id]['error'] = generic_error_text
+                _exam_gen_tasks[task_id]['completed_at'] = datetime.now().isoformat()
+                paper_id = _exam_gen_tasks[task_id].get('paper_id')
+
+        if paper_id:
+            try:
+                with get_db_connection() as conn:
+                    conn.execute(
+                        """UPDATE exam_papers
+                           SET ai_gen_status = 'failed', ai_gen_error = ?, updated_at = ?
+                           WHERE id = ?""",
+                        (generic_error_text, datetime.now().isoformat(), paper_id)
                     )
                     conn.commit()
             except Exception as db_e:
@@ -3804,7 +3742,10 @@ async def ai_suggest_exam_topics(request: Request, user: dict = Depends(get_curr
 
         # 调用AI助手（使用标准模型）
         response = await ai_client.post("/api/ai/chat", json={
-            "system_prompt": "你是一个教学专家，擅长分析课程内容并推荐合适的出题范围。",
+            "system_prompt": (
+                "你是协助高校教师备课和命题的教学顾问。"
+                "请紧扣课程实际内容给出具体、可直接落地的出题范围建议，不写空泛客套话。"
+            ),
             "messages": [],
             "new_message": prompt,
             "model_capability": "standard",
@@ -3826,19 +3767,20 @@ async def ai_suggest_exam_topics(request: Request, user: dict = Depends(get_curr
                 }
             }
         else:
-            raise HTTPException(status_code=500, detail=f"AI推荐失败: {result.get('detail')}")
+            print(f"[ERROR] AI推荐出题范围失败: {result.get('detail')}")
+            raise HTTPException(status_code=500, detail="出题范围推荐暂时失败，请稍后重试。")
 
     except HTTPException:
         raise
     except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail="AI助手服务未运行，请先启动 ai_assistant.py。")
+        raise HTTPException(status_code=503, detail="AI 服务暂时不可用，请稍后重试。")
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="AI服务响应超时，请稍后重试。")
+        raise HTTPException(status_code=504, detail="AI 服务响应超时，请稍后重试。")
     except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="请求数据格式错误")
+        raise HTTPException(status_code=400, detail="请求数据格式有误")
     except Exception as e:
         print(f"[ERROR] 获取出题范围推荐失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取出题范围推荐失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="获取出题范围推荐暂时失败，请稍后重试。")
 
 
 @router.post("/ai/exam/generate", response_class=JSONResponse)

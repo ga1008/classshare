@@ -910,7 +910,7 @@ if (modal) {
         `).join('');
         const aiSuggestion = state.selected.courseDescriptionDraft ? `
             <div class="onboarding-ai-suggestion">
-                <strong>快速 AI 推荐简介</strong>
+                <strong>AI 推荐简介</strong>
                 <p>${escapeHtml(state.selected.courseDescriptionDraft)}</p>
                 <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="apply-description">一键填入</button>
             </div>
@@ -952,7 +952,7 @@ if (modal) {
                         </div>
                     </div>
                     <div class="onboarding-dynamic-actions">
-                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="generate-description">快速 AI 生成简介</button>
+                        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="generate-description">AI 生成简介</button>
                         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" data-action="generate-lessons">AI 生成课堂设置</button>
                         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="bind-materials">智能绑定材料</button>
                         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm btn btn-ghost lq-btn--ghost btn-sm" data-action="add-lesson">新增一次课</button>

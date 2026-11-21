@@ -33,7 +33,7 @@ def assignment_detail_page(request: Request, assignment_id: str, user: dict = De
         close_overdue_assignments(conn)
         assignment_row = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
         if not assignment_row:
-            raise HTTPException(404, "Assignment not found")
+            raise HTTPException(404, "未找到该作业或考试")
         assignment_row = refresh_assignment_runtime_status(conn, assignment_row)
         assignment = _enrich_assignment_upload_config(dict(assignment_row))
         assignment = enrich_assessment_classifications(conn, [assignment])[0]

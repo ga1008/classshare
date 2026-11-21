@@ -364,15 +364,15 @@ def _ensure_websocket_room_access_sync(class_offering_id: int, user: dict, user_
         ).fetchone()
 
         if not offering:
-            raise HTTPException(status_code=403, detail="Classroom not found")
+            raise HTTPException(status_code=403, detail="未找到该课堂")
 
         if user.get("role") == "teacher":
             if int(offering["teacher_id"]) != user_pk:
-                raise HTTPException(status_code=403, detail="Permission denied")
+                raise HTTPException(status_code=403, detail="无权访问当前内容")
             return
 
         if user.get("role") != "student":
-            raise HTTPException(status_code=403, detail="Permission denied")
+            raise HTTPException(status_code=403, detail="无权访问当前内容")
 
         student_class = conn.execute(
             """
@@ -388,7 +388,7 @@ def _ensure_websocket_room_access_sync(class_offering_id: int, user: dict, user_
             student_class_id=int(student_class["class_id"] or 0),
             offering=offering,
         ):
-            raise HTTPException(status_code=403, detail="Permission denied")
+            raise HTTPException(status_code=403, detail="无权访问当前内容")
 
 
 def _discussion_room_recipient_count(class_offering_id: int) -> int:
@@ -1238,7 +1238,7 @@ def resolve_teacher_course_context(conn, course_or_offering_id: int, teacher_id:
     if course:
         return {"course_id": int(course["id"]), "class_offering_id": None}
 
-    raise HTTPException(403, "鏃犳潈鎿嶄綔褰撳墠璇惧爞璧勬簮")
+    raise HTTPException(403, "无权操作当前课堂资源")
 
 
 def resolve_teacher_course_id(conn, course_or_offering_id: int, teacher_id: int) -> int:
@@ -1346,7 +1346,7 @@ async def delete_course_file(
 
         # 检查是否有其他课程引用同一物理文件
         if not can_manage_scoped_resource(conn, file_data, user):
-            raise HTTPException(403, "Permission denied")
+            raise HTTPException(403, "无权执行此操作")
 
         # 删除数据库记录
         conn.execute("DELETE FROM course_files WHERE id = ?", (file_id,))
@@ -1374,7 +1374,7 @@ async def download_course_file(
 ):
     """下载课程文件(支持断点续传、高并发控制、中文防乱码)"""
     if not user:
-        raise HTTPException(401, "Not authenticated")
+        raise HTTPException(401, "请先登录")
 
     with get_db_connection() as conn:
         file_info = conn.execute("""
@@ -1434,7 +1434,7 @@ async def get_classroom_files(
         ).fetchone()
 
         if not offering:
-            raise HTTPException(404, "Classroom not found")
+            raise HTTPException(404, "未找到该课堂")
         course_id = offering['course_id']
 
         # 2. 根据用户角色获取文件列表（含新字段）
@@ -1542,7 +1542,7 @@ async def download_discussion_attachment_variant(
 ):
     normalized_variant = str(variant or "").strip().lower()
     if normalized_variant not in {"thumbnail", "preview", "original"}:
-        raise HTTPException(status_code=404, detail="Discussion image variant not found")
+        raise HTTPException(status_code=404, detail="未找到该讨论图片")
 
     with get_db_connection() as conn:
         _ensure_classroom_access_for_user(conn, class_offering_id, user)
@@ -1593,11 +1593,11 @@ async def get_submission_file_raw(file_id: int, user: Optional[dict] = Depends(g
 
     preview_type = str(serialize_submission_file_row(file_info).get("preview_type") or "").lower()
     if preview_type != "image":
-        raise HTTPException(400, "Only image files support raw preview")
+        raise HTTPException(400, "仅图片文件支持原图预览")
 
     file_path = _resolve_file_path(str(file_info["stored_path"]))
     if file_path is None:
-        raise HTTPException(404, "File not found on disk")
+        raise HTTPException(404, "文件不存在或已被移除")
 
     media_type, headers = submission_inline_response_params(file_info)
     return FileResponse(file_path, media_type=media_type, headers=headers)
@@ -1614,11 +1614,11 @@ async def get_submission_file_image(
         file_info = ensure_submission_file_access(conn, file_id, user)
 
     if not serialize_submission_file_row(file_info).get("is_image"):
-        raise HTTPException(400, "Only image files support image variants")
+        raise HTTPException(400, "仅图片文件支持缩略图预览")
 
     file_path = _resolve_file_path(str(file_info["stored_path"]))
     if file_path is None:
-        raise HTTPException(404, "File not found on disk")
+        raise HTTPException(404, "文件不存在或已被移除")
 
     variant_path = await resolve_submission_image_variant(
         Path(file_path), str(file_info.get("file_hash") or ""), normalize_image_variant(variant)
@@ -1637,7 +1637,7 @@ async def get_submission_file_image(
 @router.get("/submissions/download/{file_id}", response_class=FileResponse)
 async def download_submission_file(file_id: int, user: Optional[dict] = Depends(get_current_user)):
     """V4.0: 下载学生提交的文件"""
-    if not user: raise HTTPException(401, "Not authenticated")
+    if not user: raise HTTPException(401, "请先登录")
 
     with get_db_connection() as conn:
         file_info = ensure_submission_file_access(conn, file_id, user)
@@ -1647,7 +1647,7 @@ async def download_submission_file(file_id: int, user: Optional[dict] = Depends(
 
     file_path = _resolve_file_path(str(file_info['stored_path']))
     if file_path is None:
-        raise HTTPException(404, "File not found on disk")
+        raise HTTPException(404, "文件不存在或已被移除")
 
     return FileResponse(
         file_path,

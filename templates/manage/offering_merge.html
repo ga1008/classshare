@@ -11,7 +11,7 @@
 {% block content %}
 <div class="academic-shell offering-merge-shell">
     {% call page_head('课堂合并',
-        explain='合班能力上线前，同一门合班课可能按行政班开了多个课堂。合并会把被并课堂的作业（标题加“原XX班”后缀）、提交、成绩、材料、互动、修为等全部数据迁入主课堂，并把班级挂为合班；执行前会生成完整数据快照并要求输入主课堂班级名确认。该操作不可逆，请在预检通过后谨慎执行。', explain_label='合并说明',
+        explain='如果同一门合班课按行政班分别开设了多个课堂，可以在这里合并为一个主课堂。被合并课堂的作业（标题会注明原班级）、提交、成绩、材料和互动记录会一并迁入主课堂；执行前系统会先备份数据并要求输入主课堂班级名确认。该操作不可撤销，请先预检核对。', explain_label='合并说明',
         actions=[
             {'label': '返回课堂管理', 'variant': 'outline', 'href': '/manage/teaching/classroom-hub'}
         ], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) %}

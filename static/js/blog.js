@@ -1189,7 +1189,7 @@ class BlogCenter {
         const section = this.sectionByKey(this.state.currentSection);
         if (!section) {
             intro.style.removeProperty('--section-accent');
-            intro.innerHTML = '<span>全频段</span><p>从不同方向遇见新问题、新知识和下一段旅程。</p>';
+            intro.innerHTML = '<span>全站广场</span><p>不同方向的思考、问题与记录都在这里汇合。</p>';
             return;
         }
         intro.style.setProperty('--section-accent', this.sectionAccent(section));
@@ -3907,7 +3907,7 @@ class BlogCenter {
                 else list.insertAdjacentHTML('beforeend', html);
                 this.floorLastPage = data.page;
             } else {
-                list.innerHTML = html || '<div class="blog-empty blog-empty--compact" data-blog-comments-empty><div class="blog-empty__title">还没有评论，来抢沙发</div></div>';
+                list.innerHTML = html || '<div class="blog-empty blog-empty--compact" data-blog-comments-empty><div class="blog-empty__title">还没有评论，来聊聊你的想法</div></div>';
                 this.floorFirstPage = data.page;
                 this.floorLastPage = data.page;
             }

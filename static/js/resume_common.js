@@ -342,7 +342,7 @@
       var unavailable = openModal({ title: '资料暂不可用', wide: true });
       unavailable.body.innerHTML = '<p>' + esc(error.message) + '。当前草稿仍保留在这个页面中。你可以复制摘要或下载完整备份后，返回自己的资料页面。</p>';
       conflictContent(unavailable, localContent);
-      var returnLink = document.createElement('a'); returnLink.className = 'rz-btn'; adoptControl(returnLink, { kind: 'button', variant: 'glass' }); returnLink.href = '/resume'; returnLink.textContent = '返回我的工作台'; unavailable.foot.appendChild(returnLink);
+      var returnLink = document.createElement('a'); returnLink.className = 'rz-btn'; adoptControl(returnLink, { kind: 'button', variant: 'glass' }); returnLink.href = '/resume'; returnLink.textContent = '返回简历中心'; unavailable.foot.appendChild(returnLink);
       return;
     }
     if (error.status !== 409 && error.status !== 428) { toast(error.message, 'error'); return; }

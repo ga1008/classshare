@@ -450,7 +450,7 @@ async def api_private_message_attachment_variant(
 ):
     normalized_variant = str(variant or "").strip().lower()
     if normalized_variant not in {"thumbnail", "preview", "original"}:
-        raise HTTPException(status_code=404, detail="Private message attachment variant not found")
+        raise HTTPException(status_code=404, detail="未找到该私信附件")
     try:
         attachment_payload = await ensure_private_message_attachment_file_payload(
             user,

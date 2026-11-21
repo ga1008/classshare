@@ -88,7 +88,7 @@ def sanitize_student_feedback_text(feedback_md: Any) -> str:
         safe_lines.append(line)
     sanitized = "\n".join(safe_lines).strip()
     if removed_any and not sanitized:
-        sanitized = "本次评语已完成安全清理，请结合题目反馈继续完善。"
+        sanitized = "请结合下方逐题反馈查看得分与扣分点，重点修改失分题目。"
     return sanitized
 
 
@@ -109,7 +109,7 @@ def _default_overview(
     if fallback_reason:
         return fallback_reason.strip()
     if score is None:
-        return "本次批改已完成，但 AI 未返回可直接展示的总览评语。请结合逐题反馈继续修改。"
+        return "本次批改已完成，暂未生成总览评语。请先查看下方逐题反馈与扣分点。"
     deducted: list[str] = []
     for question in questions or []:
         if not isinstance(question, dict):
@@ -299,6 +299,7 @@ def normalize_structured_grading_payload(
 
         if not deduction_points:
             deduction_points = "无"
+        default_eval = "作答基本到位" if deduction_points == "无" else "对照扣分点复核"
         normalized_questions.append(
             {
                 "question_no": question_no,
@@ -306,7 +307,7 @@ def normalize_structured_grading_payload(
                 "score": question_score,
                 "max_score": max_score,
                 "deduction_points": deduction_points,
-                "evaluation": evaluation or "继续稳步完善",
+                "evaluation": evaluation or default_eval,
             }
         )
         seen_numbers.add(question_no)
@@ -340,7 +341,7 @@ def build_structured_feedback_markdown(result: dict[str, Any]) -> str:
                 f"### 第 {question_no} 题",
                 f"- 本题得分：{score_text}",
                 f"- 扣分点：{question.get('deduction_points') or '无'}",
-                f"- 评价：{question.get('evaluation') or '继续稳步完善'}",
+                f"- 评价：{question.get('evaluation') or ('作答基本到位' if (question.get('deduction_points') or '无') == '无' else '对照扣分点复核')}",
             ]
         )
     return "\n".join(lines).strip()

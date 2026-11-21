@@ -261,6 +261,24 @@ def _private_unread_count(conn, *, role: str, user_id: int) -> int:
     )
 
 
+_SUBMISSION_STATUS_LABELS: dict[str, str] = {
+    "submitted": "待批改",
+    "grading": "AI 批改中",
+    "grading_review": "待复核",
+    "graded": "已批改",
+    "grading_failed": "批改失败",
+    "draft": "草稿",
+    "returned": "已退回",
+}
+
+_ASSIGNMENT_STATUS_LABELS: dict[str, str] = {
+    "new": "草稿",
+    "draft": "草稿",
+    "published": "进行中",
+    "closed": "已截止",
+}
+
+
 def build_profile_nav(conn, user: dict, active_section: str, *, include_appearance: bool = False) -> list[dict[str, Any]]:
     role = str(user.get("role") or "").strip().lower()
     user_id = _safe_int(user.get("id"))
@@ -269,9 +287,9 @@ def build_profile_nav(conn, user: dict, active_section: str, *, include_appearan
 
     nav_items = [
         ("overview", "个人首页", "总览"),
-        ("settings", "基础信息", "资料"),
+        ("settings", "基础资料", "资料"),
         ("security", "账号安全", "安全"),
-        ("notifications", "通知中心", "通知"),
+        ("notifications", "消息中心", "消息"),
         ("private", "私信", "私信"),
     ]
     if role == "student":
@@ -349,10 +367,13 @@ def _load_teacher_recent_items(conn, teacher_id: int, role: str) -> list[dict[st
         (teacher_id, teacher_id),
     ).fetchall()
     for row in submission_rows:
+        raw_status = str(row["status"] or "").strip().lower()
+        status_label = _SUBMISSION_STATUS_LABELS.get(raw_status, "已提交" if raw_status else "—")
+        score_text = f"{row['score']} 分" if row["score"] is not None else "待评分"
         items.append({
             "type": "提交",
-            "title": f"{row['student_name']} 提交了 {row['assignment_title']}",
-            "subtitle": f"状态 {row['status'] or '-'} · 分数 {row['score'] if row['score'] is not None else '待评'}",
+            "title": f"{row['student_name']} 提交了《{row['assignment_title']}》",
+            "subtitle": f"{status_label} · {score_text}",
             "created_at": str(row["submitted_at"] or ""),
             "href": f"/submission/{row['id']}",
             "is_unread": False,
@@ -375,10 +396,12 @@ def _load_teacher_recent_items(conn, teacher_id: int, role: str) -> list[dict[st
         (teacher_id, teacher_id),
     ).fetchall()
     for row in assignment_rows:
+        raw_status = str(row["status"] or "").strip().lower()
+        status_label = _ASSIGNMENT_STATUS_LABELS.get(raw_status, "进行中" if raw_status else "—")
         items.append({
             "type": "任务",
             "title": str(row["title"] or "未命名任务"),
-            "subtitle": f"状态 {row['status'] or '-'}",
+            "subtitle": status_label,
             "created_at": str(row["created_at"] or ""),
             "href": f"/assignment/{row['id']}",
             "is_unread": False,

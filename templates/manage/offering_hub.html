@@ -22,7 +22,7 @@
 <div class="academic-shell offering-hub-shell">
     {% include "partials/teaching_stage_bar.html" %}
     {% call page_head('课堂', lq_enabled=lq_pilot_enabled|default(false),
-        explain='课堂是课程与班级在某个学期的具体授课过程，作业、考试、互动、成绩都发生在课堂里。这里集中查看授课进度与配置缺口。', explain_label='课堂说明',
+        explain='课堂是课程与班级在某个学期的具体授课过程，作业、考试、互动和成绩都围绕课堂展开。这里集中查看授课进度与待补事项。', explain_label='课堂说明',
         actions=[
             {'label': '配置 AI 助教', 'variant': 'outline', 'href': '/manage/teaching/ai'},
             {'label': '课时统计', 'variant': 'outline', 'href': '/manage/academic/course-schedule'},
@@ -234,7 +234,7 @@
                     <div class="class-card-actions">
                         <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" href="/classroom/{{ offering.id }}">进入课堂</a>
                         <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/manage/teaching/offerings?offering_id={{ offering.id }}" data-action="edit-config" data-offering-title="{{ offering.course_name }} — {{ offering.class_name }}">编辑配置</a>
-                        <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/manage/teaching/ai">AI 助教</a>
+                        <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="/manage/teaching/ai?offering_id={{ offering.id }}">AI 助教</a>
                         {% if offering.lessondoc_pack %}
                         <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm" href="{{ offering.lessondoc_pack.render_shell_url }}" target="_blank" rel="noopener">学习文档</a>
                         {% else %}
@@ -262,7 +262,7 @@
                 {% else %}
                 <div class="academic-empty" id="offeringHubInitialEmpty">
                     <strong>还没有课堂</strong>
-                    先完成教务同步，再到「开设课堂」一键把课程与班级组合成课堂。
+                    先完成教务同步，再到「开设课堂」把课程与班级组合成课堂。
                     <div class="offering-hub-empty-actions">
                         <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" href="/manage/teaching/offerings">去开设课堂</a>
                     </div>
@@ -280,7 +280,7 @@
             {% if hub_bootstrap %}
             <div class="offering-hub-aside-block offering-hub-bootstrap">
                 <div class="class-import-head">
-                    <span>Quick Start</span>
+                    <span>快速开课</span>
                     <h3>还有 {{ hub_bootstrap.summary.candidate_count }} 个教学班可开课</h3>
                     <p>教务排课已就绪，涉及 {{ hub_bootstrap.summary.course_count }} 门课程 · {{ hub_bootstrap.summary.student_count }} 名学生。</p>
                 </div>
@@ -292,15 +292,15 @@
                     </li>
                     {% endfor %}
                 </ul>
-                <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" href="/manage/teaching/offerings">一键开设课堂</a>
+                <a data-lq-component="button" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent" href="/manage/teaching/offerings">前往开设课堂</a>
             </div>
             {% endif %}
 
             <div class="offering-hub-aside-block">
                 <div class="class-import-head">
-                    <span>To-do</span>
+                    <span>待办</span>
                     <h3>课堂待办</h3>
-                    <p>点击待办直接过滤对应课堂。</p>
+                    <p>点击条目即可筛选对应课堂。</p>
                 </div>
                 <div class="offering-hub-todo-list">
                     <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass offering-hub-todo{% if not hub_todo.missing_textbook %} is-done{% endif %}" data-todo-status="missing-textbook" {% if not hub_todo.missing_textbook %}disabled{% endif %}>
@@ -320,7 +320,7 @@
 
             <div class="offering-hub-aside-block">
                 <div class="class-import-head">
-                    <span>This Week</span>
+                    <span>本周</span>
                     <h3>本周课次</h3>
                     <p>{{ hub_week_agenda | length }} 次课，按时间排列。</p>
                 </div>
@@ -348,7 +348,7 @@
     <aside data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised offering-hub-drawer" role="dialog" aria-modal="true" aria-labelledby="offeringHubDrawerTitle" tabindex="-1">
         <div class="offering-hub-drawer-head">
             <div>
-                <span>Edit Offering</span>
+                <span>课堂设置</span>
                 <h3 id="offeringHubDrawerTitle">编辑课堂配置</h3>
             </div>
             <div class="offering-hub-drawer-tools">

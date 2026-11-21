@@ -135,8 +135,8 @@ class AIChatComponent {
         this.previewsBox = document.getElementById('ai-chat-previews');
 
         // --- SVG 图标 ---
-        this.iconMaximize = `... (内容同 V2) ...`;
-        this.iconMinimize = `... (内容同 V2) ...`;
+        this.iconMaximize = '';
+        this.iconMinimize = '';
 
         // *** 新增: 复制图标 ***
         this.iconCopy = `
@@ -869,7 +869,7 @@ class AIChatComponent {
                 streamState.statusText = '';
                 streamState.errorMessage = event.message || '请求失败';
                 if (!streamState.finalAnswer) {
-                    streamState.finalAnswer = `抱歉，请求出错了: ${streamState.errorMessage}`;
+                    streamState.finalAnswer = `请求未能完成：${streamState.errorMessage}`;
                 }
                 if (streamState.thinkingState === 'thinking' && !streamState.thinkingContent.trim()) {
                     streamState.thinkingState = 'none';
@@ -1159,7 +1159,7 @@ class AIChatComponent {
             }
             return data;
         } catch (err) {
-            notifyAIChat(`加载历史失败: ${err.message}`, 'error');
+            notifyAIChat(`加载历史失败：${err.message}`, 'error');
         }
     }
     async startNewSession() {
@@ -1168,7 +1168,7 @@ class AIChatComponent {
         if (this.contextOnly && !this.workspace) {
             this.currentSessionUUID = 'context-only';
             this.messagesBox.innerHTML = '';
-            this.renderMessage('system', '已开始新的页面上下文对话。');
+            this.renderMessage('system', '已开启新对话，会结合当前页面内容回答。');
             this.updateSendButtonState();
             return;
         }
@@ -1185,7 +1185,7 @@ class AIChatComponent {
             this.renderMessage('system', '已开始新对话。');
             this.updateSendButtonState();
         } catch (err) {
-            notifyAIChat(`创建新会话失败: ${err.message}`, 'error');
+            notifyAIChat(`创建新会话失败：${err.message}`, 'error');
         }
     }
 
@@ -1605,7 +1605,7 @@ class AIChatComponent {
                 continue;
             }
             if (this.pendingFiles.length >= 5) {
-                notifyAIChat('一次最多上传5个文件。', 'error');
+                notifyAIChat('一次最多上传 5 个文件。', 'error');
                 break;
             }
 
@@ -1620,7 +1620,7 @@ class AIChatComponent {
                 this.pendingFiles.push(file);
                 acceptedCount += 1;
             } else {
-                notifyAIChat(`不支持的文件类型: ${file.name}`, 'warning');
+                notifyAIChat(`不支持的文件类型：${file.name}`, 'warning');
             }
         }
         this.renderPreviews();
@@ -1715,7 +1715,7 @@ class AIChatComponent {
                 }, 2000);
             } else {
                 // 如果是代码块复制 (没有传入事件)，使用 showMessage
-                notifyAIChat('代码已复制!', 'success');
+                notifyAIChat('代码已复制', 'success');
             }
         }).catch(err => {
             console.error('复制失败: ', err);
@@ -1741,7 +1741,7 @@ class AIChatComponent {
                 this.copyToClipboard(codeToCopy);
 
                 // (代码块按钮的“已复制”状态)
-                btn.textContent = '已复制!';
+                btn.textContent = '已复制';
                 btn.classList.add('copied');
                 setTimeout(() => {
                     btn.textContent = '复制';
@@ -1775,7 +1775,7 @@ class AIChatComponent {
             const copyBtn = document.createElement('button');
             copyBtn.className = 'lq-btn lq-btn--glass lq-btn--sm copy-btn';
         copyBtn.dataset.lqComponent = 'button';
-            copyBtn.innerHTML = this.iconCopy + ' 复制 Markdown';
+            copyBtn.innerHTML = this.iconCopy + '<span>复制 Markdown</span>';
             copyBtn.dataset.rawMarkdown = rawMarkdown; // 存储原始文本
 
             copyBtn.addEventListener('click', this.copyToClipboard.bind(this));

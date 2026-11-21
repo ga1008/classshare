@@ -2733,8 +2733,9 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
                 prefix = f"- {created_at}：" if created_at else "- "
                 lines.append(f"{prefix}{message}")
         if lines:
+            role_label = "学生" if actor_role == "student" else "教师"
             supplement_block = (
-                "教师在任务排队/执行期间补充了以下说明，请和原始任务一起处理，"
+                f"{role_label}在任务排队/执行期间补充了以下说明，请和原始任务一起处理，"
                 "越新的说明优先级越高：\n" + "\n".join(lines)
             )
 
@@ -2751,8 +2752,9 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
                 f"摘要：{_clean_text(item.get('summary'), max_chars=160) or '无（请直接读取文件）'}"
             )
         if lines:
+            role_label = "学生" if actor_role == "student" else "教师"
             attachments_block = (
-                f"教师为本任务提供了 {len(lines)} 个附件（已存入你的任务 workspace 的 attachments/ 子目录，"
+                f"{role_label}为本任务提供了 {len(lines)} 个附件（已存入你的任务 workspace 的 attachments/ 子目录，"
                 "解析文本版本若存在为同名 .extracted.txt）：\n" + "\n".join(lines)
                 + "\n请直接读取并使用附件内容完成任务，输出时引用其中的真实信息。"
             )
@@ -2765,6 +2767,12 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
     except Exception as exc:
         print(f"[AGENT_TASK] action protocol injection failed: {exc}")
 
+    role_label = "学生" if actor_role == "student" else "教师"
+    context_heading = (
+        "当前页面提供的上下文提示如下，访问资源时必须重新校验当前学生权限："
+        if actor_role == "student"
+        else "平台已验证的页面和课堂上下文如下，若上下文不足可用桥接接口查库补全："
+    )
     prompt = f"""
 你是 LanShare 当前用户的数字助手。你使用当前用户有权访问的平台数据、文件和互联网完成其任务。当前任务类型：{definition["label"]}。
 
@@ -2804,23 +2812,21 @@ def build_runtime_prompt(task: dict[str, Any], runtime_workspace: str) -> str:
 2. 发布博客、发送消息、创建作业等状态变更必须核对对象和参数，依据实际回执报告结果。待确认、未知状态或失败不能当作完成。
 3. 查询到的师生个人信息仅用于完成本任务，输出时做隐私最小化。
 4. 用数据说话：能查库就查库验证，不要编造不存在的数据；上下文不足时明确说明缺什么。
-5. RESULT.md 面向教师，使用规范 Markdown；站内跳转用相对路径链接（如 /manage/academic/gongwen）。
+5. RESULT.md 面向{role_label}，使用规范 Markdown；站内跳转用相对路径链接（如 /manage/academic/gongwen）。
 6. {thinking_line}
-7. 若任务接近时间上限或外部工具反复失败，请先把已完成内容写入 RESULT.md（或 PARTIAL_RESULT.md），再继续尝试；即使最终失败，平台也会把这些中间产物交还给教师。
+7. 若任务接近时间上限或外部工具反复失败，请先把已完成内容写入 RESULT.md（或 PARTIAL_RESULT.md），再继续尝试；即使最终失败，平台也会把这些中间产物交还给{role_label}。
 
-你能安全接管的教师业务流程边界：
+你能安全接管的{role_label}业务流程边界：
 {workflow_lines}
 
 {actions_block}
 
-教师任务：
+{role_label}任务：
 {instruction}
 
-平台已验证的页面和课堂上下文如下，若上下文不足可用桥接接口查库补全：
+{context_heading}
 ```json
 {json.dumps(context, ensure_ascii=False, indent=2)[:MAX_CONTEXT_TEXT_CHARS]}
 ```
 """.strip()
-    if actor_role == "student":
-        prompt = prompt.replace("教师", "学生").replace("平台已验证的页面和课堂上下文如下", "当前页面提供的上下文提示如下，访问资源时必须重新校验当前学生权限")
     return f"当前执行主体：{actor_role}:{actor_id}。只能使用此主体实时获授权的平台能力。\n\n{prompt}"

@@ -736,7 +736,7 @@ if (app) {
             const job = response?.job || null;
             if (!job || Number(job.id) !== jobId || job.conversation_key !== jobKey
                 || !['pending', 'running', 'completed', 'failed'].includes(job.status)) {
-                const error = new Error('未取得该回复任务的有效状态，请刷新会话。');
+                const error = new Error('回复状态同步异常，请刷新会话查看。');
                 error.protocolError = true;
                 throw error;
             }
@@ -760,8 +760,8 @@ if (app) {
         } catch (error) {
             if (!owns()) return;
             state.aiReplyPollError = error.status === 404 || error.status === 403 || error.protocolError
-                ? '暂时无法取得该回复任务，请刷新会话查看最新状态。'
-                : '暂未取得回复状态，正在重试；也可以手动刷新会话。';
+                ? '暂时无法同步回复进度，请刷新会话查看最新状态。'
+                : '暂未同步到回复进度，正在重试；也可以手动刷新会话。';
             renderConversation();
             if (!error.protocolError && ![401, 403, 404].includes(error.status)) scheduleAiReplyPoll(generation);
         } finally {
@@ -1030,7 +1030,7 @@ if (app) {
                     <h3 class="message-center-card__title">${escapeHtml(item.title || '')}</h3>
                     <div class="message-center-card__meta">
                         <span>${escapeHtml(item.actor_display_name || '系统')}</span>
-                        ${item.class_offering_id ? `<span>课堂 #${Number(item.class_offering_id)}</span>` : ''}
+                        ${item.classroom_label ? `<span>${escapeHtml(item.classroom_label)}</span>` : ''}
                     </div>
                 </div>
                 <div class="message-center-card__body">${escapeHtml(item.body_preview || '暂无更多内容')}</div>
@@ -1334,7 +1334,7 @@ if (app) {
             const activeContact = getActiveContact();
             conversationHeaderEl.innerHTML = `<div class="message-center-conversation__identity"><h2 class="message-center-pane-title">${escapeHtml(activeContact?.display_name || '私信会话')}</h2></div>`;
             if (state.bootstrapStatus === 'error') {
-                renderLoadFailure(conversationBodyEl, '信息中心加载失败', state.bootstrapError, () => { void bootstrap(); });
+                renderLoadFailure(conversationBodyEl, '消息中心加载失败', state.bootstrapError, () => { void bootstrap(); });
             } else if (state.conversationStatus === 'error') {
                 renderLoadFailure(conversationBodyEl, '私信会话加载失败', state.conversationError,
                     () => { void loadConversation(state.currentContact, state.currentScope); });
@@ -1551,7 +1551,7 @@ if (app) {
             const response = await apiFetch(url, { ...config, silent: true });
             if (!state.alive || state.actionLease !== lease) return false;
             if (!validMutationSummary(response) || !validate(response)) {
-                throw new Error('未取得有效的操作回执，状态尚未确认，请刷新后检查。');
+                throw new Error('操作结果尚未确认，请刷新页面核对。');
             }
             if (href) {
                 if (lease.navigation !== state.navigationIntent || lease.epoch !== state.viewEpoch
@@ -1610,7 +1610,7 @@ if (app) {
         privatePanelEl.hidden = true;
         feedEl.hidden = false;
         if (!state.metadataReady) {
-            if (state.bootstrapStatus === 'error') renderLoadFailure(feedEl, '信息中心加载失败', state.bootstrapError, () => { void bootstrap(); });
+            if (state.bootstrapStatus === 'error') renderLoadFailure(feedEl, '消息中心加载失败', state.bootstrapError, () => { void bootstrap(); });
             else setLoading(feedEl, '正在加载消息分类...');
             publishWorkspaceSnapshot();
             return false;
@@ -1787,7 +1787,7 @@ if (app) {
             return;
         }
         if (type === 'refresh') {
-            if (await bootstrap()) showToast('信息中心已刷新', 'success');
+            if (await bootstrap()) showToast('消息中心已刷新', 'success');
             return;
         }
         if (type === 'mark-read') {
@@ -1915,7 +1915,7 @@ if (app) {
 
             if (!state.alive) return;
             if (!response?.sent_message?.id || response.contact?.identity !== sent.identity || !response.conversation_key) {
-                throw new Error('未取得有效的发送回执');
+                throw new Error('消息是否发送成功尚未确认，请刷新会话查看');
             }
             settleSentDraft(sent);
             const sameView = conversationReady() && sent.key === conversationViewKey();
@@ -2030,7 +2030,7 @@ if (app) {
             const query = params.toString();
             const response = await apiFetch(`/api/message-center/bootstrap${query ? `?${query}` : ''}`, { silent: true });
             if (!owns()) return false;
-            if (!response?.summary || !Array.isArray(response.summary.tabs)) throw new Error('未取得完整的信息中心数据，请重试。');
+            if (!response?.summary || !Array.isArray(response.summary.tabs)) throw new Error('未能加载完整的消息数据，请稍后重试。');
             state.metadataReady = true;
             state.bootstrapStatus = 'ready';
             state.contacts = response.private_contacts || [];
@@ -2065,7 +2065,7 @@ if (app) {
             if (!owns()) return false;
             state.bootstrapStatus = 'error'; state.bootstrapError = error.message || '请稍后重试。';
             if (state.currentTab === PRIVATE_TAB) renderConversation();
-            else renderLoadFailure(feedEl, '信息中心加载失败', state.bootstrapError, () => { void bootstrap(); });
+            else renderLoadFailure(feedEl, '消息中心加载失败', state.bootstrapError, () => { void bootstrap(); });
             publishWorkspaceSnapshot();
             return false;
         }

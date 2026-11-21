@@ -494,15 +494,25 @@ def strip_proposed_actions_block(text: Any) -> str:
     return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
+_STUDENT_PROPOSED_ACTION_EXAMPLE: dict[str, Any] = {
+    "action": "create_blog_draft",
+    "summary": "保存学习总结草稿",
+    "params": {"title": "学习总结", "content_md": "请替换为本次总结正文。"},
+}
+
+
 def _is_prompt_example_action(action: str, params: dict[str, Any]) -> bool:
     """判断是否为提示词里那条示例提案（回显进输出时必须丢弃）。"""
-    if action != PROPOSED_ACTIONS_PROMPT_EXAMPLE["action"]:
-        return False
-    example_clean, _errors = validate_action_params(
-        PROPOSED_ACTIONS_PROMPT_EXAMPLE["action"],
-        PROPOSED_ACTIONS_PROMPT_EXAMPLE["params"],
-    )
-    return params == example_clean
+    for example in (PROPOSED_ACTIONS_PROMPT_EXAMPLE, _STUDENT_PROPOSED_ACTION_EXAMPLE):
+        if action != example["action"]:
+            continue
+        example_clean, _errors = validate_action_params(
+            example["action"],
+            example["params"],
+        )
+        if params == example_clean:
+            return True
+    return False
 
 
 def extract_proposed_actions(text: Any) -> list[dict[str, Any]]:
@@ -565,10 +575,7 @@ def proposed_actions_prompt_block(*, actor_role: str = "teacher") -> str:
         "缺少必要参数先使用提问工具补齐，单纯可选建议不要生成动作提案。待确认提案不代表已写入平台：",
         "```json",
         json.dumps(
-            {"proposed_actions": [PROPOSED_ACTIONS_PROMPT_EXAMPLE if actor_role == "teacher" else {
-                "action": "create_blog_draft", "label": "保存学习总结草稿",
-                "params": {"title": "学习总结", "content_md": "请替换为本次总结正文。"},
-            }]},
+            {"proposed_actions": [PROPOSED_ACTIONS_PROMPT_EXAMPLE if actor_role == "teacher" else _STUDENT_PROPOSED_ACTION_EXAMPLE]},
             ensure_ascii=False,
             indent=2,
         ),
@@ -663,7 +670,7 @@ def _execute_save_material_draft(conn, teacher_id: int, params: dict[str, Any]) 
     name = re.sub(r"[\\/:*?\"<>|]", "-", name)
     name = make_unique_material_name(conn, int(teacher_id), int(folder["id"]), name)
     now = datetime.now(timezone.utc).isoformat()
-    content = f"{params.get('content_md') or ''}\n\n> 本文档由 LanShare Agent 生成，教师确认后入库。\n"
+    content = str(params.get("content_md") or "").rstrip() + "\n"
     created = _create_file_row(
         conn,
         teacher_id=int(teacher_id),

@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from typing import Any, Optional
 
-from .prompt_utils import build_time_context_text, polite_address
+from .prompt_utils import build_natural_voice_rules, build_time_context_text, polite_address
 
 
 HIDDEN_PROFILE_LEAK_MARKERS = (
@@ -358,31 +358,40 @@ def compose_classroom_chat_system_prompt(
         "--- 课堂信息 ---",
         classroom_context_prompt or "（暂无课堂上下文信息）",
         "---------------------------",
-        "",
-        "--- 教材信息 ---",
-        textbook_context_prompt or "（当前课堂未绑定教材）",
-        "---------------------------",
-        "",
-        "--- 课程大纲 / 知识点 (RAG) ---",
-        rag_syllabus or "（暂无课程大纲信息）",
-        "---------------------------",
+    ]
+    if str(textbook_context_prompt or "").strip():
+        sections.extend([
+            "",
+            "--- 教材信息 ---",
+            str(textbook_context_prompt).strip(),
+            "---------------------------",
+        ])
+    if str(rag_syllabus or "").strip() and str(rag_syllabus).strip() not in {"（无课程大纲信息）", "（暂无课程大纲）"}:
+        sections.extend([
+            "",
+            "--- 课程大纲 / 知识点 ---",
+            str(rag_syllabus).strip(),
+            "---------------------------",
+        ])
+    sections.extend([
         "",
         "--- 提问者背景信息 ---",
         user_context_prompt or "（暂无提问者背景信息）",
         "---------------------------",
         "",
-        "--- 当前环境信息 ---",
+        "--- 当前时间 ---",
         build_time_context_text(),
         "---------------------------",
         "",
-        "--- 学习支持原则 ---",
-        "仅依据已授权课程事实和用户主动表达提供帮助，不推断人格、心理状态或作弊意图。",
-        "平台没有活动记录不等于没有听讲或实践；未知与采集异常不能当作零投入。",
-        "采用耐心、清晰、结构化的回答；用户主动表达困难时，给出可执行的小步建议。",
+        "--- 交流与学习支持原则 ---",
+        "仅依据已授权的课程事实和用户主动表达提供帮助，不臆测对方的性格、心理状态或动机。",
+        "平台没有记录不等于没有听讲或练习，未知状态不能当作零投入。",
+        build_natural_voice_rules("general"),
+        "当用户遇到学习困难时，优先给出马上能做的一小步，而不是泛泛安慰。",
         *(["教师本人私人会话的沟通参考（不作为事实或评分依据）：", *private_sections] if private_sections else []),
-        '称呼规范：称呼用户时，教师用"X老师"（X为姓氏），学生用"X同学"，绝对不要直呼全名。语气可以适当活泼幽默。',
+        "称呼规范：背景中给出指定称呼时优先采用；否则教师称“X老师”，学生称“X同学”，不直呼全名，不刻意装熟或卖萌。",
         "---------------------------------------------------------",
-    ]
+    ])
     return "\n".join(sections).strip()
 
 

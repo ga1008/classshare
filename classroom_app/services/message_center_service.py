@@ -573,9 +573,9 @@ async def prepare_private_message_uploads(files: list[Any] | tuple[Any, ...] | N
             try:
                 derivative_payload = await prepare_chat_image_derivatives(Path(save_result["path"]))
             except ChatImageTooLargeError as exc:
-                raise ValueError(f"Image {filename} dimensions are too large") from exc
+                raise ValueError(f"图片 {filename} 尺寸过大，请压缩后再发送") from exc
             except ChatImageDerivativeError as exc:
-                raise ValueError(f"Image {filename} is invalid") from exc
+                raise ValueError(f"图片 {filename} 格式无效或已损坏") from exc
 
         prepared_item = {
             "file_hash": str(save_result["hash"]),
@@ -1892,6 +1892,37 @@ def serialize_notification_rows(conn, rows) -> list[dict[str, Any]]:
 def _serialize_notifications(conn, rows) -> list[dict[str, Any]]:
     """Serialize a page; blog cards re-render their actor's current persona."""
     items = [_serialize_notification(row) for row in rows]
+    offering_ids = sorted({
+        int(item["class_offering_id"])
+        for item in items
+        if item.get("class_offering_id")
+    })
+    if offering_ids:
+        try:
+            placeholders = ",".join("?" for _ in offering_ids)
+            offering_rows = conn.execute(
+                f"""
+                SELECT o.id, c.name AS course_name, cl.name AS class_name
+                FROM class_offerings o
+                LEFT JOIN courses c ON c.id = o.course_id
+                LEFT JOIN classes cl ON cl.id = o.class_id
+                WHERE o.id IN ({placeholders})
+                """,
+                offering_ids,
+            ).fetchall()
+            label_map: dict[int, str] = {}
+            for o_row in offering_rows:
+                course_name = str(o_row["course_name"] or "").strip()
+                class_name = str(o_row["class_name"] or "").strip()
+                parts = [part for part in (course_name, class_name) if part]
+                if parts:
+                    label_map[int(o_row["id"])] = " · ".join(parts)
+            for item in items:
+                oid = item.get("class_offering_id")
+                if oid and int(oid) in label_map:
+                    item["classroom_label"] = label_map[int(oid)]
+        except Exception:
+            pass
     if any(str(item.get("category") or "").startswith("blog_") for item in items):
         from .blog_notifications import render_notifications
 
@@ -2198,7 +2229,7 @@ def open_message_center_notification(conn, user: dict, notification_id: int | st
     user_pk, role, _ = _ensure_user_identity(user)
     normalized_id = _safe_int(notification_id)
     if normalized_id is None:
-        raise ValueError("notification not found")
+        raise ValueError("未找到该条消息")
     row = conn.execute(
         """
         SELECT *
@@ -2211,7 +2242,7 @@ def open_message_center_notification(conn, user: dict, notification_id: int | st
         (normalized_id, role, user_pk),
     ).fetchone()
     if row is None:
-        raise ValueError("notification not found")
+        raise ValueError("未找到该条消息")
     if not row["read_at"]:
         conn.execute(
             """
@@ -2308,7 +2339,7 @@ def _lookup_identity_display_name(conn, identity: str) -> dict[str, Any]:
             "identity": identity,
             "role": AI_ASSISTANT_ROLE,
             "user_pk": None,
-            "display_name": f"{AI_ASSISTANT_LABEL} 路 {offering['course_name']}" if offering else AI_ASSISTANT_LABEL,
+            "display_name": f"{AI_ASSISTANT_LABEL} · {offering['course_name']}" if offering else AI_ASSISTANT_LABEL,
             "subtitle": subtitle,
             "class_offering_id": offering_id,
         }
@@ -2365,11 +2396,11 @@ def add_private_message_block(
     current_user_pk, current_role, current_identity = _ensure_user_identity(user)
     normalized_identity = str(contact_identity or "").strip()
     if not normalized_identity or normalized_identity == current_identity:
-        raise ValueError("invalid block target")
+        raise ValueError("无法识别要屏蔽的对象")
 
     parsed = parse_identity(normalized_identity)
     if not is_blockable_role(parsed["role"]):
-        raise ValueError("target cannot be blocked")
+        raise ValueError("该对象不支持屏蔽")
 
     contact = _resolve_contact(
         conn,
@@ -2524,7 +2555,7 @@ def get_private_ai_reply_job(conn, user: dict, *, job_id: int | str) -> dict[str
         (int(job_id), current_identity),
     ).fetchone()
     if row is None:
-        raise ValueError("AI reply job not found")
+        raise ValueError("未找到对应的 AI 回复记录")
     return _serialize_private_ai_reply_job(row)
 
 
@@ -2544,7 +2575,7 @@ def get_private_message_conversation(
         class_offering_id=class_offering_id,
     )
     if not contact:
-        raise ValueError("contact not found")
+        raise ValueError("未找到该联系人")
 
     ensure_private_message_attachment_schema(conn)
     normalized_scope = _safe_int(contact.get("class_offering_id"))
@@ -3038,20 +3069,20 @@ def create_private_message(
         class_offering_id=class_offering_id,
     )
     if not contact:
-        raise ValueError("contact not found")
+        raise ValueError("未找到该联系人")
 
     normalized_content = str(content or "").strip()
     prepared_attachments = list(attachments or [])
     if len(prepared_attachments) > PRIVATE_MESSAGE_ATTACHMENT_LIMIT:
         raise ValueError(f"单条私信最多只能发送 {PRIVATE_MESSAGE_ATTACHMENT_LIMIT} 个附件")
     if not normalized_content and not prepared_attachments:
-        raise ValueError("message content is required")
+        raise ValueError("请输入消息内容")
     if len(normalized_content) > 4000:
-        raise ValueError("message content is too long")
+        raise ValueError("消息内容过长，请精简后再发送")
     if str(contact["identity"]) == current_identity:
-        raise ValueError("cannot send message to self")
+        raise ValueError("不能给自己发送私信")
     if not bool(contact.get("can_send")):
-        raise ValueError("contact is not available")
+        raise ValueError("暂时无法向该联系人发送消息")
     if contact.get("is_blocked"):
         raise PermissionError("please unblock the contact before sending")
     if _is_blocked(conn, str(contact["identity"]), current_identity):

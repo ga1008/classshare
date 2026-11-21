@@ -24,7 +24,7 @@ def get_assignment_draft(assignment_id: str, user: dict = Depends(get_current_st
         conn.commit()
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
         if not assignment:
-            raise HTTPException(404, "Assignment not found")
+            raise HTTPException(404, "未找到该作业或考试")
         assignment = enrich_assignment_runtime_view(assignment)
         draft_submission = _ensure_student_can_save_assignment_draft(
             conn,
@@ -42,7 +42,7 @@ def get_assignment_draft(assignment_id: str, user: dict = Depends(get_current_st
             lock_submission_writer(conn, assignment_id, int(user["id"]))
             fresh_assignment = conn.execute("SELECT * FROM assignments WHERE id=?", (assignment_id,)).fetchone()
             if not fresh_assignment:
-                raise HTTPException(404, "Assignment not found")
+                raise HTTPException(404, "未找到该作业或考试")
             assignment = enrich_assignment_runtime_view(fresh_assignment)
             current_submission = _ensure_student_can_save_assignment_draft(
                 conn, assignment=assignment, student_id=int(user["id"]),
@@ -102,7 +102,7 @@ async def save_assignment_draft(
         conn.commit()
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
         if not assignment:
-            raise HTTPException(404, "Assignment not found")
+            raise HTTPException(404, "未找到该作业或考试")
         assignment = enrich_assignment_runtime_view(assignment)
         draft_submission = _ensure_student_can_save_assignment_draft(
             conn,
@@ -364,7 +364,7 @@ def check_assignment_attachment_hashes(
     with get_db_connection() as conn:
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
         if not assignment:
-            raise HTTPException(404, "Assignment not found")
+            raise HTTPException(404, "未找到该作业或考试")
         assignment = dict(assignment)
         if not student_can_access_assignment(conn, assignment_id, int(user["id"])):
             raise HTTPException(403, "该破境试炼只对指定学生开放")
@@ -409,7 +409,7 @@ def delete_assignment_draft_file(
         conn.commit()
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
         if not assignment:
-            raise HTTPException(404, "Assignment not found")
+            raise HTTPException(404, "未找到该作业或考试")
         assignment = enrich_assignment_runtime_view(assignment)
         draft_submission = _ensure_student_can_save_assignment_draft(
             conn,
@@ -488,7 +488,7 @@ async def get_assignment_draft_file_image(
         str(file_dict.get("relative_path") or ""), file_dict.get("mime_type"), file_dict.get("kind"),
     )
     if not is_image:
-        raise HTTPException(400, "Only image files support image variants")
+        raise HTTPException(400, "仅图片文件支持缩略图预览")
     physical_path = resolve_submission_file_path(str(file_dict.get("stored_path") or "")) or str(file_dict.get("stored_path") or "")
     physical_path = Path(physical_path)
     if not physical_path.exists() or not physical_path.is_file():

@@ -21,7 +21,7 @@
         </div>
     </fieldset>
     <div class="lq-profile-appearance__group">
-        {{ lq_switch('profile-appearance-glass', '柔和玻璃', name='profile-glass', checked=ui_palette.glass|default('tinted') == 'tinted', help='关闭后使用实色表面。系统辅助功能或浏览器能力也可能降低透明度，不会改写你的选择。', attrs={'data-ui-preference-input': 'glass', 'aria-describedby': 'profile-appearance-status'}) }}
+        {{ lq_switch('profile-appearance-glass', '柔和玻璃', name='profile-glass', checked=ui_palette.glass|default('tinted') == 'tinted', help='关闭后改用不透明背景。若系统开启了减少透明效果，显示会以系统设置为准，但不会改写你的偏好。', attrs={'data-ui-preference-input': 'glass', 'aria-describedby': 'profile-appearance-status'}) }}
     </div>
     <fieldset class="lq-profile-appearance__group" aria-describedby="profile-palette-help">
         <legend>界面配色</legend>
@@ -41,7 +41,7 @@
             {{ lq_chip('状态示例', tone='success') }}
         </div>
     </div>
-    <p id="profile-appearance-status" class="lq-profile-appearance__status" data-ui-palette-status data-ui-preference-primary-status role="status" aria-live="polite" aria-atomic="true">{% if ui_palette.available|default(true) %}选择后自动保存到当前账号。{% else %}暂时无法读取已保存的偏好；下一次选择时会先核对服务器。{% endif %}</p>
+    <p id="profile-appearance-status" class="lq-profile-appearance__status" data-ui-palette-status data-ui-preference-primary-status role="status" aria-live="polite" aria-atomic="true">{% if ui_palette.available|default(true) %}选择后自动保存到当前账号。{% else %}暂时无法读取已保存的外观偏好，下次调整时会自动重新同步。{% endif %}</p>
     <noscript><p class="lq-profile-appearance__notice">启用 JavaScript 后才能预览和保存外观。当前页面仍使用已保存的偏好。</p></noscript>
     {% else %}
     <p class="lq-profile-appearance__notice">当前账号暂不提供外观设置。</p>

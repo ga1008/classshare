@@ -381,7 +381,7 @@
                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
                             选择 JSON 文件
                         </button>
-                        <div class="text-sm text-muted mt-3">支持四种题型，并要求包含整卷评分标准与每题分值、标准答案、得分点、失分点。</div>
+                        <div class="text-sm text-muted mt-3">支持全部 8 种题型，并要求包含整卷评分标准及每题分值、标准答案、得分点与失分点。</div>
                     </div>
                 </div>
                 <div class="json-file-chip" id="json-file-chip"></div>
@@ -1632,8 +1632,8 @@
         window.saveExam = async function() {
             if (examSaveBusy) return;
             if (getAllEditorQuestions().length && !scoringIsComplete()) {
-                const wantsScoring = confirm('当前试卷还没有完整评分标准。确定：现在补充标准答案、分值和扣分点；取消：仅保存草稿，发布到课堂前仍需补齐。');
-                if (wantsScoring) {
+                const saveAsDraft = confirm('当前试卷还没有完整评分标准，发布到课堂前仍需补齐。\n确定：先保存为草稿；取消：返回补充标准答案、分值与扣分点。');
+                if (!saveAsDraft) {
                     window.openScoringModal(true);
                     return;
                 }

@@ -37,8 +37,8 @@ data-afm-open-sync {{ explain_attrs(
     data-document-type="{{ document_type }}"
     data-document-label="{{ document_type_label }}"
 >
-    {% call page_head(document_type_label, eyebrow='期末材料 · 教务系统闭环',
-        description='选择一个已有课堂，系统只登录一次教务系统并成对下载“成绩登记表”和“试卷分析表”，完成分数复算、跨表校验、结构化入库后，再进入签名与定稿。', lq_enabled=_afm_lq_enabled) %}
+    {% call page_head(document_type_label, eyebrow='期末材料 · 教务同步',
+        description='选择一个已有课堂，系统会从教务系统成对获取「成绩登记表」和「试卷分析表」，自动完成分数复核与跨表核对，再进入签名与定稿。', lq_enabled=_afm_lq_enabled) %}
             <div class="afm-hero__actions">
                 <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--primary" data-afm-open-sync {{ explain_attrs(
                     '同步教务双表',
@@ -156,7 +156,7 @@ data-afm-open-sync {{ explain_attrs(
             <section data-afm-analysis-fields hidden>
                 <div class="afm-section-heading">
                     <div><span>需确认</span><h4>考试与阅卷信息</h4></div>
-                    <p>以下字段无法从当前教务接口可靠判断，由教师确认；后续课程信息接口可直接接入。</p>
+                    <p>以下几项教务表格未提供，请任课教师直接确认并补充。</p>
                 </div>
                 <div class="afm-fields-grid">
                     <label class="afm-field"><span>命题形式</span>
@@ -188,7 +188,7 @@ data-afm-open-sync {{ explain_attrs(
                 </div>
 
                 <div class="afm-section-heading afm-section-heading--analysis">
-                    <div><span>思考型 AI</span><h4>试题与成绩简要分析</h4></div>
+                    <div><span>AI 起草</span><h4>试题与成绩简要分析</h4></div>
                     <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass afm-btn afm-btn--ai" data-afm-regenerate>重新生成</button>
                 </div>
                 <label class="afm-field">

@@ -27,8 +27,8 @@ _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
 
 POLICY = """
 # 你的角色
-你是 LanShare 智慧教学平台上 {name} 老师的虚拟全能助手（Agent）。你以 TA 的身份、按 TA 的实时权限操作平台、
-整理数据、生成材料，并可联网获取准确信息。用户能在网页上做的事你都可以通过工具做到；用户没有权限的事你也做不到。
+你是 LanShare 课堂互动平台上协助 {address} 的智能任务助手（Agent）。你以对方的实时身份和权限操作平台、
+整理资料、生成文稿，并可按需联网核验公开信息。对方在网页上有权限做的事你可以通过工具完成；无权操作的事你也无法越权执行。
 
 # 工作方式（用户会在窗口里分别看到“思考 / 决定 / 工具 / 操作 / 疑问 / 结果”）
 1. 先理解需求：必要时调用 platform_overview 了解身份与平台；用 find_capabilities 检索功能（支持中文、路径片段如 manage/ai），
@@ -57,21 +57,22 @@ POLICY = """
 - 密码、密钥等安全信息只能由用户本人在平台页面填写，你不能代填。
 - 个人信息只用于完成本任务，输出时做最小化。
 
-# 最终回复（Markdown，面向用户，简洁有条理）
-- **结论**：一两句话说明做成了什么。
-- **已执行的操作**：逐条列出操作与结果（成功/失败/待核对），失败要说明原因。
-- **产物**：生成的文件名或站内链接（用相对路径，如 /manage/academic/gongwen）。
-- **需要你处理**（如有）：被硬性拦截或无权限、需要本人完成的事项。
-不要把思考过程、工具日志写进最终回复。{thinking_line}
+# 最终回复（Markdown，面向用户，清晰自然）
+- 按实际发生的内容如实汇报，不必强凑空白章节：先用一两句话给出结论；如果执行了写入/改动操作，逐条写明结果（成功/失败/待核对）和原因；如果生成了文件或页面对象，附上文件名或站内相对路径链接（如 /manage/academic/gongwen）；如有需要本人手工处理或确认的事项再单独列明。
+- 表达克制平实，不堆砌客套话，不把思考过程、工具日志写进最终回复。{thinking_line}
 """.strip()
 
 
 def _now_text() -> str:
-    china = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=8)))
-    return china.strftime("%Y-%m-%d %H:%M（%A，北京时间）")
+    from ..prompt_utils import build_time_context_text
+
+    china = datetime.now(timezone.utc).astimezone(timezone(timedelta(hours=8))).replace(tzinfo=None)
+    return build_time_context_text(china)
 
 
 def build_instructions(task: dict[str, Any], conn) -> str:
+    from ..prompt_utils import polite_address
+
     actor_role, actor_id = task_actor_identity(task)
     context = _load_json(task.get("context_snapshot_json"), {})
     options = context.get("agent_options") if isinstance(context.get("agent_options"), dict) else {}
@@ -79,7 +80,10 @@ def build_instructions(task: dict[str, Any], conn) -> str:
     definition = TASK_TYPE_DEFINITIONS.get(task_type, TASK_TYPE_DEFINITIONS["general_teaching_task"])
     thinking_line = ("\n本任务开启了深度思考：执行前充分推理、交叉验证数据，再给出结论。"
                      if options.get("deep_thinking") else "")
-    blocks = [POLICY.format(name=task.get("teacher_name") or "当前", thinking_line=thinking_line),
+    actor_info = context.get("actor") if isinstance(context.get("actor"), dict) else {}
+    raw_name = str(actor_info.get("name") or task.get("teacher_name") or "").strip()
+    address = polite_address(raw_name, "teacher" if actor_role == "teacher" else "student")
+    blocks = [POLICY.format(address=address, thinking_line=thinking_line),
               f"# 当前时间\n{_now_text()}", f"# 任务类型\n{definition['label']}"]
     try:
         from ..ai_web_search_service import snapshot_for_user, search_context_block
@@ -91,7 +95,7 @@ def build_instructions(task: dict[str, Any], conn) -> str:
     try:
         from ..platform_knowledge_service import build_platform_overview_block, build_user_knowledge_block
 
-        blocks.append(build_platform_overview_block(actor_role))
+        blocks.append(build_platform_overview_block(actor_role, include_time=False))
         user_block = build_user_knowledge_block(conn, actor_id, actor_role)
         if user_block:
             blocks.append(user_block)

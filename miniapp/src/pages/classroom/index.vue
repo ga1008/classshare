@@ -116,10 +116,10 @@ onPullDownRefresh(() => {
       </view>
     </view>
 
-    <view class="section-title"><text>我的课堂</text></view>
+    <view v-if="idleOfferings.length || (!loading && !offerings.length)" class="section-title"><text>我的课堂</text></view>
 
     <view v-if="!loading && !offerings.length" class="glass-card feature">
-      <text class="feature__desc">还没有课堂，请联系老师或管理员开课。</text>
+      <text class="feature__desc">{{ isTeacher ? "还没有开设课堂，请前往网页端「开设课堂」创建。" : "还没有加入课堂，任课老师开课后会自动显示在这里。" }}</text>
     </view>
 
     <view

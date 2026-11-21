@@ -318,9 +318,25 @@ def begin_intro_job(conn, student_id: int) -> tuple[int, dict[str, Any]]:
 
 async def execute_intro(job, payload) -> dict[str, Any]:
     bundle, ctx = payload["bundle"], payload["context"]
-    digest = {"professional_background": ctx, "skills": bundle.get("skill"), "experience": bundle.get("experience"), "education": bundle.get("education")}
-    text = await ai._chat("请根据真实材料写80-140字职业摘要，适用学生的专业，不编造能力、成果或工作方式，不写求职愿望。只返回正文。",
-                          json.dumps(digest, ensure_ascii=False), want_json=False, capability="thinking", timeout=180, label="resume:self-intro")
+    personal = bundle.get("personal") or {}
+    digest = {
+        "expected_position": personal.get("expected_position") or "",
+        "expected_industry": personal.get("expected_industry") or "",
+        "professional_background": ctx,
+        "skills": bundle.get("skill"),
+        "experience": bundle.get("experience"),
+        "education": bundle.get("education"),
+    }
+    text = await ai._chat(
+        "你是资深高校就业与简历顾问。请严格依据学生提供的真实经历与目标岗位，撰写 80–140 字、最多 3 句的中文职业摘要，"
+        "突出与目标方向相关的核心能力、代表实践或作品成果；贴合学生所属专业，不虚构任何项目、证书或成绩，"
+        "不写“吃苦耐劳/热爱学习/期待加入贵司”等空泛套话与求职愿望。不要标题、称呼或解释，只返回正文。",
+        json.dumps(digest, ensure_ascii=False),
+        want_json=False,
+        capability="thinking",
+        timeout=180,
+        label="resume:self-intro",
+    )
     return {"content_md": _compact_resume_intro(text) or _fallback_self_intro(bundle, ctx)}
 
 
@@ -335,7 +351,7 @@ def apply_intro(conn, job, payload, result) -> bool:
 
 def fail_intro(conn, job, payload, code, message) -> None:
     conn.execute("UPDATE resume_self_intros SET status = 'failed', error_text = ? WHERE id = ? AND student_id = ? AND revision = ? AND active_job_id = ?",
-                 ("生成失败，可重试或手动编辑。" + str(code)[:80], int(payload["intro_id"]), int(payload["student_id"]), int(payload["revision"]), str(job["id"])))
+                 ("本次生成未能完成，请重试或直接手动编辑。", int(payload["intro_id"]), int(payload["student_id"]), int(payload["revision"]), str(job["id"])))
 
 
 def seed_education_from_context(conn, student_id: int) -> int | None:

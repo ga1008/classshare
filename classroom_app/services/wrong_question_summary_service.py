@@ -1944,9 +1944,9 @@ def _build_local_knowledge_analysis(
     if not points:
         summary = "当前还没有足够的逐题数据生成知识点掌握度。"
     elif weak_points:
-        summary = f"本地得分估算显示：{weak_points[0]['name']} 是当前最需要优先讲评的薄弱点。"
+        summary = f"从本次得分情况看，「{weak_points[0]['name']}」失分最集中，建议优先讲评。"
     else:
-        summary = "本地得分估算显示：本次试卷各知识点整体掌握较稳定。"
+        summary = "从本次得分情况看，各知识点整体掌握较为平稳。"
     return {
         "status": status,
         "source": source,
@@ -2123,9 +2123,9 @@ def _normalize_knowledge_analysis_result(
     summary = _clip_text(raw.get("summary") or raw.get("analysis") or "", 180) if isinstance(raw, dict) else ""
     if not summary:
         if weak_points:
-            summary = f"AI 归因显示：{weak_points[0]['name']} 是当前最需要优先讲评的薄弱点。"
+            summary = f"结合本次作答表现，「{weak_points[0]['name']}」是最需要优先讲评的薄弱点。"
         else:
-            summary = "AI 归因显示：本次试卷知识点掌握整体较稳定。"
+            summary = "结合本次作答表现，各知识点整体掌握较为平稳。"
     return {
         "status": "completed",
         "source": source_label,

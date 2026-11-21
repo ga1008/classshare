@@ -18,8 +18,8 @@
 <section class="smart-classroom-shell">
     <p>本地点名从课堂课次的“自动点名”进入；此处管理本人学校账号、读取学校点名记录。需要向学校推送时，请在具体课次的“智慧课堂核对”中核对学校课次，并单独启用本轮自动推送。</p>
     <p role="note">学校账号只支持一个登录会话。保存、重新验证或后台恢复登录可能使微信小程序需要重新登录；小程序再次登录也可能中断后台连接。系统会保留已确认进度，提示重新授权后继续核对。</p>
-    {{ page_head('广外智慧课堂对接', eyebrow='SMART CLASSROOM', description='保存账号前会先登录校验。校验通过后，系统会顺序同步教师可见的授课班点名记录，并按课程编号、教学班、学期和课次日期对齐到本平台课堂。',
-        actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'smart-account-manage-btn'}, {'label': '一键同步', 'variant': 'primary', 'id': 'smart-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'smart-sync-capability-refresh-btn'}], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
+    {{ page_head('智慧课堂对接', description='保存账号前会先登录校验。校验通过后，系统会顺序同步授课班点名记录，并按课程编号、教学班、学期与课次日期自动匹配到对应课堂。',
+        actions=[{'label': '账号管理', 'variant': 'outline', 'id': 'smart-account-manage-btn'}, {'label': '立即同步', 'variant': 'primary', 'id': 'smart-sync-all-btn'}, {'label': '刷新同步状态', 'variant': 'outline', 'id': 'smart-sync-capability-refresh-btn'}], lq_enabled=(lq_pilot_enabled|default(false) or lq_family_enabled('manage-pages'))) }}
     {% if _smart_lq_enabled %}
     <div class="smart-classroom-hero">
         {% call(slot) lq_card('同步方式') %}

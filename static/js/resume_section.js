@@ -348,10 +348,10 @@
     var m = RZ.openModal({ title: '新建自我介绍', wide: true });
     m.body.innerHTML =
       '<textarea data-lq-component="textarea" class="lq-textarea rz-textarea" id="rzIntroText" style="min-height:220px" placeholder="输入你的自我介绍，可使用空行分段、- 列表、**加粗**…"></textarea>' +
-      '<div style="color:var(--rz-muted);font-size:.78rem;margin-top:6px">「AI 优化」润色当前内容；「AI 生成」会综合你填写的全部资料深度撰写（在列表中显示生成进度）。</div>';
+      '<div style="color:var(--rz-muted);font-size:.78rem;margin-top:6px">「AI 润色」优化当前内容；「AI 生成」会结合你已填写的完整资料起草（生成进度可在列表中查看）。</div>';
     var ta = m.body.querySelector('#rzIntroText');
 
-    var optimize = btn('✨ AI 优化', 'rz-btn');
+    var optimize = btn('AI 润色', 'rz-btn');
     var recoverSuggestion = btn('查看上次建议', 'rz-btn'); recoverSuggestion.hidden = !RZ.pendingSuggestion('intro');
     async function optimizeIntro(resume) {
       if (!resume && !ta.value.trim()) { RZ.toast('请先输入内容', 'error'); return; }
@@ -369,7 +369,7 @@
       finally { optimize.disabled = false; }
     }
     optimize.onclick = function () { optimizeIntro(false); }; recoverSuggestion.onclick = function () { optimizeIntro(true); };
-    var generate = btn('🤖 AI 生成', 'rz-btn');
+    var generate = btn('AI 生成', 'rz-btn');
     generate.onclick = async function () {
       generate.disabled = true;
       try { await RZ.api('/api/resume/self-intro/generate', { method: 'POST' });

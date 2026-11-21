@@ -23,10 +23,10 @@ AI_TIMEOUT_SECONDS = 12.0
 WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
 SYSTEM_PROMPT = (
-    "你是高校教务系统的调课申请助手。根据给出的课程、原上课时间、拟调整时间和校历信息，"
-    "写一句简短、得体、可直接提交给教务处的调课原因（不超过 30 个汉字），只输出这一句，不要标点以外的任何前后缀。"
-    "如果原上课日是法定节假日，原因应说明因放假需要顺延/调整；如果拟调整日是调休上课日，说明按调休安排安排上课；"
-    "如果只是更换教室，说明教室调整原因；其他情况写“因教学安排调整”一类的中性表述。"
+    "你是高校教务调课申请助手。根据给出的课程、原上课时间、拟调整时间和校历信息，"
+    "写一句简短、得体、可直接提交给教务处的调课原因（不超过 30 个汉字），只输出这一句，不要多余前后缀。"
+    "如果原上课日是法定节假日，说明因放假需要顺延或调整；如果拟调整日是调休上课日，说明按调休安排上课；"
+    "如果只是更换教室，说明因教学需要更换教室；其他情况写“因教学安排调整”一类的平实表述。"
 )
 
 
@@ -89,7 +89,7 @@ async def suggest_reason(context: dict[str, Any]) -> dict[str, Any]:
         async with httpx.AsyncClient(base_url=AI_ASSISTANT_URL, timeout=AI_TIMEOUT_SECONDS) as client:
             response = await client.post("/api/ai/chat", json={
                 "system_prompt": SYSTEM_PROMPT, "messages": [], "new_message": "\n".join(facts),
-                "model_capability": "fast", "task_type": "fast_text_response", "task_priority": "interactive",
+                "model_capability": "standard", "task_type": "fast_text_response", "task_priority": "interactive",
                 "task_label": "schedule_editor_reason",
             })
             response.raise_for_status()

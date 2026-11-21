@@ -43,17 +43,19 @@ ALLOWED_CATEGORIES = (
     "实习", "简历面试", "合同五险", "行业城市", "职业路径", "人生大实话",
 )
 
-_PROMPT_TEMPLATE = """你是一所高校的学生事务顾问。下面是一篇校园公文的正文，请从中提取对**学生本人**真正有用的硬信息（截止日期、分数线、申请条件、办理流程、隐藏福利等），改写成"游戏加载界面提示"式的一句话。
+_PROMPT_TEMPLATE = """你是一所高校的学生事务顾问。下面是一篇校园公文正文，请从中提炼对**在校学生本人**真正有用的具体信息（如截止日期、申请门槛、办理路径、学分或毕业硬要求、常见踩坑点），改写成简洁实用的单句校园提醒。
 
 要求：
-1. 每条提示一句话、30-90 字、具体可执行，最好带数字/门槛/时间点；
-2. 只提取公文里明确写了的信息，不得编造或外推；公文里没有对学生有用的信息就返回空数组；
-3. 语气像有经验的学长学姐在给建议，不要官腔；
-4. category 只能从这些里选：{categories}；
-5. scope：适用于全校学生填 "school"，只适用于某个学院/系部填 "department" 并给出 department 名称。
+1. 每条提醒写成一个完整、好读的句子（30–90 字），尽量保留具体时间点、比例、条件或去向，方便学生一看就懂该怎么做；
+2. 只提炼公文中明确写到的事实，严禁编造或外推；如公文面向教职工行政事务、对学生没有直接帮助，返回空数组；
+3. 语气像热心靠谱的学长学姐提醒学弟学妹：平实、清楚、有温度，去掉公文官腔，也不要油腻说教或套用鸡汤；
+4. category 只能从以下选项中选：{categories}；
+5. scope：面向全校学生填 "school"，仅适用于某学院/系部填 "department" 并填写 department 名称。
 
+当前日期：{today}
 公文标题：{title}
 发文单位：{sender}
+发文时间：{published_at}
 公文正文：
 {content}
 
@@ -90,7 +92,7 @@ def _load_unmined_documents(conn) -> list[dict[str, Any]]:
     ensure_life_tip_runtime(conn)
     rows = conn.execute(
         f"""
-        SELECT d.id, d.title, d.sender_name, d.attr_school_code, d.attr_college,
+        SELECT d.id, d.title, d.sender_name, d.published_at, d.attr_school_code, d.attr_college,
                d.attr_department, d.content_text, d.parsed_text
         FROM gongwen_documents d
         LEFT JOIN life_tip_source_ledger l ON l.doc_id = d.id
@@ -151,15 +153,17 @@ async def _mine_document(doc: dict[str, Any]) -> int:
 
     prompt = _PROMPT_TEMPLATE.format(
         categories="、".join(ALLOWED_CATEGORIES),
+        today=datetime.now().strftime("%Y-%m-%d"),
         title=str(doc.get("title") or "")[:200],
         sender=str(doc.get("sender_name") or "")[:100],
+        published_at=str(doc.get("published_at") or "未知")[:40],
         content=_doc_body(doc),
     )
     response = await ai_gateway_post(
         ai_client,
         "/api/ai/chat",
         json_payload={
-            "system_prompt": "你是高校学生事务顾问，只允许输出合法 JSON。",
+            "system_prompt": "你是高校学生事务顾问，擅长把校园公文提炼成学生一眼看懂的实用单句提醒。只输出合法 JSON。",
             "messages": [],
             "new_message": prompt,
             "model_capability": "thinking",
@@ -181,7 +185,7 @@ async def _mine_document(doc: dict[str, Any]) -> int:
     payload = data.get("response_json")
     if not isinstance(payload, dict):
         try:
-            payload = json.loads(str(data.get("response") or ""))
+            payload = json.loads(str(data.get("response_text") or data.get("response") or ""))
         except (TypeError, ValueError):
             payload = {}
 

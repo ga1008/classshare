@@ -1,8 +1,8 @@
 {% from 'macros/lq/button.html' import lq_btn %}
             <section class="profile-band profile-section-head profile-reveal">
                 <div>
-                    <h2>基础信息</h2>
-                    <p>头像、昵称、联系方式和个人介绍会同步到个人中心与 AI 助教上下文。</p>
+                    <h2>基础资料</h2>
+                    <p>头像、昵称、联系方式与个人简介会在个人中心展示，也会帮助课堂助教更好地称呼与配合你。</p>
                 </div>
             </section>
 
@@ -70,7 +70,7 @@
                                 </div>
                                 {% endif %}
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">
-                                    <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-nickname">身份昵称</label>
+                                    <label class="form-label{% if _profile_lq %} lq-field__label{% endif %}" for="profile-nickname">昵称</label>
                                     <input data-lq-component="input" id="profile-nickname" name="nickname" class="lq-input lq-control--md form-control" value="{{ profile.nickname }}" maxlength="40">
                                 </div>
                                 {% if profile.role == 'teacher' %}
@@ -85,7 +85,7 @@
                                     <div id="profile-identity-editor" data-profile-identity-editor>
                                         <div class="profile-identity-loading">正在加载任职身份…</div>
                                     </div>
-                                    <small class="form-hint">与你绑定的电子签名双向同步；可设置任期起止日期，到期自动降级。主身份取职级最高的在任身份。</small>
+                                    <small class="form-hint">与你绑定的电子签名自动同步；设置任期起止日期后，到期会自动结束任期，主身份默认取当前最高在任职务。</small>
                                 </div>
                                 {% endif %}
                                 <div class="{% if _profile_lq %}lq-field {% endif %}form-group">

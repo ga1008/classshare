@@ -335,8 +335,10 @@ async def _repair_json_text(raw_text: Any) -> dict[str, Any] | None:
         return None
     payload = {
         "system_prompt": (
-            "You repair malformed JSON from a resume parser. Extract only useful data from the user's text "
-            "and return valid JSON with the same resume import schema. Do not invent fields."
+            "你是简历解析 JSON 修复助手。请从用户提供的不规范输出中提取已有内容，修复为单个合法 JSON 对象，"
+            "顶层字段遵循简历导入结构：personal（对象）、target_position（字符串）、self_intro（数组）、"
+            "education（数组）、experience（数组）、skill（数组）、award（数组）、certificate（数组）。"
+            "严禁编造原文未出现的经历或字段；只输出 JSON 本体，不要 Markdown 代码块或任何解释。"
         ),
         "messages": [],
         "new_message": raw[:24000],

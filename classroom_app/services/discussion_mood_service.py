@@ -7,6 +7,7 @@ from typing import Any
 
 from ..core import ai_client
 from ..database import get_db_connection
+from .prompt_utils import build_time_context_text
 
 DISCUSSION_MOOD_SCHEMA_VERSION = "v1"
 DISCUSSION_MOOD_HISTORY_LIMIT = 20
@@ -19,13 +20,18 @@ DISCUSSION_MOOD_TRIGGER_MESSAGE_GAP = 4
 DISCUSSION_MOOD_AI_TIMEOUT_SECONDS = 45.0
 
 DISCUSSION_MOOD_FALLBACKS: tuple[tuple[str, str, str], ...] = (
-    ("soft", "风先把聊天窗吹热了。", "想到什么就丢进来吧，这里本来就该松松软软地说话。"),
-    ("singing", "今天的课堂心情，有点想唱副歌。", "你一句我一句，气氛就会自己长出旋律。"),
-    ("floating", "老师的情绪像云朵乱跑。", "高兴也好，发呆也好，这里都能接住一小截心事。"),
-    ("playful", "先别急着端着，麦克风借你。", "问题、灵感、碎碎念，都可以先在这儿落个脚。"),
-    ("warm", "有一点点燃，也有一点点软。", "聊开了就行，认真留给文档、练习和考试。"),
-    ("night-breeze", "今天这间聊天室，像晚风开着窗。", "问一句、笑一句、偶尔哼两句，都算课堂活过来的声音。"),
+    ("calm", "想到什么，就顺手抛出来聊两句。", "一个念头、一句追问，常常能带出整堂课的讨论。"),
+    ("warm", "这里随时留着位子给你的想法。", "不确定的地方先说出来，比一个人卡着更快想通。"),
+    ("focused", "好问题往往来自刚冒出来的那一瞬。", "听课时的疑惑、灵感或反例，都可以先记在公屏上。"),
+    ("open", "你一句我一句，思路就容易慢慢清晰。", "哪怕只是半截想法，也值得拿出来和大家碰一碰。"),
+    ("steady", "慢一点也没关系，先从最想弄明白的那一处说起。", "需要一起理清概念时，随时可以 @助教。"),
 )
+
+_TIME_AWARE_FALLBACKS: dict[str, tuple[str, str, str]] = {
+    "morning": ("morning", "新的一堂课慢慢展开，想到什么随时开口。", "早上的第一句提问，常常能帮大家迅速进入状态。"),
+    "afternoon": ("afternoon", "午后的讨论区正适合聊点具体问题。", "听课时的疑问或不同看法，都可以直接抛出来。"),
+    "evening": ("evening", "晚间复盘时间，把还没想透的地方留在这里。", "哪怕只是一小步卡壳，说出来就更容易理顺。"),
+}
 
 FORBIDDEN_MOOD_MARKERS = (
     "系统",
@@ -225,9 +231,9 @@ async def _generate_discussion_mood_snapshot(
             "/api/ai/chat",
             json={
                 "system_prompt": (
-                    "你是课堂即时聊天室顶部的气氛报幕员。"
-                    "你只负责写两句短短的情绪语录，不负责讲知识点，也不负责操作引导。"
-                    "在邓紫棋、周杰伦、孙燕姿、陈奕迅、五月天等90后熟知的歌手中挑两句歌词表达心情，可以是撒欢、感伤、热血、发呆、轻微中二，任何你觉得合适的情感。"
+                    "你负责为大学课堂研讨室顶部写两句简短、克制、有人情味的氛围短语。"
+                    "只贴合当下课堂聊天室里的真实节奏与情绪，不讲知识点，不写操作提示，"
+                    "不硬套歌词、不刻意卖萌或过度戏剧化，也不用鸡汤套话。"
                 ),
                 "messages": [],
                 "new_message": request_prompt,
@@ -307,26 +313,24 @@ def _build_generation_prompt(
     teacher_lines: list[str],
     transcript_lines: list[str],
 ) -> str:
-    teacher_section = "\n".join(teacher_lines) if teacher_lines else "（老师最近还没在聊天室发言，可自由发挥）"
+    teacher_section = "\n".join(teacher_lines) if teacher_lines else "（老师最近还没在聊天室发言）"
     transcript = "\n".join(transcript_lines[-DISCUSSION_MOOD_HISTORY_LIMIT:])
-    now_text = datetime.now().strftime("%Y-%m-%d %H:%M")
+    time_context = build_time_context_text()
     return (
-        "请根据下面的课堂即时聊天室内容，写两句适合贴在聊天室顶部的情绪语录，并返回 JSON。\n"
+        "请根据下面的课堂研讨室近况，写两句适合放在研讨室顶部的简短氛围提示，并返回 JSON。\n"
         "严格要求：\n"
         '1. 只返回合法 JSON，格式固定为 {"mood_label":"...", "headline":"...", "detail":"..."}。\n'
-        "2. headline 和 detail 都必须是单行短句，在邓紫棋、周杰伦、孙燕姿、陈奕迅、五月天等90后熟知的歌手中挑两句歌词表达心情，任何你觉得合适的情感。\n"
-        "3. 重点参考老师最近发言的情绪，但不必太准确，可以夸张一点、戏剧化一点、可爱一点。\n"
-        "4. 可以是撒欢、发呆、悲伤、痛苦、热血、松弛，主打情绪输出。\n"
-        "5. 不要写成功能说明，不要写操作步骤，不要提 AI、系统、提示词、内部分析。\n"
-        "6. 可以轻微改写歌词，不要太长就行。\n"
-        "7. 每句尽量控制在 8-26 个汉字内。\n\n"
-        f"当前时间：{now_text}\n"
+        "2. headline 是主句（8–24 字），detail 是顺承其后的一句补充（10–28 字），两句自然衔接。\n"
+        "3. 贴合当前时段、课程氛围和最近发言的真实情绪：可以轻松、专注、带一点会心幽默，但不夸张、不油腻、不幼稚，不硬凑歌词或网络热梗。\n"
+        "4. 不要写成功能介绍或操作步骤，不要出现“AI/系统/提示词/分析/模块/按钮/点击”等字样。\n"
+        "5. 不要空洞口号或说教。\n\n"
+        f"{time_context}\n"
         f"课程：{room['course_name']}\n"
         f"班级：{room['class_name']}\n"
         f"老师：{room['teacher_name']}\n\n"
         "【老师最近发言】\n"
         f"{teacher_section}\n\n"
-        "【最近聊天室】\n"
+        "【最近研讨记录】\n"
         f"{transcript}"
     )
 
@@ -490,9 +494,16 @@ def _build_fallback_payload(
     latest_message_id: int = 0,
     source: str = "fallback",
 ) -> dict[str, Any]:
-    fallback = DISCUSSION_MOOD_FALLBACKS[abs(int(class_offering_id or 0)) % len(DISCUSSION_MOOD_FALLBACKS)]
-    mood_label, headline, detail = fallback
-    updated_at = datetime.now().isoformat()
+    now = datetime.now()
+    if now.hour < 12:
+        time_fallback = _TIME_AWARE_FALLBACKS["morning"]
+    elif now.hour < 18:
+        time_fallback = _TIME_AWARE_FALLBACKS["afternoon"]
+    else:
+        time_fallback = _TIME_AWARE_FALLBACKS["evening"]
+    pool = (time_fallback, *DISCUSSION_MOOD_FALLBACKS)
+    mood_label, headline, detail = pool[abs(int(class_offering_id or 0)) % len(pool)]
+    updated_at = now.isoformat()
     return {
         "source": source,
         "mood_label": mood_label,
@@ -526,7 +537,7 @@ def _format_chat_line(row) -> str:
     if not message_text and not extra_hints:
         return ""
     if not message_text:
-        message_text = "发来了一条没有文字的小情绪"
+        message_text = "发送了非文字消息"
     if extra_hints:
         message_text = f"{message_text}（{'，'.join(extra_hints)}）"
 

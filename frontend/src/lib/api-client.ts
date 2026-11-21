@@ -112,7 +112,7 @@ export async function apiRequest<T>(
     const structured = parseApiErrorPayload(payload);
     const retryAfter = response.headers.get('retry-after');
     throw new ApiError(
-      errorMessageFromPayload(payload, `Request failed (${response.status})`),
+      errorMessageFromPayload(payload, `请求未成功（状态码 ${response.status}），请稍后重试`),
       response.status,
       payload,
       {

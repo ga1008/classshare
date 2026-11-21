@@ -189,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: new FormData(createForm),
                 silent: true,
             });
-            showToast(result.message || '提示语已入库。', 'success');
+            showToast(result.message || '已保存并启用。', 'success');
             await createModal.close();
             createForm.reset();
             if (departmentField) departmentField.hidden = true;

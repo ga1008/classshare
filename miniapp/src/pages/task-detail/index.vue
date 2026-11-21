@@ -789,7 +789,7 @@ async function submit(): Promise<void> {
     if (!hasVisibleContent()) { uni.showToast({ title: "还没有填写任何作答内容", icon: "none" }); return; }
     const unanswered = detail.value.paper ? allQuestions.value.length - answeredCount.value : 0;
     const confirmed = await new Promise<boolean>((resolve) => {
-      uni.showModal({ title: "确认提交", content: unanswered > 0 ? `还有 ${unanswered} 题未作答，确定提交吗？` : "提交后将不能再修改，确定提交吗？",
+      uni.showModal({ title: "确认提交", content: unanswered > 0 ? `还有 ${unanswered} 题未作答，确定提交吗？` : "提交后如需修改，需等待老师退回；确定现在提交吗？",
         success: (res) => resolve(Boolean(res.confirm)), fail: () => resolve(false) });
     });
     if (!confirmed || !ownsPage()) return;
@@ -925,7 +925,7 @@ onUnload(() => {
           {{ detail.assignment.requirements_md }}
         </text>
         <text v-if="isAnswerMode && unsupportedQuestions.length" class="head-card__warn">
-          ⚠️ 本试卷有 {{ unsupportedQuestions.length }} 题本端暂不支持作答，请到网页端完成这些题目
+          本试卷有 {{ unsupportedQuestions.length }} 题暂需在网页端作答，小程序暂不支持。
         </text>
       </view>
 
@@ -1025,8 +1025,8 @@ onUnload(() => {
             </view>
 
             <view v-else-if="!isSupportedQuestion(q)" class="unsupported-card">
-              <text class="unsupported-card__title">本题题型（{{ q.type }}）本端暂不支持作答</text>
-              <text class="unsupported-card__hint">请到网页端完成本题；本端提交不会包含本题作答。</text>
+              <text class="unsupported-card__title">本题型（{{ QUESTION_TYPE_LABELS[q.type] || '当前题型' }}）暂需在网页端作答</text>
+              <text class="unsupported-card__hint">请前往网页端完成本题；在小程序直接提交将不包含本题作答。</text>
             </view>
 
             <view v-else-if="hasNumberedBlanks(q)" class="numbered-blanks">
@@ -1066,7 +1066,7 @@ onUnload(() => {
                 auto-height
                 @input="onTextInput(q.id, $event as never)"
               />
-              <text v-if="q.type === 'code' || q.type === 'comprehensive'" class="attach-hint">可输入 Markdown 和代码块（用三个反引号包围代码）。网页端提供代码高亮与块编辑。</text>
+              <text v-if="q.type === 'code' || q.type === 'comprehensive'" class="attach-hint">支持直接输入文字或代码（Markdown 格式）；如需代码高亮与更完整的排版，建议前往网页端作答。</text>
 
               <view v-if="isAttachmentQuestion(q)" class="uploads">
                 <text v-if="q.attachment_requirements?.description" class="attach-hint">{{ q.attachment_requirements.description }}</text>
@@ -1108,7 +1108,7 @@ onUnload(() => {
                     <text>清空</text>
                   </view>
                 </view>
-                <text class="attach-hint">文件请先发送到微信任意聊天（如"文件传输助手"），再从聊天记录中选取</text>
+                <text class="attach-hint">文件请先发送到微信任意聊天（如「文件传输助手」），再从聊天记录中选取</text>
               </view>
             </view>
           </view>
@@ -1166,7 +1166,7 @@ onUnload(() => {
                 <text>清空</text>
               </view>
             </view>
-            <text class="attach-hint">代码/文档等文件请先发送到微信任意聊天（如"文件传输助手"），再从聊天记录中选取</text>
+            <text class="attach-hint">代码/文档等文件请先发送到微信任意聊天（如「文件传输助手」），再从聊天记录中选取</text>
           </view>
         </view>
       </template>

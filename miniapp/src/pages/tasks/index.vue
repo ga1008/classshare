@@ -51,9 +51,9 @@ const SEGMENTS: Array<{ key: Segment; label: string }> = [
 ];
 
 const EMPTY_COPY: Record<Segment, string> = {
-  pending: "🎉 没有进行中的任务",
+  pending: "当前没有进行中的任务",
   completed: "还没有完成的任务",
-  expired: "没有错过的任务，很棒",
+  expired: "没有错过的任务",
 };
 
 const auth = useAuthStore();

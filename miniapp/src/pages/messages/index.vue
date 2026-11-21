@@ -165,7 +165,7 @@ onReachBottom(() => {
     <view v-if="loading && !items.length" class="empty"><text>加载中…</text></view>
     <view v-else-if="failed" class="empty" @tap="loadItems"><text>加载失败，点击重试</text></view>
     <view v-else-if="!visibleItems.length" class="empty">
-      <text>{{ tab === "unread" ? "🎉 没有未读消息" : "还没有任何消息" }}</text>
+      <text>{{ tab === "unread" ? "没有未读消息" : "还没有任何消息" }}</text>
     </view>
 
     <view

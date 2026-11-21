@@ -136,7 +136,8 @@ async def optimize_self_intro(text: str, personal: dict[str, Any]) -> dict[str, 
             return {"ok": False, "error": "AI 未返回可用于简历的专业内容，请稍后重试"}
         return {"ok": True, "content": result}
     except (httpx.HTTPError, ValueError) as exc:
-        return {"ok": False, "error": f"AI 优化暂不可用（{type(exc).__name__}）"}
+        print(f"[RESUME_AI] optimize_self_intro failed: {type(exc).__name__}: {exc}")
+        return {"ok": False, "error": "AI 润色暂时不可用，请稍后重试"}
 
 
 # ---------------------------------------------------------------------------
@@ -144,12 +145,12 @@ async def optimize_self_intro(text: str, personal: dict[str, Any]) -> dict[str, 
 # ---------------------------------------------------------------------------
 async def build_personal_info_suggestions(personal: dict[str, Any], student_context: dict[str, Any]) -> dict[str, Any]:
     system = (
-        "你是简历填写助手。基于学生平台资料，给出适合简历的字段建议值，必须返回 JSON 对象，"
-        "键可包含 expected_position（期望岗位）、expected_industry（行业）、email（规范化邮箱）。"
-        "不要编造身份证、电话等敏感信息。只返回 JSON。"
+        "你是校招简历顾问。请根据学生的专业与已有资料，给出适合简历填写的期望岗位和行业建议，只返回 JSON 对象，"
+        "键仅限 expected_position（期望岗位）、expected_industry（期望行业）。"
+        "严禁编造或修改邮箱、电话、身份证等任何个人联系或身份信息。只返回 JSON。"
     )
     context = {
-        "已有个人信息": {k: personal.get(k) for k in ("name", "email", "expected_position", "expected_industry")},
+        "已有个人信息": {k: personal.get(k) for k in ("expected_position", "expected_industry")},
         "专业": student_context.get("major_name"),
         "班级": student_context.get("class_name"),
     }
@@ -157,12 +158,13 @@ async def build_personal_info_suggestions(personal: dict[str, Any], student_cont
     try:
         result = await _chat(system, user, want_json=True, label="resume:personal-suggest")
         if isinstance(result, dict):
-            allowed = ("expected_position", "expected_industry", "email")
+            allowed = ("expected_position", "expected_industry")
             return {"ok": True, "suggestions": {k: str(v).strip() for k, v in result.items()
                                                 if k in allowed and str(v or "").strip()}}
-        return {"ok": False, "error": "AI 未返回有效建议"}
+        return {"ok": False, "error": "暂未生成可用建议，请稍后重试"}
     except (httpx.HTTPError, ValueError) as exc:
-        return {"ok": False, "error": f"AI 建议暂不可用（{type(exc).__name__}）"}
+        print(f"[RESUME_AI] personal_info_suggestions failed: {type(exc).__name__}: {exc}")
+        return {"ok": False, "error": "AI 建议暂时不可用，请稍后重试"}
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +208,8 @@ async def generate_tech_stack(
             return {"ok": True, "groups": groups}
         return {"ok": False, "error": "AI 未返回有效技术栈", "groups": _fallback_tech_stack(bundle)}
     except (httpx.HTTPError, ValueError) as exc:
-        return {"ok": False, "error": f"AI 生成暂不可用（{type(exc).__name__}）", "groups": _fallback_tech_stack(bundle)}
+        print(f"[RESUME_AI] generate_tech_stack failed: {type(exc).__name__}: {exc}")
+        return {"ok": False, "error": "AI 生成暂时不可用，已先按已有技能整理基础分组", "groups": _fallback_tech_stack(bundle)}
 
 
 async def optimize_resume_for_target(
@@ -260,6 +263,7 @@ async def optimize_resume_for_target(
         return {"ok": True, "source": "ai", "target_position": target_position, "summary_md": summary,
                 "tech_stack": groups, "notes": notes}
     except (httpx.HTTPError, ValueError) as exc:
+        print(f"[RESUME_AI] optimize_resume_for_target failed: {type(exc).__name__}: {exc}")
         return {
             "ok": False,
             "source": "baseline",
@@ -267,7 +271,7 @@ async def optimize_resume_for_target(
             "summary_md": _fallback_targeted_summary(bundle, student_context, target_position),
             "tech_stack": _fallback_tech_stack(bundle),
             "notes": _fallback_optimization_notes(target_position, True, True),
-            "error": f"AI 优化暂不可用（{type(exc).__name__}），已生成基础优化版",
+            "error": "AI 优化暂时不可用，已先生成基础版供修改",
         }
 
 
@@ -324,10 +328,17 @@ def _resume_summary_is_useful(text: Any, target_position: str = "") -> bool:
     if not target:
         return True
     target_keys = {target}
-    core = re.sub(r"(开发工程师|工程师|实习生|岗位|方向|开发|助理)$", "", target).strip()
+    core = re.sub(
+        r"(开发工程师|工程师|实习生|管培生|专员|岗位|方向|开发|助理|教师|老师|顾问|经理|分析师|策划|运营|编辑|翻译)$",
+        "",
+        target,
+    ).strip()
     if len(core) >= 2:
         target_keys.add(core)
-    return any(key and key in raw for key in target_keys)
+    if any(key and key in raw for key in target_keys):
+        return True
+    # 跨专业岗位（如外语、教育、经管等）的优质摘要未必机械照搬岗位全称
+    return len(raw) >= 48 and any(p in raw for p in ("。", "，"))
 
 
 def _clean_resume_background_label(value: Any) -> str:

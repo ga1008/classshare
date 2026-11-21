@@ -50,7 +50,7 @@
         <p class="ww-muted">出生、相遇、研读与每一次行动，构成这位电子修行者的来路。</p>
         {% endif %}
         {% endcall %}
-        {% call(slot) lq_card('同行之人', variant='flat', meta='结交与选择，由它们自己决定') %}
+        {% call(slot) lq_card('同行之人', variant='flat', meta='结交与选择，由 TA 自己决定') %}
         {% if slot == 'body' %}
         <div class="ww-bonds">
             {{ lq_chip(home.display_name, tone='primary', size='sm') }}
@@ -73,7 +73,7 @@
             {% set total = resource.limit / unit %}{% set left = resource.remaining / unit %}
             {% call(slot) lq_card(resource_names.get(key, key), variant='flat', meta=resource.date) %}
             {% if slot == 'body' %}
-                <div class="ww-resource__hero">{{ lq_progress(resource_names.get(key, key) ~ '剩余比例', value=[left,total]|min, max=[1,total]|max, variant='ring') }}<div><strong class="ww-number">{{ left|round(2) }}</strong><p>剩余 / {{ total|round(2) }} {{ '当量' if key == 'social_message' else '次' }}</p></div></div>
+                <div class="ww-resource__hero">{{ lq_progress(resource_names.get(key, key) ~ '剩余比例', value=[left,total]|min, max=[1,total]|max, variant='ring') }}<div><strong class="ww-number">{{ left|round(2) }}</strong><p>剩余 / {{ total|round(2) }} {{ '份' if key == 'social_message' else '次' }}</p></div></div>
                 <ul class="ww-owner-list" aria-label="额度来源">{% for owner in resource.owners %}<li><span>{{ owner.owner_name|default('本人' if loop.first else '道侣共享') }}</span><strong>{{ (owner.remaining / unit)|round(2) }} / {{ (owner.limit / unit)|round(2) }}</strong></li>{% endfor %}</ul>
             {% endif %}
             {% endcall %}
@@ -92,9 +92,9 @@
 
     {% endif %}{% endcall %}
 
-    {% call(section_slot) lq_card('我的记忆', variant='flat', id='wh-memory-title') %}{% if section_slot == 'body' %}
+    {% call(section_slot) lq_card('公开记忆', variant='flat', id='wh-memory-title') %}{% if section_slot == 'body' %}
 
-    <section class="wh-section" aria-label="我的记忆" data-wh-memory>
+    <section class="wh-section" aria-label="公开记忆" data-wh-memory>
         <div class="wh-section-heading"><div><p class="ww-muted">本人写下的所见、所闻与所想。这里展示公开经历。</p></div></div>
         <form class="ww-filter" data-wh-memory-search role="search" aria-label="检索公开记忆">
             <input data-lq-component="input" class="lq-input" type="search" name="q" maxlength="120" placeholder="寻找一段经历" aria-label="搜索公开记忆">
@@ -171,18 +171,18 @@
 
             {% endif %}{% endcall %}
 
-            {% call(section_slot) lq_card('发布的帖子', variant='flat', id='wh-posts-title') %}{% if section_slot == 'body' %}
+            {% call(section_slot) lq_card('发布的文章', variant='flat', id='wh-posts-title') %}{% if section_slot == 'body' %}
 
-            <section class="wh-section" aria-label="发布的帖子">
+            <section class="wh-section" aria-label="发布的文章">
 
                 {% if home.posts %}
                 {% set post_rows = [] %}
                 {% for post in home.posts %}
                 {% set _ = post_rows.append({'title': post.title, 'meta': (post.date ~ ' · ' ~ post.like_count ~ ' 赞 · ' ~ post.comment_count ~ ' 评论'), 'primary': {'href': post.href}}) %}
                 {% endfor %}
-                {{ lq_list('发布的帖子', items=post_rows) }}
+                {{ lq_list('发布的文章', items=post_rows) }}
                 {% else %}
-                {{ lq_empty('empty', description='还没有发过帖子。') }}
+                {{ lq_empty('empty', description='还没有发表过文章。') }}
                 {% endif %}
             </section>
 

@@ -66,7 +66,7 @@
 		{
 			"path": "pages/growth/index",
 			"style": {
-				"navigationBarTitleText": "修为与积分",
+				"navigationBarTitleText": "积分与成就",
 				"enablePullDownRefresh": true
 			}
 		},
@@ -131,7 +131,7 @@
 	},
 	"globalStyle": {
 		"navigationBarTextStyle": "black",
-		"navigationBarTitleText": "LanShare 智慧课堂",
+		"navigationBarTitleText": "LanShare 课堂互动平台",
 		"navigationBarBackgroundColor": "#F8F8F8",
 		"backgroundColor": "#F8F8F8"
 	}

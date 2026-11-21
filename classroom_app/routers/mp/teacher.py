@@ -35,7 +35,7 @@ _STATUS_LABELS = {"new": "草稿", "published": "进行中", "closed": "已截�
 
 _SUBMISSION_STATUS_LABELS = {
     "submitted": "待批改",
-    "grading": "AI批改中",
+    "grading": "AI 批改中",
     "grading_review": "待确认",
     "graded": "已批改",
     "unsubmitted": "未提交",
@@ -107,7 +107,7 @@ _QUESTION_TYPE_LABELS = {kind: label.removesuffix("题") for kind, label in QUES
 _VERDICT_LABELS = {
     "full": "满分",
     "partial": "部分正确",
-    "zero": "0分",
+    "zero": "0 分",
     "blank": "未作答",
     "doubt": "待评判",
     "manual": "人工评判",

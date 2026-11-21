@@ -191,16 +191,19 @@ async def api_ai_generate_course_lessons(
         response.raise_for_status()
         data = response.json()
     except httpx.ConnectError:
-        raise HTTPException(503, "AI 助手服务未运行，请先启动 ai_assistant.py。")
+        raise HTTPException(503, "AI 服务暂时不可用，请稍后重试。")
     except httpx.TimeoutException:
         raise HTTPException(504, "AI 服务响应超时，请稍后重试。")
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(exc.response.status_code, f"AI 服务错误: {exc.response.text}")
+        print(f"[COURSE_LESSONS_AI] 上游 HTTP {exc.response.status_code}: {exc.response.text[:300]}")
+        raise HTTPException(exc.response.status_code, "AI 生成课次大纲暂时失败，请稍后重试。")
     except Exception as exc:
-        raise HTTPException(500, f"AI 请求失败: {exc}")
+        print(f"[COURSE_LESSONS_AI] 请求失败: {exc}")
+        raise HTTPException(500, "AI 生成课次大纲时遇到问题，请稍后重试。")
 
     if data.get("status") != "success":
-        raise HTTPException(500, f"AI 返回异常: {data.get('detail', '未知错误')}")
+        print(f"[COURSE_LESSONS_AI] 返回异常: {data.get('detail')}")
+        raise HTTPException(500, "AI 生成课次大纲未能完成，请稍后重试。")
 
     response_text = str(data.get("response_text") or "").strip()
     if not response_text:

@@ -1725,7 +1725,7 @@ def _build_personal_attendance_insights(
                 "key": "no_records",
                 "tone": "neutral",
                 "title": "暂无本人点名记录",
-                "text": "当前同步数据里还没有匹配到你的个人点名明细，可以先和任课教师确认名单是否已对齐。",
+                "text": "目前还没有匹配到你的点名记录，如已上课可向任课老师确认名单是否录入完整。",
             }
         ]
 
@@ -1739,8 +1739,8 @@ def _build_personal_attendance_insights(
             {
                 "key": "personal_attention",
                 "tone": "warning",
-                "title": "个人出勤需要留意",
-                "text": f"本课程目前出勤率 {rate:.1f}%，缺勤 {absent} 次。建议及时补齐课堂材料并确认后续课次安排。",
+                "title": "这门课的出勤需要多留意",
+                "text": f"目前出勤率 {rate:.1f}%，缺勤 {absent} 次。先把落下的课程材料补一补，后续尽量按时到课。",
             }
         )
     elif late or leave_count:
@@ -1748,8 +1748,8 @@ def _build_personal_attendance_insights(
             {
                 "key": "personal_abnormal",
                 "tone": "neutral",
-                "title": "有少量异常记录",
-                "text": f"已记录迟到/早退 {late} 次、请假 {leave_count} 次。后续保持稳定出勤即可。",
+                "title": "有少量迟到或请假记录",
+                "text": f"目前记录到迟到或早退 {late} 次、请假 {leave_count} 次，接下来保持平稳到课就好。",
             }
         )
 
@@ -1763,8 +1763,8 @@ def _build_personal_attendance_insights(
                 {
                     "key": "course_compare",
                     "tone": "warning",
-                    "title": "低于你的其他课堂",
-                    "text": f"本课程出勤率比你其他已同步课堂均值低 {abs(delta):.1f} 个百分点，可优先检查这门课的时间安排和材料补齐情况。",
+                    "title": "比你其他课程略低",
+                    "text": f"这门课出勤率比你其他课程平均低 {abs(delta):.1f} 个百分点，可以留意一下上课时间衔接，顺手补齐对应资料。",
                 }
             )
         elif delta >= 5:
@@ -1772,8 +1772,8 @@ def _build_personal_attendance_insights(
                 {
                     "key": "course_compare",
                     "tone": "success",
-                    "title": "高于你的其他课堂",
-                    "text": f"本课程出勤率比你其他已同步课堂均值高 {delta:.1f} 个百分点，当前节奏保持得不错。",
+                    "title": "比你其他课程更稳",
+                    "text": f"这门课出勤率比你其他课程平均高 {delta:.1f} 个百分点，节奏保持得很稳。",
                 }
             )
 
@@ -1782,8 +1782,8 @@ def _build_personal_attendance_insights(
             {
                 "key": "personal_stable",
                 "tone": "success",
-                "title": "个人出勤稳定",
-                "text": "已同步的个人点名记录整体稳定，继续保持当前学习节奏。",
+                "title": "出勤很稳定",
+                "text": "这门课到课一直很稳，按现在的节奏往下学就好。",
             }
         )
     return insights[:4]

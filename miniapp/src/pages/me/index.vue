@@ -30,7 +30,7 @@ const featureEntries = computed<FeatureEntry[]>(() => {
   return [
     { icon: "🏆", title: "成绩单", desc: "学期成绩概览", url: "/pages/report-card/index" },
     { icon: "📖", title: "错题本", desc: "错过的题再看一遍", url: "/pages/wrong-book/index" },
-    { icon: "⚔️", title: "修为与积分", desc: "徽章、积分与商店", url: "/pages/growth/index" },
+    { icon: "🏅", title: "积分与成就", desc: "成就徽章、积分明细与商城", url: "/pages/growth/index" },
     { icon: "🔔", title: "消息中心", desc: "平台通知都在这里", url: "/pages/messages/index" },
     { icon: "🤖", title: "AI 助手", desc: "随时随地问学业问题" },
   ];
@@ -143,7 +143,7 @@ onShow(() => {
 
     <button class="logout press" @tap="handleLogout">退出登录</button>
 
-    <text class="footer">LanShare 智慧课堂 · 让课堂更轻</text>
+    <text class="footer">LanShare 课堂互动平台</text>
   </view>
 </template>
 

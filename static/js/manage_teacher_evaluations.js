@@ -467,7 +467,7 @@ function openGenerateModal() {
         promptPlaceholder: '如：该班整体学习积极性较高，作业完成度好，请客观评分。',
         promptPoolKey: 'teacher_evaluation.generate_from_classroom',
         confirmLabel: '确定并生成',
-        hintHtml: '系统将<strong>归集该班级本学期在这门课的全部表现</strong>（作业/考试成绩、课堂互动、修炼等级等），用<strong>快速 AI</strong> 为 10 项指标公平打分（总分 60-95），自动计算综合评价并撰写学习情况分析。可关闭窗口，列表以占位卡显示进度。',
+        hintHtml: '系统将<strong>汇总该班级本学期在这门课的真实学习表现</strong>（作业、考试与课堂互动情况），由 <strong>AI</strong> 为 10 项指标客观评分（总分 60–95）并撰写学习情况分析。窗口可关闭，列表中会实时显示进度。',
         onSelect: (offering) => offeringPanelDescriptor(offering),
         onConfirm: async ({ data, fieldValues, prompt }) => {
             try {

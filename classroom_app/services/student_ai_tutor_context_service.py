@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import re
 from typing import Any
@@ -178,10 +179,23 @@ def retrieve_material_snippets(
     return scored[: max(1, limit)]
 
 
+def _is_due_passed(raw_due_at: Any) -> bool:
+    text = str(raw_due_at or "").strip()
+    if not text:
+        return False
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed <= datetime.now()
+
+
 def _load_open_tasks(conn: Any, class_offering_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT a.id, a.title, a.exam_paper_id, a.due_at,
+        SELECT a.id, a.title, a.requirements_md, a.exam_paper_id, a.due_at,
                ep.questions_json
         FROM assignments a
         LEFT JOIN exam_papers ep ON ep.id = a.exam_paper_id
@@ -193,7 +207,7 @@ def _load_open_tasks(conn: Any, class_offering_id: int) -> list[dict[str, Any]]:
         """,
         (int(class_offering_id),),
     ).fetchall()
-    return [dict(row) for row in rows]
+    return [dict(row) for row in rows if not _is_due_passed(row["due_at"])]
 
 
 def _question_texts(questions_json: Any, *, limit: int = 60) -> list[str]:
@@ -235,8 +249,12 @@ def detect_open_task_hit(conn: Any, *, class_offering_id: int, query: str) -> di
         title_bigrams = _bigrams(title)
         if title_bigrams and len(title_bigrams & query_bigrams) >= max(2, len(title_bigrams) // 2):
             return {"title": title, "kind": "考试" if task.get("exam_paper_id") else "作业"}
-        # 题干重叠：提问与某道题的二字组交集覆盖提问的 60% 以上（学生把题目粘贴进来问答案）。
-        for question_text in _question_texts(task.get("questions_json")):
+        # 题干或作业要求重叠：提问与某道题或作业说明的二字组交集覆盖提问的 60% 以上（学生把题目粘贴进来问答案）。
+        candidate_texts = _question_texts(task.get("questions_json"))
+        requirements_md = str(task.get("requirements_md") or "").strip()
+        if len(requirements_md) >= 12:
+            candidate_texts.append(requirements_md)
+        for question_text in candidate_texts:
             question_bigrams = _bigrams(question_text)
             if not question_bigrams:
                 continue
@@ -282,12 +300,10 @@ def build_tutor_context_block(
             if hit:
                 sections.append(
                     "--- 学业诚信守卫（必须遵守，优先级最高） ---\n"
-                    f"当前提问疑似指向进行中的{hit['kind']}《{hit['title']}》。\n"
-                    "对这类问题绝不直接给出最终答案、完整解题过程或可直接提交的代码/文段。\n"
-                    "改用苏格拉底式引导，按顺序：1) 用一句话帮学生复述题目在考察什么；"
-                    "2) 点出涉及的关键概念并提示去哪份课程材料复习；"
-                    "3) 给出第一步的思考方向，然后邀请学生先自己尝试再来讨论。\n"
-                    "如果学生坚持索要答案，温和说明截止后可以一起完整复盘。"
+                    f"当前提问很可能指向进行中的{hit['kind']}《{hit['title']}》。\n"
+                    "请不要直接给出最终答案、完整推导或可直接提交的代码与段落。\n"
+                    "用自然、克制的引导帮学生自己想通：先点明这道题在考察什么、可回看哪份课程材料，再给出第一步的切入角度，请学生试着迈出第一步后继续聊；不必生硬套编号模板。\n"
+                    "若学生执意索要答案，坦诚温和地说明等截止后再一起完整复盘。"
                 )
 
         indexed_hits = _retrieve_indexed_hits(conn, class_offering_id=class_offering_id, query=query)
@@ -298,9 +314,9 @@ def build_tutor_context_block(
                 for locator in hit.get("locators") or []:
                     lines.append(f"  - {locator.get('label') or '正文'}：{locator.get('snippet') or ''}")
             lines.append(
-                "使用规则：优先依据以上材料回答，并在对应结论后标注出处与位置，格式如（见《材料名》第 3 页）；"
-                "学生问“在哪个文档 / 哪一页”时直接给出上面的材料名和位置；"
-                "材料未覆盖的部分可以用通识知识补充，但要说明\"以下内容超出本课材料\"。"
+                "使用规则：优先依据以上材料回答，并在关键结论后自然注明出处与位置，如（见《材料名》第 3 页）；"
+                "学生问“在哪个文档或哪一页”时直接给出对应材料名和位置；"
+                "需要用课外通识补充时，顺口说明哪些是延伸补充、而非本课材料原文即可。"
             )
             sections.append("\n".join(lines))
         else:
@@ -312,8 +328,8 @@ def build_tutor_context_block(
                 for index, item in enumerate(snippets, start=1):
                     lines.append(f"[材料{index}]《{item['title']}》：{item['snippet']}")
                 lines.append(
-                    "使用规则：优先依据以上材料回答，并在对应结论后标注出处，格式如（见《材料名》）；"
-                    "材料未覆盖的部分可以用通识知识补充，但要说明\"以下内容超出本课材料\"。"
+                    "使用规则：优先依据以上材料回答，并在关键结论后自然注明出处，如（见《材料名》）；"
+                    "需要用课外通识补充时，顺口说明哪些是延伸补充、而非本课材料原文即可。"
                 )
                 sections.append("\n".join(lines))
 

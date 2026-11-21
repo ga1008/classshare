@@ -15,7 +15,7 @@ const MAX_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp']);
 
 const AUTOFILL_SECTION_MAP = {
-    '/dashboard': '首页/仪表盘',
+    '/dashboard': '首页',
     '/classroom': '课堂互动',
     '/courses': '课程管理',
     '/assignments': '作业系统',
@@ -30,13 +30,13 @@ const AUTOFILL_SECTION_MAP = {
 const TYPE_CONFIG = {
     bug: {
         titlePlaceholder: '请输入问题的简要标题',
-        descriptionPlaceholder: '请详细描述：您进行了什么操作？出现了什么异常？期望的结果是什么？',
+        descriptionPlaceholder: '请写清楚：你做了什么操作？遇到了什么情况？希望它原本是什么效果？',
         showSection: true,
         showEmoji: false,
     },
     feature: {
         titlePlaceholder: '请输入新功能建议的简要标题',
-        descriptionPlaceholder: '请详细描述您希望添加的功能，包括使用场景和预期效果。',
+        descriptionPlaceholder: '请具体说说你希望新增的功能、使用场景，以及它能帮你解决什么问题。',
         showSection: false,
         showEmoji: true,
     },
@@ -414,10 +414,10 @@ class FeedbackModal {
             if (this.successMessage) {
                 if (failedUploads > 0) {
                     this.successMessage.textContent =
-                        `反馈已提交；${failedUploads} 张截图上传失败。您可在“我的反馈”继续补充文字说明。`;
+                        `反馈已提交，但有 ${failedUploads} 张截图上传失败。你可以在“我的反馈”里继续补充说明。`;
                 } else {
                     this.successMessage.textContent =
-                        '反馈已提交。您可以在“我的反馈”继续补充、查看超管回复，处理完成后由超管关闭。';
+                        '反馈已提交。你可以在“我的反馈”里继续补充说明或查看管理员回复，处理完成后会由管理员关闭。';
                 }
             }
 
@@ -431,7 +431,7 @@ class FeedbackModal {
             this.submitting = false;
             // DO NOT auto-reset — user controls when to submit again
         } catch (err) {
-            showToast(`提交失败: ${err.message}`, 'error');
+            showToast(`提交失败：${err.message}`, 'error');
             this._setSubmitting(false);
             this.submitting = false;
         }
@@ -534,11 +534,11 @@ class FeedbackModal {
         this.myCards.clear();
         this.myContent.replaceChildren();
         const toolbar = node('div', 'fb-my-refresh');
-        toolbar.append(node('span', '', '在这里查看回复、继续沟通；由超管决定关闭时间。'), button('刷新列表', () => this._loadMyFeedback()));
+        toolbar.append(node('span', '', '在这里可以查看回复、继续补充细节；问题处理完毕后会由管理员关闭。'), button('刷新列表', () => this._loadMyFeedback()));
         this.myContent.append(toolbar);
         const items = this.myFeedbackData || [];
         if (!items.length) {
-            this.myContent.append(node('p', 'fb-my-empty', '尚未提交反馈。提交后可在这里与超管沟通。'));
+            this.myContent.append(node('p', 'fb-my-empty', '还没有提交过反馈。遇到问题或有好想法，随时在这里和平台管理员沟通。'));
             return;
         }
         const list = node('div', 'fb-my-list');

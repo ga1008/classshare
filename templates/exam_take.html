@@ -90,7 +90,7 @@
                     </span>
                 </button>
                 <div class="exam-topbar-more-menu lq-menu" id="examMoreMenu" role="menu" aria-label="整理答卷" data-lq-material="raised" tabindex="-1" hidden>
-                    <div class="exam-topbar-menu-label">低频操作</div>
+                    <div class="exam-topbar-menu-label">答卷清理</div>
                     <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass exam-topbar-menu-item" id="topbarClearPageBtn" data-lq-menu-item="clear-page" tabindex="-1" title="清空当前页" aria-label="清空当前页" role="menuitem">
                         {{ app_topbar_icon('refresh') }}
                         清空当前页
@@ -1299,7 +1299,7 @@
                         <input data-lq-component="file" type="file" id="exam-folder-input" class="lq-native-file hidden" webkitdirectory directory multiple>
                         <div class="file-chips" id="exam-file-chips"></div>
                     </div>
-                    <p class="text-muted mb-3" style="font-size:0.9rem;">请确认所有题目已作答完毕，提交后不可修改。</p>
+                    <p class="text-muted mb-3" style="font-size:0.9rem;">请仔细检查各题答案与附件后再交卷。</p>
                     <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass btn btn-success btn-lg" id="submitExamBtn" style="min-width: 200px;">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                         确认交卷
@@ -2165,7 +2165,7 @@
                     <div class="result-score">${SUBMISSION_SCORE || 0} <span style="font-size:1.2rem;color:var(--text-muted);">分</span></div>
                     ${scoreCaption}
                     <div class="flex items-center justify-center gap-2 flex-wrap" style="margin-top:0.75rem;">
-                        <a data-lq-component="button" href="/feedback-review?status=active" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">进入错题本复盘</a>
+                        <a data-lq-component="button" href="/feedback-review?status=active" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">去反馈复盘</a>
                         <a data-lq-component="button" href="/api/assignments/${ASSIGNMENT_ID}/export-review-docx" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-review-docx-export data-export-url="/api/assignments/${ASSIGNMENT_ID}/export-review-docx" data-suggested-filename="${esc(PAPER_TITLE || '复习导出')}_复习导出.docx">导出复习 Word</a>
                     </div>
                     ${SUBMISSION_FEEDBACK_MD ? `

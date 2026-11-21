@@ -32,15 +32,20 @@ GREETING_MIN_CHARS = 8
 GREETING_MAX_CHARS = 64
 GREETING_CONTEXT_VERSION = "facts-v1:"
 
-# 人设文风池：每天随机一个，让欢迎语"不经意地"变换性格。
+# 学生端每日文风池：温和、清醒、有画面感，不油腻、不强行卖萌。
 PERSONAS: tuple[tuple[str, str], ...] = (
-    ("幽默段子手", "轻松幽默，可以玩谐音梗或自嘲，但不油腻"),
-    ("霸道总裁", "霸道总裁口吻，简短有力，带一点宠溺的命令感，如'今天的任务，本总裁替你排好了'"),
-    ("温柔学姐", "温柔体贴的学姐口吻，观察细节，给具体的小鼓励"),
-    ("武侠说书人", "武侠说书口吻，把学习比作修行与闯关，抑扬顿挫"),
-    ("电影旁白", "电影预告片旁白感，庄重中带热血，仿佛主角即将登场"),
-    ("毒舌教练", "毒舌但暖心的教练，先小小吐槽再给一句实在的打气"),
-    ("诗意散文", "克制的诗意散文风，从今天的时节或天光切入，落到人身上"),
+    ("晨光散记", "克制的散文感，从今天的时节、天色或节奏切入，轻落在学习与生活上"),
+    ("同路学伴", "像并肩自习的朋友，自然、诚恳，给一句不浮夸的具体鼓励"),
+    ("书院清话", "带一点淡淡的书卷气与松弛感，提醒稳住步子，不端架子"),
+    ("干脆利落", "简短直接、带一点清醒的幽默，帮人迅速进入今天的节奏"),
+    ("微风观察", "留意日常里的小细节，温和接住当下的心情，留一点余味"),
+)
+
+# 教师端每日文风池：专业、体面、有分寸的同行问候。
+TEACHER_PERSONAS: tuple[tuple[str, str], ...] = (
+    ("从容同行", "像体贴靠谱的同行问候，简短克制，顾及备课、授课或批改的节奏"),
+    ("时节清言", "从今日时段或学期节点轻起一笔，祝今天课堂顺手、留点歇息空档"),
+    ("朴素致意", "不客套、不拔高，平实温暖地开启一天的工作"),
 )
 
 
@@ -197,27 +202,33 @@ def _build_greeting_prompt(
     profiler_hint: str,
     persona_name: str,
     persona_style: str,
-    weekday_label: str,
+    time_context: str,
 ) -> str:
-    role_label = "老师" if user_role == "teacher" else "大学生"
+    from .prompt_utils import polite_address
+
+    role_label = "高校教师" if user_role == "teacher" else "大学生"
+    raw_name = str(display_name or context.get("name") or "").strip()
+    address = polite_address(raw_name, "teacher" if user_role == "teacher" else "student")
     lines = [
-        f"你要为一名{role_label}写一句今天登录学习平台首页时看到的个性化欢迎语。",
-        f"今天是{weekday_label}。",
-        f"这个人叫 {display_name or context.get('name') or '同学'}。",
+        f"请为一位{role_label}写一句今天打开平台首页时看到的每日问候。",
+        time_context,
+        f"称呼对象：{address}。",
     ]
     if context.get("department"):
         lines.append(f"所在院系：{context['department']}。")
     if context.get("cultivation"):
-        lines.append(f"学习平台上的成长状态：{context['cultivation']}。")
+        lines.append(f"近期学习进度：{context['cultivation']}。")
     if profiler_hint:
         lines.append(
-            "以下是平台对这个人的内部观察（只许用来让语气和内容更贴心，"
-            f"严禁在输出里出现'侧写/画像/分析/观察'等字眼或直接复述）：{profiler_hint}"
+            "以下是用于拿捏语气分寸的补充参考（严禁在输出中提及或复述来源）："
+            f"{profiler_hint}"
         )
     lines.extend([
-        f"文风人设：{persona_name} —— {persona_style}。",
-        "要求：只输出一句话（12-50个汉字），不带引号，不带前后缀说明，",
-        "可以称呼名字，内容要具体、贴合这个人，不要空洞鸡汤，不要提平台名。",
+        f"今日语调：{persona_name} —— {persona_style}。",
+        "要求：",
+        "1. 只输出一句完整的中文短句（12–48 个汉字），不带引号、不带前后说明、不用表情符号。",
+        "2. 贴合当前时段与对方身份；如需称呼，直接使用上面的礼貌称呼，不直呼全名。",
+        "3. 有温度、有分寸，避免空洞鸡汤、口号感、网络油腻梗和“赋能/加油冲”等套话，不提平台名称。",
     ])
     return "\n".join(lines)
 
@@ -245,8 +256,11 @@ async def handle_personal_greeting_task(task: dict[str, Any]) -> str:
         profiler_hint = _load_profiler_hint(conn, user_role, user_pk)
         conn.commit()
 
-    persona_name, persona_style = random.choice(PERSONAS)
-    weekday_label = "周" + "一二三四五六日"[china_now().weekday()]
+    from .prompt_utils import build_time_context_text
+
+    persona_pool = TEACHER_PERSONAS if user_role == "teacher" else PERSONAS
+    persona_name, persona_style = random.choice(persona_pool)
+    time_context = build_time_context_text(china_now().replace(tzinfo=None))
     prompt = _build_greeting_prompt(
         user_role=user_role,
         display_name=display_name,
@@ -254,7 +268,7 @@ async def handle_personal_greeting_task(task: dict[str, Any]) -> str:
         profiler_hint=profiler_hint,
         persona_name=persona_name,
         persona_style=persona_style,
-        weekday_label=weekday_label,
+        time_context=time_context,
     )
 
     greeting = ""
@@ -263,7 +277,10 @@ async def handle_personal_greeting_task(task: dict[str, Any]) -> str:
             ai_client,
             "/api/ai/chat",
             json_payload={
-                "system_prompt": "你是文案高手，只输出最终那一句话，不要任何解释。",
+                "system_prompt": (
+                    "你负责为高校师生撰写简短、克制、有温度的每日一句问候。"
+                    "只输出最终那一句话，不要解释、不要引号、不要鸡汤套话。"
+                ),
                 "messages": [],
                 "new_message": prompt,
                 "model_capability": "standard",

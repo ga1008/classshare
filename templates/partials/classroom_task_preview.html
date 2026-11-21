@@ -39,7 +39,7 @@
     {% endif %}
     {% if preview.urgent_overflow %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-overflow" data-cw-open="tasks">还有 {{ preview.urgent_overflow }} 项将在 24 小时内截止，查看紧急任务</button>{% endif %}
     <div class="cw-secondary-actions">
-        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-button" data-cw-task-collection data-cw-open="tasks">全部任务（{{ preview.actionable_count }}） →</button>
+        <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-button" data-cw-task-collection data-cw-open="tasks">全部任务（{{ preview.total_count }}） →</button>
         {% if teacher %}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-button is-primary" disabled>新建作业</button><button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass cw-button" disabled>从试卷库添加</button>{% endif %}
     </div>
 </div>

@@ -91,7 +91,7 @@ async function handleMergePreview(groupEl, candidates) {
             <div class="offering-merge-confirm">
                 <input data-lq-component="input" type="text" class="lq-input form-control" data-merge-confirm-input
                        placeholder="输入主课堂班级名「${escapeHtml(preview.target.class_name || targetName)}」确认">
-                <label class="offering-merge-ack"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-merge-ack> 我已知晓该操作不可逆（已生成数据快照兜底）</label>
+                <label class="offering-merge-ack"><input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" data-merge-ack> 我已知晓合并后无法撤销（执行前会自动留存数据备份）</label>
                 <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--destructive btn btn-sm text-danger" data-merge-execute>确认合并（不可逆）</button>
             </div>` : ''}
         `;
@@ -112,7 +112,7 @@ async function handleMergeExecute(groupEl, candidates) {
         return;
     }
     if (!ack?.checked) {
-        showMessage('请先勾选"我已知晓该操作不可逆"。', 'error');
+        showMessage('请先勾选「我已知晓合并后无法撤销」。', 'error');
         return;
     }
     const button = groupEl.querySelector('[data-merge-execute]');

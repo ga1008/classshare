@@ -485,7 +485,7 @@ function openGenerateModal() {
         promptPlaceholder: '如：以机试为主，重点考核 Linux 与数据库部署，分值合计 100。',
         promptPoolKey: 'assessment_plan.generate_from_classroom',
         confirmLabel: '确定并生成',
-        hintHtml: '系统将整合课堂内容、绑定文档、教材与教务考核形式，<strong>用思考型 AI</strong>生成考核计划表；生成后仍可在编辑器中调整考核项，导出前分值合计须为 100。',
+        hintHtml: '系统将结合课堂内容、绑定文档、教材与教务考核形式，由 <strong>AI</strong> 生成考核计划表；生成后仍可在编辑器中调整考核项，导出前分值合计须为 100。',
         onSelect: (offering) => offeringPanelDescriptor(offering),
         onConfirm: async ({ data, fieldValues, prompt }) => {
             try {

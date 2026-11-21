@@ -125,10 +125,10 @@ export function getExamLatePolicyLabel(snapshot: ExamAssignSnapshot): string {
 
 export function buildExamAssignMessage(snapshot: ExamAssignSnapshot): string {
   if (snapshot.isPublishing) {
-    return '正在沿用原考试发布链路创建课堂考试。';
+    return '正在发布课堂考试…';
   }
   if (snapshot.isLoading) {
-    return '正在同步试卷库，可先检查发布时间和补交策略。';
+    return '正在加载试卷库，可以先确认发布时间与补交策略。';
   }
   if (snapshot.lastError) {
     return snapshot.lastError;
@@ -137,7 +137,7 @@ export function buildExamAssignMessage(snapshot: ExamAssignSnapshot): string {
     return '试卷库暂无可发布试卷，可前往管理中心创建。';
   }
   if (!snapshot.selectedPaperId) {
-    return '先选择一份试卷，后端仍会校验评分标准完整性。';
+    return '请先选择一份试卷，发布前会自动检查评分标准是否完整。';
   }
   if (!snapshot.assessmentKind) return '请选择本次课堂任务的分类。';
   if (snapshot.lateSubmissionEnabled && snapshot.scheduleMode === 'permanent') {
@@ -145,5 +145,5 @@ export function buildExamAssignMessage(snapshot: ExamAssignSnapshot): string {
   }
   return snapshot.learningStageKey
     ? '已绑定阶段试炼，发布后会进入课堂考试任务。'
-    : '普通课堂考试已具备基本发布条件。';
+    : '已具备基本发布条件，确认后即可发布考试。';
 }

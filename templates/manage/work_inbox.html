@@ -12,7 +12,7 @@
 <section class="wi-page" data-work-inbox>
     {{ page_head('待我处理',
         description=('共 ' ~ inbox.total ~ ' 项等你处理。') if inbox.total else '目前没有需要处理的事项。',
-        explain='首页「需要处理」的完整清单：批改、审批、签名与找回申请、课堂配置缺口、教务日程与个人待办都来自同一份数据。',
+        explain='首页「需要处理」的完整清单：批改、审批、签名与找回申请、课堂待补设置、教务日程与个人待办都来自同一份数据。',
         explain_label='待我处理说明', lq_enabled=_wi_lq_enabled) }}
 
     {% if _wi_lq_enabled %}
@@ -77,7 +77,7 @@
     </div>
     {% else %}
     {{ lq_empty('empty', variant='page', title='没有需要处理的事项',
-        description=('换一个来源看看，或回到全部。' if inbox.source else '批改、审批、配置缺口与日程一旦出现，会在这里和首页同时出现。'),
+        description=('换一个来源看看，或回到全部。' if inbox.source else '批改、审批、课堂待补设置与日程一旦出现，会在这里和首页同时显示。'),
         actions=[{'label': '回首页', 'href': '/dashboard', 'variant': 'prominent', 'size': 'sm'}]) }}
     {% endif %}
     {% else %}
@@ -101,7 +101,7 @@
     {% else %}
     <div class="wi-empty">
         <strong>没有需要处理的事项</strong>
-        <p>{% if inbox.source %}换一个来源看看，或回到全部。{% else %}批改、审批、配置缺口与日程一旦出现，会在这里和首页同时出现。{% endif %}</p>
+        <p>{% if inbox.source %}换一个来源看看，或回到全部。{% else %}批改、审批、课堂待补设置与日程一旦出现，会在这里和首页同时显示。{% endif %}</p>
         <a data-lq-component="button" href="/dashboard" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">回首页</a>
     </div>
     {% endif %}

@@ -68,7 +68,7 @@
     {% else %}
     <header class="pts-hero">
         <div>
-            <span class="pts-hero__eyebrow">Points · 学分币</span>
+            <span class="pts-hero__eyebrow">学分币</span>
             <h1>学习攒币，兑换实用道具</h1>
             <p>每天学习、解锁徽章都会自动攒学分币；它独立于修为，放心花。</p>
         </div>
@@ -142,7 +142,10 @@
         document.querySelectorAll('[data-redeem-item]').forEach((button) => {
             button.addEventListener('click', async () => {
                 if (button.disabled) return;
-                if (!window.confirm('确认兑换该道具吗？')) return;
+                const itemName = button.getAttribute('data-redeem-name') || '该道具';
+                const itemCost = button.getAttribute('data-redeem-cost') || '';
+                const confirmText = itemCost ? `确认花费 ${itemCost} 学分币兑换「${itemName}」吗？` : `确认兑换「${itemName}」吗？`;
+                if (!window.confirm(confirmText)) return;
                 button.disabled = true;
                 try {
                     const response = await fetch('/api/points/redeem', {

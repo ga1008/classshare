@@ -6,7 +6,7 @@
 
 {% block header_actions %}
 {% from "macros/app_topbar.html" import topbar_action %}
-{{ topbar_action('新增提示', '内容资产', 'plus', variant='primary', tone='indigo', attrs='data-life-tip-create-open') }}
+{{ topbar_action('新增提示', '自定义语录', 'plus', variant='primary', tone='indigo', attrs='data-life-tip-create-open') }}
 {% endblock %}
 
 {% block content %}
@@ -56,7 +56,7 @@
         <h3>新增一言提示</h3>
         <form data-life-tip-create-form>
             <label class="life-tip-modal__field">
-                <span>提示语（10-150 字，游戏加载屏句式：具体、可执行、带数字/门槛更佳）</span>
+                <span>提示语（10–150 字，尽量具体、可直接上手，有明确节点或方法更好）</span>
                 <textarea data-lq-component="textarea" class="lq-textarea" name="tip_text" rows="4" required minlength="10" maxlength="150"></textarea>
             </label>
             <div class="life-tip-modal__grid">

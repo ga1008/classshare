@@ -112,7 +112,7 @@ onPullDownRefresh(() => void load());
         <view v-for="c in book.courses" :key="c.course_id" class="filter glass-chip press" :class="{ 'filter--on': courseFilter === c.course_id }" @tap="courseFilter = c.course_id"><text>{{ c.course_name }} {{ c.wrong_count }}</text></view>
       </scroll-view>
 
-      <view v-if="!visibleItems.length" class="empty"><text>🎉 没有错题</text></view>
+      <view v-if="!visibleItems.length" class="empty"><text>还没有错题记录</text></view>
 
       <view v-for="item in visibleItems" :key="itemKey(item)" class="glass-card wrong">
         <view class="wrong__head">

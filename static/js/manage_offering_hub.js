@@ -124,7 +124,7 @@ async function handleBindLessonDoc(button) {
         const listed = await apiFetch(`/api/lessondoc/packs?course_id=${courseId}`);
         const packs = listed?.packs || [];
         if (!packs.length) {
-            showMessage('本课程还没有学习文档包，先去「内容资产 → 课程」生成', 'warning');
+            showMessage('本课程还没有学习文档包，先去「资源库 → 课程」生成', 'warning');
             window.open(`/manage/library/courses?lessondoc=${courseId}`, '_blank', 'noopener');
             return;
         }

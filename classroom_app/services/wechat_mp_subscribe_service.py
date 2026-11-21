@@ -280,13 +280,20 @@ def build_deadline_values(
     }
 
 
-def build_nudge_values(assignment_title: Any, course_name: Any, due_at: Any) -> dict[str, str]:
-    """作业催交通知：thing1 标题 / thing4 科目 / time2 截止 / thing3 备注。"""
+def build_nudge_values(
+    assignment_title: Any,
+    course_name: Any,
+    due_at: Any,
+    *,
+    is_exam: bool = False,
+) -> dict[str, str]:
+    """任务催交通知：thing1 标题 / thing4 科目 / time2 截止 / thing3 备注。"""
+    tip = "老师提醒：请尽快完成考试" if is_exam else "老师提醒：请尽快提交作业"
     return {
         "thing1": clamp_thing(assignment_title),
         "thing4": clamp_thing(course_name),
         "time2": format_wechat_datetime(due_at),
-        "thing3": clamp_thing("老师提醒：请尽快提交作业"),
+        "thing3": clamp_thing(tip),
     }
 
 
@@ -368,7 +375,7 @@ def run_deadline_reminder_scan(conn: Any) -> dict[str, int]:
             user_pk=int(item["student_id"]),
             template_key="deadline",
             values=build_deadline_values(item["title"], item["class_name"], due_text, hours_left),
-            page="pages/tasks/index",
+            page=f"pages/task-detail/index?id={int(item['assignment_id'])}",
             # 截止之后再送达的"截止提醒"只会误导学生。
             expires_at=due_at.isoformat(timespec="seconds"),
         )

@@ -31,7 +31,7 @@ describe('exam assign helpers', () => {
   });
 
   it('prioritizes actionable exam assign messages', () => {
-    expect(buildExamAssignMessage(normalizeExamAssignSnapshot({ isPublishing: true }))).toBe('正在沿用原考试发布链路创建课堂考试。');
+    expect(buildExamAssignMessage(normalizeExamAssignSnapshot({ isPublishing: true }))).toBe('正在发布课堂考试…');
     expect(buildExamAssignMessage(normalizeExamAssignSnapshot({ isLoading: true }))).toContain('试卷库');
     expect(buildExamAssignMessage(normalizeExamAssignSnapshot({ lastError: '发布失败' }))).toBe('发布失败');
     expect(buildExamAssignMessage(normalizeExamAssignSnapshot({ paperCount: 0 }))).toContain('暂无');

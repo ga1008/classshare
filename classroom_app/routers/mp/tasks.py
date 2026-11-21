@@ -38,7 +38,7 @@ TASK_LIMIT = 200
 
 _SUB_STATUS_LABELS = {
     "submitted": "待批改",
-    "grading": "AI批改中",
+    "grading": "AI 批改中",
     "grading_review": "待确认",
     "graded": "已批改",
 }

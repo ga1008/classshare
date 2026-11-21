@@ -1238,7 +1238,7 @@ def _build_teacher_domain_cards(
             part for part in (
                 f"{offering_count} 个课堂",
                 f"待批改 {pending_review_total}" if pending_review_total else "",
-                f"配置缺口 {gap_count}" if gap_count else "",
+                f"待补设置 {gap_count}" if gap_count else "",
             ) if part
         ),
         "library": f"{distinct_course_count} 门课程模板 · 教材 / 试卷 / 学习文档 / 教案",

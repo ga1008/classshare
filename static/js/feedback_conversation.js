@@ -167,11 +167,11 @@ export class FeedbackConversation {
         this.form.addEventListener('submit', (event) => { event.preventDefault(); this.sendReply(); });
         this.root.append(this.form);
 
-        this.closedHint = node('p', 'fb-thread-closed', '此反馈已由超管关闭，历史记录仍可查看。如需继续沟通，可由超管重新开启。');
+        this.closedHint = node('p', 'fb-thread-closed', '这条反馈已由平台管理员关闭，历史记录仍可查看。如需继续沟通，可由管理员重新开启。');
         this.root.append(this.closedHint);
         this.adminActions = node('div', 'fb-thread-admin-actions');
         this.statusButton = button('关闭反馈', () => this.showStatusConfirmation());
-        this.adminActions.append(node('span', 'fb-thread-context', '处理完成后由超管关闭反馈。'), this.statusButton);
+        this.adminActions.append(node('span', 'fb-thread-context', '处理完成后由管理员关闭反馈。'), this.statusButton);
         this.root.append(this.adminActions);
         this.confirmation = node('div', 'fb-thread-confirm');
         this.confirmation.hidden = true;
@@ -202,11 +202,11 @@ export class FeedbackConversation {
         this.messageSignature = signature;
         const nearBottom = this.history.scrollHeight - this.history.scrollTop - this.history.clientHeight < 80;
         this.history.replaceChildren();
-        if (!messages.length) this.history.append(node('p', 'fb-thread-context fb-thread-start', '尚无回复。您可以在这里与超管继续沟通。'));
+        if (!messages.length) this.history.append(node('p', 'fb-thread-context fb-thread-start', '还没有新回复，你可以在这里继续补充细节。'));
         for (const message of messages) {
             const isEvent = message.event_type && message.event_type !== 'reply';
             const row = node('article', isEvent ? 'fb-thread-event' : `fb-thread-message${message.sender_is_super_admin ? ' is-admin' : ''}`);
-            row.append(node('div', 'fb-thread-message-meta', `${message.sender_name || '用户'}${message.sender_is_super_admin ? ' · 超管' : ''} · ${feedbackTime(message.created_at)}`));
+            row.append(node('div', 'fb-thread-message-meta', `${message.sender_name || '用户'}${message.sender_is_super_admin ? ' · 平台管理员' : ''} · ${feedbackTime(message.created_at)}`));
             if (isEvent) row.append(node('strong', '', message.event_type === 'closed' ? '已关闭反馈' : '已重新开启反馈'));
             if (message.content) row.append(node('p', 'fb-thread-text', message.content));
             this.history.append(row);
@@ -283,7 +283,7 @@ export class FeedbackConversation {
     showStatusConfirmation() {
         if (this.busy || !this.data.can_manage) return;
         const closing = !['closed', 'resolved'].includes(this.feedback.status);
-        this.confirmation.replaceChildren(node('strong', '', closing ? '确认关闭这条反馈？' : '重新开启这条反馈？'), node('p', '', closing ? '关闭后双方将无法继续回复，历史消息和截图会保留。超管可随时重新开启。' : '开启后双方可以继续回复，提交人会收到通知。'));
+        this.confirmation.replaceChildren(node('strong', '', closing ? '确认关闭这条反馈？' : '重新开启这条反馈？'), node('p', '', closing ? '关闭后双方将无法继续回复，历史消息和截图会保留，管理员也可随时重新开启。' : '开启后双方可以继续回复，提交人会收到通知。'));
         const reason = node('textarea');
         reason.rows = 2;
         reason.maxLength = 5000;

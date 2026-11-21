@@ -322,6 +322,13 @@ async function init() {
     bindEvents();
     updateControls();
 
+    const requestedOfferingId = new URLSearchParams(window.location.search).get('offering_id');
+    if (requestedOfferingId && elements.offeringSelect) {
+        const matched = Array.from(elements.offeringSelect.options).some((opt) => opt.value === requestedOfferingId);
+        if (matched) {
+            elements.offeringSelect.value = requestedOfferingId;
+        }
+    }
     if (offerings.length > 0 && elements.offeringSelect && !elements.offeringSelect.value) {
         elements.offeringSelect.selectedIndex = 1;
     }

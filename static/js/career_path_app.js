@@ -569,7 +569,7 @@ import { getLayerSystem } from './lq/layer.js';
     if (!nodes.length) {
       box.innerHTML = historyNote + '<div class="career-directions-empty"><h2>' + (query ? '没有匹配的方向' : '从你的目标开始') + '</h2><p>' +
         (query ? '试试其他名称或技能关键词。' : filter !== 'all' ? '这里还没有方向，切换“全部方向”继续探索。' : '专业方向正在准备。你可以先完善个人资料、分析目标岗位或开始编辑简历。') +
-        '</p><a href="/resume">打开简历工作台 →</a></div>'; return;
+        '</p><a href="/resume">前往简历中心 →</a></div>'; return;
     }
     box.innerHTML = historyNote + nodes.map(function (node) {
       var ranking = ranks[node.tag] || {};
@@ -700,11 +700,11 @@ import { getLayerSystem } from './lq/layer.js';
 
   function renderLegend(s) {
     var items = [
-      '<span class="it"><span class="dot d5"></span>★★★★★ 最推荐（最亮·闪烁）</span>',
+      '<span class="it"><span class="dot d5"></span>★★★★★ 高度匹配</span>',
       '<span class="it"><span class="dot d4"></span>★★★★ 推荐</span>',
-      '<span class="it"><span class="dot d3"></span>★★★ 可选（较暗）</span>',
-      '<span class="it"><span class="dx"></span>紫色虚线＝转向关系，不表示时间先后</span>',
-      '<span class="it hint">💡 点击节点：高亮成长路径并展开定制详情 · 点击空白复位</span>'
+      '<span class="it"><span class="dot d3"></span>★★★ 可选</span>',
+      '<span class="it"><span class="dx"></span>紫色虚线表示可转向方向，不表示时间先后</span>',
+      '<span class="it hint">点击节点可高亮成长路径并展开详情 · 点击空白处复位</span>'
     ];
     var axis = s.network && s.network.time_axis;
     if (axis && axis.note) items.push('<span class="it hint career-time-note">' + esc(axis.label) + ' · ' + esc(axis.note) + '</span>');
@@ -806,8 +806,8 @@ import { getLayerSystem } from './lq/layer.js';
     if (tl.graduation_date_label) {
       if (tl.years_to_graduation != null && tl.years_to_graduation > 0) {
         var enough = tl.years_to_graduation >= 1.5 ? '时间相对充裕，建议按上面的优先级稳步推进。'
-          : (tl.years_to_graduation >= 0.6 ? '时间偏紧，优先死磕「非常重要」项，并尽快找一段实习。'
-            : '距离毕业很近，集中火力补「非常重要」项 + 做一个能拿得出手的项目即可。');
+          : (tl.years_to_graduation >= 0.6 ? '时间偏紧，优先攻克「非常重要」项，并尽早争取一段实习经历。'
+            : '临近毕业，先集中补齐「非常重要」项，并打磨一个拿得出手的代表作品或实践项目。');
         deadline = '距毕业约 ' + tl.years_to_graduation + ' 年（' + (tl.months_to_graduation != null ? tl.months_to_graduation + ' 个月' : '') + '）。' + enough;
       } else {
         deadline = '你已临近或完成毕业，可把这些作为入职前后的进阶清单。';
@@ -923,8 +923,8 @@ import { getLayerSystem } from './lq/layer.js';
       + '<span class="career-modal__resume-icon">'
       + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"></path><path d="M14 2v6h6"></path><path d="M8 13h8M8 17h6"></path></svg></span>'
       + '<span class="career-modal__resume-copy"><b>简历管理与优化</b>'
-      + '<i>沉淀资料 · AI 撰写 · 拖拽搭建 · 一键导出 Word / PDF</i></span>'
-      + '<span class="career-modal__resume-go">打开控制台 →</span></a>';
+      + '<i>沉淀资料 · AI 润色 · 自由排版 · 导出 Word / PDF</i></span>'
+      + '<span class="career-modal__resume-go">进入简历中心 →</span></a>';
 
     modal.innerHTML = '<div data-lq-component="surface" data-lq-material="raised" class="lq-surface lq-domain-raised career-modal__panel" role="dialog" aria-modal="true">'
       + '<header class="career-modal__head">'

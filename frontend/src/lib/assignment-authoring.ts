@@ -118,13 +118,13 @@ export function getAssignmentModeLabel(mode: string): string {
 
 export function buildAssignmentAuthoringMessage(snapshot: AssignmentAuthoringSnapshot): string {
   if (snapshot.isSaving) {
-    return '正在沿用原发布链路保存作业。';
+    return '正在保存作业设置…';
   }
   if (snapshot.lastError) {
     return snapshot.lastError;
   }
   if (!snapshot.title) {
-    return '先填写标题，旧保存逻辑会继续做最终校验。';
+    return '请先填写作业标题。';
   }
   if (snapshot.lateSubmissionEnabled && snapshot.scheduleMode === 'permanent') {
     return '补交扣分需要先设置首次截止或倒计时。';
@@ -132,5 +132,5 @@ export function buildAssignmentAuthoringMessage(snapshot: AssignmentAuthoringSna
   if (!snapshot.rubricLength && snapshot.gradingMode === 'ai') {
     return 'AI 辅助批改建议补齐评分标准。';
   }
-  return snapshot.assignmentId ? '正在编辑已有作业，保存后沿原页面刷新。' : '新作业草稿已具备基本发布条件。';
+  return snapshot.assignmentId ? '正在编辑已有作业，保存后会自动刷新页面。' : '作业草稿已具备基本发布条件。';
 }

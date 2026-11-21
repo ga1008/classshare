@@ -142,7 +142,7 @@ const nudgeStatusLabel = computed(() => {
   if (status.in_flight) parts.push(`发送中 ${status.in_flight}`);
   if (status.no_grant) parts.push(`未开启提醒 ${status.no_grant}`);
   if (status.no_binding) parts.push(`未绑定微信 ${status.no_binding}`);
-  if (status.unknown + status.failed) parts.push(`未确认/失败 ${status.unknown + status.failed}`);
+  if (status.unknown + status.failed) parts.push(`暂未确认 ${status.unknown + status.failed}`);
   return `今日催交：${parts.join(" · ")}`;
 });
 
@@ -214,7 +214,7 @@ async function zeroUnsubmitted(): Promise<void> {
   const confirmed = await new Promise<boolean>((resolve) => {
     uni.showModal({
       title: "缺交记零",
-      content: `为 ${count} 名未提交学生记 0 分？记零为占位记录；如需更正，请到网页端逐份改分。`,
+      content: `将为 ${count} 名未提交同学登记 0 分（缺交记录）；如需调整，可前往网页端逐份修改。`,
       success: (res) => resolve(Boolean(res.confirm)),
       fail: () => resolve(false),
     });
@@ -315,7 +315,7 @@ onPullDownRefresh(() => {
           :class="{ 'action-btn--busy': batchRunning }"
           @tap="runBatchAiGrading"
         >
-          <text>🤖 AI 批改待批 {{ data.stats.pending_grade_count }} 份</text>
+          <text>AI 批改（待批 {{ data.stats.pending_grade_count }} 份）</text>
         </view>
         <view
           class="action-btn action-btn--secondary press"
@@ -349,7 +349,7 @@ onPullDownRefresh(() => {
       </view>
 
       <view v-if="!visibleEntries.length" class="empty">
-        <text>{{ segment === "submitted" ? "还没有学生提交" : "🎉 全员已提交" }}</text>
+        <text>{{ segment === "submitted" ? "还没有学生提交" : "全班同学都已提交" }}</text>
       </view>
 
       <!-- 未交名单 -->

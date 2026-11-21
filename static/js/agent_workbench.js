@@ -584,7 +584,7 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
         if (!task) return;
         try {
             if (action === 'cancel') {
-                if (!await confirmGlass({ title: '取消任务', message: '确定取消这个 Agent 任务吗？已经执行的操作不会回滚。', confirmLabel: '取消任务', danger: true })) return;
+                if (!await confirmGlass({ title: '取消任务', message: '确定取消这个任务吗？已生效的修改不会自动撤销。', confirmLabel: '取消任务', danger: true })) return;
                 await apiJson(`/api/agent-tasks/${task.id}/cancel`, { method: 'POST' });
             } else if (action === 'pause' || action === 'resume') {
                 await apiJson(`/api/agent-tasks/${task.id}/${action}`, { method: 'POST' });
@@ -714,7 +714,7 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
 
     async function adminTaskAction(action, taskId) {
         try {
-            if (action === 'stop' && !await confirmGlass({ title: '停止任务', message: '停止后任务会被取消，所有者会在任务记录中看到。已执行的操作不会回滚。', confirmLabel: '停止', danger: true })) return;
+            if (action === 'stop' && !await confirmGlass({ title: '停止任务', message: '停止后任务会被取消，所有者会在任务记录中看到。已生效的修改不会自动撤销。', confirmLabel: '停止', danger: true })) return;
             renderAdmin(await apiJson(`/api/agent-tasks/admin/tasks/${taskId}/${action}`, { method: 'POST' }));
             await refreshList();
         } catch (error) {
@@ -834,7 +834,7 @@ export function createAgentWorkbench({ root, config, notify, apiJson, capture, f
             const bootstrap = await loadBootstrap();
             if (!bootstrap.runtime_configured && !state.runtimeWarned) {
                 state.runtimeWarned = true;
-                notify('Agent 模型尚未配置，任务会先排队，请联系超级管理员配置 Agent API Key。', 'warning');
+                notify('Agent 模型尚未配置，当前任务会先排队，请联系平台管理员开启。', 'warning');
             }
             schedule();
             await refreshList();

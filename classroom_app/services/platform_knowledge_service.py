@@ -25,51 +25,51 @@ _READ_SAVEPOINT = "platform_knowledge_read"
 
 # 面向用户的路由表。AI 给跳转建议时直接使用这些路径（站内相对路径即可点击）。
 PLATFORM_ROUTES: list[dict[str, str]] = [
-    {"path": "/dashboard", "label": "工作台（教师/学生主页，日程、待办、课堂入口）", "roles": "all"},
-    {"path": "/classroom/{class_offering_id}", "label": "课堂主页（讨论、材料、作业、考试、互动）", "roles": "all"},
+    {"path": "/dashboard", "label": "首页（日程、待办、课堂入口）", "roles": "all"},
+    {"path": "/classroom/{class_offering_id}", "label": "课堂主页（研讨、材料、作业、考试、互动）", "roles": "all"},
     {"path": "/assignment/{assignment_id}", "label": "作业/考试详情", "roles": "all"},
     {"path": "/exam/take/{assignment_id}", "label": "在线考试答题页", "roles": "student"},
     {"path": "/assignment/{assignment_id}/wrong-summary", "label": "错题汇总", "roles": "all"},
     {"path": "/submission/{submission_id}", "label": "提交详情与批改", "roles": "all"},
-    {"path": "/blog", "label": "博客广场（师生文章、新闻播报）", "roles": "all"},
-    {"path": "/message-center", "label": "消息中心（通知、私信）", "roles": "all"},
-    {"path": "/profile", "label": "个人中心（资料、签名、偏好）", "roles": "all"},
+    {"path": "/blog", "label": "博客中心（师生文章与校园资讯）", "roles": "all"},
+    {"path": "/message-center", "label": "消息中心（通知与私信）", "roles": "all"},
+    {"path": "/profile", "label": "个人中心（资料、签名与偏好）", "roles": "all"},
     *iter_platform_manage_routes(),
 ]
 
 PLATFORM_FEATURES_TEXT = (
     "平台功能版图：\n"
-    "- 课堂教学：课堂主页（实时讨论室、课时安排、学习文档、课堂互动/举手/弹幕）、学习进度追踪、修仙式成长激励体系。\n"
-    "- 作业与考试：作业布置、在线考试、AI 出题与组卷、AI 批改与错题分析、提交与批改流转。\n"
-    "- 资料体系：课程材料库、教材库、AI 解析材料、学习文档（导学）自动生成。\n"
-    "- 沟通：消息中心、私信、邮件提醒（考试/监考一次性提醒）、博客（含新闻爬取与 AI 摘要）。\n"
-    "- 教师管理中心三域：教学（课堂与内容）、教务（学校事务数据）、教师（我自己的资料、安全、通知、签名与凭据）。\n"
-    "- 教务对接：课表/考务/监考/名册自动同步、智慧课堂考勤、校园公文通（公文中心，表 gongwen_documents，支持关键词检索与姓名关注）。\n"
-    "- AI 能力：课堂 AI 助教（每课堂可配置提示词）、全局 AI 助手（懂当前页面全部可见文字，并能按用户权限检索全部学习材料正文，"
-    "定位到“哪个文档的第几页 / 第几次课 / 哪一章节”并给出站内链接；教师在课堂页提问时自动掌握课堂全景——名册与修为、作业考试提交批改、投票、分组、课次与学习文档，"
-    "可按需查询授权学生的课程学习记录与提交，并可在教师确认后以教师身份发起投票、结束投票、按名册随机分组）、教师 Agent 任务中心（全平台单任务队列）。\n"
-    "- 管理：教师端入口按三域组织，超级管理员另有组织架构、用户、反馈、诊断和预算面板。"
+    "- 课堂教学：课堂主页（实时研讨、课时安排、学习文档、课堂互动/举手/弹幕）、学习进度追踪与修为成长体系。\n"
+    "- 作业与考试：作业布置、在线考试、AI 辅助出题与组卷、AI 批改与错题复盘、提交与批改流转。\n"
+    "- 资料体系：课程材料库、教材库、材料解析与学习文档生成。\n"
+    "- 沟通：消息中心、私信、邮件提醒（考试/监考提醒）、博客中心。\n"
+    "- 教师管理中心：按教学、教务与个人设置组织。\n"
+    "- 教务对接：课表/考务/监考/名册同步、智慧课堂考勤、校园公文通（表 gongwen_documents，支持关键词检索与姓名关注）。\n"
+    "- AI 能力：课堂 AI 助教（每课堂可自定义提示词）、全局 AI 助手（结合当前页面内容与已授权学习材料，定位到文档页码/课次/章节并给出站内链接；"
+    "教师在课堂页提问时可结合课堂名册、作业考试、投票、分组、课次与学习文档，在教师确认后协助发起或结束投票、随机分组）、教师 Agent 任务中心。\n"
+    "- 管理：超级管理员可维护组织架构、用户、反馈、诊断与额度。"
 )
 
 
-def build_platform_overview_block(user_role: str = "") -> str:
-    """平台总览 + 路由表 + 当前时间，注入任何 AI/Agent 的 system prompt。"""
+def build_platform_overview_block(user_role: str = "", *, include_time: bool = True) -> str:
+    """平台总览 + 路由表（可选附带当前时间），注入 AI/Agent 的 system prompt。"""
     role = str(user_role or "").strip() or "all"
     route_lines = []
     for route in PLATFORM_ROUTES:
         if route["roles"] != "all" and role != "all" and route["roles"] != role:
             continue
         route_lines.append(f"- {route['path']} —— {route['label']}")
-    return (
-        "--- 平台认知（LanShare 全局事实） ---\n"
-        f"平台名称：LanShare 智慧课堂（高校 AI 辅助教学平台）。\n"
-        f"正式域名：{PLATFORM_BASE_URL} （站内跳转直接用相对路径，如 /manage/academic/gongwen）。\n"
+    body = (
+        "--- 平台信息（LanShare 站内事实） ---\n"
+        "平台名称：LanShare 课堂互动平台（高校教学协作与 AI 辅助学习平台）。\n"
+        f"正式域名：{PLATFORM_BASE_URL}（站内跳转直接用相对路径，如 /manage/academic/gongwen）。\n"
         f"{PLATFORM_FEATURES_TEXT}\n"
         "常用路由（给用户跳转建议时直接引用路径）：\n"
         + "\n".join(route_lines)
-        + "\n"
-        + build_time_context_text()
     )
+    if include_time:
+        body += "\n" + build_time_context_text()
+    return body
 
 
 def _sqlstate(exc: BaseException) -> str:
@@ -146,8 +146,8 @@ def _safe_row(conn, sql: str, params: tuple = (), *, query_name):
 
 
 def build_teacher_knowledge_block(conn, teacher_id: int) -> str:
-    """教师全量画像：基础信息 + 教学规模 + 近期动态（全部查库，只读）。"""
-    lines = ["--- 当前用户全量画像（来自平台数据库，真实可信） ---"]
+    """教师基础信息、教学规模与近期日程（全部查库，只读）。"""
+    lines = ["--- 当前用户教学资料与日程（来自平台数据库） ---"]
     info = _safe_row(conn,
             "SELECT name, email, description FROM teachers WHERE id = ?",
             (teacher_id,),
@@ -156,7 +156,7 @@ def build_teacher_knowledge_block(conn, teacher_id: int) -> str:
     if info:
         lines.append(f"身份：教师 {info['name']}（ID {teacher_id}，邮箱 {info['email'] or '未填写'}）")
         if info["description"]:
-            lines.append(f"画像摘要：{str(info['description'])[:400]}")
+            lines.append(f"个人简介：{str(info['description'])[:400]}")
 
     course_count = _safe_scalar(conn, "SELECT COUNT(*) FROM courses WHERE created_by_teacher_id = ?", (teacher_id,), query_name="teacher_courses")
     offering_count = _safe_scalar(conn, "SELECT COUNT(*) FROM class_offerings WHERE teacher_id = ?", (teacher_id,), query_name="teacher_offerings")

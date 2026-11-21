@@ -209,7 +209,7 @@
                             <div class="grade-result-score">
                                 <div class="score-display">{{ submission.score or 0 }}<span class="text-lg text-muted font-normal ml-1">/ 100</span></div>
                                 <span class="text-sm text-muted">{% if is_group_final %}综合表现分（作业得分 × 0.8 + 组员评分均分）{% else %}批改结果已返回{% endif %}</span>
-                                <a data-lq-component="button" href="/feedback-review?status=active" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">进入错题本复盘</a>
+                                <a data-lq-component="button" href="/feedback-review?status=active" class="lq-btn lq-btn--sm btn btn-outline lq-btn--glass btn-sm">去反馈复盘</a>
                                 <a data-lq-component="button" href="/api/assignments/{{ assignment.id }}/export-review-docx" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm" data-review-docx-export data-export-url="/api/assignments/{{ assignment.id }}/export-review-docx" data-suggested-filename="{{ (assignment.title ~ '_复习导出.docx') | e }}">
                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M16 13H8"></path><path d="M16 17H8"></path><path d="M10 9H8"></path></svg>
                                     导出复习 Word
@@ -326,10 +326,10 @@
                     <div class="status-card-header">补交通道已开启（第 {{ personal_window.grant_no }} 次）</div>
                     <p class="text-muted">请在 {{ (personal_window.due_at or '')[:16] | replace('T', ' ') }} 前完成提交；扣分规则：{{ personal_window.penalty_label }}。</p>
                 </div>
-                {{ submission_form('开始补交', '提交后不可修改，请仔细检查', '确认补交作业') }}
+                {{ submission_form('开始补交', '请仔细核对答案与附件后再提交', '确认补交作业') }}
             {% elif assignment.status == 'published' %}
                 <!-- Answer Form -->
-                {{ submission_form('开始答题', '提交后不可修改，请仔细检查', '确认提交作业') }}
+                {{ submission_form('开始答题', '请仔细核对答案与附件后再提交', '确认提交作业') }}
             {% else %}
                 {% if assignment.status == 'closed' %}
                     <div data-lq-component="surface" class="lq-surface status-card error card-body rounded-lg">
@@ -337,7 +337,7 @@
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
                             作业已截止
                         </div>
-                        <p class="text-muted">抱歉，您未能在截止时间前提交作业。</p>
+                        <p class="text-muted">这份作业已经截止，你未能赶在截止时间前提交。如需补交，请联系任课老师。</p>
                     </div>
                 {% else %}
                     <div data-lq-component="surface" class="lq-surface status-card info card-body rounded-lg">
@@ -932,7 +932,7 @@
 
             if (Array.isArray(answers)) {
                 container.innerHTML = answers.map((item, index) => {
-                    const question = item?.question || item?.question_id || `Question ${index + 1}`;
+                    const question = item?.question || item?.question_id || `第 ${index + 1} 题`;
                     const answer = ordinaryAnswerText(item) || '（未作答）';
                     const feedback = findQuestionFeedback(gradingFeedback, {
                         index: index + 1,

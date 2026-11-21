@@ -1273,7 +1273,7 @@
           },
           {
             "path": "templates/session_expired.html",
-            "sha256": "282c102e7b2a9e3cca77b7a75ae83c54572f16da30f999485a7c5d65a95ed0e6",
+            "sha256": "c0e1d1e0855334362e0afd6b8cc54c99e0447e3c4a4a54848c69a3bd13fd3746",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：保留原生登录/注册/返回路径、字段、校验与条件；centered SSR 6 项及 auth fallback 19 项通过。登录模式 body 为继承场景配对的布局 region，密码弹窗内容面为共享 raised；逐帧材料切换及 tier B 像素专项 6 项、centered 完整浏览器 27 项通过，包含明暗真实照片、原生 POST、提交重试和状态页可达性。",
             "tests": [
               "tests/test_lq_centered.py",
@@ -1286,7 +1286,7 @@
           },
           {
             "path": "templates/permission_denied.html",
-            "sha256": "a9c0079b043f10173eaf1d114e489a358773267511d4703998f44669b07b099d",
+            "sha256": "946c8af299e511472608584556aa3be18404a8c326c95354b2a4c7e566b55e5f",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 2026-09-27 显式组件复核：保留原生登录/注册/返回路径、字段、校验与条件；centered SSR 6 项及 auth fallback 19 项通过。登录模式 body 为继承场景配对的布局 region，密码弹窗内容面为共享 raised；逐帧材料切换及 tier B 像素专项 6 项、centered 完整浏览器 27 项通过，包含明暗真实照片、原生 POST、提交重试和状态页可达性。",
             "tests": [
               "tests/test_lq_centered.py",
@@ -1299,7 +1299,7 @@
           },
           {
             "path": "templates/status.html",
-            "sha256": "3e2604e6aab333fcc5ee3e40247220a89b571fe2b3bdd0643845f94a48dea62c",
+            "sha256": "840eac99421141c483dba29dea93b3c712f1a2544341d3e05f0f2493775cb1cb",
             "scope": "仅本页族模板切换/呈现接线；兼容旧分支及其原业务所有者。 失败状态图标改为已登记circle-alert，6项隔离模板及正式第二图1项定向浏览器复验。 2026-09-27 显式组件复核：保留原生登录/注册/返回路径、字段、校验与条件；centered SSR 6 项及 auth fallback 19 项通过。登录模式 body 为继承场景配对的布局 region，密码弹窗内容面为共享 raised；逐帧材料切换及 tier B 像素专项 6 项、centered 完整浏览器 27 项通过，包含明暗真实照片、原生 POST、提交重试和状态页可达性。",
             "tests": [
               "tests/test_lq_centered.py",
@@ -9345,7 +9345,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/lesson_plans.html",
-            "sha256": "144d1acbbaef3b05a8571689bde6a38ccfe0fc23627d31de09ee620382c1a060",
+            "sha256": "9f063e3d567b6f5001960bdbbd85026d4751e575e65da7a03f12d5f2bbb1174e",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。 2026-09-27 显式组件复核：增加原生叶子/容器的共享呈现声明，保留原 DOM、Jinja 权限条件、表单属性、事件钩子与业务 controller；manage SSR 11 项通过，hidden/表单和危险动作明暗状态定向浏览器 2 项通过。完整 Shell/业务视觉验收仍按既有门禁独立记录。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -11437,7 +11437,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/offering_hub.html",
-            "sha256": "f3a1c1fd1afc150f0cdbddd3ff2a6cd7d785383ba4efe3edeef6c5428e5fd423",
+            "sha256": "6ffe0ab4e2e239b80fdcd4b6620abffe7a5bc73ca941bd2a1ffd8ebb7eb597d6",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。 2026-09-27 显式组件复核：增加原生叶子/容器的共享呈现声明，保留原 DOM、Jinja 权限条件、表单属性、事件钩子与业务 controller；manage SSR 11 项通过，hidden/表单和危险动作明暗状态定向浏览器 2 项通过。完整 Shell/业务视觉验收仍按既有门禁独立记录。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -12304,7 +12304,7 @@
         "sharedSources": [
           {
             "path": "templates/manage/semesters.html",
-            "sha256": "a058902d0093b40885ffd76972547b6be49643cde299625a878c2dcba3e57d75",
+            "sha256": "46b89ce1d49cfb32c499d8cccbe60b3affc2eb64951738cc5324ce7014aaa64b",
             "scope": "仅 page_head 显式 lq_enabled 调用及既有 header_actions 原位交给新 Shell；卡片、对话框、内联业务 controller 保留。八调用点集合/39 个调用总数由真实 Jinja AST 门禁固定，原业务交接由 SSR/adapter/实站门禁覆盖。 2026-09-27 显式组件复核：增加原生叶子/容器的共享呈现声明，保留原 DOM、Jinja 权限条件、表单属性、事件钩子与业务 controller；manage SSR 11 项通过，hidden/表单和危险动作明暗状态定向浏览器 2 项通过。完整 Shell/业务视觉验收仍按既有门禁独立记录。",
             "tests": [
               "tests/test_manage_lq_pilot_templates.py",
@@ -21508,7 +21508,7 @@
         "sharedSources": [
           {
             "path": "templates/report_card.html",
-            "sha256": "c441a9492230f8165e788087924657ff5a1eaee81f8d71ecd0e5be381b5a6f59",
+            "sha256": "70c9130d9f71a3484a87335b6005359fe2580e73864c6f75bc6960962a7146a6",
             "scope": "仅 pilot PageHead/Surface/filter 及 ECharts 独立 controller 入口；保留旧分支、原成绩/发布/0 分/空记录投影。真实 SSR 比对 on/off 数据 JSON/过滤 URL/owner。 2026-10-08: reviewed shared Surface/Button adoption in both existing feature states; native links, filters, role branches and business owners retained.",
             "tests": [
               "tests/test_lq_report_card_pilot.py",

@@ -33,7 +33,7 @@ function MessageCenterPageController() {
       }
       app.dataset.messageCenterControllerMounted = 'false';
       console.error('[message-center-page] controller failed to load', error);
-      window.UI?.showToast?.('信息中心初始化失败，请刷新重试。', 'error');
+      window.UI?.showToast?.('消息中心初始化失败，请刷新重试。', 'error');
     });
 
     return () => {

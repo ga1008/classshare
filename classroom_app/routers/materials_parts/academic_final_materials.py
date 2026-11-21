@@ -265,15 +265,42 @@ def _fallback_analysis_text(export_payload: dict[str, Any], course_context: dict
     excellent = next((item for item in distribution if item.get("segment") == "90-100"), {})
     low = next((item for item in distribution if item.get("segment") == "<60"), {})
     assignment_count = len(course_context.get("assignments") or [])
-    return (
-        f"本课程试题围绕《{fields.get('course_name') or '本课程'}》核心知识、综合应用与实践能力组织，"
-        f"结构和难度梯度总体合理。期末卷面平均分{float(stats.get('average') or 0):.2f}分，"
-        f"标准差{float(stats.get('standard_deviation') or 0):.2f}分，90分以上"
-        f"{int(excellent.get('count') or 0)}人，不及格{int(low.get('count') or 0)}人，"
-        "说明多数学生已掌握主要知识与操作要点。少数学生在综合分析、规范表达和知识迁移方面仍有提升空间。"
-        f"结合本学期{assignment_count}项作业与测评反馈，后续将增加分层案例、限时诊断和课堂复盘，"
-        "针对薄弱知识点安排专项训练，并强化过程反馈与实践任务的闭环评价。"
-    )
+    course_name = fields.get("course_name") or "本课程"
+    avg = float(stats.get("average") or 0)
+    std = float(stats.get("standard_deviation") or 0)
+    exc_count = int(excellent.get("count") or 0)
+    low_count = int(low.get("count") or 0)
+    total_count = int(stats.get("actual_count") or stats.get("total_count") or 0)
+    fail_ratio = (low_count / total_count) if total_count > 0 else 0.0
+
+    if avg < 60 or fail_ratio >= 0.35:
+        mastery = (
+            f"整体卷面偏低（平均分 {avg:.2f} 分，标准差 {std:.2f} 分，90 分以上 {exc_count} 人，不及格 {low_count} 人），"
+            "反映部分学生在核心基础与综合应用环节仍存在明显缺口，试题区分度及课堂重难点衔接需重点复盘。"
+        )
+        followup = (
+            f"结合本学期 {assignment_count} 次平时作业与测验情况，后续教学拟加强基础概念的阶段巩固与薄弱环节专项辅导，"
+            "并在期中前增加随堂练测与个别答疑。"
+        )
+    elif avg >= 82 and fail_ratio <= 0.1:
+        mastery = (
+            f"期末卷面平均分 {avg:.2f} 分，标准差 {std:.2f} 分，90 分以上 {exc_count} 人，不及格 {low_count} 人，"
+            "整体达成度较好，多数学生能够扎实掌握主要知识与操作要点，但在综合拓展与规范表达方面仍有拉开梯度的空间。"
+        )
+        followup = (
+            f"结合本学期 {assignment_count} 次平时作业与测验情况，后续拟适当增加综合性案例与高阶实践任务，"
+            "同时继续做好薄弱知识点的精准复盘。"
+        )
+    else:
+        mastery = (
+            f"期末卷面平均分 {avg:.2f} 分，标准差 {std:.2f} 分，90 分以上 {exc_count} 人，不及格 {low_count} 人，"
+            "成绩分布基本平稳，多数学生掌握了主要知识要点，少数学生在综合分析、规范表达与知识迁移上仍较薄弱。"
+        )
+        followup = (
+            f"结合本学期 {assignment_count} 次平时作业与测验情况，后续拟补充阶梯案例练习与随堂复盘，"
+            "针对高频失分点安排专题巩固并加强过程辅导。"
+        )
+    return f"本课程考核围绕《{course_name}》核心知识、综合应用与实践能力命题。{mastery}{followup}"
 
 
 async def _ai_review_and_analysis(
@@ -290,13 +317,13 @@ async def _ai_review_and_analysis(
     }
     try:
         response = await _call_ai_chat(
-            "你是高校教务材料复核专家和任课教师。只能基于给定数据写作，不得改写学号、姓名、成绩、统计值。",
+            "你是高校任课教师与教务归档材料复核助手。只能依据给定数据如实撰写，严禁改写学号、姓名、成绩或统计值，不写空洞套话，也不提及“平台/系统/AI/同步”等字样。",
             "\n\n".join(
                 [
-                    "请深度复核两份报表字段是否完整，并撰写约200字中文教学分析。",
-                    "输出 JSON：analysis_text（150-260个中文字符）、warnings（字符串数组）。",
-                    "分析必须覆盖试题结构、成绩分布、掌握情况、原因、改进措施；语气客观专业，避免空话。",
-                    f"教师强化要求：{extra_prompt.strip() or '无'}",
+                    "请核对两份报表字段是否完整，并撰写约 200 字中文课程考核分析（用于正式教学归档表）。",
+                    "输出 JSON：analysis_text（150–260 个中文字符）、warnings（字符串数组）。",
+                    "要求：紧扣真实平均分、标准差和分数段分布，依次交代试题结构、成绩分布与掌握情况、主要原因及具体改进措施；如果成绩偏低或不及格偏多，必须实事求是指出问题，不要强行写成“总体合理、多数掌握”；避免“赋能/闭环/抓手/值得注意的是”等空泛词。",
+                    f"教师补充要求：{extra_prompt.strip() or '无'}",
                     f"数据 JSON：{json.dumps(jsonable_encoder(source), ensure_ascii=False)}",
                 ]
             ),
@@ -314,8 +341,8 @@ async def _ai_review_and_analysis(
         warnings = [str(item).strip()[:300] for item in (result.get("warnings") or []) if str(item).strip()]
         return text, warnings, True
     except Exception as exc:
-        warning = exc.detail if isinstance(exc, HTTPException) else str(exc)
-        return _fallback_analysis_text(analysis_payload, course_context), [f"AI 深度复核暂不可用，已生成可编辑的本地严谨草稿：{warning}"], False
+        print(f"[ACADEMIC_FINAL_MATERIALS] AI 复核降级: {exc}")
+        return _fallback_analysis_text(analysis_payload, course_context), ["AI 复核暂时不可用，已先生成可编辑草稿，请结合成绩分布核对后修改。"], False
 
 
 def _failed_validation_checks(validation: dict[str, Any]) -> list[dict[str, Any]]:

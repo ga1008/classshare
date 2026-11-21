@@ -339,7 +339,7 @@ function renderForm(state, poll) {
             <div data-poll-participant-mount><p class="poll-detail-note">加载中…</p></div>
         </div>
     ` : `
-        <p class="poll-detail-note">该投票范围为当前班级。跨班级投票请到「管理中心 · 内容资产 · 投票」创建。</p>
+        <p class="poll-detail-note">该投票范围为当前班级。跨班级投票请到「管理中心 · 资源库 · 投票」创建。</p>
     `;
 
     return `

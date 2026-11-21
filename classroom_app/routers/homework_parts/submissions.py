@@ -532,7 +532,7 @@ async def submit_assignment(assignment_id: str,
         conn.commit()
         assignment = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
         if not assignment:
-            raise HTTPException(404, "Assignment not found")
+            raise HTTPException(404, "未找到该作业或考试")
         assignment = enrich_assignment_runtime_view(assignment)
         if not student_can_access_assignment(conn, assignment_id, int(user["id"])):
             raise HTTPException(403, "该破境试炼只对指定学生开放")

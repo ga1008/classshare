@@ -825,7 +825,7 @@ def _minimal_session_fallback(
                 ),
             ]
         ),
-        "side_notes": "本课次由系统兜底生成，建议教师课后结合课堂实际进一步微调。",
+        "side_notes": "课前确认教学材料与课堂练习安排，结合学情酌情调整节奏。",
         "post_notes": "",
         "source_material_ids": [str(mid) for mid in (meta.get("source_material_ids") or []) if str(mid).strip()],
         "ai_filled": False,
@@ -1103,7 +1103,7 @@ async def _generate_one_session(
         "key_points": str(result.get("key_points") or ""),
         "difficulties": str(result.get("difficulties") or ""),
         "methods": str(result.get("methods") or "讲授法、案例法、PBL项目驱动法、手把手实践指导"),
-        "means": str(result.get("means") or "PPT、思维导图、虚拟机、Xshell"),
+        "means": str(result.get("means") or "PPT、思维导图、课程材料、课堂演示"),
         "process": str(result.get("process") or ""),
         "side_notes": str(result.get("side_notes") or ""),
         "post_notes": "",

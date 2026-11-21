@@ -134,7 +134,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="presentation",
         href="/manage/teaching/classroom-hub",
         search_text="课堂 课堂管理 运行 进度 教材 AI offering hub 教学首页",
-        ai_hint="课堂管理：教学域首页——集中查看与治理本学期全部课堂：授课进度、下次课、教材/AI 配置缺口、活动资产与本周课次日程。",
+        ai_hint="课堂管理：集中查看本学期全部课堂的授课进度、下次课安排、教材与 AI 助教配置及本周课次日程。",
     ),
     ManageNavItem(
         key="offering_merge",
@@ -199,7 +199,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="search",
         href="/manage/library",
         search_text="材料中心 材料检索 全部材料 搜索 AI 搜索 公文 教案 试卷 教材 library hub search",
-        ai_hint="材料检索：资源库首页——按分类勾选（学习文档/课后材料/教案/过程材料/期末材料/试卷/教材/公文等），支持模糊搜索标题、内容、属性、标签、归属人与归属层级，也可让 AI 理解需求后筛选。",
+        ai_hint="材料检索：按分类筛选学习文档、课后材料、教案、过程与期末材料、试卷、教材及公文，支持按标题、正文、标签或自然语言需求查找。",
     ),
     ManageNavItem(
         key="courses",
@@ -253,7 +253,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="file-text",
         href="/manage/library/lesson-plans",
         search_text="教案 备课 教学设计 lesson plan teaching",
-        ai_hint="教案：空白新建 / 按课堂一键生成整学期教案 / 导入文件解析，支持渲染预览、导出 Word、系部院校级公开与一键继承。",
+        ai_hint="教案：支持新建、按课堂生成整学期教案或导入已有文件解析，可在线预览、导出 Word、公开共享与复用。",
         legacy_hrefs=("/manage/lesson-plans", "/manage/teaching/lesson-plans"),
     ),
     ManageNavItem(
@@ -276,7 +276,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="workflow",
         href="/manage/archive",
         search_text="成绩与归档 流水线 总览 archive pipeline",
-        ai_hint="归档流水线：成绩与归档域首页，按命题与考核、成绩链、教务归档、课后材料显示已有材料并直达对应页；签到统计表为可选归档。",
+        ai_hint="归档流水线：按命题与考核、成绩链、教务归档与课后材料串联学期末全部归档材料，签到统计表为可选归档。",
     ),
     ManageNavItem(
         key="assessment_plans",
@@ -286,7 +286,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="clipboard-list",
         href="/manage/archive/assessment-plans",
         search_text="考核计划表 过程材料 命题 考核 评分 归档 assessment plan",
-        ai_hint="考核计划表：空白新建 / 完整表单填写（可按课堂自动带入）/ 按课堂深度思考生成 / 导入解析（自动归集签名到签名库并去重），支持渲染预览、导出 Word、系部院校级公开与一键继承。",
+        ai_hint="考核计划表：支持新建、按课堂信息带入、AI 辅助生成或导入文件解析，自动归集签名，支持预览、导出 Word 与共享复用。",
         nav_note="可空白/课堂生成/导入，导出 Word/PDF",
         nav_badge="100分校验",
         legacy_hrefs=("/manage/assessment-plans", "/manage/teaching/assessment-plans"),
@@ -300,7 +300,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="clipboard-list",
         href="/manage/archive/grading-rubrics",
         search_text="评分细则 评分标准 课程考核评分细则 过程材料 命题 归档 rubric",
-        ai_hint="评分细则：从材料库入口关联具体试卷或题目附件生成，逐题给出评分标准、扣分项、例外情况和截图/提交物要求，导出为官方模板 Word。",
+        ai_hint="评分细则表：关联具体试卷或题目附件，逐题生成评分标准、扣分项与提交物要求，支持导出规范 Word。",
         nav_note="依赖具体试卷或题目来源，导出 Word/PDF",
         nav_badge="需试卷",
         legacy_hrefs=("/manage/teaching/grading-rubrics",),
@@ -370,8 +370,8 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="bar-chart",
         href="/manage/archive/academic-exam-analyses",
         search_text="期末材料 试卷分析表 教务系统 成绩分布 AI 教学分析 审核意见 签名",
-        ai_hint="试卷分析表：复用同一次教务双表同步结果，自动统计成绩分布并由思考型 AI 撰写教学分析；可补充考试属性、选择签名并导出正式 Word/PDF。",
-        nav_note="AI 分析、公共同意签章、签名库",
+        ai_hint="试卷分析表：复用教务双表同步结果，自动统计成绩分布并由 AI 协助撰写教学分析，补充考试属性与签名后即可导出正式 Word/PDF。",
+        nav_note="AI 分析、审核意见与电子签名",
         nav_badge="AI分析",
         legacy_hrefs=("/manage/teaching/academic-exam-analyses",),
         step=7,
@@ -384,7 +384,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="clipboard-list",
         href="/manage/archive/teacher-evaluations",
         search_text="教师评学表 评学表 学生评价 综合评价 过程材料 归档 teacher evaluation",
-        ai_hint="教师评学表：空白新建 / 完整表单填写（可按课堂自动带入）/ 按教学班级用快速 AI 归集全学期表现自动评分并撰写学习情况分析 / 导入文件解析，10 项指标合计 100、总分自动计算综合评价，支持渲染预览、导出与原版一致的 Word、系部院校级公开与一键继承。",
+        ai_hint="教师评学表：支持新建、按课堂汇总全学期表现并由 AI 辅助生成 10 项指标评分与学习情况分析，或导入文件解析，支持预览与导出 Word。",
         nav_note="按班级生成/导入解析，补全后导出 Word/PDF",
         nav_badge="10项评分",
         legacy_hrefs=("/manage/teacher-evaluations", "/manage/teaching/teacher-evaluations"),
@@ -425,7 +425,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="calendar",
         href="/manage/academic",
         search_text="教务 总览 日程 周 课表 考试 监考 academic overview schedule",
-        ai_hint="教务日程：教务域首页——按周查看监考、考试与教务提醒（与首页同一数据源，可设邮件提醒），并查看教务对接/智慧课堂/公文通的同步状态。",
+        ai_hint="教务日程：按周查看监考、考试与教务提醒，可设置邮件提醒，并查看教务、智慧课堂与公文通的同步状态。",
     ),
     ManageNavItem(
         key="course_schedule",
@@ -468,7 +468,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="calendar",
         href="/manage/academic/teachers/schedule",
         search_text="教师课表查询 教工号 教师姓名 学年 学期 同名教师 timetable teacher",
-        ai_hint="教师课表查询：按姓名或教工号查询教师，优先读取本地学期缓存，可从教务重新同步并查看完整3D课表和课程详情。",
+        ai_hint="课表查询：按姓名或教工号查询教师课表，支持查看周课表详情并按需从教务重新同步。",
     ),
     ManageNavItem(
         key="classrooms",
@@ -522,7 +522,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="inbox",
         href="/manage/me/inbox",
         search_text="待我处理 收件箱 待办 审批 批改 申请 inbox todo",
-        ai_hint="待我处理：首页「需要处理」的完整清单——批改、审批申请、签名申请、找回申请、课堂配置缺口、教务日程与个人待办，按来源筛选。",
+        ai_hint="待我处理：汇总当前待批改、审批与签名申请、找回申请、待完善的课堂设置及近期教务日程，可按来源筛选。",
     ),
     ManageNavItem(
         key="me_settings",
@@ -563,7 +563,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="message-circle",
         href="/manage/me/notifications",
         search_text="通知 私信 消息中心 notifications message center",
-        ai_hint="通知与私信：消息中心，集中处理系统通知与一对一私信。",
+        ai_hint="通知与私信：在消息中心统一查看平台通知与私信对话。",
     ),
     ManageNavItem(
         key="me_email",
@@ -594,7 +594,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="check",
         href="/manage/me/signature-workflows",
         search_text="材料 签名 审批 申请 批准 使用",
-        ai_hint="查看申请材料原样预览，批准或拒绝签名，跟踪申请和实际应用状态。",
+        ai_hint="签名审批与使用：预览待审材料原貌，批准或拒绝签名申请，并跟踪实际签章状态。",
     ),
     ManageNavItem(
         key="teacher_credentials",
@@ -626,7 +626,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="users",
         href="/manage/system/users",
         search_text="用户管理 教师账号 user admin",
-        ai_hint="用户管理：超管教师维护教师账号和平台用户状态。",
+        ai_hint="用户管理：维护教师账号与平台用户状态。",
         required_flag="super_admin",
     ),
     ManageNavItem(
@@ -637,7 +637,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="building",
         href="/manage/system/organizations",
         search_text="学校组织 学院 系部 organization",
-        ai_hint="学校组织：超管教师维护学校、学院和系部组织目录。",
+        ai_hint="学校组织：维护学校、学院和系部组织目录。",
         required_flag="super_admin",
     ),
     ManageNavItem(
@@ -648,7 +648,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="message-circle",
         href="/manage/system/life-tips",
         search_text="一言 提示 人生提示 登录提示 life tip loading",
-        ai_hint="一言提示：管理学生/教师登录加载屏上的一句话提示——审核 AI 从公文挖掘的条目、手工新增本校/本系提示、下架劣句、查看有用/无感反馈。",
+        ai_hint="一言提示：管理师生登录页展示的校园提示——审核公文提炼条目、补充本校或本系实用提醒，并查看反馈数据。",
         required_flag="super_admin",
         legacy_hrefs=("/manage/teaching/life-tips",),
     ),
@@ -660,7 +660,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="file-text",
         href="/manage/system/feedback",
         search_text="问题反馈 feedback",
-        ai_hint="问题反馈：超管教师查看和处理全站用户反馈。",
+        ai_hint="问题反馈：查看并回复全站师生的建议与问题反馈。",
         required_flag="super_admin",
     ),
     ManageNavItem(
@@ -671,7 +671,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="bot",
         href="/manage/system/blog-crawler",
         search_text="博客管家 AI博客管家 爬虫 新闻 blog crawler",
-        ai_hint="博客管家：超管教师用 AI 维护新闻爬取、摘要和博客发布队列。",
+        ai_hint="博客管家：维护校园与行业资讯抓取、AI 改写与博客发布队列。",
         required_flag="super_admin",
     ),
     ManageNavItem(
@@ -682,7 +682,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="users",
         href="/manage/system/wanderers",
         search_text="散修 电子学生 AI 自由体 天道 wanderer",
-        ai_hint="散修管理：超管教师查看与控制 20 个 AI 电子学生（散修）的人格、行为记录、天道裁决与运行开关。",
+        ai_hint="散修管理：查看并管理 AI 电子学生（散修）的人格设定、行为日志、天道裁决与运行开关。",
         required_flag="super_admin",
     ),
     ManageNavItem(
@@ -693,7 +693,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="lock",
         href="/manage/system/blog-review",
         search_text="博客审核 审核台 举报 申诉 内容安全 blog review moderation",
-        ai_hint="博客审核：博客管理员处理 AI 审核、本地规则、举报、紧急限制与申诉，查看处置审计。",
+        ai_hint="博客审核：处理内容安全审核、用户举报、申诉与处置记录。",
         required_flag="super_admin",
     ),
     ManageNavItem(
@@ -704,7 +704,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="line-chart",
         href="/manage/system/ai-usage",
         search_text="AI 用量 预算 成本 usage budget",
-        ai_hint="AI 用量：超管教师查看 AI 预算、成本和使用趋势。",
+        ai_hint="AI 用量：查看 AI 预算、调用成本与使用趋势。",
         required_flag="super_admin",
     ),
     ManageNavItem(
@@ -715,7 +715,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="key",
         href="/manage/system/agent-keys",
         search_text="Agent Key 密钥 token",
-        ai_hint="Agent Key：超管教师维护 Agent 运行时密钥。",
+        ai_hint="Agent Key：维护 Agent 任务运行所需的接口密钥。",
         required_flag="super_admin",
     ),
     ManageNavItem(
@@ -726,7 +726,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="gauge",
         href="/manage/system/monitor",
         search_text="监控大屏 服务器监控 进程 内存优化 CPU 访问量 连接 monitor dashboard",
-        ai_hint="监控大屏：超管实时查看服务器 CPU/内存/磁盘、进程树管理、内存一键优化、平台访问量与连接丢失统计，可调用快速 AI 解读运行状况。",
+        ai_hint="监控大屏：查看服务器 CPU、内存、磁盘、进程与访问状态，并可让 AI 协助解读运行状况。",
         required_flag="super_admin",
     ),
     ManageNavItem(
@@ -737,7 +737,7 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         icon="activity",
         href="/manage/system/diagnostics",
         search_text="压测诊断 性能 diagnostics",
-        ai_hint="压测诊断：超管教师查看运行健康、压测入口和后台任务状态。",
+        ai_hint="压测诊断：查看平台运行健康度、性能压测与后台任务状态。",
         required_flag="super_admin",
     ),
 )

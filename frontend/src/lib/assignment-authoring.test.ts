@@ -29,7 +29,7 @@ describe('assignment authoring helpers', () => {
   });
 
   it('prioritizes actionable authoring messages', () => {
-    expect(buildAssignmentAuthoringMessage(normalizeAssignmentAuthoringSnapshot({ isSaving: true }))).toBe('正在沿用原发布链路保存作业。');
+    expect(buildAssignmentAuthoringMessage(normalizeAssignmentAuthoringSnapshot({ isSaving: true }))).toBe('正在保存作业设置…');
     expect(buildAssignmentAuthoringMessage(normalizeAssignmentAuthoringSnapshot({ lastError: '保存失败' }))).toBe('保存失败');
     expect(buildAssignmentAuthoringMessage(normalizeAssignmentAuthoringSnapshot({
       title: 'Week 1',

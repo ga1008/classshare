@@ -242,7 +242,7 @@ onPullDownRefresh(() => {
         <text>加载失败，点击重试</text>
       </view>
       <view v-else-if="!activeAgenda.length" class="agenda__empty">
-        <text>🎉 暂无待办，好好休息</text>
+        <text>暂无待办，节奏保持得很稳</text>
       </view>
 
       <view

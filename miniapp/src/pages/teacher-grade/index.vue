@@ -563,7 +563,7 @@ onUnload(() => {
 
         <!-- 评分 -->
         <view class="card glass-card">
-          <text class="card__title">原始评分（迟交扣分前）</text>
+          <text class="card__title">{{ review.submission.is_late ? "原始评分（迟交扣分前）" : "评分" }}</text>
           <view class="score-row">
             <input v-model="gradeScore" class="score-input" type="digit" placeholder="0-100" :disabled="!canGrade" />
             <view class="quick-scores">
@@ -612,7 +612,7 @@ onUnload(() => {
               </template>
             </view>
             <text v-else-if="gradeFeedback" class="feedback-raw">{{ gradeFeedback }}</text>
-            <text v-else class="feedback-empty">暂无评语，点右上角"写评语"补充。</text>
+            <text v-else class="feedback-empty">暂无评语，点击右上角「写评语」补充。</text>
           </template>
         </view>
       </template>
@@ -623,7 +623,7 @@ onUnload(() => {
         <view class="nav-btn press" :class="{ 'nav-btn--disabled': !hasPrev || saving }" @tap="goPrev">
           <text>‹</text>
         </view>
-        <button class="save-btn save-btn--plain" :disabled="saving || !canGrade" @tap="saveGrade(false)">
+        <button v-if="hasNext" class="save-btn save-btn--plain" :disabled="saving || !canGrade" @tap="saveGrade(false)">
           保存
         </button>
         <button

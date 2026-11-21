@@ -19,7 +19,7 @@
                 <section data-lq-component="surface" data-lq-material="content" data-lq-padding="md" class="lq-surface lq-messages__overview" aria-label="{{ '私信概览' if _is_private else '通知概览' }}">
                     <header class="lq-page-head lq-messages__heading">
                         <div class="page-head__copy">
-                            <h2 class="lq-page-head__title" data-explain data-explain-title="{{ '私信' if _is_private else '通知中心' }}" data-explain-text="{{ '和同学、老师或 AI 助教保持一对一沟通。' if _is_private else '系统通知集中处理，私信保留在独立入口。未读数量会实时同步到右上角铃铛。' }}">{{ '私信' if _is_private else '通知中心' }}</h2>
+                            <h2 class="lq-page-head__title" data-explain data-explain-title="{{ '私信' if _is_private else '消息中心' }}" data-explain-text="{{ '和同学、老师或 AI 助教直接私信交流。' if _is_private else '集中查看课堂通知、批改结果和重要提醒，私信在独立入口查看。未读数会实时同步到顶部铃铛。' }}">{{ '私信' if _is_private else '消息中心' }}</h2>
                         </div>
                     </header>
                     {# 工作台状态岛是未读/联系人数字的唯一可见来源；这些 id 由 message_center.js 实时写入，保留供同步 #}

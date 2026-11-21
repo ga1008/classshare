@@ -115,10 +115,9 @@ function abilityBlock(card) {
 
 function wandererBlock(card) {
     const homepage = safeLink(card.homepage_url);
-    if (!card.is_wanderer && !card.archetype && !homepage) return null;
-    return section('散修档案', [el('div', { class: 'social-card__wanderer' }, [
-        card.archetype ? el('p', { class: 'social-card__archetype', text: `原型：${card.archetype}` }) : null,
-        homepage ? lqButton({ label: '散修主页', icon: 'external-link', variant: 'soft', href: homepage }) : null,
+    if (!homepage) return null;
+    return section('散修主页', [el('div', { class: 'social-card__wanderer' }, [
+        lqButton({ label: '查看散修主页', icon: 'external-link', variant: 'soft', href: homepage }),
     ])]);
 }
 

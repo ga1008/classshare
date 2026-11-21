@@ -398,7 +398,7 @@ export function ClassroomWorkspace() {
           </LqCardFrame>;
         })}</ul>}
       {previewFilter === 'actionable' && preview.urgentOverflow > 0 && <LqButton variant="soft" type="button" className="cw-overflow" onClick={() => { setFilter('urgent'); setQuery(''); open('tasks'); }} attrs={{ "data-lq-shape": "surface" }}>还有 {preview.urgentOverflow} 项将在 24 小时内截止，查看紧急任务</LqButton>}
-      <div className="cw-secondary-actions"><LqButton variant="soft" type="button" className="cw-button" onClick={() => { setFilter(previewFilter); setQuery(''); open('tasks'); }} attrs={{ "data-cw-task-collection": "" }}>全部任务（{previewCount}） →</LqButton>
+      <div className="cw-secondary-actions"><LqButton variant="soft" type="button" className="cw-button" onClick={() => { setFilter('all'); setQuery(''); open('tasks'); }} attrs={{ "data-cw-task-collection": "" }}>全部任务（{tasks.length}） →</LqButton>
       {teacher && <><LqButton variant="prominent" type="button" className="cw-button is-primary" disabled={pendingEditor !== null} loading={pendingEditor === '[data-cw-create-assignment]'} onClick={() => void openEditor('[data-cw-create-assignment]')}>新建作业</LqButton><LqButton variant="soft" type="button" className="cw-button" disabled={pendingEditor !== null} loading={pendingEditor === '[data-cw-assign-exam]'} onClick={() => void openEditor('[data-cw-assign-exam]')}>从试卷库添加</LqButton>{pendingEditor && <span className="cw-meta" role="status">正在准备编辑工具…</span>}</>}
       </div>
     </>, taskTarget)}

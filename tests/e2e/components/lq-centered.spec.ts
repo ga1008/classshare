@@ -79,7 +79,7 @@ test.describe('LQ centered actual templates and native owners', () => {
     await mount(page, 'status');
     await expect(page.getByRole('heading', { name: '操作失败' })).toBeVisible();
     await expect(page.locator('.lq-status-card__icon svg line')).toHaveCount(2);
-    await expect(page.getByRole('link', { name: '返回主页' })).toHaveAttribute('href', '/dashboard?source=status');
+    await expect(page.getByRole('link', { name: '返回首页' })).toHaveAttribute('href', '/dashboard?source=status');
     for (const appearance of ['light','dark']) {
       await theme(page, 'indigo', appearance, 'off');
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
