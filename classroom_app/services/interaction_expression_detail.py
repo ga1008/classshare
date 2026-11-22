@@ -72,7 +72,7 @@ def build_interaction_detail(rows, *, audience):
         return None
 
     if totals["expression_count"]:
-        status = "已记录互动表达"
+        status = "有表达记录，待评分"
     elif totals["expression_offered"]:
         status = "已有表达机会，尚未观察到表达"
     elif limited_courses or pending:

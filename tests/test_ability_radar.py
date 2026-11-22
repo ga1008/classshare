@@ -80,6 +80,8 @@ class AbilityRadarTests(unittest.TestCase):
         self.assertEqual(90, self._axis(result, "cultivation")["score"])
 
     def test_missing_axes_never_draw_as_zero(self):
+        self.conn.execute("UPDATE learning_progress_snapshots SET metrics_json=? WHERE class_offering_id=1 AND student_id=1",
+                          (_metrics(0.8, interaction=None),))
         result = radar.build_ability_radar(self.conn, student_id=1, offering_ids=[1])
         quality = self._axis(result, "quality")
         self.assertIsNone(quality["average"])
@@ -89,7 +91,34 @@ class AbilityRadarTests(unittest.TestCase):
         expression = self._axis(result, "interaction")
         self.assertIsNone(expression["score"])
         self.assertIsNone(expression["vertex_x"])
+        self.assertNotIn("reference_label", expression)
         self.assertNotIn("interaction_detail", result)
+
+    def test_legacy_reference_requires_a_finite_ratio_and_accepts_published_zero(self):
+        for raw in (None, "", "unknown", "nan", "inf", True, -0.1, 1.1, {}, 10 ** 400):
+            with self.subTest(raw=raw):
+                self.assertIsNone(radar.axis_values({"interactions": {"interaction_ratio": raw}}, 60)["interaction"])
+        self.assertIsNone(radar.axis_values({"interactions": {}}, 60)["interaction"])
+        for raw, expected in ((0, 0), ("0.25", 25), (1, 100)):
+            self.assertEqual(expected, radar.axis_values({"interactions": {"interaction_ratio": raw}}, 60)["interaction"])
+
+    def test_legacy_reference_is_compared_per_course_and_excluded_from_ability_summary(self):
+        self.conn.execute("UPDATE learning_progress_snapshots SET metrics_json=? WHERE class_offering_id=1 AND student_id=1",
+                          (_metrics(0.8, interaction=0),))
+        self.conn.execute("UPDATE learning_progress_snapshots SET metrics_json=? WHERE class_offering_id=2 AND student_id=1",
+                          (_metrics(0.6, interaction=0.2),))
+        result = radar.build_ability_radar(self.conn, student_id=1, offering_ids=[1, 2])
+        axis = self._axis(result, "interaction")
+        self.assertEqual((10, 40, -30), (axis["score"], axis["average"], axis["delta"]))
+        self.assertEqual("原口径参考", axis["reference_label"])
+        self.assertNotIn("status_label", axis)
+        self.assertNotIn("interaction", (result["strength"]["key"], result["focus"]["key"]))
+        self.assertEqual(49, result["overall"])  # (70 + 50 + 50 + 30 + 45) / 5
+        self.conn.execute("UPDATE learning_progress_snapshots SET metrics_json=? WHERE class_offering_id=1 AND student_id=4",
+                          (_metrics(0.6, interaction=None),))
+        radar.clear_peer_cache()
+        small = radar.build_ability_radar(self.conn, student_id=1, offering_ids=[1, 2])
+        self.assertIsNone(self._axis(small, "interaction")["average"])
 
     def test_strength_and_focus_use_peer_gaps(self):
         result = radar.build_ability_radar(self.conn, student_id=1, offering_ids=[1])

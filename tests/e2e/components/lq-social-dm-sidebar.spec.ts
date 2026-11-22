@@ -13,9 +13,10 @@ const OTHER = 'student:3';
 const dm = (identity = PEER) => `dm:${[ME, identity].sort().join('|')}`;
 const clone = (value: any) => structuredClone(value);
 const point = (angle: number, radius: number) => ({ x: 120 + Math.sin(angle) * radius, y: 120 - Math.cos(angle) * radius });
-const axes = ['研读', '练习', '探索', '互助', '表达', '韧性'].map((label, index) => {
+const axes = ['材料吸收', '任务执行', '成绩质量', '互动表达', '学习稳定', '修为推进'].map((label, index) => {
   const angle = index * Math.PI / 3, vertex = point(angle, 56), text = point(angle, 103);
-  return { key: `axis${index}`, label, score: 70, average: 60, delta: 10,
+  return { key: index === 3 ? 'interaction' : `axis${index}`, label, score: 70, average: 60, delta: 10,
+    ...(index === 3 ? { reference_label: '原口径参考' } : {}),
     vertex_x: vertex.x, vertex_y: vertex.y, label_x: text.x, label_y: text.y,
     anchor: index === 0 || index === 3 ? 'middle' : index < 3 ? 'start' : 'end' };
 });
@@ -172,7 +173,9 @@ test('LQ DM profile keeps learning cards compact and moves uncommon actions into
   await expect(page.locator('[data-dm-card]')).toHaveCount(3);
   await expect(page.locator('[data-dm-card=profile]')).toContainText('陈清禾');
   await expect(page.locator('[data-dm-card=cultivation]')).toContainText('灵台');
-  await expect(page.locator('[data-dm-card=radar] svg[role=img]')).toHaveAccessibleName(/陈清禾.*能力雷达/);
+  const chart = page.locator('[data-dm-card=radar] svg[role=img]');
+  await expect(chart).toHaveAccessibleName(/陈清禾.*能力雷达.*互动表达（原口径参考） 70（同课堂 60）/);
+  await expect(chart.locator('text').filter({ hasText: '原口径参考' })).toContainText('70 / 60');
   await expect(page.locator('.social-chat__side')).not.toContainText('最新动态');
   await expect(page.locator('.social-chat__side input')).toHaveCount(0);
   await expect(page.locator('.social-chat__side')).not.toContainText('删除好友');

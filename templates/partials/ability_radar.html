@@ -2,6 +2,13 @@
     可选：radar_self_label（默认“本人”）。样式：static/css/lq/components/ability-radar.css -#}
 {% set r = ability_radar or {} %}
 {% set self_label = radar_self_label or '本人' %}
+{% set private_view = radar_show_evidence | default(false) %}
+{% macro axis_name(axis) -%}
+    {{ axis.label }}{% if axis.reference_label | default('') %}（{{ axis.reference_label }}）{% endif %}
+{%- endmacro %}
+{% macro empty_label(axis) -%}
+    {{ axis.status_label if private_view and axis.status_label | default('') else ('暂无参考分' if axis.key == 'interaction' else '未评分') }}
+{%- endmacro %}
 {% macro outline(kind, label, segments, points, complete) -%}
     {% if segments is defined and segments is not none %}
         {% for segment in segments %}
@@ -21,7 +28,7 @@
 <div class="lq-radar" data-lq-component="radar">
 <div class="lq-radar__inner">
     <figure class="lq-radar__figure">
-        <svg class="lq-radar__svg" viewBox="-58 -14 356 268" role="img" aria-label="{{ self_label }}能力雷达：{% for axis in r.axes %}{{ axis.label }} {{ axis.score if axis.score is not none else '未评分' }}{% if axis.average is not none %}（{{ r.peer_label }} {{ axis.average }}）{% endif %}{{ '，' if not loop.last }}{% endfor %}">
+        <svg class="lq-radar__svg" viewBox="-58 -14 356 268" role="img" aria-label="{{ self_label }}能力雷达：{% for axis in r.axes %}{{ axis_name(axis) }} {{ axis.score if axis.score is not none else empty_label(axis) }}{% if axis.average is not none %}（{{ r.peer_label }} {{ axis.average }}）{% endif %}{{ '，' if not loop.last }}{% endfor %}">
             {% for ring in r.rings %}
             <polygon class="lq-radar__ring{% if ring.ratio == 100 %} is-outer{% endif %}" points="{{ ring.points }}"></polygon>
             {% endfor %}
@@ -37,11 +44,11 @@
             {{ outline('self', self_label, r.self_segments, r.points, self_complete) }}
             {% for axis in r.axes %}
             {% if axis.score is not none %}
-            <circle class="lq-radar__vertex" cx="{{ axis.vertex_x }}" cy="{{ axis.vertex_y }}" r="3.4"><title>{{ axis.label }} {{ axis.score }}</title></circle>
+            <circle class="lq-radar__vertex" cx="{{ axis.vertex_x }}" cy="{{ axis.vertex_y }}" r="3.4"><title>{{ axis_name(axis) }} {{ axis.score }}</title></circle>
             {% endif %}
             <text class="lq-radar__label" x="{{ axis.label_x }}" y="{{ axis.label_y }}" text-anchor="{{ axis.anchor }}">
-                <tspan x="{{ axis.label_x }}">{{ axis.label }}</tspan>
-                <tspan class="lq-radar__label-value" x="{{ axis.label_x }}" dy="15">{{ axis.score if axis.score is not none else '—' }}{% if axis.average is not none %}<tspan class="lq-radar__label-average"> / {{ axis.average }}</tspan>{% endif %}</tspan>
+                <tspan x="{{ axis.label_x }}">{{ axis_name(axis) }}</tspan>
+                <tspan class="lq-radar__label-value" x="{{ axis.label_x }}" dy="15">{{ axis.score if axis.score is not none else (empty_label(axis) if axis.key == 'interaction' else '—') }}{% if axis.average is not none %}<tspan class="lq-radar__label-average"> / {{ axis.average }}</tspan>{% endif %}</tspan>
             </text>
             {% endfor %}
         </svg>
@@ -49,7 +56,7 @@
             <span class="lq-radar__key is-self">{{ self_label }}</span>
             {% if r.has_average %}<span class="lq-radar__key is-average">{{ r.peer_label }}{% if r.peer_count %} · {{ r.peer_count }} 人{% endif %}</span>{% endif %}
             {% if r.course_count > 1 %}<span class="lq-radar__key is-scope">综合 {{ r.course_count }} 门课堂</span>{% endif %}
-            {% if not self_complete %}<span class="lq-radar__key is-unmeasured">— 未评分</span>{% endif %}
+            {% if r.axes | rejectattr('key', 'equalto', 'interaction') | selectattr('score', 'none') | list %}<span class="lq-radar__key is-unmeasured">— 未评分</span>{% endif %}
         </figcaption>
     </figure>
     <div class="lq-radar__detail">
@@ -62,20 +69,21 @@
         <ul class="lq-radar__axes">
             {% for axis in r.axes %}
             <li class="lq-radar__axis{% if axis.score is none %} is-empty{% endif %}">
-                <span class="lq-radar__axis-name">{{ axis.label }}</span>
-                <strong class="lq-radar__axis-value">{{ axis.score if axis.score is not none else '未评分' }}</strong>
+                <span class="lq-radar__axis-name">{{ axis_name(axis) }}</span>
+                <strong class="lq-radar__axis-value">{{ axis.score if axis.score is not none else empty_label(axis) }}</strong>
                 {% if axis.delta is not none %}
                 <span class="lq-radar__delta" data-tone="{{ 'success' if axis.delta >= 5 else ('warning' if axis.delta <= -5 else 'neutral') }}">{{ '+' if axis.delta > 0 else '' }}{{ axis.delta }}</span>
                 {% else %}<span class="lq-radar__delta" data-tone="neutral" aria-hidden="true"></span>{% endif %}
                 {% if axis.score is not none or axis.average is not none %}<span class="lq-radar__bar" aria-hidden="true">{% if axis.score is not none %}<i style="--value: {{ axis.score }}%"></i>{% endif %}{% if axis.average is not none %}<b style="--value: {{ axis.average }}%"></b>{% endif %}</span>{% endif %}
+                {% if private_view and axis.score is not none and axis.status_label | default('') %}<small class="lq-radar__axis-status">{{ axis.status_label }}</small>{% endif %}
             </li>
             {% endfor %}
         </ul>
         {% set evidence = r.interaction_detail | default(none) %}
-        {% if radar_show_evidence | default(false) and evidence %}
+        {% if private_view and evidence %}
         <section class="lq-radar__evidence" aria-label="课堂互动记录">
             <h4>课堂互动记录</h4>
-            {% if evidence.status_label | default('') %}<p>{{ evidence.status_label }}</p>{% endif %}
+            {% if evidence.status_label | default('') and evidence.status_label not in r.axes | map(attribute='status_label', default='') %}<p>{{ evidence.status_label }}</p>{% endif %}
             <dl>
                 {% for name, value in [('课堂参与', evidence.participation_label), ('互动表达', evidence.expression_label), ('数据范围', evidence.coverage_label)] %}
                 {% if value | default('') %}<div><dt>{{ name }}</dt><dd>{{ value }}</dd></div>{% endif %}

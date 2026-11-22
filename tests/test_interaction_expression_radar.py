@@ -42,7 +42,11 @@ class PublishedInteractionRadarTests(unittest.TestCase):
     def test_pending_history_then_lecture_and_discrete_participation(self):
         self.assertEqual("课堂记录正在整理", self.radar()["interaction_detail"]["status_label"])
         self.publish(7, {"participation_count": 0})
-        self.assertEqual("暂无可评机会", self.radar()["interaction_detail"]["status_label"])
+        radar = self.radar()
+        self.assertEqual("暂无可评机会", radar["interaction_detail"]["status_label"])
+        axis = next(axis for axis in radar["axes"] if axis["key"] == "interaction")
+        self.assertEqual((90, "原口径参考", "暂无可评机会"),
+                         (axis["score"], axis["reference_label"], axis["status_label"]))
         self.publish(8, {"participation_count": 0}, offered=3, participated=3)
         detail = self.radar(courses=(7, 8))["interaction_detail"]
         self.assertIn("已记录课堂参与", detail["status_label"])
@@ -72,20 +76,52 @@ class PublishedInteractionRadarTests(unittest.TestCase):
         trace.clear()
         public = self.radar(None)
         self.assertNotIn("interaction_detail", public)
+        self.assertNotIn("status_label", next(a for a in public["axes"] if a["key"] == "interaction"))
         self.assertFalse(any("interaction_expression_snapshots" in sql for sql in trace))
         for radar in (own, teacher, public):
             axis = next(a for a in radar["axes"] if a["key"] == "interaction")
-            self.assertIsNone(axis["score"])
-            self.assertIsNone(axis["average"])
+            self.assertEqual((90, 90, "原口径参考"), (axis["score"], axis["average"], axis["reference_label"]))
+            if radar is not public:
+                self.assertEqual("有表达记录，待评分", axis["status_label"])
             self.assertEqual(30, next(a["score"] for a in radar["axes"] if a["key"] == "cultivation"))
         self.assertEqual(snapshot, list(self.conn.execute("SELECT * FROM learning_progress_snapshots ORDER BY student_id")))
 
     def test_valid_sources_are_visible_while_one_course_is_pending(self):
         self.publish(8, {"participation_count": 1, "expression_count": 1, "ai_message_count": 2})
         detail = self.radar(courses=(7, 8))["interaction_detail"]
-        self.assertEqual("已记录互动表达", detail["status_label"])
+        self.assertEqual("有表达记录，待评分", detail["status_label"])
         self.assertIn("1 门课堂等待整理", detail["coverage_label"])
         self.assertIsNone(detail["ai_message_count"])
+
+    def test_reference_is_independent_of_expression_and_teacher_defaults(self):
+        self.publish(8, {"participation_count": 2, "expression_count": 1}, {"participation_count": 0})
+        self.assertTrue(self.radar(courses=(8,))["available"])
+        own_axis = next(a for a in self.radar(courses=(8,))["axes"] if a["key"] == "interaction")
+        self.assertIsNone(own_axis["score"])
+        self.assertEqual("有表达记录，待评分", own_axis["status_label"])
+        self.assertNotIn("reference_label", own_axis)
+        current = {7: {"metrics": {}, "score": 75},
+                   8: {"metrics": {"interactions": {"interaction_ratio": 1}}, "score": 85}}
+        result = build_ability_radar(self.conn, student_id=1, offering_ids=[7, 8],
+                                     self_states=current, evidence_audience="teacher")
+        axes = {a["key"]: a for a in result["axes"]}
+        self.assertEqual(90, axes["interaction"]["score"])  # published course 7, no reference in course 8
+        self.assertEqual(80, axes["cultivation"]["score"])
+        teacher_axis = next(a for a in self.radar("teacher", courses=(8,))["axes"] if a["key"] == "interaction")
+        self.assertEqual("暂无可评机会", teacher_axis["status_label"])
+        self.assertIsNone(teacher_axis["score"])
+        self.assertNotIn("有表达记录，待评分", json.dumps(result, ensure_ascii=False))
+
+    def test_zero_reference_with_confirmed_no_opportunity_and_limited_history(self):
+        self.conn.execute("UPDATE learning_progress_snapshots SET metrics_json=? WHERE class_offering_id=7 AND student_id=1",
+                          ('{"interactions":{"interaction_ratio":0}}',))
+        self.publish(7, {"participation_count": 0})
+        axis = next(a for a in self.radar()["axes"] if a["key"] == "interaction")
+        self.assertEqual((0, "原口径参考", "暂无可评机会"),
+                         (axis["score"], axis["reference_label"], axis["status_label"]))
+        limited = next(a for a in self.radar(courses=(7, 8))["axes"] if a["key"] == "interaction")
+        self.assertEqual("历史覆盖有限，暂无法判断表达机会", limited["status_label"])
+        self.assertEqual(0, limited["score"])
 
     def test_generated_upload_prompt_contributes_only_to_participation_label(self):
         self.publish(7, {"participation_count": 1, "expression_count": 0, "ai_message_count": 1,
@@ -94,3 +130,10 @@ class PublishedInteractionRadarTests(unittest.TestCase):
         self.assertIn("已记录课堂参与", detail["status_label"])
         self.assertIn("课堂 AI 学生消息 1 条", detail["participation_label"])
         self.assertEqual("尚无可核实的表达记录", detail["expression_label"])
+
+    def test_offered_expression_with_no_response_is_distinct_from_no_opportunity(self):
+        self.publish(7, {"participation_count": 0}, offered=1, expression_offered=1)
+        for audience in ("self", "teacher"):
+            axis = next(a for a in self.radar(audience)["axes"] if a["key"] == "interaction")
+            self.assertEqual("已有表达机会，尚未观察到表达", axis["status_label"])
+            self.assertEqual("原口径参考", axis["reference_label"])

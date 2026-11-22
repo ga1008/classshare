@@ -587,13 +587,13 @@
 **Ability radar 六边形能力雷达** · 层：component · CSS：`static/css/lq/components/ability-radar.css`
 
 - **设计摘要**：六轴能力雷达（ability_radar_service.build_ability_radar 载荷，几何由服务端算好）。服务端页用 templates/partials/ability_radar.html；异步浮层用 static/js/ability_radar.js renderAbilityRadar(payload, {selfLabel})，两者输出同一 DOM/类名（lq-radar__*）。2026-10-27 起个人信息面板（social/user_card.js）消费 JS 版。 2026-10-28私聊侧栏也消费JS版，在领域内容槽保留图与图例、去除重复明细，并限定图尺寸；不创建第二套几何或评分。
-- **规则**：Jinja 与 JS 共用服务端几何，缺测轴显示未评分，分段轮廓不连到零点。本人和所授学生的课堂互动证据由授权页面单独传入。社交卡与私聊仅渲染公开数值。JS 版使用 textContent/setAttribute，颜色在 ability-radar.css。
+- **规则**：Jinja 与 JS 共用服务端几何。互动表达轴的历史数值及同门比较标注原口径参考，真实零分保留顶点，缺值断开轮廓。本人和任课教师可在轴行看到表达待评分、暂无可评机会等状态，查看课堂记录。社交卡和私聊仅显示公开参考分或暂无参考分，私聊收起明细后仍保留图中的口径说明。JS 使用 textContent/setAttribute，颜色在 ability-radar.css。
 - **根类**：`lq-radar`
 - **消费者**：3 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
-- `templates/partials/ability_radar.html` ×30
+- `templates/partials/ability_radar.html` ×31
 - `static/js/ability_radar.js` ×26
 - `static/js/social/chat_sidebar.js` ×1
 

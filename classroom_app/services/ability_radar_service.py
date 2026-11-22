@@ -6,7 +6,7 @@ student outline and the peer outline are measured the same way:
 * 材料吸收  material.ratio
 * 任务执行  assignments.completion_ratio
 * 成绩质量  assignments.score_ratio (only once something is graded)
-* 互动表达  descriptive course evidence (no calibrated ability score yet)
+* 互动表达  published interaction_ratio as a legacy reference alongside private evidence
 * 学习稳定  interactions.consistency_ratio
 * 修为推进  score / 100
 
@@ -65,7 +65,7 @@ _PEER_LOAD_LOCKS = tuple(threading.Lock() for _ in range(32))
 def _num(value: Any, default: float = 0.0) -> float:
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
     return default if math.isnan(number) else number
 
@@ -87,8 +87,13 @@ def axis_values(metrics: dict[str, Any] | None, score: Any) -> dict[str, float |
         values["task"] = _ratio(assignments.get("completion_ratio")) * 100
         if int(_num(assignments.get("graded_count"))) > 0:
             values["quality"] = _ratio(assignments.get("score_ratio")) * 100
-    # The cultivation reward ratio cannot measure expression ability. Its
-    # published value remains in the original snapshot and scoring service.
+    # An explicit zero is a real value on the legacy reward scale. Missing,
+    # malformed and out-of-range values cannot support a reference or comparison.
+    ratio = interactions.get("interaction_ratio")
+    if isinstance(ratio, (int, float, str)) and not isinstance(ratio, bool):
+        reference = _num(ratio, math.nan)
+        if 0 <= reference <= 1:
+            values["interaction"] = reference * 100
     if "consistency_ratio" in interactions:
         values["consistency"] = _ratio(interactions.get("consistency_ratio")) * 100
     values["cultivation"] = max(0.0, min(100.0, _num(score)))
@@ -252,27 +257,30 @@ def build_ability_radar(
     """
     ids = sorted({int(item) for item in offering_ids})
     self_states = self_states or {}
-    own_rows: dict[int, dict[str, Any]] = {}
+    own_per_course: dict[int, dict[str, float | None]] = {}
     private_view = evidence_audience in ("self", "teacher")
     private_rows = load_private_radar_rows(conn, ids, int(student_id), audience=evidence_audience) if private_view else []
     for row in private_rows:
         if row["scored_student"] is not None:
-            own_rows[int(row["offering"])] = {"metrics": _parse_metrics(row["metrics_json"]), "score": row["score"]}
+            own_per_course[int(row["offering"])] = axis_values(_parse_metrics(row["metrics_json"]), row["score"])
     for offering_id in ids:
         if offering_id in self_states:
             state = self_states[offering_id]
-            own_rows[offering_id] = {"metrics": state.get("metrics") or {}, "score": state.get("score")}
+            values = axis_values(state.get("metrics"), state.get("score"))
+            if private_view:
+                # The teacher's fresh state may supply defaults before a first
+                # publication. Only the saved classroom ratio is a legacy reference.
+                values["interaction"] = own_per_course.get(offering_id, {}).get("interaction")
+            own_per_course[offering_id] = values
             continue
         if private_view:
             continue
         rows = _load_snapshots(conn, offering_id, [int(student_id)])
         if rows:
-            own_rows[offering_id] = {"metrics": _parse_metrics(rows[0].get("metrics_json")), "score": rows[0].get("score")}
-    measured = [offering_id for offering_id in ids if offering_id in own_rows]
-    own_per_course = {
-        offering_id: axis_values(own_rows[offering_id]["metrics"], own_rows[offering_id]["score"]) for offering_id in measured
-    }
+            own_per_course[offering_id] = axis_values(_parse_metrics(rows[0]["metrics_json"]), rows[0]["score"])
+    measured = [offering_id for offering_id in ids if offering_id in own_per_course]
     peers = {offering_id: peer_average(conn, offering_id, exclude_student_id=int(student_id)) for offering_id in measured}
+    detail = build_interaction_detail(private_rows, audience=evidence_audience) if private_rows else None
 
     axes: list[dict[str, Any]] = []
     for index, (key, label, short) in enumerate(AXES):
@@ -287,7 +295,7 @@ def build_ability_radar(
         delta = int(round(sum(gaps) / len(gaps))) if gaps and score is not None else None
         average = max(0, min(100, score - delta)) if delta is not None else None
         vertex = _point(index, score / 100) if score is not None else None
-        axes.append({
+        axis = {
             "key": key,
             "label": label,
             "short_label": short,
@@ -297,9 +305,17 @@ def build_ability_radar(
             "vertex_x": round(vertex[0], 1) if vertex else None,
             "vertex_y": round(vertex[1], 1) if vertex else None,
             **_label_geometry(index),
-        })
+        }
+        if key == "interaction":
+            if score is not None:
+                axis["reference_label"] = "原口径参考"
+            if detail:
+                axis["status_label"] = detail["status_label"]
+        axes.append(axis)
     has_average = any(axis["average"] is not None for axis in axes)
-    measured_axes = [axis for axis in axes if axis["score"] is not None]
+    # A legacy reference may be drawn and compared on its original scale. It
+    # cannot enter the ability summary or generate a strength/focus judgment.
+    measured_axes = [axis for axis in axes if axis["score"] is not None and "reference_label" not in axis]
     compared = [axis for axis in measured_axes if axis["delta"] is not None]
     # Strength / focus: compare against peers when possible, otherwise by own value.
     pool = compared if len(compared) >= 2 else measured_axes
@@ -327,10 +343,8 @@ def build_ability_radar(
         "focus": weakest if weakest is not strongest else None,
         "overall": int(round(_mean(axis["score"] for axis in measured_axes))) if measured_axes else None,
     }
-    if private_rows:
-        detail = build_interaction_detail(private_rows, audience=evidence_audience)
-        if detail:
-            result.update(available=True, interaction_detail=detail, course_count=len(ids))
+    if detail:
+        result.update(available=True, interaction_detail=detail, course_count=len(ids))
     return result
 
 

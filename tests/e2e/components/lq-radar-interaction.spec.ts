@@ -6,26 +6,6 @@ import path from 'node:path';
 
 const graph = JSON.parse(fs.readFileSync('static/assets/manifest.json', 'utf8'));
 const asset = (key: string) => '/static/' + graph.entries[key];
-const spokes = [{ x: 120, y: 40 }, { x: 189.3, y: 80 }, { x: 189.3, y: 160 },
-    { x: 120, y: 200 }, { x: 50.7, y: 160 }, { x: 50.7, y: 80 }];
-const axes = [
-    ['material', '材料吸收', 60, 120, 72, 120, 12, 'middle'],
-    ['task', '任务执行', 0, 120, 120, 205, 64, 'start'],
-    ['quality', '成绩质量', 75, 172, 150, 205, 164, 'start'],
-    ['interaction', '互动表达', null, 120, 120, 120, 220, 'middle'],
-    ['consistency', '学习稳定', 50, 85, 140, 35, 164, 'end'],
-    ['cultivation', '修为推进', 65, 75, 94, 35, 64, 'end'],
-].map(([key, label, score, vertex_x, vertex_y, label_x, label_y, anchor]) => ({
-    key, label, score, average: key === 'material' ? 60 : null, delta: key === 'material' ? 0 : null,
-    vertex_x, vertex_y, label_x, label_y, anchor,
-}));
-const chart = {
-    available: true, center: 120, course_count: 1, peer_count: 5, peer_label: '同门均值', has_average: true,
-    axes, self_segments: ['85,140 75,94 120,72 120,120 172,150'], average_segments: ['120,72'],
-    rings: [25, 50, 75, 100].map(ratio => ({
-        ratio, points: spokes.map(({ x, y }) => `${120 + (x - 120) * ratio / 100},${120 + (y - 120) * ratio / 100}`).join(' '),
-    })), spokes, points: '', average_points: '',
-};
 const renderSSR = (radar: object, teacher: boolean) => execFileSync('python', ['-c', [
     "import json, sys",
     "from jinja2 import Environment, FileSystemLoader",
@@ -37,28 +17,40 @@ const renderSSR = (radar: object, teacher: boolean) => execFileSync('python', ['
     input: JSON.stringify({ ability_radar: radar, radar_show_evidence: true, radar_self_label: teacher ? '该生' : '本人' }),
 });
 
-function interactionDetail(withExpression: boolean, teacher: boolean) {
+function courseRadar(withExpression: boolean, legacyScore: number | null, teacher: boolean) {
     return JSON.parse(execFileSync('python', ['-c', `import json, sys
+from unittest.mock import patch
 from tools.isolated_environment import guard_dotenv_loading
 guard_dotenv_loading()
-from classroom_app.services.interaction_expression_detail import build_interaction_detail
+from classroom_app.services import ability_radar_service as radar
 facts = {'expression_count': 0, 'participation_count': 0}
 opportunities = {'coverage_status': 'complete'}
 if sys.argv[1] == 'yes':
     facts.update(expression_count=4, participation_count=7, ai_message_count=3,
                  expression_source_counts={'legacy_ai': 2, 'group_exchange': 1, 'discussion_reply': 1})
     opportunities.update(offered=5, participated=3)
-row = {'evidence_json': json.dumps({'facts': facts, 'opportunities': opportunities}), 'calculated_at': '2026-11-22T11:30:00'}
-sys.stdout.write(json.dumps(build_interaction_detail([row], audience=sys.argv[2])))`,
-    withExpression ? 'yes' : 'no', teacher ? 'teacher' : 'self'], {
+metrics = {'material': {'required_count': 1, 'ratio': .6},
+           'assignments': {'assignment_count': 1, 'completion_ratio': 0, 'graded_count': 1, 'score_ratio': .75},
+           'interactions': {'consistency_ratio': .5}}
+if sys.argv[2] != 'null':
+    metrics['interactions']['interaction_ratio'] = float(sys.argv[2]) / 100
+row = {'offering': 1, 'scored_student': 1, 'metrics_json': json.dumps(metrics), 'score': 65,
+       'evidence_json': json.dumps({'facts': facts, 'opportunities': opportunities}), 'calculated_at': '2026-11-22T11:30:00'}
+peers = {'axes': dict.fromkeys(radar.AXIS_KEYS, 60), 'student_count': 6}
+with patch.object(radar, 'load_private_radar_rows', return_value=[row]), patch.object(radar, 'peer_average', return_value=peers):
+    result = radar.build_ability_radar(None, student_id=1, offering_ids=[1], evidence_audience=sys.argv[3])
+sys.stdout.write(json.dumps(result))`,
+    withExpression ? 'yes' : 'no', String(legacyScore), teacher ? 'teacher' : 'self'], {
         encoding: 'utf8', env: { ...process.env, SECRET_KEY: 'isolated-browser-fixture-only' },
     }));
 }
 
 for (const width of [360, 1366]) {
     for (const scenario of [
-        { title: '讲授课堂', status: '暂无可评机会', active: false },
-        { title: '已见提问', status: '已记录互动表达', active: true },
+        { title: '讲授课堂', status: '暂无可评机会', active: false, legacy: null },
+        { title: '新提问尚待评分', status: '有表达记录，待评分', active: true, legacy: null },
+        { title: '先前有分并有新提问', status: '有表达记录，待评分', active: true, legacy: 18 },
+        { title: '先前零分并有新提问', status: '有表达记录，待评分', active: true, legacy: 0 },
     ]) {
         test(`LQ 互动雷达 ${scenario.title} at ${width}px`, async ({ page }, info) => {
             for (const key of ['js/ability_radar.js', 'css/lq/components/ability-radar.css', 'css/tailwind-app.css']) {
@@ -66,7 +58,7 @@ for (const width of [360, 1366]) {
             }
             const narrow = width === 360;
             await page.setViewportSize({ width, height: 880 });
-            const data = { ...chart, interaction_detail: interactionDetail(scenario.active, !narrow) };
+            const data = courseRadar(scenario.active, scenario.legacy, !narrow);
             const own = renderSSR(data, !narrow);
             const errors: string[] = [];
             page.on('pageerror', error => errors.push(error.message));
@@ -85,17 +77,32 @@ for (const width of [360, 1366]) {
             await page.goto('https://radar.test/');
             const ownChart = page.locator('#own');
             for (const area of [ownChart, page.locator('#peer')]) {
-                await expect(area.getByRole('img')).toHaveAccessibleName(/任务执行 0.*互动表达 未评分/);
-                await expect(area.locator('polygon.lq-radar__self')).toHaveCount(0);
-                await expect(area.locator('polyline.lq-radar__self')).toHaveCSS('fill', 'none');
-                await expect(area.locator('circle.lq-radar__average')).toHaveCount(1);
-                await expect(area.locator('.lq-radar__axis').filter({ hasText: '互动表达' })).toHaveText(/未评分/);
-                await expect(area.locator('.lq-radar__axis').filter({ hasText: '互动表达' }).locator('i')).toHaveCount(0);
+                const publicView = area !== ownChart;
+                const row = area.locator('.lq-radar__axis').filter({ hasText: '互动表达' });
+                const value = row.locator('.lq-radar__axis-value');
+                const chart = area.getByRole('img');
+                if (scenario.legacy === null) {
+                    const text = publicView ? '暂无参考分' : scenario.status;
+                    await expect(value).toHaveText(text);
+                    await expect(chart).toHaveAccessibleName(new RegExp(`互动表达 ${text}`));
+                    await expect(row.locator('i, b')).toHaveCount(0);
+                    await expect(area.locator('polygon.lq-radar__self')).toHaveCount(0);
+                    await expect(area.locator('polyline.lq-radar__self')).toHaveCSS('fill', 'none');
+                } else {
+                    await expect(value).toHaveText(String(scenario.legacy));
+                    await expect(row).toContainText('互动表达（原口径参考）');
+                    await expect(chart).toHaveAccessibleName(new RegExp(`互动表达（原口径参考） ${scenario.legacy}（同门均值 60）`));
+                    await expect(chart.locator('text').filter({ hasText: '原口径参考' })).toContainText(`${scenario.legacy} / 60`);
+                    await expect(row.locator('i')).toHaveCount(1);
+                    await expect(area.locator('polygon.lq-radar__self')).toHaveCount(1);
+                    if (!publicView) await expect(row).toContainText(scenario.status);
+                }
+                await expect(chart).toHaveAccessibleName(/任务执行 0/);
                 await expect(area.locator('.lq-radar__axis').filter({ hasText: '任务执行' }).locator('i')).toHaveCount(1);
-                await expect(area.getByText('— 未评分', { exact: true })).toBeVisible();
+                await expect(area.getByText('— 未评分', { exact: true })).toHaveCount(0);
             }
             const evidence = ownChart.getByRole('region', { name: '课堂互动记录' });
-            await expect(evidence).toContainText(scenario.status);
+            await expect(evidence).not.toContainText(scenario.status);
             await expect(ownChart.locator('.lq-radar__key.is-scope')).toHaveCount(0);
             await expect(evidence.locator('dd').nth(2)).toContainText('1 门课堂');
             await expect(evidence.locator('dt')).toHaveText(['课堂参与', '互动表达', '数据范围']);

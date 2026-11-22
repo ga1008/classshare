@@ -31,9 +31,17 @@ function titled(doc, node, title) {
     return node;
 }
 
+function axisName(axis) {
+    return axis.reference_label ? `${axis.label}（${axis.reference_label}）` : axis.label;
+}
+
+function emptyLabel(axis) {
+    return axis.key === 'interaction' ? '暂无参考分' : '未评分';
+}
+
 function ariaLabel(radar, selfLabel) {
     const parts = (radar.axes || []).map((axis) => {
-        let text = `${axis.label} ${show(axis.score) ?? '未评分'}`;
+        let text = `${axisName(axis)} ${show(axis.score) ?? emptyLabel(axis)}`;
         if (show(axis.average) !== null) text += `（${radar.peer_label} ${axis.average}）`;
         return text;
     });
@@ -74,11 +82,11 @@ function figure(doc, radar, selfLabel) {
     outline('self', selfLabel, radar.self_segments, radar.points, selfComplete);
     for (const axis of radar.axes || []) {
         if (show(axis.score) !== null) {
-            root.append(titled(doc, svg(doc, 'circle', { class: 'lq-radar__vertex', cx: axis.vertex_x, cy: axis.vertex_y, r: '3.4' }), `${axis.label} ${axis.score}`));
+            root.append(titled(doc, svg(doc, 'circle', { class: 'lq-radar__vertex', cx: axis.vertex_x, cy: axis.vertex_y, r: '3.4' }), `${axisName(axis)} ${axis.score}`));
         }
         const label = svg(doc, 'text', { class: 'lq-radar__label', x: axis.label_x, y: axis.label_y, 'text-anchor': axis.anchor });
-        label.append(svg(doc, 'tspan', { x: axis.label_x }, axis.label));
-        const value = svg(doc, 'tspan', { class: 'lq-radar__label-value', x: axis.label_x, dy: '15' }, show(axis.score) ?? '—');
+        label.append(svg(doc, 'tspan', { x: axis.label_x }, axisName(axis)));
+        const value = svg(doc, 'tspan', { class: 'lq-radar__label-value', x: axis.label_x, dy: '15' }, show(axis.score) ?? (axis.key === 'interaction' ? emptyLabel(axis) : '—'));
         if (show(axis.average) !== null) value.append(svg(doc, 'tspan', { class: 'lq-radar__label-average' }, ` / ${axis.average}`));
         label.append(value);
         root.append(label);
@@ -87,7 +95,7 @@ function figure(doc, radar, selfLabel) {
     legend.append(html(doc, 'span', 'lq-radar__key is-self', selfLabel));
     if (radar.has_average) legend.append(html(doc, 'span', 'lq-radar__key is-average', `${radar.peer_label}${radar.peer_count ? ` · ${radar.peer_count} 人` : ''}`));
     if (Number(radar.course_count) > 1) legend.append(html(doc, 'span', 'lq-radar__key is-scope', `综合 ${radar.course_count} 门课堂`));
-    if (!selfComplete) legend.append(html(doc, 'span', 'lq-radar__key is-unmeasured', '— 未评分'));
+    if (radar.axes.some(axis => axis.key !== 'interaction' && !isNum(axis.score))) legend.append(html(doc, 'span', 'lq-radar__key is-unmeasured', '— 未评分'));
     const fig = html(doc, 'figure', 'lq-radar__figure');
     fig.append(root, legend);
     return fig;
@@ -120,7 +128,7 @@ function axisList(doc, radar) {
     for (const axis of radar.axes || []) {
         const score = show(axis.score);
         const item = html(doc, 'li', `lq-radar__axis${score === null ? ' is-empty' : ''}`);
-        item.append(html(doc, 'span', 'lq-radar__axis-name', axis.label), html(doc, 'strong', 'lq-radar__axis-value', score ?? '未评分'));
+        item.append(html(doc, 'span', 'lq-radar__axis-name', axisName(axis)), html(doc, 'strong', 'lq-radar__axis-value', score ?? emptyLabel(axis)));
         const delta = html(doc, 'span', 'lq-radar__delta');
         if (isNum(axis.delta)) {
             delta.dataset.tone = axis.delta >= 5 ? 'success' : (axis.delta <= -5 ? 'warning' : 'neutral');

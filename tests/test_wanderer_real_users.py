@@ -44,7 +44,7 @@ class RealUserRulesTest(WandererWorldTestCase):
         for key in ("gender", "tier_name", "cultivation", "courses", "radar"):
             self.assertIn(key, chosen)
 
-    def test_discovery_preserves_published_cultivation_while_public_radar_omits_unassessed_axis(self):
+    def test_discovery_preserves_published_cultivation_and_separates_legacy_radar_reference(self):
         from classroom_app.services import ability_radar_service, social_card_service
 
         for clear in (ability_radar_service.clear_peer_cache, social_card_service.clear_radar_cache):
@@ -74,7 +74,10 @@ class RealUserRulesTest(WandererWorldTestCase):
                 found = next(person for person in friends.real_user_candidates(conn, ctx) if person["identity"] == target)
                 self.assertEqual(47, found["cultivation"])  # 80, 50, 50, and the historical interaction score of 8.
                 self.assertEqual(60, found["radar"]["overall"])
-                self.assertIsNone(next(axis["score"] for axis in found["radar"]["axes"] if axis["key"] == "interaction"))
+                axis = next(axis for axis in found["radar"]["axes"] if axis["key"] == "interaction")
+                self.assertEqual(16, axis["score"])  # the second course has no usable legacy ratio
+                self.assertEqual("原口径参考", axis["reference_label"])
+                self.assertNotIn("status_label", axis)
                 card = social_card_service.user_card(conn, self.student, target)
                 self.assertEqual(found["radar"], card["radar"])
                 self.assertNotIn("cultivation", card)
