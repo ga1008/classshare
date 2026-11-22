@@ -34,7 +34,7 @@ def build_capabilities(Capability, spec, ID):
                 'is_public': spec('boolean', required=True), 'is_teacher_resource': spec('boolean', required=True)}},
             transport='form', allows_files=True, max_body_bytes=upload_limit, file_field_name='file', max_files=1),
         Capability('http.collaboration.file.upload', '上传一个组内文件并返回文件编号，仅当前成员或课堂教师', 'POST', '/api/collaboration/groups/{group_id}/files',
-            'collaboration', 'upload_study_group_file', '618faf5924c395d2c9f21878eb69e01b6aaa9ddb1396d7cd88038ff5ae05210a', {'path': {'group_id': ID}, 'body': {
+            'collaboration', 'upload_study_group_file', 'c4c747d648edc6b0ea248605c8aa3f4111fb86c96ddde1c5d250e994ad79304f', {'path': {'group_id': ID}, 'body': {
                 'description': spec('string', required=True, maxLength=500, allowNewlines=True)}},
             transport='form', allows_files=True, max_body_bytes=upload_limit, file_field_name='file', max_files=1),
     )

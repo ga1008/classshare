@@ -485,6 +485,15 @@ function groupProgress(group) {
         <span style="width:${progress}%"></span></div><small class="collab-scheme-group__progress-label">进度 ${progress}%</small>`;
 }
 
+function rosterAvatar(person, size) {
+    return componentMarkup('avatar', {
+        name: person.name || '同学', size,
+        src: person.has_custom_avatar === false ? null : person.avatar_url || null,
+        // The outer host owns the emblem for uploaded images and initials alike.
+        attrs: { 'data-cultivation-emblem': 'off' },
+    });
+}
+
 function renderSchemeMemberAvatar(member) {
     const leaderClass = member.is_leader ? ' is-leader' : '';
     const scoreAttr = member.cultivation_score === null || member.cultivation_score === undefined ? '' : String(member.cultivation_score);
@@ -497,8 +506,8 @@ function renderSchemeMemberAvatar(member) {
             data-avatar="${escapeHtml(member.avatar_url || '/api/profile/avatar')}"
             data-leader="${member.is_leader ? '1' : '0'}"
             title="${escapeHtml(member.name)}${member.is_leader ? '（组长）' : ''}" aria-label="${escapeHtml(member.name)}${member.is_leader ? '，组长' : ''}">
-            <span class="collab-scheme-member__avatar">
-                <img src="${escapeHtml(member.avatar_url || '/api/profile/avatar')}" alt="" loading="lazy">
+            <span class="collab-scheme-member__avatar" data-cultivation-student-id="${Number(member.student_id)}">
+                ${rosterAvatar(member, 32)}
                 ${member.is_leader ? `<span class="collab-scheme-member__crown" aria-hidden="true">${iconMarkup('crown')}</span>` : ''}
             </span>
             <span class="collab-scheme-member__name">${escapeHtml(member.name)}</span>
@@ -603,8 +612,8 @@ function renderInvitePicker(candidates) {
     return `<div class="collab-invite-grid" data-collab-invite-list>${candidates.map((c) => `
         <label class="collab-invite-card${c.blocked ? ' is-blocked' : ''}"${c.blocked ? ' title="对方已多次拒绝，暂不可邀请"' : ''}>
             <input data-lq-component="checkbox" class="lq-checkbox" type="checkbox" value="${c.student_id}"${c.blocked ? ' disabled' : ''}>
-            <span class="collab-invite-card__avatar">
-                <img src="${escapeHtml(c.avatar_url || '/api/profile/avatar')}" alt="" loading="lazy">
+            <span class="collab-invite-card__avatar" data-cultivation-student-id="${Number(c.student_id)}">
+                ${rosterAvatar(c, 56)}
                 <span class="collab-invite-card__check" aria-hidden="true">
                     <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
                 </span>
@@ -627,7 +636,7 @@ function renderStudentForm(snapshot, state) {
                 <input data-lq-component="input" class="lq-input" name="name" type="text" maxlength="60" placeholder="分组名称，例如：算法学习小队" required>
                 <div class="collab-invite-pick">
                     <span class="collab-invite-pick__label">邀请同学（可多选）</span>
-                    ${candidates.length ? renderInvitePicker(candidates) : '<span class="collaboration-muted">正在加载同学名单…</span>'}
+                    ${renderInvitePicker(candidates)}
                 </div>
                 <button data-lq-component="button" type="submit" class="lq-btn lq-btn--sm btn btn-primary lq-btn--prominent btn-sm">发起并邀请</button>
             </form>
@@ -960,7 +969,8 @@ function initGroupChat(overlay, groupId) {
     const dropZone = overlay.querySelector('[data-group-chat-drop]');
     let pending = [];
     let lastId = 0;
-    let stopped = false;
+    const chatLifetime = new AbortController();
+    let pollTimer;
     const nodes = new Map();
 
     const buildNode = (message) => {
@@ -982,13 +992,21 @@ function initGroupChat(overlay, groupId) {
         row.innerHTML = `<span class="group-chat-msg__name">${escapeHtml(message.sender_name || '成员')}${message.sender_role === 'teacher' ? ' · 老师' : ''}</span>${body}${renderChatAttachments(message.attachments)}${recall}`;
     };
     const append = (messages) => {
-        if (!messages || !messages.length) return;
+        if (chatLifetime.signal.aborted || !messages?.length) return;
         const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
         messages.forEach((message) => {
-            lastId = Math.max(lastId, Number(message.id) || 0);
+            const id = String(message.id);
+            if (nodes.has(id)) return;
             const node = buildNode(message);
-            nodes.set(String(message.id), node);
-            list.appendChild(node);
+            nodes.set(id, node);
+            // A send reply can arrive before the poll that carries earlier messages.
+            let next = null;
+            let previous = list.lastElementChild;
+            while (previous && Number(previous.dataset.msgId) > Number(message.id)) {
+                next = previous;
+                previous = previous.previousElementSibling;
+            }
+            list.insertBefore(node, next);
         });
         if (atBottom) list.scrollTop = list.scrollHeight;
     };
@@ -1022,16 +1040,22 @@ function initGroupChat(overlay, groupId) {
     };
 
     const poll = async () => {
-        if (stopped || document.hidden) return; // pause polling when tab is hidden (perf)
         try {
-            const data = await apiFetch(`/api/collaboration/groups/${groupId}/chat?after_id=${lastId}`, { silent: true });
+            if (document.hidden || chatLifetime.signal.aborted) return;
+            const data = await apiFetch(`/api/collaboration/groups/${groupId}/chat?after_id=${lastId}`, {
+                silent: true, signal: chatLifetime.signal,
+            });
+            if (chatLifetime.signal.aborted) return;
             append(data.messages || []);
+            if (data.messages?.length) lastId = Number(data.messages[data.messages.length - 1].id);
             markRecalled(data.recalls);
             sweepRecallButtons();
         } catch (error) { /* polling: ignore transient errors */ }
+        finally {
+            if (!chatLifetime.signal.aborted) pollTimer = window.setTimeout(poll, 4000);
+        }
     };
     poll();
-    const timer = window.setInterval(poll, 4000);
 
     const sendSticker = async (emojiId) => {
         try {
@@ -1131,7 +1155,10 @@ function initGroupChat(overlay, groupId) {
             }
         });
     }
-    return () => { stopped = true; window.clearInterval(timer); };
+    return () => {
+        chatLifetime.abort();
+        window.clearTimeout(pollTimer);
+    };
 }
 
 function updateMyGroupBadge(snapshot) {
@@ -1559,18 +1586,46 @@ async function handleSchemeCreate(root, state, form) {
     }
 }
 
+async function openStudentCreate(root, state) {
+    if (state.loadingCandidates || state.studentCreating) return;
+    state.loadingCandidates = true;
+    const cid = root.dataset.classOfferingId || window.APP_CONFIG?.classOfferingId;
+    try {
+        const data = await apiFetch(`/api/collaboration/classrooms/${cid}/invite-candidates`, { silent: true });
+        state.inviteCandidates = data.candidates || [];
+    } catch (error) {
+        state.inviteCandidates = [];
+        showToast(error.message || '同学名单加载失败，可先发起分组', 'error');
+    } finally {
+        state.loadingCandidates = false;
+    }
+    state.studentCreateOpen = true;
+    render(root, state);
+    root.querySelector('[data-collab-student-form] [name=name]')?.focus();
+}
+
 async function handleStudentCreate(root, state, form) {
+    if (state.studentCreating) return;
     const classOfferingId = root.dataset.classOfferingId || window.APP_CONFIG?.classOfferingId;
     const name = String(form.querySelector('input[name="name"]')?.value || '').trim();
     const invitees = Array.from(form.querySelectorAll('[data-collab-invite-list] input:checked')).map((input) => Number(input.value));
-    const response = await apiFetch(`/api/collaboration/classrooms/${classOfferingId}/student-groups`, {
-        method: 'POST',
-        body: { name, invitee_student_ids: invitees },
-    });
-    state.studentCreateOpen = false;
-    state.inviteCandidates = [];
-    applyAndRender(root, state, response);
-    showToast(response.message || '已发起分组', 'success');
+    state.studentCreating = true;
+    form.inert = true;
+    form.setAttribute('aria-busy', 'true');
+    try {
+        const response = await apiFetch(`/api/collaboration/classrooms/${classOfferingId}/student-groups`, {
+            method: 'POST',
+            body: { name, invitee_student_ids: invitees },
+        });
+        state.studentCreateOpen = false;
+        state.inviteCandidates = [];
+        applyAndRender(root, state, response);
+        showToast(response.message || '已发起分组', 'success');
+    } finally {
+        form.inert = false;
+        form.removeAttribute('aria-busy');
+        state.studentCreating = false;
+    }
 }
 
 function showInviteOverlay(root, state, groupId, candidates) {
@@ -1598,16 +1653,21 @@ function showInviteOverlay(root, state, groupId, candidates) {
 
 async function handleRandomJoin(root, state, schemeId) {
     const scheme = (state.snapshot?.schemes || []).find((item) => String(item.id) === String(schemeId));
-    if (!scheme) return;
-    const confirmed = await confirmRandomJoin(scheme);
-    if (!confirmed) return;
-    const response = await apiFetch(`/api/collaboration/schemes/${schemeId}/random-join`, { method: 'POST' });
-    applyAndRender(root, state, response);
-    showToast(response.message || '已加入小组', 'success');
-    const newGroupId = response.result?.group_id;
-    if (newGroupId) {
-        closeOverlays();
-        showGroupDetail(state.snapshot, newGroupId);
+    if (!scheme || state.randomJoining) return;
+    state.randomJoining = true;
+    try {
+        const confirmed = await confirmRandomJoin(scheme);
+        if (!confirmed) return;
+        const response = await apiFetch(`/api/collaboration/schemes/${schemeId}/random-join`, { method: 'POST' });
+        applyAndRender(root, state, response);
+        showToast(response.message || '已加入小组', 'success');
+        const newGroupId = response.result?.group_id;
+        if (newGroupId) {
+            closeOverlays();
+            showGroupDetail(state.snapshot, newGroupId);
+        }
+    } finally {
+        state.randomJoining = false;
     }
 }
 
@@ -1720,7 +1780,7 @@ function bindEvents(root, state) {
         if (!target) return;
         try {
             if (target.matches('[data-collab-create-primary]')) {
-                if (!state.snapshot || state.schemeCreating) return;
+                if (!state.snapshot || state.schemeCreating || state.studentCreating) return;
                 if (state.snapshot.role === 'teacher') {
                     state.schemeIntent = null;
                     state.schemeCreateOpen = !state.schemeCreateOpen;
@@ -1737,14 +1797,7 @@ function bindEvents(root, state) {
                         render(root, state);
                         return;
                     }
-                    const cid = root.dataset.classOfferingId || window.APP_CONFIG?.classOfferingId;
-                    try {
-                        const data = await apiFetch(`/api/collaboration/classrooms/${cid}/invite-candidates`, { silent: true });
-                        state.inviteCandidates = data.candidates || [];
-                    } catch (error) { state.inviteCandidates = []; }
-                    state.studentCreateOpen = true;
-                    render(root, state);
-                    root.querySelector('[data-collab-student-form] [name=name]')?.focus();
+                    await openStudentCreate(root, state);
                 }
             } else if (target.matches('[data-collab-scheme-create-open]')) {
                 if (state.schemeCreating) return;
@@ -1785,14 +1838,9 @@ function bindEvents(root, state) {
                 applyAndRender(root, state, response);
                 showToast(response.message || '已结束方案', 'success');
             } else if (target.matches('[data-collab-student-create-open]')) {
-                const cid = root.dataset.classOfferingId || window.APP_CONFIG?.classOfferingId;
-                try {
-                    const data = await apiFetch(`/api/collaboration/classrooms/${cid}/invite-candidates`, { silent: true });
-                    state.inviteCandidates = data.candidates || [];
-                } catch (error) { state.inviteCandidates = []; }
-                state.studentCreateOpen = true;
-                render(root, state);
+                await openStudentCreate(root, state);
             } else if (target.matches('[data-collab-student-create-close]')) {
+                if (state.studentCreating) return;
                 state.studentCreateOpen = false;
                 render(root, state);
                 root.querySelector('[data-collab-create-primary]')?.focus();
@@ -1890,6 +1938,9 @@ export function initCollaborationPanel() {
         builderDropdowns: [],
         schemeTab: 'current',
         studentCreateOpen: false,
+        studentCreating: false,
+        loadingCandidates: false,
+        randomJoining: false,
         inviteCandidates: [],
     };
     bindEvents(root, state);

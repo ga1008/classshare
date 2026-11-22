@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 
 from ..core import templates
 from ..database import get_db_connection
+from ..db.connection import get_configured_db_engine
 from ..dependencies import get_current_teacher, get_current_user
 from ..lq_migration import lq_family_enabled
 from ..services.emoji_service import get_custom_emoji_path, validate_and_store_custom_emoji
@@ -92,9 +93,14 @@ def _load_avatar_profile(conn, *, role: str, user_id: int) -> dict[str, Any] | N
             (user_id,),
         ).fetchone()
     elif normalized_role == "student":
+        # PostgreSQL creates wanderer_agents at startup. Check its unique student
+        # key alongside the profile so ordinary avatars skip wanderer hydration.
+        # Standalone SQLite databases keep the existing lazy schema path.
+        binding = ("EXISTS (SELECT 1 FROM wanderer_agents w WHERE w.student_id = students.id)"
+                   if get_configured_db_engine() == "postgres" else "1")
         row = conn.execute(
-            """
-            SELECT id, name, nickname, avatar_file_hash, avatar_mime_type
+            f"""
+            SELECT id, name, nickname, avatar_file_hash, avatar_mime_type, {binding} AS may_be_wanderer
             FROM students
             WHERE id = ?
             LIMIT 1
@@ -115,6 +121,7 @@ def _load_avatar_profile(conn, *, role: str, user_id: int) -> dict[str, Any] | N
         "nickname": str(row["nickname"] or ""),
         "avatar_file_hash": str(row["avatar_file_hash"] or ""),
         "avatar_mime_type": str(row["avatar_mime_type"] or ""),
+        "may_be_wanderer": normalized_role == "student" and bool(row["may_be_wanderer"]),
     }
 
 
@@ -529,6 +536,7 @@ def api_profile_avatar(
     role: str | None = None,
     user_id: int | None = None,
     user: dict = Depends(get_current_user),
+    v: str | None = None,
 ):
     requested_role = str(role or "").strip().lower()
     requested_user_id = int(user_id) if user_id is not None else None
@@ -539,7 +547,7 @@ def api_profile_avatar(
             profile = _load_avatar_profile(conn, role=requested_role, user_id=requested_user_id)
             if profile is None:
                 raise HTTPException(status_code=404, detail="头像用户不存在。")
-            if requested_role == "student":
+            if profile["may_be_wanderer"]:
                 wanderer_avatar = _wanderer_avatar_response(conn, requested_user_id)
         else:
             profile = get_user_profile(conn, user)
@@ -548,12 +556,15 @@ def api_profile_avatar(
         return wanderer_avatar
 
     file_hash = str(profile.get("avatar_file_hash") or "").strip()
+    explicit_target = requested_role in {"teacher", "student"} and requested_user_id is not None
     if file_hash:
         try:
             return FileResponse(
                 get_custom_emoji_path(file_hash),
                 media_type=str(profile.get("avatar_mime_type") or "application/octet-stream"),
                 filename="avatar",
+                headers={"Cache-Control": "private, max-age=3600", "Vary": "Cookie, Authorization"}
+                if explicit_target and v == file_hash else None,
             )
         except HTTPException:
             pass
@@ -561,7 +572,8 @@ def api_profile_avatar(
     return Response(
         content=_build_avatar_svg(profile),
         media_type="image/svg+xml",
-        headers={"Cache-Control": "no-store"},
+        headers={"Cache-Control": "private, max-age=60", "Vary": "Cookie, Authorization"}
+        if explicit_target and v == "default" and not file_hash else {"Cache-Control": "no-store"},
     )
 
 

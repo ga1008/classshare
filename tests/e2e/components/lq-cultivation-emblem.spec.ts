@@ -81,7 +81,7 @@ async function mount(page: Page, { motion = 'standard', dark = false } = {}) {
           <section class="fixture-section"><h2>散修管理与主页（原模板）</h2><div class="fixture-consumers"><div data-consumer="admin-ssr">${fragments.admin}</div><div data-consumer="home-ssr">${fragments.home}</div><div data-consumer="admin-js"><button id="wd-refresh-btn" class="lq-btn lq-btn--soft">刷新散修</button><div id="wd-card-grid"></div></div></div></section>
           <section class="fixture-section" data-consumer="shared-card"><h2>课程 / 个人中心共享修炼卡</h2><div class="fixture-cards">${fragments.cards.join('')}${fragments.mortal}</div></section>
           <button id="card-open" class="lq-btn lq-btn--soft" data-social-entry data-social-css="${asset('css/lq/pages/social.css')}">个人信息</button>
-          </main><div id="wd-detail" hidden><form data-wd-tier-form></form><form data-wd-persona-form></form><form data-wd-avatar-form></form></div>
+          </main><div id="wd-detail" hidden><form data-wd-tier-form></form><form data-wd-life-form></form><form data-wd-talent-form></form><form data-wd-persona-form></form><form data-wd-avatar-form></form></div>
           <script>window.WANDERER_ADMIN_BOOT={overview:{},wanderers:[]};</script>
           <script type="module">
           import {initCultivationEmblems} from '${asset('js/cultivation_emblems.js')}';
@@ -97,6 +97,40 @@ async function mount(page: Page, { motion = 'standard', dark = false } = {}) {
     await expect(page.locator('[data-consumer=auto] .lq-cultivation-emblem')).toHaveCount(10);
     return state;
 }
+
+test('a busy emblem endpoint gets one lookup at a time and a delayed retry', async ({ page }) => {
+    await mount(page);
+    await page.clock.install();
+    let attempts = 0;
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/cultivation/emblems?*', async route => {
+        attempts++;
+        if (attempts === 1) {
+            await held;
+            return route.fulfill({ status: 503, headers: { 'Retry-After': '5' }, body: '' });
+        }
+        await route.fulfill({ json: { items: {} } });
+    });
+    const addAvatar = (id: number) => page.evaluate(id => {
+        const avatar = document.createElement('span');
+        avatar.dataset.cultivationStudentId = String(id);
+        document.body.append(avatar);
+    }, id);
+    await addAvatar(301);
+    await page.clock.runFor(100);
+    await expect.poll(() => attempts).toBe(1);
+    await addAvatar(302);
+    await page.clock.runFor(1000);
+    expect(attempts).toBe(1);
+    const busyReply = page.waitForResponse(r => r.url().includes('/api/cultivation/emblems') && r.status() === 503);
+    release();
+    await busyReply;
+    await page.clock.runFor(4000);
+    expect(attempts).toBe(1);
+    await page.clock.runFor(2500);
+    await expect.poll(() => attempts).toBe(2);
+});
 
 test('emblems stay within avatar stacking contexts without losing position, presence, or focus', async ({ page }) => {
     const state = await mount(page);

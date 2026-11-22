@@ -78,6 +78,8 @@ function createController(doc) {
     const tracked = new Map(); // element -> { el, id, host, emblem }
     const pending = new Set();
     let timer = null;
+    let fetching = false;
+    let retryDelay = 0;
     cache.delete('self');
     let selfId = null;
 
@@ -178,8 +180,8 @@ function createController(doc) {
     }
 
     function schedule() {
-        if (timer) return;
-        timer = window.setTimeout(flush, 60);
+        if (timer || fetching) return;
+        timer = window.setTimeout(flush, retryDelay || 60);
     }
 
     async function flush() {
@@ -187,14 +189,23 @@ function createController(doc) {
         const ids = [...pending].slice(0, 200);
         ids.forEach((id) => pending.delete(id));
         if (!ids.length) return;
+        fetching = true;
         try {
             const response = await fetch(`/api/cultivation/emblems?students=${encodeURIComponent(ids.join(','))}`, {
                 credentials: 'same-origin', headers: { Accept: 'application/json' },
             });
             if (!response.ok) {
-                if (response.status >= 500) ids.forEach((id) => pending.add(id));
+                if (response.status >= 500 || response.status === 429) {
+                    // Keep one retry timer per page. A busy server can ask us to wait longer.
+                    const seconds = Number(response.headers.get('Retry-After'));
+                    const backoff = Math.min(60_000, retryDelay * 2 || 3_000);
+                    retryDelay = Math.max(backoff, Number.isFinite(seconds) ? Math.min(seconds * 1000, 300_000) : 0)
+                        + Math.floor(Math.random() * 1000);
+                    ids.forEach((id) => pending.add(id));
+                }
                 return;
             }
+            retryDelay = 0;
             const data = await response.json();
             const items = data?.items && typeof data.items === 'object' ? data.items : {};
             const now = Date.now();
@@ -211,6 +222,7 @@ function createController(doc) {
         } catch {
             /* Emblems are decorative: a failed lookup leaves avatars untouched. */
         } finally {
+            fetching = false;
             if (pending.size) schedule();
         }
     }

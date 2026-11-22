@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-21",
+ "generatedAt": "2026-11-22",
  "generator": "python tools/ui/lq_module_registry.py",
  "modules": {
   "materials": {
@@ -3372,7 +3372,7 @@
    "title": "Cultivation emblem 境界标志与道印图案身份",
    "layer": "component",
    "notes": {
-    "summary": "既有头像境界标志由 static/js/cultivation_emblems.js 与 components/cultivation-emblem.css 提供；2026-10-27续修局部层级、阴影令牌与共享动效；保持SVG身份和宿主原定位。2026-10-27 道印大徽章在 static/img/cultivation/awards/ 扩展相同十阶段图案身份，tools/ui/build_cultivation_awards.py 生成 SVG；展示与 PNG 保存统一消费 learning_certificate_art.js 的映射，避免展示/导出两张不同图。",
+    "summary": "同一页面串行读取头像境界标志。服务繁忙时按退避时间合并重试，遵守服务端的 Retry-After 秒数。既有头像境界标志由 static/js/cultivation_emblems.js 与 components/cultivation-emblem.css 提供；2026-10-27续修局部层级、阴影令牌与共享动效；保持SVG身份和宿主原定位。2026-10-27 道印大徽章在 static/img/cultivation/awards/ 扩展相同十阶段图案身份，tools/ui/build_cultivation_awards.py 生成 SVG；展示与 PNG 保存统一消费 learning_certificate_art.js 的映射，避免展示/导出两张不同图。",
     "params": "道印顺序 qi_awakening/qi_refining/foundation/application_seed/golden_core/practical_mastery/systems_thinking/nascent_soul/independent_path/mentor_heart；兼容 self_directed 与 teacher_guiding。主色依次天蓝、青绿、青、翡翠、金、橙、靛、紫、玫红、暖金。",
     "states": "头像宿主isolation、共享raised层级、精细指针hover/键盘focus、quiet/standard/expressive/off、系统reduce零过渡、forced-colors无外部阴影；隐藏修为和SSR/动态更新保留。2026-11-05：共享修为卡、课堂按钮和修为面板区分building（分数未知、进度无aria-valuenow）、stale（展示最近已提交值及更新时间）、ready；后台更新期间不造零分，模型迁移也保留最近提交值。面板打开时有界轮询，关闭取消计时；徽记复用首页摘要。原头像标志状态保持；道印内容庆祝粒子 6–24、基础时长 1900–5140ms，单次有限播放；高阶段增加外环、扩散范围与多色光晕。quiet/off/reduced-motion 停止庆祝；forced-colors 隐藏装饰光效。",
     "rules": "奖章 SVG/Canvas 是可导出的图形内容，不作为控件或面板材质；操作与信息区继续使用 LQ。图形色只描绘境界身份；不能将奖章特效推广成共享控件第二套动效。四项硬编码阻断已用现有令牌修复，不增加例外。除六个原登记消费者，还覆盖partials/cultivation_card.html及learning_path、profile/hero、hero_lq、overview父模板；测试tests/e2e/components/lq-cultivation-emblem.spec.ts。"

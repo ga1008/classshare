@@ -11,6 +11,7 @@ Student:
 """
 
 from .common import *  # noqa: F401,F403  (shared FastAPI + db imports)
+from starlette.concurrency import run_in_threadpool
 
 from ...services import group_assignment_service as ga
 from ...services.collaboration_service import create_group_scheme, _scheme_is_expired
@@ -57,7 +58,7 @@ def _scheme_options(conn, class_offering_id: int, bound_scheme_id: int | None = 
 
 
 @router.get("/assignments/{assignment_id}/group-config", response_class=JSONResponse)
-async def get_group_config(assignment_id: str, user: dict = Depends(get_current_teacher)):
+def get_group_config(assignment_id: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         assignment = _get_assignment_for_teacher(conn, assignment_id, int(user["id"]))
         class_offering_id = assignment.get("class_offering_id")
@@ -86,6 +87,10 @@ async def get_group_config(assignment_id: str, user: dict = Depends(get_current_
 @router.post("/assignments/{assignment_id}/group-config", response_class=JSONResponse)
 async def set_group_config(assignment_id: str, request: Request, user: dict = Depends(get_current_teacher)):
     data = await request.json()
+    return await run_in_threadpool(_set_group_config, assignment_id, user, data)
+
+
+def _set_group_config(assignment_id: str, user: dict, data: dict):
     action = str(data.get("action") or "").strip().lower()
     with get_db_connection() as conn:
         assignment = _get_assignment_for_teacher(conn, assignment_id, int(user["id"]))

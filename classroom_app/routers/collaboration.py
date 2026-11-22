@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import AsyncExitStack
+from functools import partial, wraps
 from typing import Any
 from urllib.parse import quote
+from weakref import WeakValueDictionary
 
+import anyio
+from anyio.lowlevel import RunVar
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse
-from starlette.concurrency import run_in_threadpool
+from fastapi.routing import APIRoute
 
-from ..config import MAX_UPLOAD_SIZE_BYTES
+from ..config import MAX_UPLOAD_SIZE_BYTES, POSTGRES_POOL_MAX
 from ..database import get_db_connection
 from ..dependencies import get_current_user
 from ..services.collaboration_service import (
@@ -21,7 +28,7 @@ from ..services.collaboration_service import (
     close_group_scheme,
     redistribute_scheme_groups,
     create_group,
-    create_group_scheme,
+    create_group_scheme_record,
     create_group_submission_blog_draft,
     create_student_group,
     ensure_group_chat_writable,
@@ -34,9 +41,10 @@ from ..services.collaboration_service import (
     load_invite_candidates,
     load_member_public_card,
     nominate_group_leader,
-    respond_invitation,
+    update_invitation_response,
     post_group_chat,
-    random_join_scheme,
+    join_scheme_member,
+    scheme_from_snapshot,
     recall_group_chat_message,
     remove_group_member,
     resolve_group_chat_attachment_download,
@@ -56,8 +64,53 @@ from ..services.submission_file_safety import (
 )
 
 
-router = APIRouter(prefix="/api/collaboration")
 GROUP_FILE_MAX_BYTES = min(MAX_UPLOAD_SIZE_BYTES, 100 * 1024 * 1024)
+_work_state = RunVar("collaboration_work_state")
+
+
+class _CollaborationRoute(APIRoute):
+    def get_route_handler(self):
+        handle = super().get_route_handler()
+
+        async def prepare_response(request: Request):
+            # Release admissions once the Response exists, before a slow client downloads it.
+            async with AsyncExitStack() as slots:
+                request.state.collaboration_slots = slots
+                return await handle(request)
+
+        return prepare_response
+
+
+async def _admit_collaboration_request(request: Request):
+    # Dependencies run after multipart upload parsing, before student authentication and SQL.
+    state = _work_state.get(None)
+    if state is None:
+        state = (anyio.CapacityLimiter(max(1, min(4, POSTGRES_POOL_MAX // 2))), WeakValueDictionary())
+        _work_state.set(state)
+    capacity, locks = state
+    slots = request.state.collaboration_slots
+    if request.method not in {"GET", "HEAD"} and request.path_params:
+        # Serialise common URLs locally; the DB owns correctness across workers and aliases.
+        key = next(iter(request.path_params.items()))
+        lock = locks.get(key)
+        if lock is None:
+            locks[key] = lock = asyncio.Lock()
+        await slots.enter_async_context(lock)
+    await slots.enter_async_context(capacity)
+
+
+router = APIRouter(prefix="/api/collaboration", route_class=_CollaborationRoute,
+                   dependencies=[Depends(_admit_collaboration_request)])
+
+
+def _collaboration_work(endpoint):
+    """Run the synchronous DB transaction and JSON encoding together off the event loop."""
+    @wraps(endpoint)
+    def dispatch(*args, **kwargs):
+        result = endpoint(*args, **kwargs)
+        return JSONResponse(jsonable_encoder(result)) if isinstance(result, dict) else result
+
+    return dispatch
 
 
 async def _json_payload(request: Request) -> dict[str, Any]:
@@ -95,6 +148,7 @@ def _group_class_offering_id(conn, group_id: int) -> int:
 
 
 @router.get("/classrooms/{class_offering_id}/snapshot", response_class=JSONResponse)
+@_collaboration_work
 def collaboration_snapshot(class_offering_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         snapshot = load_collaboration_snapshot(conn, class_offering_id, user)
@@ -112,20 +166,18 @@ def _scheme_class_offering_id(conn, scheme_id: int) -> int:
 
 
 @router.post("/classrooms/{class_offering_id}/schemes", response_class=JSONResponse)
-async def create_random_group_scheme(class_offering_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
-    return await run_in_threadpool(_create_scheme_response, class_offering_id, user, payload)
-
-
-def _create_scheme_response(class_offering_id, user, payload):
+@_collaboration_work
+def create_random_group_scheme(class_offering_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
-        scheme = create_group_scheme(conn, class_offering_id, user, payload)
+        scheme = create_group_scheme_record(conn, class_offering_id, user, payload)
         conn.commit()
         snapshot = load_collaboration_snapshot(conn, class_offering_id, user)
+        scheme = scheme_from_snapshot(conn, snapshot, scheme, user)
     return {"status": "ok", "message": "分组方案已创建", "scheme": scheme, "snapshot": snapshot}
 
 
 @router.post("/schemes/{scheme_id}/fill", response_class=JSONResponse)
+@_collaboration_work
 def fill_random_group_scheme(scheme_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         count = fill_scheme_groups(conn, scheme_id, user)
@@ -135,11 +187,14 @@ def fill_random_group_scheme(scheme_id: int, user: dict = Depends(get_current_us
 
 
 @router.post("/schemes/{scheme_id}/random-join", response_class=JSONResponse)
+@_collaboration_work
 def random_join_group_scheme(scheme_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
-        result = random_join_scheme(conn, scheme_id, user)
+        result = join_scheme_member(conn, scheme_id, user)
         conn.commit()
-        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
+        scheme = result["scheme"]
+        snapshot = load_collaboration_snapshot(conn, int(scheme["class_offering_id"]), user)
+        result["scheme"] = scheme_from_snapshot(conn, snapshot, scheme, user)
     return {
         "status": "ok",
         "message": f"已加入「{result['group_name']}」",
@@ -149,15 +204,16 @@ def random_join_group_scheme(scheme_id: int, user: dict = Depends(get_current_us
 
 
 @router.get("/groups/{group_id}/chat", response_class=JSONResponse)
-async def get_group_chat(group_id: int, after_id: int = 0, user: dict = Depends(get_current_user)):
+@_collaboration_work
+def get_group_chat(group_id: int, after_id: int = 0, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         payload = list_group_chat(conn, group_id, user, after_id)
     return {"status": "ok", **payload}
 
 
 @router.post("/groups/{group_id}/chat", response_class=JSONResponse)
-async def send_group_chat(group_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def send_group_chat(group_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     raw_ids = payload.get("attachment_ids") or []
     attachment_ids: list[int] = []
     if isinstance(raw_ids, list):
@@ -189,8 +245,22 @@ async def upload_group_chat_attachments(
         raise HTTPException(400, "请选择要上传的文件")
     if len(files) > MAX_GROUP_CHAT_ATTACHMENTS:
         raise HTTPException(400, f"单条消息最多上传 {MAX_GROUP_CHAT_ATTACHMENTS} 个附件")
-    with get_db_connection() as conn:
-        ensure_group_chat_writable(conn, group_id, user)
+    def check_writable():
+        with get_db_connection() as conn:
+            ensure_group_chat_writable(conn, group_id, user)
+
+    def record_attachment(file, storage, measured_size):
+        with get_db_connection() as conn:
+            payload = add_group_chat_attachment(
+                conn, group_id, user, file_hash=str(storage["hash"]),
+                original_filename=str(file.filename),
+                mime_type=trusted_submission_mime_type(str(file.filename or "")),
+                file_size=int(storage.get("size") or measured_size),
+            )
+            conn.commit()
+        return payload
+
+    await anyio.to_thread.run_sync(check_writable)
     payloads = []
     for file in files:
         if not file.filename:
@@ -203,24 +273,14 @@ async def upload_group_chat_attachments(
         storage = await save_file_globally(file)
         if not storage:
             raise HTTPException(500, "文件保存失败")
-        with get_db_connection() as conn:
-            payload = add_group_chat_attachment(
-                conn,
-                group_id,
-                user,
-                file_hash=str(storage["hash"]),
-                original_filename=str(file.filename),
-                # Never trust the browser-declared type for files served on our origin.
-                mime_type=trusted_submission_mime_type(str(file.filename or "")),
-                file_size=int(storage.get("size") or size),
-            )
-            conn.commit()
+        payload = await anyio.to_thread.run_sync(partial(record_attachment, file, storage, size))
         payloads.append(payload)
     return {"status": "ok", "attachments": payloads}
 
 
 @router.post("/groups/{group_id}/chat/{message_id}/recall", response_class=JSONResponse)
-async def recall_group_chat(group_id: int, message_id: int, user: dict = Depends(get_current_user)):
+@_collaboration_work
+def recall_group_chat(group_id: int, message_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         result = recall_group_chat_message(conn, group_id, message_id, user)
         conn.commit()
@@ -228,14 +288,16 @@ async def recall_group_chat(group_id: int, message_id: int, user: dict = Depends
 
 
 @router.get("/classrooms/{class_offering_id}/member-card/{student_id}", response_class=JSONResponse)
-async def get_member_public_card(class_offering_id: int, student_id: int, user: dict = Depends(get_current_user)):
+@_collaboration_work
+def get_member_public_card(class_offering_id: int, student_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         card = load_member_public_card(conn, class_offering_id, student_id, user)
     return {"status": "ok", "card": card}
 
 
 @router.get("/groups/{group_id}/chat/attachments/{attachment_id}")
-async def download_group_chat_attachment(
+@_collaboration_work
+def download_group_chat_attachment(
     group_id: int,
     attachment_id: int,
     download: bool = False,
@@ -260,32 +322,35 @@ async def download_group_chat_attachment(
 
 
 @router.put("/schemes/{scheme_id}/admission")
+@_collaboration_work
 def change_scheme_admission(scheme_id: int, payload: dict, user: dict = Depends(get_current_user)):
     is_open = payload.get("open")
     if not isinstance(is_open, bool):
         raise HTTPException(400, "请选择开启或暂停学生抽组")
     with get_db_connection() as conn:
         set_scheme_admission(conn, scheme_id, user, is_open)
-        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
     return {"status": "ok", "message": "学生抽组已开启" if is_open else "学生抽组已暂停", "snapshot": snapshot}
 
 
 @router.post("/schemes/{scheme_id}/close", response_class=JSONResponse)
-async def close_random_group_scheme(scheme_id: int, user: dict = Depends(get_current_user)):
+@_collaboration_work
+def close_random_group_scheme(scheme_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         close_group_scheme(conn, scheme_id, user)
-        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
     return {"status": "ok", "message": "分组方案已结束并归档", "snapshot": snapshot}
 
 
 @router.post("/schemes/{scheme_id}/auto-leaders", response_class=JSONResponse)
-async def auto_assign_random_scheme_leaders(scheme_id: int, user: dict = Depends(get_current_user)):
+@_collaboration_work
+def auto_assign_random_scheme_leaders(scheme_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         result = auto_assign_scheme_leaders(conn, scheme_id, user)
-        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
     return {
         "status": "ok",
         "message": f"已为 {result['assigned']} 个小组自动配置组长",
@@ -294,17 +359,18 @@ async def auto_assign_random_scheme_leaders(scheme_id: int, user: dict = Depends
 
 
 @router.post("/schemes/{scheme_id}/redistribute", response_class=JSONResponse)
-async def redistribute_random_scheme_groups(scheme_id: int, user: dict = Depends(get_current_user)):
+@_collaboration_work
+def redistribute_random_scheme_groups(scheme_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         redistribute_scheme_groups(conn, scheme_id, user)
-        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _scheme_class_offering_id(conn, scheme_id), user)
     return {"status": "ok", "message": "各组人数已达标，组数和原有组长已保留", "snapshot": snapshot}
 
 
 @router.post("/groups/{group_id}/assign-leader", response_class=JSONResponse)
-async def teacher_assign_group_leader(group_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def teacher_assign_group_leader(group_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     candidate = payload.get("candidate_student_id")
     try:
         candidate_id = int(candidate)
@@ -312,24 +378,24 @@ async def teacher_assign_group_leader(group_id: int, request: Request, user: dic
         raise HTTPException(400, "请选择要指定的组员") from exc
     with get_db_connection() as conn:
         assign_scheme_leader(conn, group_id, user, candidate_id)
-        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
     return {"status": "ok", "message": "已指定组长", "snapshot": snapshot}
 
 
 @router.put("/groups/{group_id}/goal", response_class=JSONResponse)
-async def set_study_group_goal(group_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def set_study_group_goal(group_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         set_group_goal_progress(conn, group_id, user, payload)
-        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
     return {"status": "ok", "message": "小组目标与进度已更新", "snapshot": snapshot}
 
 
 @router.post("/groups/{group_id}/scheme-assign", response_class=JSONResponse)
-async def assign_scheme_group_member(group_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def assign_scheme_group_member(group_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     student = payload.get("student_id")
     try:
         student_id = int(student)
@@ -337,14 +403,14 @@ async def assign_scheme_group_member(group_id: int, request: Request, user: dict
         raise HTTPException(400, "请选择要分配的学生") from exc
     with get_db_connection() as conn:
         teacher_assign_to_scheme_group(conn, group_id, user, student_id)
-        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
     return {"status": "ok", "message": "已分配到小组", "snapshot": snapshot}
 
 
 @router.post("/groups/{group_id}/nominate-leader", response_class=JSONResponse)
-async def nominate_study_group_leader(group_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def nominate_study_group_leader(group_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     candidate = payload.get("candidate_student_id")
     try:
         candidate_id = int(candidate)
@@ -352,61 +418,66 @@ async def nominate_study_group_leader(group_id: int, request: Request, user: dic
         raise HTTPException(400, "请选择要举荐的组员") from exc
     with get_db_connection() as conn:
         nominate_group_leader(conn, group_id, user, candidate_id)
-        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
     return {"status": "ok", "message": "已举荐组长", "snapshot": snapshot}
 
 
 @router.post("/classrooms/{class_offering_id}/student-groups", response_class=JSONResponse)
-async def create_student_invite_group(class_offering_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def create_student_invite_group(class_offering_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         group = create_student_group(conn, class_offering_id, user, payload)
-        snapshot = load_collaboration_snapshot(conn, class_offering_id, user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, class_offering_id, user)
     return {"status": "ok", "message": "分组已发起，邀请已发送", "group": group, "snapshot": snapshot}
 
 
 @router.get("/classrooms/{class_offering_id}/invite-candidates", response_class=JSONResponse)
-async def get_invite_candidates(class_offering_id: int, group_id: int | None = None, user: dict = Depends(get_current_user)):
+@_collaboration_work
+def get_invite_candidates(class_offering_id: int, group_id: int | None = None, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         candidates = load_invite_candidates(conn, class_offering_id, user, group_id)
     return {"status": "ok", "candidates": candidates}
 
 
 @router.post("/groups/{group_id}/invite", response_class=JSONResponse)
-async def invite_group_members(group_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def invite_group_members(group_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         group = invite_to_group(conn, group_id, user, payload.get("invitee_student_ids") or [])
-        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
     return {"status": "ok", "message": "邀请已发送", "group": group, "snapshot": snapshot}
 
 
 @router.post("/invitations/{invitation_id}/accept", response_class=JSONResponse)
-async def accept_group_invitation(invitation_id: int, user: dict = Depends(get_current_user)):
-    with get_db_connection() as conn:
-        result = respond_invitation(conn, invitation_id, user, accept=True)
-        conn.commit()
-    return {"status": "ok", "message": result["message"], "snapshot": result["snapshot"]}
+@_collaboration_work
+def accept_group_invitation(invitation_id: int, user: dict = Depends(get_current_user)):
+    return _invitation_response(invitation_id, user, accept=True)
 
 
 @router.post("/invitations/{invitation_id}/decline", response_class=JSONResponse)
-async def decline_group_invitation(invitation_id: int, user: dict = Depends(get_current_user)):
+@_collaboration_work
+def decline_group_invitation(invitation_id: int, user: dict = Depends(get_current_user)):
+    return _invitation_response(invitation_id, user, accept=False)
+
+
+def _invitation_response(invitation_id, user, *, accept):
     with get_db_connection() as conn:
-        result = respond_invitation(conn, invitation_id, user, accept=False)
+        classroom_id, message = update_invitation_response(conn, invitation_id, user, accept=accept)
         conn.commit()
-    return {"status": "ok", "message": result["message"], "snapshot": result["snapshot"]}
+        snapshot = load_collaboration_snapshot(conn, classroom_id, user)
+    return {"status": "ok", "message": message, "snapshot": snapshot}
 
 
 @router.post("/classrooms/{class_offering_id}/groups", response_class=JSONResponse)
-async def create_study_group(class_offering_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def create_study_group(class_offering_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         group = create_group(conn, class_offering_id, user, payload)
-        snapshot = load_collaboration_snapshot(conn, class_offering_id, user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, class_offering_id, user)
     return {
         "status": "ok",
         "message": "小组已创建",
@@ -416,12 +487,12 @@ async def create_study_group(class_offering_id: int, request: Request, user: dic
 
 
 @router.put("/groups/{group_id}", response_class=JSONResponse)
-async def update_study_group(group_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def update_study_group(group_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         group = update_group(conn, group_id, user, payload)
-        snapshot = load_collaboration_snapshot(conn, int(group["class_offering_id"]), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, int(group["class_offering_id"]), user)
     return {
         "status": "ok",
         "message": "小组信息已更新",
@@ -431,11 +502,12 @@ async def update_study_group(group_id: int, request: Request, user: dict = Depen
 
 
 @router.post("/groups/{group_id}/join", response_class=JSONResponse)
-async def join_study_group(group_id: int, user: dict = Depends(get_current_user)):
+@_collaboration_work
+def join_study_group(group_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         group = join_group(conn, group_id, user)
-        snapshot = load_collaboration_snapshot(conn, int(group["class_offering_id"]), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, int(group["class_offering_id"]), user)
     return {
         "status": "ok",
         "message": "已加入小组",
@@ -445,11 +517,12 @@ async def join_study_group(group_id: int, user: dict = Depends(get_current_user)
 
 
 @router.post("/groups/{group_id}/leave", response_class=JSONResponse)
-async def leave_study_group(group_id: int, user: dict = Depends(get_current_user)):
+@_collaboration_work
+def leave_study_group(group_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         group = leave_group(conn, group_id, user)
-        snapshot = load_collaboration_snapshot(conn, int(group["class_offering_id"]), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, int(group["class_offering_id"]), user)
     return {
         "status": "ok",
         "message": "已退出小组",
@@ -459,8 +532,8 @@ async def leave_study_group(group_id: int, user: dict = Depends(get_current_user
 
 
 @router.post("/groups/{group_id}/members", response_class=JSONResponse)
-async def add_study_group_member(group_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def add_study_group_member(group_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     student_id = payload.get("student_id")
     try:
         normalized_student_id = int(student_id)
@@ -468,8 +541,8 @@ async def add_study_group_member(group_id: int, request: Request, user: dict = D
         raise HTTPException(400, "请选择要加入小组的学生") from exc
     with get_db_connection() as conn:
         group = add_group_member(conn, group_id, user, normalized_student_id)
-        snapshot = load_collaboration_snapshot(conn, int(group["class_offering_id"]), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, int(group["class_offering_id"]), user)
     return {
         "status": "ok",
         "message": "成员已加入小组",
@@ -479,11 +552,12 @@ async def add_study_group_member(group_id: int, request: Request, user: dict = D
 
 
 @router.delete("/groups/{group_id}/members/{student_id}", response_class=JSONResponse)
-async def remove_study_group_member(group_id: int, student_id: int, user: dict = Depends(get_current_user)):
+@_collaboration_work
+def remove_study_group_member(group_id: int, student_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         group = remove_group_member(conn, group_id, user, student_id)
-        snapshot = load_collaboration_snapshot(conn, int(group["class_offering_id"]), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, int(group["class_offering_id"]), user)
     return {
         "status": "ok",
         "message": "成员已移出小组",
@@ -502,10 +576,13 @@ async def upload_study_group_file(
     if not file.filename:
         raise HTTPException(400, "请选择要上传的文件")
     from ..services.collaboration_service import _ensure_group_access, _can_access_group_work
-    with get_db_connection() as conn:
-        group = _ensure_group_access(conn, group_id, user)
-        if not _can_access_group_work(conn, group, user):
-            raise HTTPException(403, '只有小组成员或教师可以上传组内文件')
+    def check_access():
+        with get_db_connection() as conn:
+            group = _ensure_group_access(conn, group_id, user)
+            if not _can_access_group_work(conn, group, user):
+                raise HTTPException(403, '只有小组成员或教师可以上传组内文件')
+
+    await anyio.to_thread.run_sync(check_access)
     size = _measure_upload(file)
     if size <= 0:
         raise HTTPException(400, "不能上传空文件")
@@ -516,29 +593,25 @@ async def upload_study_group_file(
     if not storage:
         raise HTTPException(500, "文件保存失败")
 
-    with get_db_connection() as conn:
-        group_file = add_group_file(
-            conn,
-            group_id,
-            user,
-            file_hash=str(storage["hash"]),
-            original_filename=str(file.filename),
-            mime_type=str(file.content_type or ""),
-            file_size=int(storage.get("size") or size),
-            description=description,
-        )
-        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
-        conn.commit()
-    return {
-        "status": "ok",
-        "message": "组内文件已上传",
-        "file": group_file,
-        "snapshot": snapshot,
-    }
+    def save_record():
+        with get_db_connection() as conn:
+            group_file = add_group_file(
+                conn, group_id, user, file_hash=str(storage["hash"]),
+                original_filename=str(file.filename), mime_type=str(file.content_type or ""),
+                file_size=int(storage.get("size") or size), description=description,
+            )
+            conn.commit()
+            snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
+        return JSONResponse(jsonable_encoder({
+            "status": "ok", "message": "组内文件已上传", "file": group_file, "snapshot": snapshot,
+        }))
+
+    return await anyio.to_thread.run_sync(save_record)
 
 
 @router.get("/files/{file_id}/download")
-async def download_study_group_file(file_id: int, user: dict = Depends(get_current_user)):
+@_collaboration_work
+def download_study_group_file(file_id: int, user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         payload = resolve_group_file_download(conn, file_id, user)
     return FileResponse(
@@ -552,12 +625,12 @@ async def download_study_group_file(file_id: int, user: dict = Depends(get_curre
 
 
 @router.put("/groups/{group_id}/submission", response_class=JSONResponse)
-async def save_group_submission(group_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def save_group_submission(group_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         submission = upsert_group_submission(conn, group_id, user, payload)
-        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
     return {
         "status": "ok",
         "message": "小组成果已提交",
@@ -567,12 +640,12 @@ async def save_group_submission(group_id: int, request: Request, user: dict = De
 
 
 @router.post("/groups/{group_id}/blog-draft", response_class=JSONResponse)
-async def create_submission_blog_draft(group_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def create_submission_blog_draft(group_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         blog_post = create_group_submission_blog_draft(conn, group_id, user, payload)
-        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
     return {
         "status": "ok",
         "message": "小组成果博客草稿已生成",
@@ -583,12 +656,12 @@ async def create_submission_blog_draft(group_id: int, request: Request, user: di
 
 
 @router.post("/groups/{group_id}/peer-reviews", response_class=JSONResponse)
-async def save_peer_review(group_id: int, request: Request, user: dict = Depends(get_current_user)):
-    payload = await _json_payload(request)
+@_collaboration_work
+def save_peer_review(group_id: int, payload: dict = Depends(_json_payload), user: dict = Depends(get_current_user)):
     with get_db_connection() as conn:
         review = submit_peer_review(conn, group_id, user, payload)
-        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
         conn.commit()
+        snapshot = load_collaboration_snapshot(conn, _group_class_offering_id(conn, group_id), user)
     return {
         "status": "ok",
         "message": "同伴互评已保存",

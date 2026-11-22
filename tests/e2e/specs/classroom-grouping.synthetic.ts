@@ -38,6 +38,143 @@ test.beforeEach(async ({ page }) => {
   await openClassroom(page, f);
 });
 
+test('roster and invite picker render default avatars locally and keep uploaded and member-card avatars', async ({ page, browser }, info) => {
+  const f = fixture();
+  const name = `合成头像名单-${Date.now()}`;
+  const created = await page.request.post(`/api/collaboration/classrooms/${f.classOfferingId}/schemes`, {
+    data: { name, allocation_mode: 'all', group_count: 13, min_members: 4, max_members: 5 },
+  });
+  await expect(created).toBeOK();
+  const student = await browser.newContext({ baseURL: new URL(page.url()).origin });
+  try {
+    const sp = await student.newPage();
+    await loginStudent(sp, f);
+    const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jxL8AAAAASUVORK5CYII=', 'base64');
+    await expect(await sp.request.post('/api/profile/avatar', {
+      multipart: { file: { name: 'synthetic.png', mimeType: 'image/png', buffer: image } },
+    })).toBeOK();
+    const avatars: URL[] = [];
+    sp.on('request', request => {
+      const url = new URL(request.url());
+      if (url.pathname === '/api/profile/avatar' && url.searchParams.has('v')) avatars.push(url);
+    });
+    await openClassroom(sp, f);
+    const card = namedScheme(sp, name);
+    const listed = card.locator('[data-collab-member-info]');
+    await expect(listed).toHaveCount(63);
+    await expect(listed.locator('.lq-avatar__image')).toHaveCount(1);
+    const custom = card.locator(`[data-collab-member-info="${f.student.id}"] .lq-avatar__image`);
+    await custom.scrollIntoViewIfNeeded();
+    await expect.poll(() => custom.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBe(1);
+    const peer = listed.filter({ hasNot: sp.locator('.lq-avatar__image') }).first();
+    const peerId = await peer.getAttribute('data-collab-member-info');
+    await expect(peer.locator('[data-cultivation-student-id]')).toHaveAttribute('data-cultivation-student-id', peerId!);
+    const picker = sp.locator('[data-collab-student-form]');
+    const start = sp.locator('[data-collab-create-primary]');
+    const candidates: string[] = [];
+    sp.on('request', req => { if (new URL(req.url()).pathname.endsWith('/invite-candidates')) candidates.push(req.url()); });
+    await start.evaluate(el => { (el as HTMLElement).click(); (el as HTMLElement).click(); });
+    await expect(picker.locator('[data-cultivation-student-id]').first()).toBeVisible();
+    expect(candidates).toHaveLength(1);
+    await expect(picker.locator('.lq-avatar__image')).toHaveCount(0);
+    const defaults = () => avatars.filter(url => url.searchParams.get('v') === 'default');
+    expect(defaults()).toHaveLength(0);
+    await info.attach('roster-avatar-requests', { contentType: 'application/json', body: JSON.stringify({
+      members: 63, uploadedAvatars: 1, defaultAvatarRequests: defaults().length,
+      inviteCandidates: await picker.locator('[data-cultivation-student-id]').count(),
+    }) });
+    const studentGroup = `合成自建组-${Date.now()}`;
+    await picker.locator('[name=name]').fill(studentGroup);
+    const creates: string[] = [];
+    sp.on('request', req => { if (req.method() === 'POST' && new URL(req.url()).pathname.endsWith('/student-groups')) creates.push(req.url()); });
+    await picker.evaluate(form => { (form as HTMLFormElement).requestSubmit(); (form as HTMLFormElement).requestSubmit(); });
+    await expect(sp.getByText(studentGroup, { exact: true })).toHaveCount(1);
+    expect(creates).toHaveLength(1);
+    await peer.click();
+    await expect(sp.locator('.collab-member-info__avatar img')).toBeVisible();
+    await expect.poll(() => defaults().filter(url => url.searchParams.get('user_id') === peerId).length).toBe(1);
+  } finally {
+    await student.close();
+  }
+});
+
+test('slow group chat reads stay single-flight and close with their group', async ({ page, browser }) => {
+  const f = fixture();
+  const names = ['甲', '乙'].map(label => `组聊合成${label}-${Date.now()}`);
+  const groupIds: number[] = [];
+  for (const name of names) {
+    const response = await page.request.post(`/api/collaboration/classrooms/${f.classOfferingId}/schemes`, {
+      data: { name, allocation_mode: 'all', group_count: 13, min_members: 4, max_members: 5 },
+    });
+    await expect(response).toBeOK();
+    const { scheme } = await response.json();
+    groupIds.push(scheme.groups.find((group: { members: { student_id: number }[] }) =>
+      group.members.some(member => member.student_id === f.student.id)).id);
+  }
+  const student = await browser.newContext({ baseURL: new URL(page.url()).origin });
+  try {
+    const sp = await student.newPage();
+    await loginStudent(sp, f);
+    await openClassroom(sp, f);
+    type Reply = { messages: { id: number; content: string }[] };
+    type ChatMock = { readGroupChat: (url: string) => Promise<Reply>; abortGroupChat: (url: string) => void };
+    const reads: { url: string; finish: (reply: Reply) => void }[] = [];
+    const aborted: string[] = [];
+    await sp.exposeFunction('readGroupChat', (url: string) => new Promise<Reply>(finish => reads.push({ url, finish })));
+    await sp.exposeFunction('abortGroupChat', (url: string) => { aborted.push(url); });
+    await sp.evaluate(() => {
+      const mock = window as Window & ChatMock;
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (url, options) => {
+        const path = String(url);
+        if (options?.method === 'POST' && /^\/api\/collaboration\/groups\/\d+\/chat$/.test(path)) {
+          return Response.json({ message: { id: 43, content: '我的消息', is_mine: true } });
+        }
+        if (!/^\/api\/collaboration\/groups\/\d+\/chat\?/.test(path)) return originalFetch(url, options);
+        options?.signal?.addEventListener('abort', () => mock.abortGroupChat(path), { once: true });
+        // Return the response even after abort to exercise a late delivery during a group switch.
+        return Response.json(await mock.readGroupChat(path));
+      };
+    });
+    await sp.clock.install();
+    const openGroup = (index: number) => namedScheme(sp, names[index]).getByRole('button', { name: '查看我的小组' }).click();
+    await openGroup(0);
+    await expect.poll(() => reads.length).toBe(1);
+    await sp.clock.fastForward(9_000);
+    expect(reads.map(read => read.url)).toEqual([`/api/collaboration/groups/${groupIds[0]}/chat?after_id=0`]);
+    const list = sp.locator('[data-group-chat-messages]');
+    const form = sp.locator('[data-group-chat-form]');
+    await form.locator('.group-chat-text').fill('我的消息');
+    await form.getByRole('button', { name: '发送' }).click();
+    await expect(list).toContainText('我的消息');
+    reads[0].finish({ messages: [{ id: 41, content: '第一组消息' }] });
+    await expect(list).toContainText('第一组消息');
+    const oldList = await list.elementHandle();
+    await sp.clock.fastForward(4_100);
+    await expect.poll(() => reads[1]?.url).toBe(`/api/collaboration/groups/${groupIds[0]}/chat?after_id=41`);
+    reads[1].finish({ messages: [{ id: 42, content: '组员的消息' }, { id: 43, content: '我的消息' }] });
+    await expect(list.locator('.group-chat-msg__body')).toHaveText(['第一组消息', '组员的消息', '我的消息']);
+    await sp.clock.fastForward(4_100);
+    await expect.poll(() => reads[2]?.url).toBe(`/api/collaboration/groups/${groupIds[0]}/chat?after_id=43`);
+    await sp.keyboard.press('Escape');
+    await expect(list).toHaveCount(0);
+    await expect.poll(() => aborted).toContain(reads[2].url);
+    await openGroup(1);
+    await expect.poll(() => reads[3]?.url).toBe(`/api/collaboration/groups/${groupIds[1]}/chat?after_id=0`);
+    reads[2].finish({ messages: [{ id: 44, content: '迟到的旧组消息' }] });
+    reads[3].finish({ messages: [{ id: 51, content: '新组消息' }] });
+    await expect(list).toContainText('新组消息');
+    await expect(list).not.toContainText('迟到的旧组消息');
+    expect(await oldList!.textContent()).not.toContain('迟到的旧组消息');
+    await sp.keyboard.press('Escape');
+    await expect(list).toHaveCount(0);
+    await sp.clock.fastForward(9_000);
+    expect(reads).toHaveLength(4);
+  } finally {
+    await student.close();
+  }
+});
+
 test('balanced whole-class allocation survives a lost reply, reopen and archive', async ({ page, browser }, info) => {
   test.setTimeout(120_000);
   const f = fixture();
@@ -152,12 +289,16 @@ test.describe('touch classroom', () => {
       await resume.press('Enter');
       await expect(pause).toBeFocused();
       await sp.locator('[data-collab-refresh]').click();
-      await join.click();
+      await join.evaluate(el => { (el as HTMLElement).click(); (el as HTMLElement).click(); });
+      await expect(sp.locator('[data-collab-confirm-yes]')).toHaveCount(1);
+      const joins: string[] = [];
+      sp.on('request', req => { if (req.method() === 'POST' && req.url().endsWith('/random-join')) joins.push(req.url()); });
       const response = sp.waitForResponse(r => r.url().endsWith('/random-join') && r.request().method() === 'POST');
       await sp.locator('[data-collab-confirm-yes]').click();
       const joined = await response;
       expect(joined.ok()).toBe(true);
       joinedId = (await joined.json()).result.group_id;
+      expect(joins).toHaveLength(1);
     } finally { await student.close(); }
     await page.locator('[data-collab-refresh]').click();
     await expect(card).toContainText('已分组 1/63');

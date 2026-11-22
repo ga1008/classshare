@@ -39,19 +39,19 @@ def build_capabilities(RequestCapability, spec, ID):
         RequestCapability('http.todos.classroom.delete','删除自己的课堂待办','DELETE','/api/classrooms/{class_offering_id}/todos/{todo_id}','learning','delete_classroom_todo',
             '5d809c7d8b32a95b0ef8f8f084f1d851312775a324e81108c12665ed1d4d3d99',{'path':{'class_offering_id':ID,'todo_id':ID}}),
         RequestCapability('http.collaboration.snapshot','读取可访问课堂的协作状态与自己的邀请','GET','/api/collaboration/classrooms/{class_offering_id}/snapshot','collaboration','collaboration_snapshot',
-            '1049eef5e83bdde34d62009d8260a4b30ce6bd541dd8882aa058bbd80ca3ce52',{'path':{'class_offering_id':ID}},mutates=False),
+            '253d05e398d4aadb5e3ca78f0586480f8a98b75f2a098841c5bad7f84325dfbb',{'path':{'class_offering_id':ID}},mutates=False),
         # group_id deliberately omitted: the original candidate query doesn't
         # authorize an arbitrary group before using its membership to filter.
         RequestCapability('http.collaboration.invite_candidates','读取当前课堂可邀请的同学','GET','/api/collaboration/classrooms/{class_offering_id}/invite-candidates','collaboration','get_invite_candidates',
-            '44cb7577102575696740b7630e72709bac9dfaf98cd2c0eec799777c59410936',{'path':{'class_offering_id':ID}},mutates=False),
+            '64b851fb63706a2b5b3878cb1f312bd47349aa8ed53e21a442675a243145e6fc',{'path':{'class_offering_id':ID}},mutates=False),
         RequestCapability('http.collaboration.student_group.create','学生发起自己的邀请小组','POST','/api/collaboration/classrooms/{class_offering_id}/student-groups','collaboration','create_student_invite_group',
-            '60038cbb848c118242c2c8ffa5ffa9aab9a037505ac7df58975a652c00b4dec9',{'path':{'class_offering_id':ID},'body':{
+            '025cb42d196a521e50c490570c43751c4b23277a23da5146274f3832aaeadf76',{'path':{'class_offering_id':ID},'body':{
                 'name':spec('string',required=True,maxLength=60),'invitee_student_ids':spec('ids',minItems=0,maxItems=30)}}),
         RequestCapability('http.collaboration.group.invite','邀请同学加入自己发起的小组','POST','/api/collaboration/groups/{group_id}/invite','collaboration','invite_group_members',
-            '24a539d46f1fc1ebf18962afb6fc0d065a8a1611607114016a6ed22fe672d1c6',{'path':{'group_id':ID},'body':{
+            '53f7314728c8140876eaa59f77fb9e98f9fcfcb53188fdef145d16dc93ec6bbd',{'path':{'group_id':ID},'body':{
                 'invitee_student_ids':spec('ids',required=True,minItems=1,maxItems=30)}}),
         RequestCapability('http.collaboration.invitation.accept','接受发给自己的小组邀请','POST','/api/collaboration/invitations/{invitation_id}/accept','collaboration','accept_group_invitation',
-            '9d9d7aec5a7524ee58daebfd8b4ef5510d56d1c699058ba8fa46b018d4c80784',{'path':{'invitation_id':ID}}),
+            '9a5d8350b8bdb3193bcc2d956850053a2d6f397f4f4ff14cf633d70cb29ae905',{'path':{'invitation_id':ID}}),
         RequestCapability('http.collaboration.invitation.decline','拒绝发给自己的小组邀请','POST','/api/collaboration/invitations/{invitation_id}/decline','collaboration','decline_group_invitation',
-            '410ebb4e473873c19ff76ab7bf0f66d4ce0607d7fb3e9a486423622fd05c3ff4',{'path':{'invitation_id':ID}}),
+            'dcda043fd99a5fe665567352c2511cb349409fdf346e46265086da81318cc58f',{'path':{'invitation_id':ID}}),
     )

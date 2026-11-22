@@ -9,6 +9,7 @@ import importlib.util
 import json
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -157,6 +158,20 @@ class AvatarChainTest(WandererDbTestCase):
         self.assertIn("image/svg+xml", response.headers["content-type"])
         self.assertIn("max-age=3600", response.headers["cache-control"])
         return response.content
+
+    def test_versioned_roster_avatar_checks_binding_and_caches_only_its_target(self):
+        # The indexed binding expression is portable; exercise it against the fixture.
+        with patch("classroom_app.routers.profile.get_configured_db_engine", return_value="postgres"):
+            with patch("classroom_app.routers.profile._wanderer_avatar_response") as hydrate:
+                response = self.client.get("/api/profile/avatar", params={
+                    "role": "student", "user_id": self.viewer["id"], "v": "default",
+                })
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.headers["cache-control"], "private, max-age=60")
+                self.assertIn("Cookie", response.headers["vary"])
+                hydrate.assert_not_called()
+            self.assertTrue(self.fetch("atai"))
+            self.assertEqual(self.client.get("/api/profile/avatar?v=default").headers["cache-control"], "no-store")
 
     def test_seeding_points_every_seed_at_its_illustration(self):
         with self.connect() as conn:

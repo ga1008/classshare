@@ -225,12 +225,15 @@ def _lock_classroom_memberships(conn, class_offering_id: int, user: dict[str, An
 
     Every membership/leader/scheme mutation takes this lock before changing
     groups or members, including operations that move several groups at once.
-    The portable no-op UPDATE is a row lock on PostgreSQL and a write lock on
-    SQLite. Read-only snapshots never take it. Recheck access after waiting;
+    PostgreSQL's no-key-update lock allows unrelated foreign-key references
+    to this offering. SQLite uses a write lock. Recheck access after waiting;
     neither the permission read nor a group loaded before the lock is fresh.
     """
     ensure_classroom_access(conn, class_offering_id, user)
-    conn.execute("UPDATE class_offerings SET id = id WHERE id = ?", (int(class_offering_id),))
+    if get_configured_db_engine() == "postgres":
+        conn.execute("SELECT id FROM class_offerings WHERE id = ? FOR NO KEY UPDATE", (int(class_offering_id),)).fetchone()
+    else:
+        conn.execute("UPDATE class_offerings SET id = id WHERE id = ?", (int(class_offering_id),))
     return ensure_classroom_access(conn, class_offering_id, user)
 
 
@@ -1840,6 +1843,11 @@ def _scheme_roster(conn, scheme: dict[str, Any], *, grouped_ids=None, classroom_
 
 
 def create_group_scheme(conn, class_offering_id: int, user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    scheme = create_group_scheme_record(conn, class_offering_id, user, payload)
+    return _serialize_scheme(conn, scheme, user)
+
+
+def create_group_scheme_record(conn, class_offering_id: int, user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     _lock_classroom_memberships(conn, class_offering_id, user)
     if not _is_teacher(user):
         raise HTTPException(403, "只有教师可以创建分组方案")
@@ -1873,7 +1881,7 @@ def create_group_scheme(conn, class_offering_id: int, user: dict[str, Any], payl
         if existing:
             if json.loads(existing["metadata_json"]).get("create_signature") != signature:
                 raise HTTPException(409, "本次请求已创建其他配置的方案，请刷新后核对")
-            return _serialize_scheme(conn, dict(existing), user)
+            return dict(existing)
         metadata["create_signature"] = signature
     expires_at = _normalize_expires_at(payload.get("expires_at"))
     students = [s for s in _scheme_class_students(conn, class_offering_id) if include_retake or not s["exempt"]]
@@ -1913,7 +1921,7 @@ def create_group_scheme(conn, class_offering_id: int, user: dict[str, Any], payl
     scheme = _load_scheme(conn, scheme_id)
     if mode == "all":
         _fill_scheme(conn, scheme, user, students)
-    return _serialize_scheme(conn, scheme, user)
+    return scheme
 
 
 def _fill_scheme(conn, scheme, user, students) -> int:
@@ -1970,6 +1978,12 @@ def fill_scheme_groups(conn, scheme_id: int, user: dict[str, Any]) -> int:
 
 
 def random_join_scheme(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, Any]:
+    result = join_scheme_member(conn, scheme_id, user)
+    result["scheme"] = _serialize_scheme(conn, result["scheme"], user)
+    return result
+
+
+def join_scheme_member(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, Any]:
     scheme = _lock_scheme_memberships(conn, scheme_id, user)
     if not _is_student(user):
         raise HTTPException(403, "只有学生可以参与随机分组")
@@ -1978,7 +1992,7 @@ def random_join_scheme(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, 
     existing = _student_scheme_group(conn, scheme_id, student_id)
     if existing:
         return {
-            "scheme": _serialize_scheme(conn, scheme, user),
+            "scheme": scheme,
             "group_id": int(existing["id"]),
             "group_name": str(existing["name"]),
         }
@@ -2017,7 +2031,7 @@ def random_join_scheme(conn, scheme_id: int, user: dict[str, Any]) -> dict[str, 
     )
     conn.execute("UPDATE study_groups SET updated_at = ? WHERE id = ?", (_now_iso(), int(chosen["id"])))
     return {
-        "scheme": _serialize_scheme(conn, _load_scheme(conn, scheme_id), user),
+        "scheme": scheme,
         "group_id": int(chosen["id"]),
         "group_name": str(chosen["name"]),
     }
@@ -2617,6 +2631,7 @@ def _serialize_group_entry(
             "student_id_number": str(m.get("student_id_number") or ""),
             "member_role": str(m.get("member_role") or "member"),
             "is_leader": leader_id is not None and int(m["student_id"]) == leader_id,
+            "has_custom_avatar": bool(m.get("avatar_file_hash")),
             "avatar_url": _avatar_url("student", m["student_id"], m.get("avatar_file_hash")),
         }
         for m in members
@@ -2745,6 +2760,14 @@ def _serialize_scheme(conn, scheme: dict[str, Any], user: dict[str, Any], *, cla
     }
 
 
+def scheme_from_snapshot(conn, snapshot, scheme, user):
+    for item in snapshot["schemes"]:
+        if item["id"] == scheme["id"]:
+            return item
+    # A retried request can refer to a scheme beyond the snapshot's history window.
+    return _serialize_scheme(conn, _load_scheme(conn, scheme["id"]), user)
+
+
 def _load_schemes_for_snapshot(conn, class_offering_id: int, user: dict[str, Any], *, classroom_students=None) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
@@ -2792,6 +2815,16 @@ def _invite_decline_count(conn, inviter_id: int, invitee_id: int) -> int:
         (int(inviter_id), int(invitee_id), INVITE_STATUS_DECLINED),
     ).fetchone()
     return int(row["c"] if row else 0)
+
+
+def _blocked_invitee_ids(conn, inviter_id: int) -> set[int]:
+    rows = conn.execute(
+        """SELECT invitee_student_id FROM group_invitations
+           WHERE inviter_student_id = ? AND status = ?
+           GROUP BY invitee_student_id HAVING COUNT(*) >= ?""",
+        (int(inviter_id), INVITE_STATUS_DECLINED, INVITE_DECLINE_BLOCK_THRESHOLD),
+    ).fetchall()
+    return {int(row["invitee_student_id"]) for row in rows}
 
 
 def _assert_invite_rate(conn, inviter_id: int, *, count: int = 1) -> None:
@@ -2874,7 +2907,7 @@ def invite_to_group(conn, group_id: int, user: dict[str, Any], invitee_ids: Any)
         (int(group_id), INVITE_STATUS_PENDING),
     ).fetchall()
     pending_ids = {int(r["invitee_student_id"]) for r in pending_rows}
-    blocked = [sid for sid in targets if _invite_decline_count(conn, inviter_id, sid) >= INVITE_DECLINE_BLOCK_THRESHOLD]
+    blocked = set(targets) & _blocked_invitee_ids(conn, inviter_id)
     sendable = [sid for sid in targets if sid not in member_ids and sid not in pending_ids and sid not in blocked]
     if not sendable:
         if blocked:
@@ -2906,6 +2939,11 @@ def invite_to_group(conn, group_id: int, user: dict[str, Any], invitee_ids: Any)
 
 
 def respond_invitation(conn, invitation_id: int, user: dict[str, Any], *, accept: bool) -> dict[str, Any]:
+    classroom_id, message = update_invitation_response(conn, invitation_id, user, accept=accept)
+    return {"snapshot": load_collaboration_snapshot(conn, classroom_id, user), "message": message}
+
+
+def update_invitation_response(conn, invitation_id: int, user: dict[str, Any], *, accept: bool) -> tuple[int, str]:
     row = conn.execute("SELECT * FROM group_invitations WHERE id = ? LIMIT 1", (int(invitation_id),)).fetchone()
     if row is None:
         raise HTTPException(404, "邀请不存在")
@@ -2965,8 +3003,8 @@ def respond_invitation(conn, invitation_id: int, user: dict[str, Any], *, accept
             body=f"{_actor_name(user)} 暂时不方便加入「{group['name']}」。" + (f"（对方已多次拒绝，邀请通道关闭）" if decline_count >= INVITE_DECLINE_BLOCK_THRESHOLD else ""),
             group=group, actor=user, ref_id=f"group-invite-decline:{invitation_id}:{now}", allow_duplicates=True,
         )
-        return {"snapshot": load_collaboration_snapshot(conn, int(inv["class_offering_id"]), user), "message": "已拒绝邀请" + extra}
-    return {"snapshot": load_collaboration_snapshot(conn, int(inv["class_offering_id"]), user), "message": "已加入小组"}
+        return class_offering_id, "已拒绝邀请" + extra
+    return class_offering_id, "已加入小组"
 
 
 def load_invite_candidates(conn, class_offering_id: int, user: dict[str, Any], group_id: Optional[int] = None) -> list[dict[str, Any]]:
@@ -2994,17 +3032,18 @@ def load_invite_candidates(conn, class_offering_id: int, user: dict[str, Any], g
         ).fetchall()
         exclude |= {int(r["invitee_student_id"]) for r in pending}
     candidates = []
+    blocked_ids = _blocked_invitee_ids(conn, inviter_id)
     for s in rows:
         sid = int(s["id"])
         if sid in exclude:
             continue
-        blocked = _invite_decline_count(conn, inviter_id, sid) >= INVITE_DECLINE_BLOCK_THRESHOLD
         candidates.append({
             "student_id": sid,
             "name": str(s["name"]),
             "student_id_number": str(s["student_id_number"] or ""),
+            "has_custom_avatar": bool(s["avatar_file_hash"]),
             "avatar_url": _avatar_url("student", sid, s["avatar_file_hash"]),
-            "blocked": blocked,
+            "blocked": sid in blocked_ids,
         })
     return candidates
 

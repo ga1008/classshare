@@ -140,7 +140,7 @@ class CollaborationMembershipPostgresTests(unittest.TestCase):
 
             def execute(inner, sql, params=()):
                 normalized = " ".join(sql.split())
-                if inner.index == 1 and normalized.startswith("UPDATE class_offerings SET id = id"):
+                if inner.index == 1 and normalized == "SELECT id FROM class_offerings WHERE id = ? FOR NO KEY UPDATE":
                     attempted.set()
                 if inner.index == 0 and not inner.gated and normalized.startswith(gate_sql):
                     inner.gated = True
@@ -194,6 +194,19 @@ class CollaborationMembershipPostgresTests(unittest.TestCase):
                          lambda c: service.join_group(c, 1, self.student(9)))
         self.assertEqual((200, 400), (a[0], b[0]))
         self.assertEqual({7, 8}, self.members())
+
+    def test_membership_write_allows_unrelated_reference_to_same_classroom(self):
+        self.conn.execute("CREATE TABLE attendance_reference(offering_id BIGINT REFERENCES class_offerings(id))")
+        self.conn.commit()
+        service._lock_classroom_memberships(self.conn, 1, self.teacher())
+        try:
+            with self.connection() as other:
+                other.execute("SET LOCAL lock_timeout = '500ms'")
+                other.execute("INSERT INTO attendance_reference VALUES (1)")
+                other.commit()
+        finally:
+            self.conn.rollback()
+        self.assertEqual(1, self.conn.execute("SELECT COUNT(*) FROM attendance_reference").fetchone()[0])
 
     def test_replayed_whole_class_create_uses_one_scheme(self):
         settings = {"name": "QA", "allocation_mode": "all", "group_count": 2,

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from ..database import get_db_connection
 from ..dependencies import get_current_teacher
@@ -18,18 +19,10 @@ from ..services.chat_action_service import cancel_proposal, execute_proposal, ma
 router = APIRouter()
 
 
-@router.post("/api/ai/chat-actions/{token}/execute", response_class=JSONResponse)
-async def api_execute_chat_action(token: str, user: dict = Depends(get_current_teacher)):
+def _execute_chat_action(token: str, user: dict):
     with get_db_connection() as conn:
-        try:
-            result = execute_proposal(conn, user, token)
-            conn.commit()
-        except HTTPException as exc:
-            conn.rollback()
-            if exc.status_code not in (404, 409):
-                # The action itself was refused (400/403): keep the proposal from being retried blindly.
-                mark_proposal_failed(token, str(exc.detail))
-            raise
+        result = execute_proposal(conn, user, token)
+        conn.commit()
         if result.get("kind") == "poll" and result.get("notify_poll_active"):
             try:
                 from ..services.message_center_service import create_poll_published_notifications
@@ -39,6 +32,18 @@ async def api_execute_chat_action(token: str, user: dict = Depends(get_current_t
             except Exception as exc:  # noqa: BLE001 — notification is best-effort, the poll already exists
                 conn.rollback()
                 print(f"[CHAT-ACTION] poll notification skipped: {exc}")
+    return result
+
+
+@router.post("/api/ai/chat-actions/{token}/execute", response_class=JSONResponse)
+async def api_execute_chat_action(token: str, user: dict = Depends(get_current_teacher)):
+    try:
+        result = await run_in_threadpool(_execute_chat_action, token, user)
+    except HTTPException as exc:
+        if exc.status_code not in (404, 409):
+            # Record a refused action only after returning its original connection.
+            await run_in_threadpool(mark_proposal_failed, token, str(exc.detail))
+        raise
     if result.get("kind") == "poll":
         try:
             from .polls import _broadcast_poll_changed
@@ -51,7 +56,7 @@ async def api_execute_chat_action(token: str, user: dict = Depends(get_current_t
 
 
 @router.post("/api/ai/chat-actions/{token}/cancel", response_class=JSONResponse)
-async def api_cancel_chat_action(token: str, user: dict = Depends(get_current_teacher)):
+def api_cancel_chat_action(token: str, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         result = cancel_proposal(conn, user, token)
         conn.commit()
