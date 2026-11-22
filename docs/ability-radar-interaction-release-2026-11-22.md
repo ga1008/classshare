@@ -37,3 +37,13 @@
 正式构建的 44 项隔离浏览器回归通过。生产镜像、运行中代码和资源版本已核对，六个应用角色使用同一新镜像，PostgreSQL 容器和数据目录身份保持。216 张必需表均已就绪，索引失败 0 项，跳过迁移 0 项。公网版本、健康、就绪、权限和正式资源共 11 项检查通过。切换前的代码与 PostgreSQL 停写备份位于服务器 `/var/backups/lanshare-radar-20261122-151127-db367bb39f84/`。
 
 查询定义见[逐课对账 SQL](../tools/interaction_expression_audit.sql)，归属及去重口径见[调查与实施记录](ability-radar-interaction-review-2026-11-22.md)。工作站保留本次[逐课原表比对](../.codex-temp/evidence/interaction-radar-deploy-20261122/audit/after-comparison.json)、[第二轮刷新](../.codex-temp/evidence/interaction-radar-deploy-20261122/audit/first-to-second-publication.json)、[修为差异定界](../.codex-temp/evidence/interaction-radar-deploy-20261122/audit/score-event-window.json)、[角色渲染核验](../.codex-temp/evidence/interaction-radar-deploy-20261122/ui/roles-render-verified.json)及[正式发布核验](../.codex-temp/evidence/interaction-radar-release-20261122/production-after.json)。
+
+## 22:24 互动表达参考分恢复
+
+正式发布 `20261122-222034-3732328468cb`，产品提交 `4db80b3f`。雷达读取已发布的旧分，按原规则显示本人和同门均值，并标明“原口径参考”。参考分只用于该轴展示。能力总评、优势与提升建议继续使用其余可评分的轴。本人和任课教师可同时查看表达状态；公开资料卡只展示参考分和可用的同门均值。
+
+在正式教师登录会话中，重新打开用户反馈的公开资料卡和教师端学生详情。两门课的旧分分别为 21 和 3，两处均显示本人 12 分、同门均值 2 分。其余五轴及均值与原截图一致。该生有 1 件课堂参与，当前可核实的表达为 0 件，教师详情显示“已记录课堂参与，暂无可评表达样例”。另用生产只读服务和正式模板核对 7 种场景的本人、教师及公开展示，并在 360 和 1366 像素下完成 28 次师生布局核验。学生本人端核验使用其可见范围的模板，浏览器实登验证使用教师账号。[角色核验](../.codex-temp/evidence/interaction-reference-transition-20261122/ui/roles-render-verified.json)
+
+13 个教学班共 486 条在读选课均已发布，全部有有效旧分，其中 253 条原为 0 分。按课对照原始业务记录，确认课堂 AI 提问 56 件、小组表达 152 件、研讨回复 10 件。下午核验后新增的 1 件 AI 提问已明确归入《Python程序设计》。学生本人和任课教师各 486 份均与原记录一致。[逐课明细](../.codex-temp/evidence/interaction-reference-transition-20261122/audit/after-逐课核对.md)
+
+暂停写入时留存的基线与上线后逐课修为、积分流水及排名一致，486 个名次全部保持。22:15 首次取样与停写之间有一名学生正常学习材料，其分项从 22.9 经 23.1 升至 23.3，名次保持。八个生产容器运行正常、重启次数均为 0。数据库与数据目录身份一致。[学习流水核对](../.codex-temp/evidence/interaction-reference-transition-20261122/audit/intervening-events.json) · [生产发布核验](../.codex-temp/evidence/interaction-reference-transition-20261122/release/production-after.json)
