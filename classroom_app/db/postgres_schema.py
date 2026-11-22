@@ -22,6 +22,7 @@ from .schema_smart_classroom_sessions import SMART_CLASSROOM_SESSION_REQUIRED_CO
 from .schema_smart_classroom_auto_sync import SMART_CLASSROOM_AUTO_SYNC_REQUIRED_COLUMNS
 from .schema_feedback_conversations import FEEDBACK_CONVERSATION_POSTGRES_TABLES
 from .schema_ai_workspace import AI_WORKSPACE_POSTGRES_TABLES
+from .schema_interaction_expression import EXPRESSION_TABLES
 from .schema_ai_search import AI_SEARCH_TABLES
 from .schema_behavior_inbox import BEHAVIOR_INBOX_TABLES
 from .schema_behavior_collection_health import BEHAVIOR_COLLECTION_HEALTH_TABLES
@@ -441,6 +442,7 @@ POSTGRES_RUNTIME_TABLE_DEFINITIONS: dict[str, str] = {
     **AI_SEARCH_TABLES,
     **ACADEMIC_TEACHER_TIMETABLE_POSTGRES_TABLES,
     **AI_WORKSPACE_POSTGRES_TABLES,
+    **EXPRESSION_TABLES,
     **ACADEMIC_SCHEDULE_PREDICTION_POSTGRES_TABLES,
     **AI_JOB_POSTGRES_RUNTIME_TABLES,
     **GRADE_PUBLICATION_POSTGRES_TABLES,
@@ -821,6 +823,7 @@ REQUIRED_POSTGRES_TABLES = (
     *ATTENDANCE_REPORT_REQUIRED_COLUMNS,
     *FEEDBACK_CONVERSATION_POSTGRES_TABLES,
     *AI_WORKSPACE_POSTGRES_TABLES,
+    *EXPRESSION_TABLES,
     *AI_SEARCH_TABLES,
     "learning_stage_status",
     "learning_stage_exam_attempts",

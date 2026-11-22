@@ -67,6 +67,16 @@ async def _run(args, *, stop=None) -> None:
         initialized = True
         if stop is not None and stop["requested"]:
             return  # A signal during synchronous initialization must not claim.
+        # The scheduler can start independently of the web workers. Its own
+        # bootstrap is idempotent and never performs the historical rebuild here.
+        try:
+            from classroom_app.services.interaction_expression_refresh import arm_expression_timer
+            await _await_owned_work(asyncio.create_task(asyncio.to_thread(arm_expression_timer)),
+                                    operation="expression timer registration")
+        except Exception as exc:
+            print(f"[RADAR] Scheduler timer registration deferred: {type(exc).__name__}")
+        if stop is not None and stop["requested"]:
+            return
         from classroom_app.services.life_tip_service import warm_life_tip_runtime
         try:
             await _await_owned_work(asyncio.create_task(asyncio.to_thread(warm_life_tip_runtime)),

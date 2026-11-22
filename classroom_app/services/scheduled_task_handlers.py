@@ -421,6 +421,10 @@ def handle_cultivation_snapshot_refresh(task: dict[str, Any]) -> str:
 
 register_task_handler(CULTIVATION_SNAPSHOT_REFRESH_TASK_KIND, handle_cultivation_snapshot_refresh)
 
+from .interaction_expression_refresh import TASK_KIND as INTERACTION_EXPRESSION_REFRESH_KIND, handle_interaction_expression_refresh
+
+register_task_handler(INTERACTION_EXPRESSION_REFRESH_KIND, handle_interaction_expression_refresh)
+
 
 _WEEKLY_CAPTURE_EXECUTION = "_weekly_capture_execution"
 

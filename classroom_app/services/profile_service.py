@@ -726,7 +726,7 @@ def _student_ability_radar(conn, student_id: int, courses: list[dict[str, Any]])
     radar = None
     # Optional panel: a failure leaves the rest of the profile intact.
     with best_effort(conn, "profile_ability_radar"):
-        radar = build_ability_radar(conn, student_id=int(student_id), offering_ids=offering_ids)
+        radar = build_ability_radar(conn, student_id=int(student_id), offering_ids=offering_ids, evidence_audience="self")
     return radar
 
 

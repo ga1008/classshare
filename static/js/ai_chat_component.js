@@ -1141,8 +1141,7 @@ class AIChatComponent {
             if (this.workspace) {
                 if (this.pendingRequest && data.messages.some(msg => msg.request_id === this.pendingRequest.id)) {
                     if (this.draftFingerprint() === this.pendingRequest.fingerprint) {
-                        this.textarea.value = '';
-                        this.clearPendingFiles();
+                        this.clearSubmittedDraft();
                     }
                     this.pendingRequest = null;
                     this.onRequestChange?.(null);
@@ -1230,6 +1229,8 @@ class AIChatComponent {
             formData.append('session_uuid', this.currentSessionUUID);
             formData.append('request_id', this.pendingRequest.id);
             formData.append('page_path', window.location.pathname);
+            const offering = this.courseQuestionOffering();
+            if (offering) formData.append('question_offering_id', offering);
         }
         if (!this.contextOnly && !this.workspace) {
             formData.append('session_uuid', this.currentSessionUUID);
@@ -1256,9 +1257,7 @@ class AIChatComponent {
         const submittedFingerprint = this.draftFingerprint();
         const acceptDraft = () => {
             if (this.draftFingerprint() === submittedFingerprint) {
-                this.textarea.value = '';
-                this.textarea.style.height = 'auto';
-                this.clearPendingFiles();
+                this.clearSubmittedDraft();
             }
             this.pendingRequest = null;
             this.onRequestChange?.(null);
@@ -1395,8 +1394,24 @@ class AIChatComponent {
         this.historyPaused = true;
     }
 
+    courseQuestionOffering() {
+        const toggle = this.workspace && document.getElementById('ai-course-question');
+        return toggle?.checked ? toggle.value : null;
+    }
+
+    clearSubmittedDraft() {
+        this.textarea.value = '';
+        this.textarea.style.height = 'auto';
+        const toggle = document.getElementById('ai-course-question');
+        if (toggle) toggle.checked = false;
+        this.clearPendingFiles();
+    }
+
     draftFingerprint() {
-        return JSON.stringify([this.currentSessionUUID, this.textarea.value.trim(), this.pendingFiles.map(f => [f.name, f.size, f.type, f.lastModified]), this.isDeepThinking, this.webSearchEnabled]);
+        const draft = [this.currentSessionUUID, this.textarea.value.trim(), this.pendingFiles.map(f => [f.name, f.size, f.type, f.lastModified]), this.isDeepThinking, this.webSearchEnabled];
+        const offering = this.courseQuestionOffering();
+        if (offering) draft.push(offering);
+        return JSON.stringify(draft);
     }
 
     /**

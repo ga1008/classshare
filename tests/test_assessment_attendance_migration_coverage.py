@@ -14,6 +14,9 @@ class _Rows:
     def __init__(self, rows=()):
         self.rows = rows
 
+    def __iter__(self):
+        return iter(self.rows)
+
     def fetchall(self):
         return list(self.rows)
 
@@ -37,6 +40,8 @@ class _RecordingConnection:
             if "table_name='login_attendance_policies'" in sql:
                 # Existing policies predate the optional network restriction.
                 return _Rows([{"column_name": "class_offering_id"}, {"column_name": "networks_json"}])
+            if "table_name='login_attendance_records'" in sql:
+                return _Rows([{"column_name": "id"}, {"column_name": "status"}])
             if "table_name='smart_attendance_session_links'" in sql:
                 return _Rows([{"column_name": "alignment_json"}, {"column_name": "course_link_revision"}])
             raise AssertionError(f"Unexpected schema introspection: {sql}")
@@ -99,8 +104,27 @@ class AttendanceMigrationCoverageTests(unittest.TestCase):
         for index in ("idx_attendance_settlement_round", "idx_smart_student_correction_round",
                       "idx_smart_student_correction_offering", "idx_smart_student_correction_session"):
             self.assertTrue(any(sql.startswith(f"CREATE INDEX IF NOT EXISTS {index} ") for sql in statements), index)
-        self.assertEqual([sqlite_compatible_dict_row] * 3, self.connection.introspection_row_factories)
+        self.assertEqual([sqlite_compatible_dict_row] * 4, self.connection.introspection_row_factories)
         self.assertIs(original_factory, self.connection.row_factory)
+
+    def test_interaction_evidence_incremental_ddl_matches_full_startup_and_source_gate(self):
+        from classroom_app.db.postgres_required_columns import REQUIRED_POSTGRES_COLUMNS
+        from classroom_app.db.postgres_schema import POSTGRES_RUNTIME_TABLE_DEFINITIONS
+        from classroom_app.db.schema_ai_workspace import COURSE_QUESTION_INDEX
+        from tools.deploy.validate_native_pg_rehearsal import REPO_ROOT, migration_source_hashes
+
+        apply_assessment_migrations(self.connection)
+        ddl = self.connection.statements
+        tables = ("ai_workspace_course_questions", "interaction_expression_snapshots", "interaction_expression_refresh_state")
+        for table in tables:
+            self.assertIn(POSTGRES_RUNTIME_TABLE_DEFINITIONS[table], ddl)
+            self.assertIn(table, REQUIRED_POSTGRES_COLUMNS)
+        self.assertIn(COURSE_QUESTION_INDEX, ddl)
+        self.assertLess(ddl.index(POSTGRES_RUNTIME_TABLE_DEFINITIONS["ai_workspace_messages"]),
+                        ddl.index(POSTGRES_RUNTIME_TABLE_DEFINITIONS["ai_workspace_course_questions"]))
+        sources = migration_source_hashes(REPO_ROOT)
+        for name in ("schema_ai_workspace.py", "schema_interaction_expression.py"):
+            self.assertIn(f"classroom_app/db/{name}", sources)
 
     def test_schema_failure_propagates_and_restores_snapshot_row_contract(self):
         original_factory = self.connection.row_factory

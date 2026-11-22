@@ -33,7 +33,7 @@ function titled(doc, node, title) {
 
 function ariaLabel(radar, selfLabel) {
     const parts = (radar.axes || []).map((axis) => {
-        let text = `${axis.label} ${show(axis.score) ?? '暂无'}`;
+        let text = `${axis.label} ${show(axis.score) ?? '未评分'}`;
         if (show(axis.average) !== null) text += `（${radar.peer_label} ${axis.average}）`;
         return text;
     });
@@ -52,8 +52,26 @@ function figure(doc, radar, selfLabel) {
     for (const ring of (radar.rings || []).slice(0, 3)) {
         root.append(svg(doc, 'text', { class: 'lq-radar__tick', x: center + 3, y: center - (80 * ring.ratio) / 100 + 3 }, ring.ratio));
     }
-    if (radar.has_average) root.append(titled(doc, svg(doc, 'polygon', { class: 'lq-radar__average', points: radar.average_points }), radar.peer_label));
-    root.append(titled(doc, svg(doc, 'polygon', { class: 'lq-radar__self', points: radar.points }), selfLabel));
+    const selfComplete = radar.axes.every(axis => isNum(axis.score));
+    const peerComplete = radar.axes.every(axis => isNum(axis.average));
+    function outline(kind, label, segments, points, complete) {
+        const className = `lq-radar__${kind}`;
+        if (!Array.isArray(segments)) {
+            if (complete && points) root.append(titled(doc, svg(doc, 'polygon', { class: className, points }), label));
+            return;
+        }
+        for (const segment of segments) {
+            if (!segment) continue;
+            if (segment.includes(' ')) {
+                root.append(titled(doc, svg(doc, 'polyline', { class: className, points: segment }), label));
+            } else {
+                const [cx, cy] = segment.split(',');
+                root.append(titled(doc, svg(doc, 'circle', { class: className, cx, cy, r: 2 }), label));
+            }
+        }
+    }
+    if (radar.has_average) outline('average', radar.peer_label, radar.average_segments, radar.average_points, peerComplete);
+    outline('self', selfLabel, radar.self_segments, radar.points, selfComplete);
     for (const axis of radar.axes || []) {
         if (show(axis.score) !== null) {
             root.append(titled(doc, svg(doc, 'circle', { class: 'lq-radar__vertex', cx: axis.vertex_x, cy: axis.vertex_y, r: '3.4' }), `${axis.label} ${axis.score}`));
@@ -69,6 +87,7 @@ function figure(doc, radar, selfLabel) {
     legend.append(html(doc, 'span', 'lq-radar__key is-self', selfLabel));
     if (radar.has_average) legend.append(html(doc, 'span', 'lq-radar__key is-average', `${radar.peer_label}${radar.peer_count ? ` · ${radar.peer_count} 人` : ''}`));
     if (Number(radar.course_count) > 1) legend.append(html(doc, 'span', 'lq-radar__key is-scope', `综合 ${radar.course_count} 门课堂`));
+    if (!selfComplete) legend.append(html(doc, 'span', 'lq-radar__key is-unmeasured', '— 未评分'));
     const fig = html(doc, 'figure', 'lq-radar__figure');
     fig.append(root, legend);
     return fig;
@@ -101,7 +120,7 @@ function axisList(doc, radar) {
     for (const axis of radar.axes || []) {
         const score = show(axis.score);
         const item = html(doc, 'li', `lq-radar__axis${score === null ? ' is-empty' : ''}`);
-        item.append(html(doc, 'span', 'lq-radar__axis-name', axis.label), html(doc, 'strong', 'lq-radar__axis-value', score ?? '暂无'));
+        item.append(html(doc, 'span', 'lq-radar__axis-name', axis.label), html(doc, 'strong', 'lq-radar__axis-value', score ?? '未评分'));
         const delta = html(doc, 'span', 'lq-radar__delta');
         if (isNum(axis.delta)) {
             delta.dataset.tone = axis.delta >= 5 ? 'success' : (axis.delta <= -5 ? 'warning' : 'neutral');
@@ -112,15 +131,18 @@ function axisList(doc, radar) {
         }
         const bar = html(doc, 'span', 'lq-radar__bar');
         bar.setAttribute('aria-hidden', 'true');
-        const self = html(doc, 'i');
-        self.style.setProperty('--value', `${Number(score) || 0}%`);
-        bar.append(self);
+        if (score !== null) {
+            const self = html(doc, 'i');
+            self.style.setProperty('--value', `${score}%`);
+            bar.append(self);
+        }
         if (show(axis.average) !== null) {
             const peer = html(doc, 'b');
             peer.style.setProperty('--value', `${Number(axis.average) || 0}%`);
             bar.append(peer);
         }
-        item.append(delta, bar);
+        item.append(delta);
+        if (bar.childElementCount) item.append(bar);
         list.append(item);
     }
     return list;

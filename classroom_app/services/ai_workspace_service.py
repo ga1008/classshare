@@ -9,7 +9,8 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 
 from ..database import get_db_connection
-from ..db.connection import execute_insert_returning_id
+from ..db.connection import execute_insert_returning_id, get_configured_db_engine
+from .offering_membership_service import offering_student_where
 from .psych_profile_service import sanitize_hidden_profile_leaks
 
 PROFILE_ROUND_INTERVAL = 4
@@ -20,11 +21,21 @@ def _now():
     return datetime.now().isoformat()
 
 
-def owned_session(conn, session_uuid, user):
-    row = conn.execute('SELECT * FROM ai_workspace_sessions WHERE session_uuid=? AND user_pk=? AND user_role=?',
-                       (session_uuid, user['id'], user['role'])).fetchone()
+def owned_session(conn, session_uuid, user, *, question_offering_id=None):
+    sql = 'SELECT w.* FROM ai_workspace_sessions w WHERE w.session_uuid=? AND w.user_pk=? AND w.user_role=?'
+    params = (session_uuid, user['id'], user['role'])
+    if question_offering_id is not None:
+        # Check active human membership at admission, including linked classes
+        # and legacy AI bindings. Keep this in the session ownership read.
+        sql += f""" AND w.user_role='student' AND EXISTS (
+            SELECT 1 FROM class_offerings o JOIN students s ON {offering_student_where()}
+            WHERE o.id=? AND s.id=w.user_pk AND COALESCE(s.enrollment_status,'active')='active'
+              AND LOWER(COALESCE(s.control_mode,'human'))<>'ai'
+              AND NOT EXISTS (SELECT 1 FROM wanderer_agents a WHERE a.student_id=s.id))"""
+        params += (question_offering_id,)
+    row = conn.execute(sql, params).fetchone()
     if not row:
-        raise HTTPException(403, '会话不存在或无权访问')
+        raise HTTPException(403, '无权将这次提问记入本课' if question_offering_id is not None else '会话不存在或无权访问')
     return dict(row)
 
 
@@ -105,8 +116,33 @@ def load_history(conn, session_uuid, user):
             'pending_request_id': pending, 'pending': bool(pending)}
 
 
-def begin_request(conn, session_uuid, user, request_id, message, attachments, fingerprint_payload, *, image_uploads=None):
-    session = owned_session(conn, session_uuid, user)
+def _save_user_message(conn, session_id, request_id, message, attachments, stamp, fingerprint, student_id, offering_id):
+    # An AI retry starts a new session lease. The authored message keeps its original date.
+    save = """INSERT INTO ai_workspace_messages
+        (session_id,request_id,role,message,attachments_json,created_at,status,request_fingerprint)
+        VALUES(?,?,'user',?,?,?,'running',?) ON CONFLICT(session_id,request_id,role)
+        DO UPDATE SET status='running',attachments_json=excluded.attachments_json"""
+    params = (session_id, request_id, message, json.dumps(attachments, ensure_ascii=False), stamp, fingerprint)
+    if offering_id is None:
+        conn.execute(save, params)
+        return
+    link = "INSERT INTO ai_workspace_course_questions(message_id,class_offering_id,student_id)"
+    on_replay = "ON CONFLICT(message_id) DO NOTHING"
+    if get_configured_db_engine() == 'postgres':
+        conn.execute(f"WITH saved AS ({save} RETURNING id) {link} SELECT id,?,? FROM saved {on_replay}",
+                     (*params, offering_id, student_id))
+    else:
+        saved = conn.execute(save + " RETURNING id", params).fetchone()
+        conn.execute(f"{link} VALUES (?,?,?) {on_replay}", (saved['id'], offering_id, student_id))
+
+
+def begin_request(conn, session_uuid, user, request_id, message, attachments, fingerprint_payload, *,
+                  image_uploads=None, question_offering_id=None):
+    if question_offering_id is not None:
+        if user['role'] != 'student' or fingerprint_payload.get('assessment_scope'):
+            raise HTTPException(403, '只有普通课堂中的学生提问可以关联互动记录')
+        fingerprint_payload = {**fingerprint_payload, 'question_offering_id': question_offering_id}
+    session = owned_session(conn, session_uuid, user, question_offering_id=question_offering_id)
     conn.execute('''INSERT INTO ai_workspace_profile_states(user_pk,user_role) VALUES(?,?)
                     ON CONFLICT(user_role,user_pk) DO NOTHING''', (user['id'], user['role']))
     # A short row lock serializes the account across tabs and application
@@ -154,10 +190,8 @@ def begin_request(conn, session_uuid, user, request_id, message, attachments, fi
     created_images = []
     try:
         attachments, created_images = save_request_images(user, session_uuid, request_id, attachments, image_uploads or [])
-        conn.execute('''INSERT INTO ai_workspace_messages(session_id,request_id,role,message,attachments_json,created_at,status,request_fingerprint)
-            VALUES(?,?,'user',?,?,?,'running',?) ON CONFLICT(session_id,request_id,role)
-            DO UPDATE SET status='running',created_at=excluded.created_at,attachments_json=excluded.attachments_json''',
-            (session['id'], request_id, message, json.dumps(attachments, ensure_ascii=False), stamp, fingerprint))
+        _save_user_message(conn, session['id'], request_id, message, attachments, stamp, fingerprint,
+                           user['id'], question_offering_id)
         conn.execute("UPDATE ai_workspace_sessions SET title=? WHERE id=? AND title='新对话'", (message[:36], session['id']))
         conn.commit()
     except Exception:

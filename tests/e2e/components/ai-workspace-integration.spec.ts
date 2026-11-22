@@ -2,13 +2,32 @@ import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 const widget = execFileSync('python', ['-c', `from jinja2 import Environment, FileSystemLoader
 env=Environment(loader=FileSystemLoader('templates'), autoescape=True)
 print(env.get_template('partials/ai_workspace_widget.html').render(user_info={'role':'teacher','id':21,'name':'Fixture Teacher'},ai_workspace_access={'user_key':'teacher:21','page_path':'/dashboard'}))`], { encoding: 'utf8', env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
 
-async function mount(page: Page, { visual = false, appearance = 'light' } = {}) {
+function studentWidgets(): Record<string, string> {
+  return JSON.parse(execFileSync('python', ['-c', `import json
+from jinja2 import Environment, FileSystemLoader
+template = Environment(loader=FileSystemLoader('templates'), autoescape=True).get_template('partials/ai_workspace_widget.html')
+pages = {'/dashboard': {}, '/classroom/11': {'classroom': {'id': 11}}, '/classroom/12': {'classroom': {'id': 12}},
+         '/assessment/41': {'classroom': {'id': 11}, 'exam_ai_access': {'scope_key': 'exam:41'}}}
+print(json.dumps({path: template.render(user_info={'role':'student','id':21,'name':'合成学生'}, ai_workspace_access={'user_key':'student:21','page_path':path}, **context)
+                  for path, context in pages.items()}))`], { encoding: 'utf8' }));
+}
+
+async function mount(page: Page, { visual = false, appearance = 'light', courseQuestion = false } = {}) {
   const errors: string[] = [], unexpected: string[] = [], sent: string[] = [], apiCalls: string[] = [];
+  const studentPages = courseQuestion ? studentWidgets() : null;
+  const assets = courseQuestion ? JSON.parse(fs.readFileSync('static/assets/manifest.json', 'utf8')) : null;
+  if (assets) {
+    for (const key of ['js/ai_chat_component.js', 'js/ai_workspace_widget.js', 'css/tailwind-app.css']) {
+      expect(assets.sourceHashes[key], key).toBe(createHash('sha256').update(fs.readFileSync('static/' + key)).digest('hex'));
+    }
+  }
+  const asset = (source: string) => '/static/' + (assets ? assets.entries[source] : source);
   page.on('pageerror', error => errors.push(error.message));
   const messages: Array<{ role: string; message: string; request_id?: string }> = [{ role: 'assistant', message: '这是服务器保存的历史回复。' }];
   let session = 'fixture-session-21';
@@ -60,9 +79,9 @@ async function mount(page: Page, { visual = false, appearance = 'light' } = {}) 
     const photo = '/static/img/life_tips/biye-sunny-meadow-kite06-80413526.webp';
     const visualCSS = visual ? `body{background: url('${photo}') center/cover fixed!important;min-height:100vh}#outside-action{position:fixed;left:12px;top:12px;z-index:2;padding:10px 16px;border-radius:999px;background:#fff;color:#172033}.fixture-text{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:24px;padding:82px 24px 24px;font:700 44px/1.5 system-ui;color:${appearance === 'dark' ? '#ffffff' : '#172033'};text-shadow:0 1px 4px ${appearance === 'dark' ? '#172033' : '#fff'};overflow:hidden;max-height:100vh}.fixture-text p{margin:0;opacity:.8}` : '';
     const content = visual ? `<button id="outside-action" onclick="window.outsideClicks=(window.outsideClicks||0)+1">页面操作</button><main class="fixture-text">${Array.from({ length: 24 }, () => '<p>课堂内容<br>PAGE TEXT<br>课程与作业</p>').join('')}</main>` : '<main><h1>合成课堂工作台</h1><p>页面的正文仍可选中。</p></main>';
-    return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html data-appearance="${appearance}" data-lq-glass="tinted" data-lq-tier="A"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fixture dashboard</title><link rel="stylesheet" href="/static/css/ui-system.src.css"><link rel="stylesheet" href="/static/css/ai_workspace.css"><style>${visualCSS}</style></head><body class="ls-page">${content}${widget}<script src="/static/js/ai_chat_component.js"></script><script type="module" src="/static/js/ai_workspace_widget.js"></script></body></html>` });
+    return route.fulfill({ contentType: 'text/html', body: `<!doctype html><html data-appearance="${appearance}" data-lq-glass="tinted" data-lq-tier="A"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fixture dashboard</title><link rel="stylesheet" href="${asset(courseQuestion ? 'css/tailwind-app.css' : 'css/ui-system.src.css')}"><link rel="stylesheet" href="${asset('css/ai_workspace.css')}"><style>${visualCSS}</style></head><body class="ls-page">${content}${studentPages ? studentPages[url.pathname] : widget}<script src="${asset('js/ai_chat_component.js')}"></script><script type="module" src="${asset('js/ai_workspace_widget.js')}"></script></body></html>` });
   });
-  await page.goto('https://assistant.test/dashboard');
+  await page.goto('https://assistant.test' + (courseQuestion ? '/classroom/11' : '/dashboard'));
   await page.waitForFunction(() => Boolean((window as any).aiChat?.windowManager));
   return { errors, unexpected, sent, apiCalls, messages };
 }
@@ -71,6 +90,86 @@ async function open(page: Page) {
   await page.locator('#ai-chat-fab').click();
   await expect(page.locator('#ai-chat-messages-box')).toContainText('这是服务器保存的历史回复。');
 }
+
+test('course question opt-in retains a rejected draft and scopes only the accepted question', async ({ page }) => {
+  const fixture = await mount(page, { courseQuestion: true });
+  const attempts: string[] = [];
+  await page.route('https://assistant.test/api/ai/workspace-chat', async route => {
+    attempts.push(route.request().postDataBuffer()!.toString('utf8'));
+    if (attempts.length === 1) return route.fulfill({ status: 413, json: { detail: '请调整本次提问后重试' } });
+    return route.fallback();
+  });
+  await open(page);
+  const optIn = page.getByRole('checkbox', { name: '将这次提问记入本课互动' });
+  const text = page.locator('#ai-chat-textarea'), submit = page.locator('#ai-chat-btn-send');
+  await expect(optIn).not.toBeChecked();
+  await optIn.check();
+  await text.fill('路由表中的下一跳怎样选？');
+  await submit.click();
+  await expect(submit).toBeEnabled();
+  await expect(text).toHaveValue('路由表中的下一跳怎样选？');
+  await expect(optIn).toBeChecked();
+  await page.reload();
+  await expect(text).toHaveValue('路由表中的下一跳怎样选？');
+  await expect(optIn).toBeChecked();
+  await submit.click();
+  await expect(text).toHaveValue('');
+  await expect(optIn).not.toBeChecked();
+  const ids = attempts.map(body => body.match(/name="request_id"\r\n\r\n([^\r]+)/)?.[1]);
+  expect(ids).toHaveLength(2);
+  expect(ids[0]).toMatch(/^[a-f0-9-]{36}$/);
+  expect(ids[0]).toBe(ids[1]);
+  for (const body of attempts) expect(body).toContain('name="question_offering_id"\r\n\r\n11\r\n');
+  await text.fill('这一次保持私人对话');
+  await submit.click();
+  await expect(text).toHaveValue('');
+  expect(attempts).toHaveLength(3);
+  expect(attempts[2]).not.toContain('name="question_offering_id"');
+  expect(fixture.errors).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
+
+test('course question opt-in clears after server history confirms an interrupted submission', async ({ page }) => {
+  const fixture = await mount(page, { courseQuestion: true });
+  let attempt = '';
+  await page.route('https://assistant.test/api/ai/workspace-chat', async route => {
+    attempt = route.request().postDataBuffer()!.toString('utf8');
+    fixture.messages.push({ role: 'user', message: '这是已保存的问题', request_id: attempt.match(/name="request_id"\r\n\r\n([^\r]+)/)?.[1] });
+    return route.abort('connectionreset');
+  });
+  await open(page);
+  const optIn = page.getByRole('checkbox', { name: '将这次提问记入本课互动' });
+  await optIn.check();
+  await page.locator('#ai-chat-textarea').fill('这是已保存的问题');
+  await page.locator('#ai-chat-btn-send').click();
+  await expect(page.locator('#ai-chat-textarea')).toHaveValue('');
+  await expect(optIn).not.toBeChecked();
+  expect(attempt).toContain('name="question_offering_id"\r\n\r\n11\r\n');
+  expect(fixture.errors).toEqual([]);
+});
+
+test('course question opt-in is scoped to the current classroom and absent on exam and ordinary pages', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  await mount(page, { courseQuestion: true });
+  await open(page);
+  const optIn = page.getByRole('checkbox', { name: '将这次提问记入本课互动' });
+  const labelInViewport = await optIn.evaluate(el => {
+    const bounds = el.closest('label')!.getBoundingClientRect();
+    return bounds.left >= 0 && bounds.right <= window.innerWidth;
+  });
+  expect(labelInViewport).toBeTruthy();
+  await optIn.check();
+  await page.locator('#ai-chat-textarea').fill('当前课堂的草稿');
+  await page.goto('https://assistant.test/classroom/12');
+  await expect(optIn).toHaveValue('12');
+  await expect(optIn).not.toBeChecked();
+  await expect(page.locator('#ai-chat-textarea')).toHaveValue('当前课堂的草稿');
+  for (const path of ['/assessment/41', '/dashboard']) {
+    await page.goto('https://assistant.test' + path);
+    await expect(page.locator('#ai-course-question')).toHaveCount(0);
+    await expect(page.locator('#ai-chat-fab')).toHaveCount(1);
+  }
+});
 
 test('real template/widget/core inserts capture as an unsent draft and restores it across navigation', async ({ page }, info) => {
   const fixture = await mount(page); await open(page);

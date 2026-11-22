@@ -84,7 +84,10 @@ function setMode(next, { persist = true } = {}) {
 
 function persistDraft() {
     if (!draftsReady) return;
-    workspaceState.patch({ draft: $('#ai-chat-textarea')?.value || '', deepThinking: Boolean(chatComponent?.isDeepThinking) });
+    const draft = $('#ai-chat-textarea')?.value || '';
+    const hasContent = draft.trim() || chatComponent?.pendingFiles.length;
+    workspaceState.patch({ draft, deepThinking: Boolean(chatComponent?.isDeepThinking),
+        questionOffering: hasContent ? chatComponent?.courseQuestionOffering() || null : null });
     void workspaceState.saveFiles(chatComponent?.pendingFiles || []);
 }
 
@@ -135,6 +138,8 @@ async function initWindow() {
     const container = $('.ai-chat-container', modal);
     const textarea = $('#ai-chat-textarea');
     textarea.value = workspaceState.value.draft || '';
+    const questionToggle = $('#ai-course-question');
+    if (questionToggle) questionToggle.checked = workspaceState.value.questionOffering === questionToggle.value;
     if (chatComponent) {
         chatComponent.pendingFiles = await workspaceState.loadFiles();
         chatComponent.isDeepThinking = Boolean(workspaceState.value.deepThinking);
@@ -163,6 +168,7 @@ async function initWindow() {
     conversationHistory = createConversationHistory(container, chatComponent, notify);
     $('#ai-chat-history-toggle')?.addEventListener('click', () => { void conversationHistory?.toggle(); });
     textarea.addEventListener('input', persistDraft);
+    questionToggle?.addEventListener('change', persistDraft);
     $('#ai-deep-think-btn')?.addEventListener('click', persistDraft);
     window.addEventListener('pagehide', persistDraft);
     bindChatCapture(textarea);

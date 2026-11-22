@@ -38,7 +38,7 @@ class AbilityRadarTests(unittest.TestCase):
             (2, 6, 50, _metrics(0.4)),
         ])
         classes = {1: [10], 2: [10, 20]}
-        patcher = patch.object(radar, "offering_class_ids", lambda conn, offering_id: classes.get(int(offering_id), []))
+        patcher = patch.object(radar, "offering_class_ids", lambda conn, offering_id, **kwargs: classes.get(int(offering_id), []))
         patcher.start()
         self.addCleanup(patcher.stop)
         # Offering 2 really only has students 1, 5, 6 with snapshots; 2-4 have none there.
@@ -83,9 +83,13 @@ class AbilityRadarTests(unittest.TestCase):
         result = radar.build_ability_radar(self.conn, student_id=1, offering_ids=[1])
         quality = self._axis(result, "quality")
         self.assertIsNone(quality["average"])
-        # The peer outline borrows the student's own value on that axis instead of collapsing to 0.
-        peer_points = result["average_points"].split()
-        self.assertNotEqual(f"{radar.CENTER:.1f},{radar.CENTER:.1f}", peer_points[2])
+        self.assertEqual("", result["average_points"])
+        self.assertTrue(result["average_segments"])
+        self.assertNotIn(f"{radar.CENTER:.1f},{radar.CENTER:.1f}", " ".join(result["average_segments"]))
+        expression = self._axis(result, "interaction")
+        self.assertIsNone(expression["score"])
+        self.assertIsNone(expression["vertex_x"])
+        self.assertNotIn("interaction_detail", result)
 
     def test_strength_and_focus_use_peer_gaps(self):
         result = radar.build_ability_radar(self.conn, student_id=1, offering_ids=[1])

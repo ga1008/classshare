@@ -9,7 +9,7 @@ import tempfile
 import os
 import mimetypes
 from pathlib import Path
-from typing import AsyncIterator, List, Literal, Dict, Any, Optional
+from typing import Annotated, AsyncIterator, List, Literal, Dict, Any, Optional
 from enum import Enum
 from datetime import datetime
 
@@ -2608,6 +2608,7 @@ async def handle_ai_workspace_chat(
         request_id: str = Form(""),
         page_path: str = Form(""),
         page_text: str = Form(""),
+        question_offering_id: Annotated[Optional[int], Form(gt=0)] = None,
 ):
     """
     Account-owned assistant with history independent of the current classroom.
@@ -2641,7 +2642,7 @@ async def handle_ai_workspace_chat(
                                        "web_search_enabled": bool(web_search_enabled),
                                        "file_texts": uploads["file_texts"], "images": uploads["base64_urls"],
                                        **({'assessment_scope': current_access['scope_key']} if current_access else {})},
-                image_uploads=uploads["private_images"])
+                image_uploads=uploads["private_images"], question_offering_id=question_offering_id)
             result['_assessment_access'] = current_access
             return result
 

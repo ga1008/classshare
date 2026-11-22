@@ -587,13 +587,13 @@
 **Ability radar 六边形能力雷达** · 层：component · CSS：`static/css/lq/components/ability-radar.css`
 
 - **设计摘要**：六轴能力雷达（ability_radar_service.build_ability_radar 载荷，几何由服务端算好）。服务端页用 templates/partials/ability_radar.html；异步浮层用 static/js/ability_radar.js renderAbilityRadar(payload, {selfLabel})，两者输出同一 DOM/类名（lq-radar__*）。2026-10-27 起个人信息面板（social/user_card.js）消费 JS 版。 2026-10-28私聊侧栏也消费JS版，在领域内容槽保留图与图例、去除重复明细，并限定图尺寸；不创建第二套几何或评分。
-- **规则**：改雷达 DOM 时 Jinja 宏与 JS 渲染器同步修改；JS 版只用 textContent/setAttribute，不拼 HTML；颜色只在 ability-radar.css。
+- **规则**：Jinja 与 JS 共用服务端几何，缺测轴显示未评分，分段轮廓不连到零点。本人和所授学生的课堂互动证据由授权页面单独传入。社交卡与私聊仅渲染公开数值。JS 版使用 textContent/setAttribute，颜色在 ability-radar.css。
 - **根类**：`lq-radar`
 - **消费者**：3 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
-- `templates/partials/ability_radar.html` ×27
+- `templates/partials/ability_radar.html` ×30
 - `static/js/ability_radar.js` ×26
 - `static/js/social/chat_sidebar.js` ×1
 
@@ -1385,7 +1385,7 @@
 - **设计摘要**：`lq-field`（label / control / help / error / count）包裹原生 input / textarea / select / checkbox / radio / switch / range / file；`enhanceForms` 提供清空、计数、自动增高、首错聚焦，不接管值与校验。
 - **参数 / 变体**：`id, name, label, type, value, placeholder, required, readonly, min/max/step, autocomplete, help, error, clearable, count, autoGrow, attrs`。
 - **状态**：focus-visible 环 / aria-invalid 错误 / disabled 虚线 / readonly；IME composition 期间不触发派生逻辑。
-- **规则**：搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。
+- **规则**：搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。课堂 AI 使用原生复选框，由学生为本次提问明确选择课堂归属。
 - **根类**：`lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions`, `lq-form-section`, `lq-input`, `lq-native-color`, `lq-native-file`, `lq-radio`, `lq-range`, `lq-select`, `lq-switch`, `lq-textarea`
 - **Jinja 宏** `templates/macros/lq/forms.html`：`lq_input`, `lq_textarea`, `lq_select`, `lq_checkbox`, `lq_radio`, `lq_range`, `lq_switch`, `lq_field`, `lq_form_section`, `lq_form_actions`, `lq_error_summary`
 - **JS 入口** `static/js/lq/forms.js`：`checkbox`, `createForm`, `enhanceForms`, `errorSummary`, `field`, `focusFirstError`, `formActions`, `formKinds`, `formMarkup`, `formProps`, `formSection`, `html`, `input`, `nativeSelect` …
@@ -1486,6 +1486,7 @@
 - `templates/manage/ai.html` ×8
 - `templates/manage/materials.html` ×8
 - `templates/manage/offering_hub.html` ×8
+- `templates/partials/ai_workspace_widget.html` ×8
 - `templates/partials/classroom_members/exams.html` ×8
 - `templates/partials/feedback_modal.html` ×8
 - `templates/partials/student_dashboard_schedule.html` ×8
@@ -1526,7 +1527,6 @@
 - `static/js/ui_color_picker.js` ×4
 - `static/js/wanderer_workspace.js` ×4
 - `templates/career_path.html` ×4
-- `templates/partials/ai_workspace_widget.html` ×4
 - `templates/partials/classroom_group_qr.html` ×4
 - `templates/partials/classroom_material_library.html` ×4
 - `templates/partials/classroom_members/settings.html` ×4

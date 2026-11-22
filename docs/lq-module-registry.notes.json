@@ -61,7 +61,7 @@
     "title": "Ability radar 六边形能力雷达",
     "layer": "component",
     "summary": "六轴能力雷达（ability_radar_service.build_ability_radar 载荷，几何由服务端算好）。服务端页用 templates/partials/ability_radar.html；异步浮层用 static/js/ability_radar.js renderAbilityRadar(payload, {selfLabel})，两者输出同一 DOM/类名（lq-radar__*）。2026-10-27 起个人信息面板（social/user_card.js）消费 JS 版。 2026-10-28私聊侧栏也消费JS版，在领域内容槽保留图与图例、去除重复明细，并限定图尺寸；不创建第二套几何或评分。",
-    "rules": "改雷达 DOM 时 Jinja 宏与 JS 渲染器同步修改；JS 版只用 textContent/setAttribute，不拼 HTML；颜色只在 ability-radar.css。"
+    "rules": "Jinja 与 JS 共用服务端几何，缺测轴显示未评分，分段轮廓不连到零点。本人和所授学生的课堂互动证据由授权页面单独传入。社交卡与私聊仅渲染公开数值。JS 版使用 textContent/setAttribute，颜色在 ability-radar.css。"
   },
   "react-bridges": {
     "title": "React bridges",
@@ -124,7 +124,7 @@
     "summary": "`lq-field`（label / control / help / error / count）包裹原生 input / textarea / select / checkbox / radio / switch / range / file；`enhanceForms` 提供清空、计数、自动增高、首错聚焦，不接管值与校验。",
     "params": "`id, name, label, type, value, placeholder, required, readonly, min/max/step, autocomplete, help, error, clearable, count, autoGrow, attrs`。",
     "states": "focus-visible 环 / aria-invalid 错误 / disabled 虚线 / readonly；IME composition 期间不触发派生逻辑。",
-    "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。",
+    "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。课堂 AI 使用原生复选框，由学生为本次提问明确选择课堂归属。",
     "forceRoots": [
       "lq-input",
       "lq-textarea",

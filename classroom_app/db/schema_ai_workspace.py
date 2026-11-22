@@ -1,5 +1,13 @@
-"""Account-owned assistant storage, independent of classroom foreign keys."""
+"""Account-owned assistant storage and optional per-question course attribution."""
 from .connection import get_configured_db_engine
+
+
+COURSE_QUESTION_TABLE = """CREATE TABLE IF NOT EXISTS ai_workspace_course_questions (
+            message_id BIGINT PRIMARY KEY REFERENCES ai_workspace_messages(id) ON DELETE CASCADE,
+            class_offering_id BIGINT NOT NULL REFERENCES class_offerings(id) ON DELETE CASCADE,
+            student_id BIGINT NOT NULL REFERENCES students(id) ON DELETE CASCADE
+        )"""
+COURSE_QUESTION_INDEX = "CREATE INDEX IF NOT EXISTS idx_ai_workspace_course_question_owner ON ai_workspace_course_questions(class_offering_id,student_id,message_id)"
 
 
 def ai_workspace_schema_statements(engine):
@@ -27,6 +35,8 @@ def ai_workspace_schema_statements(engine):
             profile_json TEXT NOT NULL DEFAULT '{}', profile_updated_at TEXT,
             PRIMARY KEY(user_role,user_pk)
         )""",
+        COURSE_QUESTION_TABLE,
+        COURSE_QUESTION_INDEX,
         "CREATE INDEX IF NOT EXISTS idx_ai_workspace_owner ON ai_workspace_sessions(user_role,user_pk,updated_at DESC,id DESC)",
         "CREATE INDEX IF NOT EXISTS idx_ai_workspace_history ON ai_workspace_messages(session_id,id)",
         "CREATE INDEX IF NOT EXISTS idx_ai_workspace_profile_due ON ai_workspace_profile_states(next_due_at,lease_until)",
@@ -41,10 +51,11 @@ def ensure_ai_workspace_schema(conn, *, engine=None):
 
 
 AI_WORKSPACE_POSTGRES_TABLES = dict(zip(
-    ('ai_workspace_sessions', 'ai_workspace_messages', 'ai_workspace_profile_states'),
-    ai_workspace_schema_statements('postgres')[:3],
+    ('ai_workspace_sessions', 'ai_workspace_messages', 'ai_workspace_profile_states', 'ai_workspace_course_questions'),
+    ai_workspace_schema_statements('postgres')[:4],
 ))
 AI_WORKSPACE_REQUIRED_COLUMNS = {
+    'ai_workspace_course_questions': ('message_id', 'class_offering_id', 'student_id'),
     'ai_workspace_sessions': ('id', 'session_uuid', 'user_pk', 'user_role', 'title', 'created_at', 'updated_at', 'active_request_id', 'request_started_at'),
     'ai_workspace_messages': ('id', 'session_id', 'request_id', 'role', 'message', 'attachments_json', 'thinking_content', 'final_answer', 'created_at', 'status', 'request_fingerprint'),
     'ai_workspace_profile_states': ('user_pk', 'user_role', 'completed_rounds', 'profiled_rounds', 'claimed_rounds', 'claim_token', 'lease_until', 'next_due_at', 'profile_json', 'profile_updated_at'),

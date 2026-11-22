@@ -29,7 +29,7 @@ RADAR_CACHE_MAX = 2000
 RECENT_LIMIT = 8
 CREATION_LIMIT = 10
 
-_RADAR_CACHE: dict[int, tuple[float, Optional[dict[str, Any]]]] = {}
+_RADAR_CACHE: dict[int, tuple[float, tuple[Optional[dict[str, Any]], Optional[int]]]] = {}
 _RADAR_LOCK = threading.Lock()
 
 STUDENT_ORG_SQL = (
@@ -100,25 +100,25 @@ def _courses(conn: Any, student_id: int, *, hidden: bool) -> tuple[list[dict[str
     return courses, [item["offering_id"] for item in offerings]
 
 
-def _radar(conn: Any, student_id: int, offering_ids: list[int]) -> Optional[dict[str, Any]]:
+def _radar_and_cultivation(conn: Any, student_id: int, offering_ids: list[int]) -> tuple[Optional[dict[str, Any]], Optional[int]]:
     from ..db.savepoint import best_effort
-    from .ability_radar_service import build_ability_radar
+    from .ability_radar_service import social_radar_and_cultivation
 
     if not offering_ids:
-        return None
+        return None, None
     now = time.monotonic()
     with _RADAR_LOCK:
         cached = _RADAR_CACHE.get(int(student_id))
         if cached and cached[0] > now:
             return cached[1]
-    radar: Optional[dict[str, Any]] = None
+    summary = (None, None)
     with best_effort(conn, "social_card_radar", log_prefix="[SOCIAL]"):
-        radar = build_ability_radar(conn, student_id=int(student_id), offering_ids=offering_ids)
+        summary = social_radar_and_cultivation(conn, int(student_id), offering_ids)
     with _RADAR_LOCK:
         if len(_RADAR_CACHE) >= RADAR_CACHE_MAX:
             _RADAR_CACHE.clear()
-        _RADAR_CACHE[int(student_id)] = (now + RADAR_CACHE_SECONDS, radar)
-    return radar
+        _RADAR_CACHE[int(student_id)] = (now + RADAR_CACHE_SECONDS, summary)
+    return summary
 
 
 def _teacher_courses(conn: Any, teacher_id: int) -> list[dict[str, Any]]:
@@ -212,6 +212,12 @@ def _empty_card(person: dict[str, Any], relation: str) -> dict[str, Any]:
 
 def user_card(conn: Any, user: dict, identity: Any) -> dict[str, Any]:
     """``GET /api/social/users/{identity}/card`` -> InfoCard."""
+    card, _ = user_card_and_cultivation(conn, user, identity)
+    return card
+
+
+def user_card_and_cultivation(conn: Any, user: dict, identity: Any) -> tuple[dict[str, Any], int | None]:
+    """Return the authorized card and the historical score used by real-user discovery."""
     from .cultivation_display_service import is_cultivation_hidden
     from .presence_service import presence_map
     from .social_identity_service import add_capability, homepage_url, require_person
@@ -222,8 +228,9 @@ def user_card(conn: Any, user: dict, identity: Any) -> dict[str, Any]:
     target = person["identity"]
     relation = "self" if target == me else relations_for(conn, me, [target]).get(target, "none")
     card = _empty_card(person, relation)
+    cultivation = None
     if relation == "blocked":
-        return card
+        return card, cultivation
     role, pk = split_identity(target)
     if relation != "self":
         probe = add_capability(conn, me, [{"identity": target, "relation": relation}])[0]
@@ -251,8 +258,9 @@ def user_card(conn: Any, user: dict, identity: Any) -> dict[str, Any]:
         number = "".join(ch for ch in str(org.get("student_id_number") or "") if ch.isalnum())
         card["student_no_tail"] = number[-4:] if len(number) >= 4 else None
         card["courses"], offering_ids = _courses(conn, pk, hidden=hidden)
-        card["radar"] = None if hidden else _radar(conn, pk, offering_ids)
+        if not hidden:
+            card["radar"], cultivation = _radar_and_cultivation(conn, pk, offering_ids)
     if relation == "friend":
         is_student = role == "student" and not person["is_wanderer"]
         card["friend_extras"] = _friend_extras(conn, target, is_student=is_student, hidden=hidden)
-    return card
+    return card, cultivation

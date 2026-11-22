@@ -69,11 +69,12 @@
                 <div class="profile-band__head">
                     <div>
                         <h3 id="profile-radar-title">能力雷达</h3>
-                        <p>综合你所有课堂的学习表现；每门课先与本课同门比较，再取各课平均。虚线为同门均值，数值后为“本人 / 均值”。</p>
+                        <p>各项取有评分课堂的平均值。实线为本人，虚线为同课堂同学的参考值。</p>
                     </div>
                 </div>
                 {% set ability_radar = overview.ability_radar %}
                 {% set radar_self_label = '本人' %}
+                {% set radar_show_evidence = true %}
                 {% include 'partials/ability_radar.html' %}
             </section>
             {% endif %}

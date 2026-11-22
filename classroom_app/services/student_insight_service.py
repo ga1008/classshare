@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .ability_radar_service import build_ability_radar
+from .offering_membership_service import student_offering_where
 from .learning_progress_service import (
     build_student_public_cultivation_badge,
     clamp,
@@ -143,7 +144,7 @@ def _load_teacher_student_row(conn, *, teacher_id: int, student_id: int) -> dict
 
 def _load_teacher_student_offerings(conn, *, teacher_id: int, class_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
-        """
+        f"""
         SELECT o.id AS class_offering_id,
                o.class_id,
                o.course_id,
@@ -158,11 +159,11 @@ def _load_teacher_student_offerings(conn, *, teacher_id: int, class_id: int) -> 
         JOIN classes cl ON cl.id = o.class_id
         JOIN teachers t ON t.id = o.teacher_id
         LEFT JOIN academic_semesters s ON s.id = o.semester_id
-        WHERE o.class_id = ?
+        WHERE {student_offering_where()}
           AND o.teacher_id = ?
         ORDER BY COALESCE(s.start_date, o.first_class_date, o.created_at) DESC, c.name
         """,
-        (int(class_id), int(teacher_id)),
+        (int(class_id), int(class_id), int(teacher_id)),
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -236,7 +237,6 @@ def _load_activity_summary(
             "event_count": 0,
             "active_days": 0,
             "chat_message_count": 0,
-            "ai_question_count": 0,
             "online_minutes": 0,
             "focus_minutes": 0,
         }
@@ -258,8 +258,7 @@ def _load_activity_summary(
     event_row = conn.execute(
         f"""
         SELECT COUNT(*) AS event_count,
-               COUNT(DISTINCT substr(created_at, 1, 10)) AS active_days,
-               SUM(CASE WHEN action_type = 'ai_question' THEN 1 ELSE 0 END) AS ai_question_count
+               COUNT(DISTINCT substr(created_at, 1, 10)) AS active_days
         FROM classroom_behavior_events
         WHERE class_offering_id IN ({placeholders})
           AND user_pk = ?
@@ -282,7 +281,6 @@ def _load_activity_summary(
         "event_count": safe_int(event_row["event_count"] if event_row else 0),
         "active_days": safe_int(event_row["active_days"] if event_row else 0),
         "chat_message_count": safe_int(chat_row["chat_message_count"] if chat_row else 0),
-        "ai_question_count": safe_int(event_row["ai_question_count"] if event_row else 0),
         "online_minutes": round(safe_int(state_row["online_seconds"] if state_row else 0) / 60),
         "focus_minutes": round(safe_int(state_row["focus_seconds"] if state_row else 0) / 60),
     }
@@ -698,7 +696,10 @@ def build_teacher_student_insight(conn, teacher_id: int, student_id: int) -> dic
             for course in courses
         },
         peer_label="班级均值",
+        evidence_audience="teacher",
     )
+    detail = radar.get("interaction_detail") or {}
+    activity_summary["ai_question_count"] = detail.get("ai_message_count") if offering_ids else 0
     public_badge = build_student_public_cultivation_badge(conn, int(student_id))
     raw_support_profile = _load_latest_student_support_profile(
         conn,

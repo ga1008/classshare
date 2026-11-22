@@ -207,6 +207,16 @@ def _runtime_schema_adapter(conn):
         conn.row_factory = original
 
 
+def apply_interaction_expression_migrations(conn) -> None:
+    from classroom_app.db.schema_ai_workspace import AI_WORKSPACE_POSTGRES_TABLES, COURSE_QUESTION_INDEX
+    from classroom_app.db.schema_interaction_expression import ensure_interaction_expression_schema
+
+    for table in ("ai_workspace_sessions", "ai_workspace_messages", "ai_workspace_course_questions"):
+        conn.execute(AI_WORKSPACE_POSTGRES_TABLES[table])
+    conn.execute(COURSE_QUESTION_INDEX)
+    ensure_interaction_expression_schema(conn)
+
+
 def apply_assessment_migrations(conn) -> None:
     """Use this release's actual PG DDL, excluding unrelated old startup repairs."""
     from classroom_app.db.postgres_schema import POSTGRES_RUNTIME_COLUMN_DEFINITIONS, POSTGRES_RUNTIME_TABLE_DEFINITIONS
@@ -228,6 +238,7 @@ def apply_assessment_migrations(conn) -> None:
         ensure_smart_classroom_write_schema(adapter, engine="postgres")
         ensure_smart_classroom_sessions_schema(adapter, engine="postgres")
         ensure_smart_classroom_auto_sync_schema(adapter, engine="postgres")
+        apply_interaction_expression_migrations(adapter)
     ensure_behavior_collection_health_schema(LanSharePostgresConnection(conn), engine="postgres")
     ensure_retake_schema(LanSharePostgresConnection(conn), engine="postgres", force=True)
     for column, definition in POSTGRES_RUNTIME_COLUMN_DEFINITIONS["assignments"].items():

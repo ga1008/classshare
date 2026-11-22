@@ -6,7 +6,7 @@ student outline and the peer outline are measured the same way:
 * 材料吸收  material.ratio
 * 任务执行  assignments.completion_ratio
 * 成绩质量  assignments.score_ratio (only once something is graded)
-* 互动表达  interactions.interaction_ratio
+* 互动表达  descriptive course evidence (no calibrated ability score yet)
 * 学习稳定  interactions.consistency_ratio
 * 修为推进  score / 100
 
@@ -35,6 +35,7 @@ import threading
 import time
 from typing import Any, Iterable
 
+from .interaction_expression_detail import build_interaction_detail, load_private_radar_rows
 from .offering_membership_service import offering_class_ids
 
 AXES: tuple[tuple[str, str, str], ...] = (
@@ -58,6 +59,7 @@ RING_RATIOS = (0.25, 0.5, 0.75, 1.0)
 
 _PEER_CACHE: dict[int, tuple[float, dict[str, Any]]] = {}
 _PEER_LOCK = threading.Lock()
+_PEER_LOAD_LOCKS = tuple(threading.Lock() for _ in range(32))
 
 
 def _num(value: Any, default: float = 0.0) -> float:
@@ -85,8 +87,8 @@ def axis_values(metrics: dict[str, Any] | None, score: Any) -> dict[str, float |
         values["task"] = _ratio(assignments.get("completion_ratio")) * 100
         if int(_num(assignments.get("graded_count"))) > 0:
             values["quality"] = _ratio(assignments.get("score_ratio")) * 100
-    if "interaction_ratio" in interactions:
-        values["interaction"] = _ratio(interactions.get("interaction_ratio")) * 100
+    # The cultivation reward ratio cannot measure expression ability. Its
+    # published value remains in the original snapshot and scoring service.
     if "consistency_ratio" in interactions:
         values["consistency"] = _ratio(interactions.get("consistency_ratio")) * 100
     values["cultivation"] = max(0.0, min(100.0, _num(score)))
@@ -123,7 +125,7 @@ def _parse_metrics(raw: Any) -> dict[str, Any]:
 
 
 def _active_student_ids(conn: Any, offering_id: int) -> list[int]:
-    class_ids = offering_class_ids(conn, int(offering_id))
+    class_ids = offering_class_ids(conn, int(offering_id), ensure_schema=False)
     if not class_ids:
         return []
     rows = conn.execute(
@@ -139,36 +141,47 @@ def _active_student_ids(conn: Any, offering_id: int) -> list[int]:
 
 def _classroom_values(conn: Any, offering_id: int) -> dict[str, Any]:
     """Per-student axis values of one classroom's active students (cached)."""
-    now = time.monotonic()
     with _PEER_LOCK:
         cached = _PEER_CACHE.get(int(offering_id))
-        if cached and cached[0] > now:
+        if cached and cached[0] > time.monotonic():
             return cached[1]
-    student_ids = _active_student_ids(conn, int(offering_id))
-    rows = _load_snapshots(conn, int(offering_id), student_ids)
-    result = {
-        "student_count": len(student_ids),
-        "values": {
-            int(row["student_id"]): axis_values(_parse_metrics(row.get("metrics_json")), row.get("score")) for row in rows
-        },
-    }
-    with _PEER_LOCK:
-        _PEER_CACHE[int(offering_id)] = (now + PEER_CACHE_TTL_SECONDS, result)
-    return result
+    # Several students can open the same radar together after a lesson. Load
+    # their shared reference distribution once, then exclude each viewer in O(axes).
+    with _PEER_LOAD_LOCKS[offering_id % len(_PEER_LOAD_LOCKS)]:
+        with _PEER_LOCK:
+            cached = _PEER_CACHE.get(offering_id)
+            if cached and cached[0] > time.monotonic():
+                return cached[1]
+        student_ids = _active_student_ids(conn, offering_id)
+        values = {}
+        sums = dict.fromkeys(AXIS_KEYS, 0.0)
+        counts = dict.fromkeys(AXIS_KEYS, 0)
+        for row in _load_snapshots(conn, offering_id, student_ids):
+            axes = axis_values(_parse_metrics(row.get("metrics_json")), row.get("score"))
+            values[int(row["student_id"])] = axes
+            for key, value in axes.items():
+                if value is not None:
+                    sums[key] += value
+                    counts[key] += 1
+        result = {"student_count": len(student_ids), "values": values, "sums": sums, "counts": counts}
+        with _PEER_LOCK:
+            _PEER_CACHE[offering_id] = (time.monotonic() + PEER_CACHE_TTL_SECONDS, result)
+        return result
 
 
 def peer_average(conn: Any, offering_id: int, *, exclude_student_id: int | None = None) -> dict[str, Any]:
     """Mean of the other students per axis; None where fewer than MIN_PEERS_FOR_AVERAGE have it."""
     classroom = _classroom_values(conn, int(offering_id))
-    others = [values for student_id, values in classroom["values"].items() if student_id != exclude_student_id]
+    excluded = classroom["values"].get(exclude_student_id, {})
     axes: dict[str, float | None] = {}
     for key in AXIS_KEYS:
-        samples = [values[key] for values in others if values.get(key) is not None]
-        axes[key] = (sum(samples) / len(samples)) if len(samples) >= MIN_PEERS_FOR_AVERAGE else None
+        own = excluded.get(key)
+        count = classroom["counts"][key] - int(own is not None)
+        axes[key] = (classroom["sums"][key] - (own or 0.0)) / count if count >= MIN_PEERS_FOR_AVERAGE else None
     return {
         "available": any(value is not None for value in axes.values()),
         "student_count": classroom["student_count"],
-        "sample_count": len(others),
+        "sample_count": len(classroom["values"]) - int(exclude_student_id in classroom["values"]),
         "axes": axes,
     }
 
@@ -204,6 +217,25 @@ def _label_geometry(index: int) -> dict[str, Any]:
     return {"label_x": round(x, 1), "label_y": round(y, 1), "anchor": anchor}
 
 
+def _outline_segments(axes: list[dict[str, Any]], field: str) -> list[str] | None:
+    """Split a circular outline at unmeasured axes, keeping 0 as a measured value."""
+    missing = next((i for i, axis in enumerate(axes) if axis[field] is None), None)
+    if missing is None:
+        return None
+    segments: list[str] = []
+    points: list[str] = []
+    for step in range(1, len(axes) + 1):
+        index = (missing + step) % len(axes)
+        value = axes[index][field]
+        if value is not None:
+            x, y = _point(index, value / 100)
+            points.append(f"{x:.1f},{y:.1f}")
+        elif points:
+            segments.append(" ".join(points))
+            points = []
+    return segments
+
+
 def build_ability_radar(
     conn: Any,
     *,
@@ -211,6 +243,7 @@ def build_ability_radar(
     offering_ids: Iterable[int],
     self_states: dict[int, dict[str, Any]] | None = None,
     peer_label: str = "同门均值",
+    evidence_audience: str | None = None,
 ) -> dict[str, Any]:
     """Cross-classroom radar for one student.
 
@@ -220,10 +253,17 @@ def build_ability_radar(
     ids = sorted({int(item) for item in offering_ids})
     self_states = self_states or {}
     own_rows: dict[int, dict[str, Any]] = {}
+    private_view = evidence_audience in ("self", "teacher")
+    private_rows = load_private_radar_rows(conn, ids, int(student_id), audience=evidence_audience) if private_view else []
+    for row in private_rows:
+        if row["scored_student"] is not None:
+            own_rows[int(row["offering"])] = {"metrics": _parse_metrics(row["metrics_json"]), "score": row["score"]}
     for offering_id in ids:
         if offering_id in self_states:
             state = self_states[offering_id]
             own_rows[offering_id] = {"metrics": state.get("metrics") or {}, "score": state.get("score")}
+            continue
+        if private_view:
             continue
         rows = _load_snapshots(conn, offering_id, [int(student_id)])
         if rows:
@@ -246,7 +286,7 @@ def build_ability_radar(
         score = int(round(own)) if own is not None else None
         delta = int(round(sum(gaps) / len(gaps))) if gaps and score is not None else None
         average = max(0, min(100, score - delta)) if delta is not None else None
-        vertex_x, vertex_y = _point(index, (score or 0) / 100)
+        vertex = _point(index, score / 100) if score is not None else None
         axes.append({
             "key": key,
             "label": label,
@@ -254,8 +294,8 @@ def build_ability_radar(
             "score": score,
             "average": average,
             "delta": (score - average) if average is not None else None,
-            "vertex_x": round(vertex_x, 1),
-            "vertex_y": round(vertex_y, 1),
+            "vertex_x": round(vertex[0], 1) if vertex else None,
+            "vertex_y": round(vertex[1], 1) if vertex else None,
             **_label_geometry(index),
         })
     has_average = any(axis["average"] is not None for axis in axes)
@@ -266,17 +306,17 @@ def build_ability_radar(
     key_of = (lambda axis: axis["delta"]) if pool is compared else (lambda axis: axis["score"])
     strongest = max(pool, key=key_of) if pool else None
     weakest = min(pool, key=key_of) if len(pool) >= 2 else None
-    # Gaps in an outline are drawn where the other outline is, so a missing value
-    # never looks like a zero.
-    self_values = [axis["score"] if axis["score"] is not None else (axis["average"] or 0) for axis in axes]
-    peer_values = [axis["average"] if axis["average"] is not None else (axis["score"] or 0) for axis in axes]
+    self_segments = _outline_segments(axes, "score")
+    peer_segments = _outline_segments(axes, "average")
     peer_count = max((peers[offering_id]["student_count"] for offering_id in measured), default=0)
-    return {
+    result = {
         "available": bool(measured),
         "course_count": len(measured),
         "axes": axes,
-        "points": _polygon(self_values),
-        "average_points": _polygon(peer_values) if has_average else "",
+        "points": _polygon([axis["score"] for axis in axes]) if self_segments is None else "",
+        "average_points": _polygon([axis["average"] for axis in axes]) if peer_segments is None else "",
+        "self_segments": self_segments,
+        "average_segments": peer_segments,
         "has_average": has_average,
         "peer_label": peer_label,
         "peer_count": peer_count,
@@ -287,3 +327,36 @@ def build_ability_radar(
         "focus": weakest if weakest is not strongest else None,
         "overall": int(round(_mean(axis["score"] for axis in measured_axes))) if measured_axes else None,
     }
+    if private_rows:
+        detail = build_interaction_detail(private_rows, audience=evidence_audience)
+        if detail:
+            result.update(available=True, interaction_detail=detail, course_count=len(ids))
+    return result
+
+
+def social_radar_and_cultivation(conn, student_id: int, offering_ids: list[int]) -> tuple[dict[str, Any], int | None]:
+    """Project one set of published snapshots for the public card and the established wanderer score."""
+    ids = sorted(set(offering_ids))
+    states: dict[int, dict[str, Any]] = {}
+    interaction = []
+    for start in range(0, len(ids), 500):
+        batch = ids[start:start + 500]
+        rows = conn.execute(
+            f"SELECT class_offering_id, score, metrics_json FROM learning_progress_snapshots "
+            f"WHERE student_id = ? AND class_offering_id IN ({','.join('?' for _ in batch)}) "
+            "ORDER BY class_offering_id",
+            (student_id, *batch),
+        ).fetchall()
+        for row in rows:
+            metrics = _parse_metrics(row["metrics_json"])
+            states[int(row["class_offering_id"])] = {"metrics": metrics, "score": row["score"]}
+            facts = metrics.get("interactions")
+            if isinstance(facts, dict) and "interaction_ratio" in facts:
+                interaction.append(_ratio(facts["interaction_ratio"]) * 100)
+    radar = build_ability_radar(conn, student_id=student_id, offering_ids=states, self_states=states)
+    # The original public "cultivation" field in real-user discovery used the
+    # mean of the rounded axis scores, each measured over its own available courses.
+    scores = [axis["score"] for axis in radar["axes"] if axis["key"] != "interaction" and axis["score"] is not None]
+    if interaction:
+        scores.append(round(sum(interaction) / len(interaction)))
+    return radar, round(sum(scores) / len(scores)) if scores else None

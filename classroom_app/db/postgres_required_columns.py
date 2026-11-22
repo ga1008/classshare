@@ -19,6 +19,7 @@ from .schema_smart_classroom_sessions import SMART_CLASSROOM_SESSION_REQUIRED_CO
 from .schema_smart_classroom_auto_sync import SMART_CLASSROOM_AUTO_SYNC_REQUIRED_COLUMNS
 from .schema_feedback_conversations import FEEDBACK_CONVERSATION_REQUIRED_COLUMNS
 from .schema_ai_workspace import AI_WORKSPACE_REQUIRED_COLUMNS
+from .schema_interaction_expression import EXPRESSION_COLUMNS
 from .schema_ai_search import AI_SEARCH_REQUIRED_COLUMNS
 from .schema_behavior_inbox import BEHAVIOR_INBOX_REQUIRED_COLUMNS
 from .schema_behavior_collection_health import BEHAVIOR_COLLECTION_HEALTH_REQUIRED_COLUMNS
@@ -36,6 +37,7 @@ REQUIRED_POSTGRES_COLUMNS = {
     **RETAKE_REQUIRED_COLUMNS,
     **ACADEMIC_TEACHER_TIMETABLE_REQUIRED_COLUMNS,
     **AI_WORKSPACE_REQUIRED_COLUMNS,
+    **EXPRESSION_COLUMNS,
     **ACADEMIC_SCHEDULE_PREDICTION_REQUIRED_COLUMNS,
     **GRADE_PUBLICATION_REQUIRED_COLUMNS,
     **ATTENDANCE_REPORT_REQUIRED_COLUMNS,

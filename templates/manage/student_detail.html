@@ -259,7 +259,7 @@
                             <div class="student-mini-bar"><span style="--value: {{ course.task_completion_percent }}%;"></span></div>
                         </div>
                         <div>
-                            <span>互动 {{ course.interaction_percent }}%</span>
+                            <span>修为互动分项 {{ course.interaction_percent }}%</span>
                             <div class="student-mini-bar"><span style="--value: {{ course.interaction_percent }}%;"></span></div>
                         </div>
                     </div>
@@ -277,10 +277,11 @@
             <div class="student-insight-band__head">
                 <div>
                     <h3>六边形能力雷达</h3>
-                    <p>综合你所授课堂的材料、任务、成绩、互动、稳定投入与修为；虚线为同课堂均值，数值后为“该生 / 均值”。</p>
+                    <p>各项取所授课堂中已有评分的平均值。实线为该生，虚线为同课堂同学的参考值。</p>
                 </div>
             </div>
             {% set ability_radar = insight.radar %}
+            {% set radar_show_evidence = true %}
             {% set radar_self_label = '该生' %}
             {% include 'partials/ability_radar.html' %}
         </aside>
@@ -337,7 +338,7 @@
                 <div data-lq-component="surface" class="lq-surface student-activity-card"><span>课堂互动</span><strong>{{ activity.event_count }}</strong></div>
                 <div data-lq-component="surface" class="lq-surface student-activity-card"><span>活跃天数</span><strong>{{ activity.active_days }}</strong></div>
                 <div data-lq-component="surface" class="lq-surface student-activity-card"><span>聊天发言</span><strong>{{ activity.chat_message_count }}</strong></div>
-                <div data-lq-component="surface" class="lq-surface student-activity-card"><span>AI 提问</span><strong>{{ activity.ai_question_count }}</strong></div>
+                <div data-lq-component="surface" class="lq-surface student-activity-card"><span>课堂 AI 学生消息</span><strong>{{ '待整理' if activity.ai_question_count is none else activity.ai_question_count }}</strong></div>
                 <div data-lq-component="surface" class="lq-surface student-activity-card"><span>在线分钟</span><strong>{{ activity.online_minutes }}</strong></div>
                 <div data-lq-component="surface" class="lq-surface student-activity-card"><span>专注分钟</span><strong>{{ activity.focus_minutes }}</strong></div>
             </div>

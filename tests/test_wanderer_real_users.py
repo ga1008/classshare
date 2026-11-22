@@ -44,6 +44,50 @@ class RealUserRulesTest(WandererWorldTestCase):
         for key in ("gender", "tier_name", "cultivation", "courses", "radar"):
             self.assertIn(key, chosen)
 
+    def test_discovery_preserves_published_cultivation_while_public_radar_omits_unassessed_axis(self):
+        from classroom_app.services import ability_radar_service, social_card_service
+
+        for clear in (ability_radar_service.clear_peer_cache, social_card_service.clear_radar_cache):
+            clear()
+            self.addCleanup(clear)
+        ctx = self._ctx(tier=1)
+        with self.connect() as conn:
+            conn.execute("SAVEPOINT discovery_scores")
+            try:
+                conn.execute("INSERT INTO courses (name, created_by_teacher_id) VALUES (?, ?)", ("表达合成课", self.teacher_id))
+                course_id = conn.execute("SELECT id FROM courses WHERE name = ?", ("表达合成课",)).fetchone()[0]
+                conn.execute("INSERT INTO class_offerings (class_id, course_id, teacher_id) VALUES (?, ?, ?)",
+                             (self.class_id, course_id, self.teacher_id))
+                other = conn.execute("SELECT id FROM class_offerings WHERE course_id = ?", (course_id,)).fetchone()[0]
+                cases = [
+                    (self.offering_id, 40, {"material": {"required_count": 1, "ratio": 0.8},
+                                            "interactions": {"interaction_ratio": 0.16}}),
+                    (other, 60, {"assignments": {"assignment_count": 1, "completion_ratio": 0.495},
+                                 "interactions": {"interaction_ratio": None}}),
+                ]
+                for course, score, metrics in cases:
+                    conn.execute("INSERT INTO learning_progress_snapshots (student_id, class_offering_id, score, metrics_json) "
+                                 "VALUES (?, ?, ?, ?) ON CONFLICT (class_offering_id, student_id) DO UPDATE "
+                                 "SET score = excluded.score, metrics_json = excluded.metrics_json",
+                                 (self.student_pk, course, score, json.dumps(metrics)))
+                target = f"student:{self.student_pk}"
+                found = next(person for person in friends.real_user_candidates(conn, ctx) if person["identity"] == target)
+                self.assertEqual(47, found["cultivation"])  # 80, 50, 50, and the historical interaction score of 8.
+                self.assertEqual(60, found["radar"]["overall"])
+                self.assertIsNone(next(axis["score"] for axis in found["radar"]["axes"] if axis["key"] == "interaction"))
+                card = social_card_service.user_card(conn, self.student, target)
+                self.assertEqual(found["radar"], card["radar"])
+                self.assertNotIn("cultivation", card)
+                self.assertNotIn("interaction_detail", card["radar"])
+                from classroom_app.services.cultivation_display_service import set_cultivation_hidden
+                set_cultivation_hidden(conn, self.student_pk, True)
+                hidden = next(person for person in friends.real_user_candidates(conn, ctx) if person["identity"] == target)
+                self.assertIsNone(hidden["cultivation"])
+                self.assertFalse(hidden["radar"])
+            finally:
+                conn.execute("ROLLBACK TO discovery_scores")
+                conn.execute("RELEASE discovery_scores")
+
     def test_search_action_sends_a_request_and_records_location(self):
         ctx = self._ctx(tier=1, caller=StubCaller(json.dumps({
             "action": "request", "target": f"student:{self.student_pk}",

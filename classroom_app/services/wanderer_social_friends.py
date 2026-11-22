@@ -646,7 +646,7 @@ def real_user_candidates(conn: Any, ctx: ActionContext, query: str = "", *, limi
     This is deliberately global (not the normal class/college social scope): a
     wanderer may look for anyone in the platform, but never above its own tier.
     """
-    from .social_card_service import user_card
+    from .social_card_service import user_card_and_cultivation
     from .social_scope_service import student_global_tier
     from .wanderer_life_core import clamp_tier
 
@@ -670,11 +670,10 @@ def real_user_candidates(conn: Any, ctx: ActionContext, query: str = "", *, limi
         if identity == ctx.identity or get_friendship(conn, ctx.identity, identity) is not None \
                 or blocked_either(conn, ctx.identity, identity):
             continue
-        card = user_card(conn, user, identity)
+        card, cultivation = user_card_and_cultivation(conn, user, identity)
         if not card.get("can_add"):
             continue
         radar = card.get("radar") or {}
-        cultivation = radar.get("overall") if isinstance(radar, dict) else None
         found.append({
             "identity": identity,
             "name": str(card.get("name") or identity)[:40],

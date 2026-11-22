@@ -24,6 +24,7 @@ from .schema_smart_classroom_auto_sync import ensure_smart_classroom_auto_sync_s
 from ..services.approval_workflow_schema import ensure_approval_workflow_schema
 from .schema_feedback_conversations import ensure_feedback_conversation_schema
 from .schema_ai_workspace import ensure_ai_workspace_schema
+from .schema_interaction_expression import ensure_interaction_expression_schema
 from .schema_ai_search import ensure_ai_search_schema
 from .schema_behavior_inbox import ensure_behavior_inbox_schema
 from .schema_behavior_collection_health import ensure_behavior_collection_health_schema
@@ -518,6 +519,7 @@ def _init_database_unlocked():
             ensure_cultivation_display_schema(conn)
             ensure_feedback_conversation_schema(conn, engine="sqlite")
             ensure_ai_workspace_schema(conn, engine="sqlite")
+            ensure_interaction_expression_schema(conn)
             ensure_ai_search_schema(conn, engine="sqlite")
             ensure_signature_workflow_schema(conn)
             ensure_scheduler_schema(conn)

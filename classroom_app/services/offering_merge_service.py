@@ -33,6 +33,7 @@ STRATEGY_REPOINT = "repoint"
 STRATEGY_REPOINT_GUARDED = "repoint_guarded"  # UNIQUE(offering, <conflict_key>)：预检探撞
 STRATEGY_DEDUP_SKIP = "dedup_skip"            # 与 target 撞唯一键的 source 行归档后删除
 STRATEGY_KEEP_TARGET = "keep_target"          # offering 级单例：保留 target，source 归档删除
+STRATEGY_REBUILD_EXPRESSION = "rebuild_interaction_expression"
 STRATEGY_SESSION_STRUCTURE = "session_structure"  # 课次结构：映射引用后删 source 行
 STRATEGY_ASSIGNMENT_COEXIST = "assignment_coexist"
 STRATEGY_GRADE_PUBLICATIONS = "grade_publications"  # 保留快照，迁入目标版本序列
@@ -58,7 +59,7 @@ class MergeRule:
 
 def _rules() -> dict[str, MergeRule]:
     repoint_tables = [
-        "ai_chat_sessions", "ai_psychology_profiles", "ai_usage_log", "assessment_plans",
+        "ai_chat_sessions", "ai_workspace_course_questions", "ai_psychology_profiles", "ai_usage_log", "assessment_plans",
         "assignment_group_bindings", "assignment_classification_revisions", "chat_logs", "chunked_uploads", "classroom_behavior_events",
         "classroom_behavior_profiles", "classroom_live_activities", "classroom_live_help_signals",
         "classroom_live_questions", "classroom_todos", "course_files", "cultivation_alerts",
@@ -108,6 +109,8 @@ def _rules() -> dict[str, MergeRule]:
         rules[table] = MergeRule(STRATEGY_DEDUP_SKIP, conflict_key=key)
     for table in keep_target:
         rules[table] = MergeRule(STRATEGY_KEEP_TARGET)
+    for table in ("interaction_expression_snapshots", "interaction_expression_refresh_state"):
+        rules[table] = MergeRule(STRATEGY_REBUILD_EXPRESSION)
     rules["assignments"] = MergeRule(STRATEGY_ASSIGNMENT_COEXIST)
     rules["grade_publications"] = MergeRule(STRATEGY_GRADE_PUBLICATIONS)
     rules["ai_review_reservations"] = MergeRule(STRATEGY_KEEP_BILLING_SCOPE)
@@ -193,6 +196,9 @@ MERGE_TABLE_LABELS = {
     "ai_class_configs": "课堂AI配置", "discussion_mood_snapshots": "讨论状态分析", "chat_log_migrations": "讨论迁移记录",
     "academic_final_material_batches": "期末材料批次", "assignments": "作业（保留各份作业及其提交）",
     "grade_publications": "成绩公布历史", "ai_review_reservations": "AI复核计费预约", "class_offering_sessions": "课堂课次",
+    "ai_workspace_course_questions": "AI 工作台提问的课堂归属",
+    "interaction_expression_snapshots": "互动表达记录（合班后重算）",
+    "interaction_expression_refresh_state": "互动表达刷新记录（合班后重算）",
     "class_offering_class_links": "合班名单", "class_offering_learning_materials": "课次材料绑定",
     "session_material_generation_tasks": "课时文档生成任务", "blog_posts": "课堂定向博客", "polls": "课堂发起投票",
     "smart_attendance_source_offerings": "智慧课堂考勤来源",
@@ -557,6 +563,8 @@ def build_merge_preview(
                 warnings.append(f"{label}：{duplicates} 条与主课堂重复的下发/关联将去重（快照保留）")
         if source_rows and rule.strategy == STRATEGY_KEEP_TARGET:
             warnings.append(f"{label}：保留主课堂配置，被并课堂的 {source_rows} 条归档后删除")
+        if table == "interaction_expression_snapshots":
+            warnings.append("互动表达将按合班后的活动与名单重新整理。")
         if source_rows and rule.strategy == STRATEGY_KEEP_BILLING_SCOPE:
             warnings.append(
                 f"{label}：{source_rows} 条历史 AI 复核预约保留原计费课堂和每日额度，"
@@ -674,6 +682,10 @@ def _snapshot_offerings(conn: Any, offering_ids: list[int]) -> dict[str, Any]:
 
     payload["offerings"] = rows(f"SELECT * FROM class_offerings WHERE id IN ({placeholders})", tuple(offering_ids))
     for table, rule in MERGE_RULES.items():
+        # These rows consist entirely of rebuildable audience projections and
+        # short-lived worker leases. Neither is a source fact reviewed for merge.
+        if rule.strategy == STRATEGY_REBUILD_EXPRESSION:
+            continue
         if not _table_exists(conn, table):
             continue
         items = rows(f"SELECT * FROM {table} WHERE {rule.offering_column} IN ({placeholders})", tuple(offering_ids))
@@ -933,6 +945,14 @@ def execute_offering_merge(
             if publications:
                 summary["grade_publications.repointed"] = len(publications)
                 summary["grade_publications.version_map"] = version_map
+            continue
+        if rule.strategy == STRATEGY_REBUILD_EXPRESSION:
+            # Fence pre-merge workers and drop both divergent course read models.
+            # Source messages are moved independently using their immutable IDs.
+            cursor = conn.execute(f"DELETE FROM {table} WHERE {column} IN (?,{src_placeholders})",
+                                  (int(target["id"]), *source_ids))
+            if cursor.rowcount:
+                summary[f"{table}.invalidated"] = int(cursor.rowcount)
             continue
         if rule.strategy == STRATEGY_KEEP_TARGET:
             cursor = conn.execute(
