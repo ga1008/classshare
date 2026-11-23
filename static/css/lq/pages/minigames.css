@@ -815,6 +815,69 @@
     align-items: end;
 }
 
+.game-guide-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ls-s-3) var(--ls-s-5);
+}
+
+.game-guide-tools p {
+    margin: 0;
+    font-size: var(--ls-t-sub);
+    line-height: var(--ls-leading-body);
+}
+
+.game-author-guide {
+    max-width: 60rem;
+}
+
+.game-guide-toc {
+    margin-bottom: var(--ls-s-4);
+}
+
+.game-guide-toc ul {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    gap: var(--ls-s-1) var(--ls-s-4);
+    margin-block: var(--ls-s-2);
+    padding: 0;
+    max-height: min(42vh, 18rem);
+    overflow-y: auto;
+}
+
+.game-guide-toc a {
+    display: block;
+    padding-block: var(--ls-s-2);
+    overflow-wrap: anywhere;
+    text-decoration: underline;
+    text-underline-offset: .15em;
+}
+
+.game-guide-document .lq-prose :is(h1, h2, h3, h4) {
+    font-weight: var(--ls-weight-title3);
+    line-height: var(--ls-leading-title3);
+    scroll-margin-top: 6rem;
+}
+
+.game-guide-document h1 {
+    font-size: var(--ls-t-title1);
+}
+
+.game-guide-document h2 {
+    margin-block: var(--ls-s-8) var(--ls-s-3);
+    font-size: var(--ls-t-title2);
+}
+
+.game-guide-document :is(h3, h4) {
+    margin-block: var(--ls-s-5) var(--ls-s-2);
+    font-size: var(--ls-t-title3);
+}
+
+.game-guide-document .lq-prose :is(ul, ol) {
+    list-style: revert;
+}
+
 .game-admin-bar .game-search-box {
     flex: 1.4 1 180px;
 }

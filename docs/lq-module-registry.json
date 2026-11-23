@@ -28,7 +28,7 @@
     "rules": "玻璃上的文字只读 `--lq-material-ink/muted/accent`，禁用随主题翻转的灰阶；普通内容面板与重复行不得各自开 backdrop-filter；真源 docs/lq-scene-ink-2026-09-26.md。"
    },
    "consumers": {
-    "count": 192,
+    "count": 193,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -351,6 +351,10 @@
       "hits": 3
      },
      {
+      "path": "templates/minigames/manage.html",
+      "hits": 3
+     },
+     {
       "path": "templates/partials/academic_sync_dialog.html",
       "hits": 3
      },
@@ -495,11 +499,11 @@
       "hits": 2
      },
      {
-      "path": "templates/minigames/host.html",
+      "path": "templates/minigames/author_guide.html",
       "hits": 2
      },
      {
-      "path": "templates/minigames/manage.html",
+      "path": "templates/minigames/host.html",
       "hits": 2
      },
      {
@@ -932,7 +936,7 @@
     "rules": "禁止 div 模拟按钮；颜色只来自变体及显式语义槽位，不传任意色；固定宽度长标签用 overflow-label。课次详情的操作共用 LQ Button 规格，知识树等状态另行显示，窄屏允许操作组换行。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。2026-11-12 对齐课次使用 soft 的 warning/success 槽位，动作保持原生 Button，不借用 filter Chip 的 toggle 语义；共享禁用/忙碌/强制颜色配方继续生效。 课堂分组与派题共用 Lucide 图标和 Button。发布、抽组保留短标签，刷新、返回、下载等图标按钮提供可访问名称；触屏仍有独立命中区。"
    },
    "consumers": {
-    "count": 291,
+    "count": 293,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -1991,6 +1995,10 @@
       "hits": 3
      },
      {
+      "path": "templates/minigames/author_guide.html",
+      "hits": 3
+     },
+     {
       "path": "templates/minigames/ui.html",
       "hits": 3
      },
@@ -2032,6 +2040,10 @@
      },
      {
       "path": "templates/macros/user_ui_preferences.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/minigames/manage.html",
       "hits": 2
      },
      {
@@ -2638,7 +2650,7 @@
     "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。"
    },
    "consumers": {
-    "count": 189,
+    "count": 190,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -2881,6 +2893,10 @@
       "hits": 5
      },
      {
+      "path": "templates/minigames/manage.html",
+      "hits": 5
+     },
+     {
       "path": "templates/partials/semester_calendar_panel.html",
       "hits": 5
      },
@@ -2922,10 +2938,6 @@
      },
      {
       "path": "templates/manage/system/users.html",
-      "hits": 4
-     },
-     {
-      "path": "templates/minigames/manage.html",
       "hits": 4
      },
      {
@@ -3026,6 +3038,10 @@
      },
      {
       "path": "templates/manage/work_inbox.html",
+      "hits": 3
+     },
+     {
+      "path": "templates/minigames/author_guide.html",
       "hits": 3
      },
      {
@@ -3543,7 +3559,7 @@
     "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface=\"embedded\"`，否则声明的 `!important` 底色会铺回来，形成\"有底无边距\"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。 `lq-domain-choice[data-lq-shape=\"surface\"]` 退出胶囊后高度即内容高度（2026-10-26），在滚动列里不会被压缩；需要固定格高的网格单元（学期日历）在 domain-controls.css 以更高特异性自设 min-height。 2026-10-27材料资源管理器工具栏/窗格头/状态栏用embedded Surface，不各自采样模糊；树节点/文件选择和卡片主入口为原生button+Choice，菜单按钮为兄弟节点。 2026-11-08材料浏览器窄屏的标题与操作区允许换行，操作区独占一行；领域CSS只调整布局，避免元信息逐字纵排挤掉正文高度；窄屏正文不被flex压缩，由既有内容区滚动，不改共享按钮材质与事件。"
    },
    "consumers": {
-    "count": 160,
+    "count": 161,
     "files": [
      {
       "path": "templates/assignment_detail_teacher.html",
@@ -4159,6 +4175,10 @@
      },
      {
       "path": "templates/manage/system/users.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/minigames/author_guide.html",
       "hits": 1
      },
      {
@@ -7456,6 +7476,7 @@
   "minigames": {
    "css": "static/css/lq/pages/minigames.css",
    "linkedBy": [
+    "templates/minigames/author_guide.html",
     "templates/minigames/detail.html",
     "templates/minigames/hall.html",
     "templates/minigames/host.html",
@@ -9306,6 +9327,12 @@
    "forms",
    "materials"
   ],
+  "templates/minigames/author_guide.html": [
+   "button",
+   "content",
+   "declarative",
+   "materials"
+  ],
   "templates/minigames/detail.html": [
    "content",
    "forms",
@@ -9328,6 +9355,7 @@
    "shells"
   ],
   "templates/minigames/manage.html": [
+   "button",
    "content",
    "forms",
    "materials",

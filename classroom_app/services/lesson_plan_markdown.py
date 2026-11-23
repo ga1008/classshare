@@ -151,13 +151,14 @@ def _inline_html(text: Any) -> str:
     return "".join(parts)
 
 
-def blocks_to_html(blocks: list[dict[str, Any]]) -> str:
+def blocks_to_html(blocks: list[dict[str, Any]], *, heading_offset: int = 2) -> str:
     out: list[str] = []
     for block in blocks:
         btype = block.get("type")
         if btype == "heading":
-            level = min(6, max(1, int(block.get("level", 3)) + 2))  # nests under section headers
-            out.append(f"<h{level}>{_inline_html(block.get('text'))}</h{level}>")
+            level = min(6, max(1, int(block.get("level", 3)) + heading_offset))
+            anchor = f' id="{html.escape(block["anchor"], quote=True)}"' if block.get("anchor") else ""
+            out.append(f"<h{level}{anchor}>{_inline_html(block.get('text'))}</h{level}>")
         elif btype == "para":
             out.append(f"<p>{_inline_html(block.get('text'))}</p>")
         elif btype == "ul":

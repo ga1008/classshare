@@ -1,0 +1,28 @@
+{% extends 'manage/layout.html' %}
+{% from 'macros/lq/button.html' import lq_btn %}
+{% from 'macros/lq/content.html' import lq_prose %}
+
+{% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
+{% block header_actions %}{{ lq_btn('返回小游戏管理', variant='ghost', size='sm', icon='arrow-left', href='/manage/library/games') }}{% endblock %}
+{% block content %}
+<div class="game-management game-author-guide">
+    <section class="lq-surface game-guide-tools" data-lq-component="surface" data-lq-padding="md" aria-label="开发资料下载">
+        <p class="game-row-main">开发包内含规范全文、JSON Schema、平台 SDK、打包校验工具和三个可运行示例。</p>
+        <div class="game-actions">
+            {{ lq_btn('下载开发包（ZIP）', variant='prominent', size='sm', icon='download', href='/manage/library/games/author-guide/download') }}
+            {{ lq_btn('下载规范（Markdown）', variant='soft', size='sm', href='/manage/library/games/author-guide/markdown') }}
+        </div>
+    </section>
+    <article class="lq-surface game-guide-document" data-lq-component="surface" data-lq-padding="lg" aria-label="小游戏开发规范全文">
+        {% if guide_toc %}
+        <details class="game-guide-toc">
+            <summary class="lq-disclosure-trigger" data-lq-component="disclosure">章节目录</summary>
+            <nav aria-label="规范章节">
+                <ul>{% for heading in guide_toc %}<li><a href="#{{ heading.id }}">{{ heading.title }}</a></li>{% endfor %}</ul>
+            </nav>
+        </details>
+        {% endif %}
+        {% call(slot) lq_prose() %}{% if slot == 'content' %}{{ guide_html }}{% endif %}{% endcall %}
+    </article>
+</div>
+{% endblock %}

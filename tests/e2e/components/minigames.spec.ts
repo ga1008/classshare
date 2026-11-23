@@ -139,6 +139,59 @@ test('教师管理列表筛选及建立草稿',async({page})=>{
   await page.getByRole('button',{name:'创建草稿'}).click();await expect(page).toHaveURL(/draft-new$/);
   expect(writes.find(x=>x.path==='/admin/games')?.body.scope).toBe('private');
 });
+
+test('教师可在桌面和窄屏阅读开发规范并下载开发包和 Markdown',async({page},info)=>{
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await fixture(page,'manage','teacher');
+  const guidePath='/manage/library/games/author-guide';
+  await page.route(origin+guidePath,route=>route.fulfill({
+    contentType:'text/html; charset=utf-8',body:render('author_guide','teacher'),
+  }));
+  for(const [suffix,filename] of [['/download','author-kit.zip'],['/markdown','author-guide.md']]){
+    await page.route(origin+guidePath+suffix,route=>route.fulfill({
+      headers:{'Content-Disposition':`attachment; filename="${filename}"`},
+      body:Buffer.from('synthetic download'),
+    }));
+  }
+  for(const width of [1440,390,320]){
+    await page.setViewportSize({width,height:844});
+    const section=page.getByRole('region',{name:'小游戏开发规范'});
+    const read=section.getByRole('link',{name:'在线阅读'});
+    await expect(read).toBeInViewport();
+    await expect(section.getByRole('link',{name:'下载开发包'})).toHaveAttribute('href',guidePath+'/download');
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    if(width===390){
+      await page.screenshot({path:info.outputPath('开发规范入口-390.png'),animations:'disabled'});
+      await page.locator('[data-lq-pane-open="actions"]').click();
+      await expect(page.getByRole('button',{name:'上传新游戏'})).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
+    await read.click();
+    const doc=page.getByRole('article',{name:'小游戏开发规范全文'});
+    await expect(doc.getByRole('heading',{level:1})).toContainText('小游戏');
+    await expect(doc.locator('pre').filter({hasText:'main.html'}).first()).toBeAttached();
+    if(width!==320)await page.screenshot({path:info.outputPath(`规范阅读-${width}.png`),animations:'disabled'});
+    await doc.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    const firstSection = doc.locator('nav a[href="#section-1"]');
+    await expect(firstSection).toBeVisible();
+    const heading = await firstSection.textContent();
+    expect(heading).toBeTruthy();
+    await firstSection.click();
+    await expect(page).toHaveURL(/#section-1$/);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    await expect(doc.locator('h2#section-1')).toHaveText(heading!);
+    await expect(doc.locator('h2#section-1')).toBeInViewport();
+    if(width===390){
+      for(const [label,ext] of [['下载开发包（ZIP）','.zip'],['下载规范（Markdown）','.md']]){
+        const downloaded=page.waitForEvent('download');
+        await page.getByRole('link',{name:label,exact:true}).click();
+        expect((await downloaded).suggestedFilename().endsWith(ext)).toBe(true);
+      }
+    }
+    await page.goto(origin+'/manage/library/games');
+  }
+});
 test('教师上传验收、登记试玩、发布、下架和彻底删除',async({page})=>{
   const {writes}=await fixture(page,'detail','teacher');
   await page.getByLabel('独立 HTML 游戏包（ZIP）').setInputFiles({name:'sample.zip',mimeType:'application/zip',buffer:Buffer.from('synthetic')});

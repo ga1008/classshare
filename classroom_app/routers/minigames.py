@@ -1,7 +1,8 @@
 """Game directory, authenticated host pages and launch controls."""
 
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from ..services import minigame_author_kit as author_kit
 from ..services import minigame_platform as p
 from ..services import minigame_catalog as directory
 from ..services.minigame_launch import change_grant, launch, version_for
@@ -98,31 +99,55 @@ def host(request: Request, slug: str, user: Player, previewVersion: str = ""):
     )
 
 
+def management_context(request, user, conn, page_title, **fields):
+    from ..services.user_ui_preferences_service import resolve_user_ui_preferences
+    from .ui_parts.common import _build_manage_template_context
+
+    resolve_user_ui_preferences(request, user, conn=conn)
+    extra = context(user, **fields)
+    return _build_manage_template_context(
+        request,
+        extra["user"],
+        page_title=page_title,
+        active_page="games",
+        teacher_is_super_admin=p.is_super_admin_teacher(conn, user["id"]),
+        extra=extra,
+    )
+
+
+@pages.get("/manage/library/games/author-guide")
+def author_guide(request: Request, user: Manager):
+    from ..core import templates
+
+    html, contents = author_kit.guide_page()
+    with p.game_db() as conn:
+        ctx = management_context(request, user, conn, "小游戏开发规范", guide_html=html, guide_toc=contents)
+    return templates.TemplateResponse(request, "minigames/author_guide.html", ctx, headers=NO_STORE)
+
+
+@pages.get("/manage/library/games/author-guide/markdown")
+def download_author_spec(user: Manager):
+    return Response(author_kit.guide_bytes(), media_type="text/markdown; charset=utf-8",
+                    headers={**NO_STORE, "Content-Disposition": 'attachment; filename="AI-GAME-SPEC.md"',
+                             "X-Content-Type-Options": "nosniff"})
+
+
+@pages.get("/manage/library/games/author-guide/download")
+def download_author_kit(user: Manager):
+    return Response(author_kit.kit_bytes(), media_type="application/zip",
+                    headers={**NO_STORE, "Content-Disposition": 'attachment; filename="LanShare-game-author-kit-v1.zip"',
+                             "X-Content-Type-Options": "nosniff"})
+
+
 @pages.get("/manage/library/games")
 @pages.get("/manage/library/games/{game_id}")
 def manage(request: Request, user: Manager, game_id: str = ""):
     from ..core import templates
-    from ..services.user_ui_preferences_service import resolve_user_ui_preferences
-    from .ui_parts.common import _build_manage_template_context
 
     with p.game_db() as conn:
         row = p.require_manager(conn, user, game_id) if game_id else None
-        admin = p.is_super_admin_teacher(conn,user["id"])
-        resolve_user_ui_preferences(request, user, conn=conn)
-        extra = context(
-            user,
-            game=p.public_game(row) if row else None,
-            games=[],
-            scope_options=p.scope_options(conn, user),
-        )
-    ctx = _build_manage_template_context(
-        request,
-        extra["user"],
-        page_title="小游戏管理",
-        active_page="games",
-        teacher_is_super_admin=admin,
-        extra=extra,
-    )
+        ctx = management_context(request, user, conn, "小游戏管理", game=p.public_game(row) if row else None,
+                                 games=[], scope_options=p.scope_options(conn, user))
     return templates.TemplateResponse(
         request,
         "minigames/detail.html" if row else "minigames/manage.html",

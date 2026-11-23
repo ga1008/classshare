@@ -1,6 +1,6 @@
 # LanShare 前端迁移清单
 
-> 生成时间：2026-11-23 12:32:54（Asia/Shanghai）。
+> 生成时间：2026-11-23 16:40:02（Asia/Shanghai）。
 > 生成命令：`python tools/frontend_migration_inventory.py`。
 
 ## 用途
@@ -33,7 +33,7 @@
 | 业务域 | 模板数量 | 关键模板 | 关键脚本线索 |
 | --- | ---: | --- | --- |
 | 作业与提交 | 6 | `assignment_detail_student.html`, `assignment_detail_teacher.html`, `assignment_wrong_summary.html`, `macros/assignment_applicants.html`, `partials/submission_retained_grade.html`, `submission_detail.html` | `js/behavior_tracker.js`, `js/feedback.js`, `js/ui.js`, `js/assessment_editor.js`, `js/assessment_questions.js`, `js/submission_upload.js` 等 25 项 |
-| 其他页面 | 104 | `achievements.html`, `assessment_plan_editor.html`, `base.html`, `base_centered.html`, `base_navbar.html`, `career_path.html` | `js/auth.js`, `js/assessment_plan_editor.js`, `js/ls_date_picker.js`, `js/cultivation_identity.js`, `js/cultivation_emblems.js`, `js/message_center_bell.js` 等 46 项 |
+| 其他页面 | 105 | `achievements.html`, `assessment_plan_editor.html`, `base.html`, `base_centered.html`, `base_navbar.html`, `career_path.html` | `js/auth.js`, `js/assessment_plan_editor.js`, `js/ls_date_picker.js`, `js/cultivation_identity.js`, `js/cultivation_emblems.js`, `js/message_center_bell.js` 等 46 项 |
 | 教师管理中心 | 30 | `manage/academic_overview.html`, `manage/ai.html`, `manage/archive_pipeline.html`, `manage/assessment_plans.html`, `manage/attendance_reports.html`, `manage/classes.html` | `js/manage_ai.js`, `js/manage_assessment_plans.js`, `js/attendance_reports.js`, `js/base_resource_modes.js`, `js/manage_classes.js`, `js/manage_classrooms.js` 等 32 项 |
 | 消息、反馈、博客、个人中心 | 23 | `blog.html`, `feedback_review.html`, `manage/profile.html`, `partials/blog_button.html`, `partials/feedback_button.html`, `partials/feedback_modal.html` | `js/blog.js`, `js/feedback_review.js`, `js/echarts.min.js`, `js/profile.js`, `js/cultivation_panel.js`, `js/profile_signatures.js` |
 | 系统与超管 | 15 | `manage/system/academic_integrations.html`, `manage/system/agent_keys.html`, `manage/system/ai_usage.html`, `manage/system/blog_crawler.html`, `manage/system/blog_review.html`, `manage/system/diagnostics.html` | `js/manage_academic_integrations.js`, `js/manage_agent_keys.js`, `js/manage_blog_crawler.js`, `js/manage_blog_review.js`, `js/feedback_admin.js`, `js/manage_gongwen_integrations.js` 等 11 项 |
@@ -162,10 +162,11 @@
 | `material_reader_unavailable.html` | `base_centered.html` | `js/material_reader_return.js` | - | - |
 | `material_render_shell.html` | `base.html`, `partials/markdown_assets.html` | `js/material_reader_return.js`, `js/teacher_whiteboard.js`, `js/behavior_tracker.js`, `js/material_render_shell.js` | - | - |
 | `material_viewer.html` | `base.html`, `partials/markdown_assets.html` | `js/material_reader_return.js`, `js/teacher_whiteboard.js`, `js/behavior_tracker.js`, `js/material_viewer.js` | - | - |
+| `minigames/author_guide.html` | `manage/layout.html`, `macros/lq/button.html`, `macros/lq/content.html` | `css/lq/pages/minigames.css` | - | - |
 | `minigames/detail.html` | `manage/layout.html` | `css/lq/pages/minigames.css`, `js/minigames/manage.js` | - | - |
 | `minigames/hall.html` | `base.html` | `css/lq/pages/minigames.css`, `js/minigames/hall.js` | - | - |
 | `minigames/host.html` | `base.html` | `css/lq/pages/minigames.css`, `js/minigames/host.js` | - | - |
-| `minigames/manage.html` | `manage/layout.html` | `css/lq/pages/minigames.css`, `js/minigames/manage.js` | - | - |
+| `minigames/manage.html` | `manage/layout.html`, `macros/lq/button.html` | `css/lq/pages/minigames.css`, `js/minigames/manage.js` | - | - |
 | `minigames/ui.html` | - | - | - | - |
 | `partials/ability_radar.html` | - | - | - | - |
 | `partials/academic_sync_dialog.html` | - | - | - | - |
@@ -332,7 +333,7 @@
 | `classroom_app/routers/materials_parts/node_ops.py` | 6 | `POST /api/materials/folders`, `POST /api/materials/files`, `GET /api/materials/folder-options`, `POST /api/materials/{material_id}/move` 等 6 项 | - |
 | `classroom_app/routers/message_center.py` | 19 | `GET /message-center`, `GET /api/message-center/bootstrap`, `GET /api/message-center/summary`, `GET /api/message-center/items` 等 8 项 | - |
 | `classroom_app/routers/minigame_admin.py` | 15 | `GET /games`, `GET /games/{game_id}`, `POST /games`, `PATCH /games/{game_id}` 等 8 项 | - |
-| `classroom_app/routers/minigames.py` | 0 | - | `minigames/hall.html`, `minigames/host.html`, `minigames/detail.html`, `minigames/manage.html` |
+| `classroom_app/routers/minigames.py` | 0 | - | `minigames/hall.html`, `minigames/host.html`, `minigames/author_guide.html`, `minigames/detail.html`, `minigames/manage.html` |
 | `classroom_app/routers/mp/auth.py` | 5 | `POST /login`, `POST /bind/student`, `POST /bind/teacher`, `GET /me` 等 5 项 | - |
 | `classroom_app/routers/mp/classroom.py` | 1 | `GET /live` | - |
 | `classroom_app/routers/mp/life_tips.py` | 1 | `POST /feedback` | - |

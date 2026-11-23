@@ -1,11 +1,22 @@
 {% extends 'manage/layout.html' %}
 {% import 'minigames/ui.html' as ui with context %}
+{% from 'macros/lq/button.html' import lq_btn %}
 {% block title %}小游戏管理{% endblock %}
 {% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
 {% block header_actions %}{{ ui.btn('游玩大厅', variant='ghost', size='sm', icon='gamepad', href='/games') }} {{ ui.action('上传新游戏', 'draft', 'prominent', 'upload') }}{% endblock %}
 {% block content %}
 <section class="game-management" data-game-library>
 <h1 class="sr-only">小游戏管理</h1>
+<section class="lq-surface game-guide-tools" data-lq-component="surface" data-lq-padding="md" aria-labelledby="game-guide-heading">
+    <div class="game-row-main">
+        <h2 class="game-section-title" id="game-guide-heading">{{ ui.g_icon('book', 'game-mini-icon') }}小游戏开发规范</h2>
+        <p class="game-muted">将规范、平台 SDK 和示例一起交给 AI，用于开发兼容平台的游戏包。</p>
+    </div>
+    <div class="game-actions">
+        {{ lq_btn('在线阅读', variant='soft', size='sm', href='/manage/library/games/author-guide') }}
+        {{ lq_btn('下载开发包', variant='glass', size='sm', icon='download', href='/manage/library/games/author-guide/download') }}
+    </div>
+</section>
 <form class="lq-surface game-filters game-admin-bar" data-lq-component="surface" data-admin-filters>
 <label class="lq-search game-search-box"><span class="sr-only">搜索名称、标识或标签</span><input class="lq-input" data-lq-component="input" type="search" name="q" placeholder="搜索名称、标识或标签…"></label>
 {{ ui.select('状态', 'status', [('', '全部状态'), ('draft', '草稿'), ('listed', '已上架'), ('unlisted', '已下架'), ('deleting', '删除中')]) }}

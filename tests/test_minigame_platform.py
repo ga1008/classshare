@@ -107,6 +107,43 @@ class GamePlatformFixture(TestCase):
 
 
 class GamePlatformTests(GamePlatformFixture):
+    def test_teacher_can_read_and_download_the_same_author_spec(self):
+        from io import BytesIO
+        from zipfile import ZipFile
+
+        base = "/manage/library/games/author-guide"
+        for uid in (None, 931):
+            self.client.cookies.clear()
+            if uid:
+                self.client.cookies.set("access_token", self.tokens[uid])
+            for suffix in ("", "/markdown", "/download"):
+                denied = self.client.get(base + suffix, follow_redirects=False)
+                self.assertIn(denied.status_code, (303, 401, 403))
+                self.assertNotIn("attachment", denied.headers.get("Content-Disposition", ""))
+
+        self.client.cookies.clear()
+        self.client.cookies.set("access_token", self.tokens[901])
+        page = self.client.get(base, follow_redirects=False)
+        markdown = self.client.get(base + "/markdown", follow_redirects=False)
+        archive = self.client.get(base + "/download", follow_redirects=False)
+        for res in (page, markdown, archive):
+            self.assertEqual(res.status_code, 200)
+            self.assertIn("private", res.headers["Cache-Control"])
+        self.assertIn('href="#section-1"', page.text)
+        self.assertIn('id="section-1"', page.text)
+        self.assertIn(base + "/download", page.text)
+        self.assertIn(base + "/markdown", page.text)
+        self.assertIn("attachment", markdown.headers["Content-Disposition"])
+        self.assertIn("attachment", archive.headers["Content-Disposition"])
+        self.assertTrue(markdown.headers["Content-Type"].startswith("text/markdown"))
+        self.assertEqual(archive.headers["Content-Type"], "application/zip")
+        with ZipFile(BytesIO(archive.content)) as package:
+            self.assertEqual(package.read("AI-GAME-SPEC.md"), markdown.content)
+        for line in markdown.text.splitlines():
+            if line.startswith("# "):
+                self.assertIn(line[2:], page.text)
+                break
+
     def test_interrupted_preview_does_not_authorize_playtest(self):
         import asyncio
         from classroom_app import minigame_content
