@@ -229,9 +229,19 @@ class GamePackageTests(unittest.TestCase):
             with patch.dict(os.environ, {"MINIGAMES_PROBE_COMMAND": '["executor"]'}), self.fake_probe() as probe:
                 self.assertTrue(packages.worker_once())
                 probe.assert_called_once()
-            self.assertEqual(checked.call_count, 1)
-        data = self.game_detail()
-        self.assertEqual((data["versions"][0]["status"], data["game"]["status"]), ("ready", "draft"))
+                self.assertEqual(checked.call_count, 1)
+                data = self.game_detail()
+                job = data["jobs"][0]
+                if job["status"] == "retry":
+                    self.assertEqual(job["error"].get("code"), "ASSET_BUSY", job)
+                    with self.db() as conn:
+                        due = conn.execute("SELECT due FROM mg_admin_jobs WHERE id=?", (job["id"],)).fetchone()[0]
+                    # Windows can briefly hold the prepared directory during its atomic promotion.
+                    with patch.object(platform, "now_ms", return_value=due + 1):
+                        self.assertTrue(packages.worker_once())
+                    data = self.game_detail()
+                    self.assertEqual(data["jobs"][0]["id"], job["id"])
+        self.assertEqual((data["versions"][0]["status"], data["game"]["status"]), ("ready", "draft"), data["jobs"])
         self.assertFalse(stage.exists())
         self.assertFalse((version / "static-check.json").exists())
         with self.assertRaises(HTTPException) as denied:
