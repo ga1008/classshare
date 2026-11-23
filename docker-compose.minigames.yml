@@ -1,0 +1,74 @@
+# Optional overlay for the trusted game API and the cookie-free content host.
+services:
+  app:
+    environment:
+      MINIGAMES_EXTERNAL_API: "1"
+      MINIGAMES_APP_ALIASES: ${MINIGAMES_APP_ALIASES:-}
+      MINIGAMES_APP_ORIGIN: ${MINIGAMES_APP_ORIGIN:?set the platform HTTPS origin}
+      MINIGAMES_CONTENT_ORIGIN: ${MINIGAMES_CONTENT_ORIGIN:?set the isolated content HTTPS origin}
+      GAMES_DB_WORKERS: "1"
+  game-api:
+    image: ${LANSHARE_IMAGE:-lanshare-app}:${LANSHARE_TAG:-latest}
+    command: ["python","-m","uvicorn","classroom_app.minigame_api:app","--host","0.0.0.0","--port","8015","--no-access-log","--workers","2"]
+    restart: unless-stopped
+    init: true
+    cpu_shares: 512
+    expose: ["8015"]
+    healthcheck:
+      test: ["CMD", "python", "/app/deployment/docker/minigame_health.py", "api"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./docker.env
+    environment:
+      MINIGAMES_APP_ALIASES: ${MINIGAMES_APP_ALIASES:-}
+      MINIGAMES_APP_ORIGIN: ${MINIGAMES_APP_ORIGIN:?set the platform HTTPS origin}
+      MINIGAMES_CONTENT_ORIGIN: ${MINIGAMES_CONTENT_ORIGIN:?set the isolated content HTTPS origin}
+      GAMES_DB_WORKERS: "1"
+      POSTGRES_POOL_MAX: "1"
+      MINIGAMES_PROBE_COMMAND: ${MINIGAMES_PROBE_COMMAND:-}
+      POSTGRES_APPLICATION_NAME: lanshare-game-api
+      AI_ASSISTANT_URL: http://ai:8001
+      MINIGAMES_DELETION_REGISTER: /app/minigame-register
+    volumes:
+      - ./data/games:/app/data/games
+      - ${MINIGAMES_REGISTER_DIR:?set the persistent external deletion register directory}:/app/minigame-register
+    networks: [lanshare]
+  game-content:
+    image: ${LANSHARE_IMAGE:-lanshare-app}:${LANSHARE_TAG:-latest}
+    command: ["python","-m","uvicorn","classroom_app.minigame_content:app","--host","0.0.0.0","--port","8014","--no-access-log","--workers","1"]
+    restart: unless-stopped
+    init: true
+    cpu_shares: 256
+    expose: ["8014"]
+    healthcheck:
+      test: ["CMD", "python", "/app/deployment/docker/minigame_health.py", "content"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 20s
+    environment:
+      DB_ENGINE: postgres
+      DATABASE_URL: ${MINIGAMES_DATABASE_URL:?set the game-content database URL}
+      SECRET_KEY: ${MINIGAMES_SIGNING_SECRET:?supply the existing platform secret through the protected compose environment}
+      MINIGAMES_APP_ALIASES: ${MINIGAMES_APP_ALIASES:-}
+      MINIGAMES_APP_ORIGIN: ${MINIGAMES_APP_ORIGIN:?set the platform HTTPS origin}
+      MINIGAMES_CONTENT_ORIGIN: ${MINIGAMES_CONTENT_ORIGIN:?set the isolated content HTTPS origin}
+      GAMES_DB_WORKERS: "1"
+      POSTGRES_POOL_MAX: "1"
+      POSTGRES_APPLICATION_NAME: lanshare-game-content
+    volumes:
+      - ./data/games/versions:/app/data/games/versions:ro
+      - ./data/games/locks:/app/data/games/locks
+    networks: [lanshare]
+  nginx:
+    volumes:
+      - ./deployment/nginx-game-api-location.conf:/etc/nginx/lanshare-optional/game-api.conf:ro
+      - ${MINIGAMES_VHOST_CONF:?set the configured game-content nginx file}:/etc/nginx/conf.d/game-content.conf:ro
+      - ${MINIGAMES_TLS_DIR:?set the certificate directory}:/etc/nginx/game-tls:ro
+

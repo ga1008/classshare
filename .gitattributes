@@ -2,3 +2,7 @@
 Dockerfile text eol=lf
 DockerfileBase text eol=lf
 deployment/docker/Dockerfile.* text eol=lf
+static/minigames/lan-game-sdk.v1.js text eol=lf
+examples/minigames/*.html text eol=lf
+examples/minigames/*.js text eol=lf
+examples/minigames/*.css text eol=lf

@@ -20,6 +20,7 @@
     </span>
     <span class="app-topbar-action__count app-topbar-action__count--blue" data-blog-today-count hidden>+0</span>
 </a>
+{% from 'minigames/ui.html' import entry as game_entry %}{{ game_entry('sm') }}
 <div class="message-center-bell-anchor app-topbar-notification" data-message-center-bell-shell>
     <a data-lq-component="button"
         href="/profile?section=notifications#profile-message-center"

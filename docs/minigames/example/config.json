@@ -1,0 +1,30 @@
+{
+  "formatVersion": 1,
+  "gameKey": "beacon-relay",
+  "version": "1.0.0",
+  "title": "航标接力",
+  "summary": "按海图线索依次点亮三座航标并引导船队返航。支持单人闯关，也支持 2–4 人合作轮流执舵。",
+  "entry": "main.html",
+  "icon": "static/beacon.png",
+  "sdk": "js/lan-game-sdk.v1.js",
+  "display": {
+    "aspectRatio": "16:9",
+    "stageTone": "dark"
+  },
+  "standalone": "solo",
+  "modes": {
+    "solo": true,
+    "multiplayer": {
+      "kind": "coop",
+      "privateRooms": true,
+      "minPlayers": 2,
+      "maxPlayers": 4,
+      "randomSizes": [2]
+    }
+  },
+  "capabilities": ["save.private", "room.chat"],
+  "contracts": {
+    "writeback": "contracts/writeback.json",
+    "rules": "contracts/rules.json"
+  }
+}

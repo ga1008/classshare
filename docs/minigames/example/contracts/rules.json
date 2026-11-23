@@ -1,0 +1,17 @@
+{
+  "engine": "finite-turn-v1",
+  "initial": "atPier",
+  "states": {
+    "atPier": { "outcome": null },
+    "atBay": { "outcome": null },
+    "atCape": { "outcome": null },
+    "atChannel": { "outcome": null },
+    "home": { "outcome": "completed" }
+  },
+  "transitions": [
+    { "from": "atPier", "actor": "turn", "type": "light", "payload": { "bearing": "east" }, "to": "atBay", "turn": "next" },
+    { "from": "atBay", "actor": "turn", "type": "light", "payload": { "bearing": "south" }, "to": "atCape", "turn": "next" },
+    { "from": "atCape", "actor": "turn", "type": "light", "payload": { "bearing": "west" }, "to": "atChannel", "turn": "next" },
+    { "from": "atChannel", "actor": "turn", "type": "dock", "payload": { "signal": "allClear" }, "to": "home", "turn": "keep" }
+  ]
+}

@@ -1,6 +1,6 @@
 # LanShare 前端迁移清单
 
-> 生成时间：2026-11-22 15:07:48（Asia/Shanghai）。
+> 生成时间：2026-11-23 12:32:54（Asia/Shanghai）。
 > 生成命令：`python tools/frontend_migration_inventory.py`。
 
 ## 用途
@@ -11,14 +11,29 @@
 
 | 入口 | 产物 | 共享依赖 |
 | --- | --- | --- |
-| - | 尚未生成 `static/dist/manifest.json` | - |
+| `frontend/src/islands/app-shell.tsx` | `assets/app-shell-aF6Uw8Rp.js` | `_mount-react-island-BBWvX_tO.js` |
+| `frontend/src/islands/assignment-authoring-sync.tsx` | `assets/assignment-authoring-sync-Bbs1sglo.js` | `_mount-react-island-BBWvX_tO.js`, `_lq-presentation-CVtV91S7.js`, `_createLucideIcon-BVHDfZG6.js`, `_file-type-corner-Cn5AxK1t.js` 等 6 项 |
+| `frontend/src/islands/assignment-submit-sync.tsx` | `assets/assignment-submit-sync-BfPvPo09.js` | `_mount-react-island-BBWvX_tO.js`, `_island-payload-DC_mu5iS.js`, `_createLucideIcon-BVHDfZG6.js`, `_circle-alert-DdPJxtTI.js` 等 6 项 |
+| `frontend/src/islands/blog-launcher.tsx` | `assets/blog-launcher-BlIkWvMf.js` | `_mount-react-island-BBWvX_tO.js`, `_action-entry-0Eh2myi0.js`, `_createLucideIcon-BVHDfZG6.js` |
+| `frontend/src/islands/blog-topbar-sync.tsx` | `assets/blog-topbar-sync-BhcDShqm.js` | `_mount-react-island-BBWvX_tO.js`, `_ambient_poll-B5CiUY1U.js` |
+| `frontend/src/islands/classroom-page.tsx` | `assets/classroom-page-FLvhMbmY.js` | `_mount-react-island-BBWvX_tO.js`, `_preload-helper-D77bZG1K.js`, `_lq-presentation-CVtV91S7.js`, `_dialog-Qr2TSzqk.js` 等 5 项 |
+| `frontend/src/islands/dashboard-quick-actions.tsx` | `assets/dashboard-quick-actions-ByfR1SMZ.js` | `_preload-helper-D77bZG1K.js`, `_components-DbPFC9H6.js` |
+| `frontend/src/islands/exam-assign-sync.tsx` | `assets/exam-assign-sync-D_PtmakL.js` | `_mount-react-island-BBWvX_tO.js`, `_lq-presentation-CVtV91S7.js`, `_createLucideIcon-BVHDfZG6.js`, `_file-type-corner-Cn5AxK1t.js` 等 5 项 |
+| `frontend/src/islands/feedback-launcher.tsx` | `assets/feedback-launcher-BOe-yjue.js` | `_mount-react-island-BBWvX_tO.js`, `_action-entry-0Eh2myi0.js`, `_circle-alert-DdPJxtTI.js` |
+| `frontend/src/islands/materials-manage-page.tsx` | `assets/materials-manage-page-DN0D2xM5.js` | `_mount-react-island-BBWvX_tO.js`, `_preload-helper-D77bZG1K.js` |
+| `frontend/src/islands/message-center-page.tsx` | `assets/message-center-page-LZ-MU9yZ.js` | `_mount-react-island-BBWvX_tO.js`, `_preload-helper-D77bZG1K.js` |
+| `frontend/src/islands/message-center-sync.tsx` | `assets/message-center-sync-C8JFmkPl.js` | `_mount-react-island-BBWvX_tO.js`, `_ambient_poll-B5CiUY1U.js` |
+| `frontend/src/islands/message-center-workspace-sync.tsx` | `assets/message-center-workspace-sync-CMtrk6uM.js` | `_mount-react-island-BBWvX_tO.js`, `_lq-presentation-CVtV91S7.js` |
+| `frontend/src/islands/profile-launcher.tsx` | `assets/profile-launcher-C1Bqblt6.js` | `_mount-react-island-BBWvX_tO.js`, `_action-entry-0Eh2myi0.js` |
+| `frontend/src/islands/student-security-sync.tsx` | `assets/student-security-sync-BCOxKiUj.js` | `_mount-react-island-BBWvX_tO.js` |
+| `frontend/src/islands/submission-jump-nav.tsx` | `assets/submission-jump-nav-B6arUWEB.js` | `_mount-react-island-BBWvX_tO.js`, `_lq-presentation-CVtV91S7.js`, `_island-payload-DC_mu5iS.js`, `_createLucideIcon-BVHDfZG6.js` 等 5 项 |
 
 ## 业务域覆盖图
 
 | 业务域 | 模板数量 | 关键模板 | 关键脚本线索 |
 | --- | ---: | --- | --- |
 | 作业与提交 | 6 | `assignment_detail_student.html`, `assignment_detail_teacher.html`, `assignment_wrong_summary.html`, `macros/assignment_applicants.html`, `partials/submission_retained_grade.html`, `submission_detail.html` | `js/behavior_tracker.js`, `js/feedback.js`, `js/ui.js`, `js/assessment_editor.js`, `js/assessment_questions.js`, `js/submission_upload.js` 等 25 项 |
-| 其他页面 | 99 | `achievements.html`, `assessment_plan_editor.html`, `base.html`, `base_centered.html`, `base_navbar.html`, `career_path.html` | `js/auth.js`, `js/assessment_plan_editor.js`, `js/ls_date_picker.js`, `js/cultivation_identity.js`, `js/cultivation_emblems.js`, `js/message_center_bell.js` 等 43 项 |
+| 其他页面 | 104 | `achievements.html`, `assessment_plan_editor.html`, `base.html`, `base_centered.html`, `base_navbar.html`, `career_path.html` | `js/auth.js`, `js/assessment_plan_editor.js`, `js/ls_date_picker.js`, `js/cultivation_identity.js`, `js/cultivation_emblems.js`, `js/message_center_bell.js` 等 46 项 |
 | 教师管理中心 | 30 | `manage/academic_overview.html`, `manage/ai.html`, `manage/archive_pipeline.html`, `manage/assessment_plans.html`, `manage/attendance_reports.html`, `manage/classes.html` | `js/manage_ai.js`, `js/manage_assessment_plans.js`, `js/attendance_reports.js`, `js/base_resource_modes.js`, `js/manage_classes.js`, `js/manage_classrooms.js` 等 32 项 |
 | 消息、反馈、博客、个人中心 | 23 | `blog.html`, `feedback_review.html`, `manage/profile.html`, `partials/blog_button.html`, `partials/feedback_button.html`, `partials/feedback_modal.html` | `js/blog.js`, `js/feedback_review.js`, `js/echarts.min.js`, `js/profile.js`, `js/cultivation_panel.js`, `js/profile_signatures.js` |
 | 系统与超管 | 15 | `manage/system/academic_integrations.html`, `manage/system/agent_keys.html`, `manage/system/ai_usage.html`, `manage/system/blog_crawler.html`, `manage/system/blog_review.html`, `manage/system/diagnostics.html` | `js/manage_academic_integrations.js`, `js/manage_agent_keys.js`, `js/manage_blog_crawler.js`, `js/manage_blog_review.js`, `js/feedback_admin.js`, `js/manage_gongwen_integrations.js` 等 11 项 |
@@ -112,7 +127,7 @@
 | `manage/life_tips.html` | `manage/layout.html`, `macros/manage_page.html`, `macros/ui_explanation.html`, `macros/app_topbar.html` | `js/manage_life_tips.js` | - | - |
 | `manage/lq_sidebar.html` | `macros/manage_icons.html`, `macros/lq/icons.generated.html`, `macros/ui_explanation.html` | - | - | - |
 | `manage/lq_topbar.html` | `manage/lq_utility.html`, `macros/lq/shells.html` | - | - | - |
-| `manage/lq_utility.html` | `macros/lq/button.html`, `macros/lq/icons.generated.html`, `macros/user_ui_preferences.html`, `partials/social_entry.html` | - | - | - |
+| `manage/lq_utility.html` | `macros/lq/button.html`, `macros/lq/icons.generated.html`, `macros/user_ui_preferences.html`, `partials/social_entry.html` 等 5 项 | - | - | - |
 | `manage/material_hub.html` | `manage/layout.html`, `macros/manage_page.html`, `macros/lq/chip-row.html`, `macros/app_topbar.html` | `js/material_hub.js` | - | - |
 | `manage/materials.html` | `manage/layout.html`, `partials/materials/library_card.html`, `partials/materials/modals_generate.html`, `partials/materials/modals_repository.html` 等 9 项 | `css/materials_library.css`, `js/base_resource_modes.js`, `js/materials_manage.js` | `frontend/src/islands/materials-manage-page.tsx` | `materials-manage-page` |
 | `manage/me_credentials.html` | `manage/layout.html`, `macros/manage_page.html`, `macros/app_topbar.html`, `macros/lq/content.html` | - | - | - |
@@ -147,13 +162,18 @@
 | `material_reader_unavailable.html` | `base_centered.html` | `js/material_reader_return.js` | - | - |
 | `material_render_shell.html` | `base.html`, `partials/markdown_assets.html` | `js/material_reader_return.js`, `js/teacher_whiteboard.js`, `js/behavior_tracker.js`, `js/material_render_shell.js` | - | - |
 | `material_viewer.html` | `base.html`, `partials/markdown_assets.html` | `js/material_reader_return.js`, `js/teacher_whiteboard.js`, `js/behavior_tracker.js`, `js/material_viewer.js` | - | - |
+| `minigames/detail.html` | `manage/layout.html` | `css/lq/pages/minigames.css`, `js/minigames/manage.js` | - | - |
+| `minigames/hall.html` | `base.html` | `css/lq/pages/minigames.css`, `js/minigames/hall.js` | - | - |
+| `minigames/host.html` | `base.html` | `css/lq/pages/minigames.css`, `js/minigames/host.js` | - | - |
+| `minigames/manage.html` | `manage/layout.html` | `css/lq/pages/minigames.css`, `js/minigames/manage.js` | - | - |
+| `minigames/ui.html` | - | - | - | - |
 | `partials/ability_radar.html` | - | - | - | - |
 | `partials/academic_sync_dialog.html` | - | - | - | - |
 | `partials/ai_workspace_assets.html` | `partials/markdown_assets.html` | `js/ai_chat_component.js`, `js/ai_workspace_widget.js` | - | - |
 | `partials/ai_workspace_mount.html` | `partials/ai_workspace_widget.html`, `partials/ai_workspace_assets.html` | `css/ai_workspace.css`, `css/agent_workbench.css` | - | - |
 | `partials/ai_workspace_widget.html` | - | - | - | - |
 | `partials/app_bottomnav.html` | - | - | - | - |
-| `partials/app_topbar_utility_actions.html` | `macros/app_topbar.html`, `macros/app_utility_menus.html`, `partials/social_entry.html` | `js/lq/nav-menu.js` | - | - |
+| `partials/app_topbar_utility_actions.html` | `macros/app_topbar.html`, `macros/app_utility_menus.html`, `partials/social_entry.html`, `minigames/ui.html` | `js/lq/nav-menu.js` | - | - |
 | `partials/assessment_classification_batch.html` | - | `js/assessment_classification_batch.js` | - | - |
 | `partials/assessment_kind_control.html` | - | - | - | - |
 | `partials/blog_button.html` | - | - | `frontend/src/islands/blog-launcher.tsx` | `blog-launcher` |
@@ -181,7 +201,7 @@
 | `partials/login_remember.html` | `macros/lq/forms.html` | - | - | - |
 | `partials/lq_app_bottomnav.html` | `macros/lq/shells.html` | - | - | - |
 | `partials/lq_editor_head.html` | `partials/lq_theme_bootstrap.html`, `partials/ui_system_assets.html`, `partials/ai_workspace_mount.html` | `css/user_ui_preferences.css`, `js/user_ui_preferences.js` | - | - |
-| `partials/lq_navbar_topbar.html` | `macros/lq/button.html`, `macros/lq/icons.generated.html`, `macros/user_ui_preferences.html` | `js/lq/nav-menu.js` | - | - |
+| `partials/lq_navbar_topbar.html` | `macros/lq/button.html`, `macros/lq/icons.generated.html`, `macros/user_ui_preferences.html`, `minigames/ui.html` | `js/lq/nav-menu.js` | - | - |
 | `partials/lq_page_backdrop.html` | - | - | - | - |
 | `partials/lq_report_card_topbar.html` | `partials/lq_navbar_topbar.html` | - | - | - |
 | `partials/lq_shell_prepaint.html` | - | - | - | - |
@@ -311,6 +331,8 @@
 | `classroom_app/routers/materials_parts/library.py` | 24 | `GET /manage/library/materials`, `GET /manage/archive/postclass-materials`, `GET /manage/archive/grading-rubrics`, `GET /manage/archive/ordinary-grade-records` 等 8 项 | `manage/materials.html` |
 | `classroom_app/routers/materials_parts/node_ops.py` | 6 | `POST /api/materials/folders`, `POST /api/materials/files`, `GET /api/materials/folder-options`, `POST /api/materials/{material_id}/move` 等 6 项 | - |
 | `classroom_app/routers/message_center.py` | 19 | `GET /message-center`, `GET /api/message-center/bootstrap`, `GET /api/message-center/summary`, `GET /api/message-center/items` 等 8 项 | - |
+| `classroom_app/routers/minigame_admin.py` | 15 | `GET /games`, `GET /games/{game_id}`, `POST /games`, `PATCH /games/{game_id}` 等 8 项 | - |
+| `classroom_app/routers/minigames.py` | 0 | - | `minigames/hall.html`, `minigames/host.html`, `minigames/detail.html`, `minigames/manage.html` |
 | `classroom_app/routers/mp/auth.py` | 5 | `POST /login`, `POST /bind/student`, `POST /bind/teacher`, `GET /me` 等 5 项 | - |
 | `classroom_app/routers/mp/classroom.py` | 1 | `GET /live` | - |
 | `classroom_app/routers/mp/life_tips.py` | 1 | `POST /feedback` | - |

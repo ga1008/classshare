@@ -134,7 +134,7 @@ test('syntax errors fail rather than silently printing or publishing a new manif
   assert.deepEqual(readFileSync(join(f.root, 'assets/manifest.json')), before);
 });
 
-test('printer source and compiler version changes each force new immutable URLs; manifest binds every source', async t => {
+test('printer, compiler and gzip encoder changes get separate immutable URLs; manifest binds every source', async t => {
   const f = fixture(t);
   // Copies resolve the installed lexer above .codex-temp. The compiler facade
   // uses the real printer but allows a version-only upgrade without editing npm.
@@ -151,21 +151,32 @@ test('printer source and compiler version changes each force new immutable URLs;
   writeFileSync(join(compiler, 'experimental.mjs'), `export { minifySync } from ${JSON.stringify(compilerEntry)};`);
   const version = value => writeFileSync(join(compiler, 'package.json'), JSON.stringify({ name: 'rolldown', version: value,
     exports: { './experimental': './experimental.mjs', './package.json': './package.json' } }));
+  const encoder = join(toolsCopy, 'node_modules/@gfx/zopfli'); mkdirSync(encoder, { recursive: true });
+  const encoderEntry = pathToFileURL(createRequire(import.meta.url).resolve('@gfx/zopfli')).href;
+  writeFileSync(join(encoder, 'index.mjs'), `export { default } from ${JSON.stringify(encoderEntry)};`);
+  const encoderVersion = value => writeFileSync(join(encoder, 'package.json'), JSON.stringify({ name: '@gfx/zopfli', version: value,
+    exports: { '.': './index.mjs', './package.json': './package.json' } }));
   const build = () => {
     const result = spawnSync(process.execPath, [builder, f.root], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     return f.manifest();
   };
   version('fixture-version-one');
+  encoderVersion('fixture-encoder-one');
   const first = build();
   const original = readFileSync(f.artifact('js/lq/index.js'));
+  const originalGzip = readFileSync(`${f.artifact('js/lq/index.js')}.gz`);
   writeFileSync(printer, readFileSync(printer, 'utf8') + '\n// A printer implementation revision.\n');
   const second = build();
   version('fixture-version-two');
   const third = build();
-  assert.equal(new Set([first.revision, second.revision, third.revision]).size, 3);
-  assert.equal(new Set([first.recipeHash, second.recipeHash, third.recipeHash]).size, 3);
+  encoderVersion('fixture-encoder-two');
+  const fourth = build();
+  const snapshots = [first, second, third, fourth];
+  assert.equal(new Set(snapshots.map(m => m.revision)).size, 4);
+  assert.equal(new Set(snapshots.map(m => m.recipeHash)).size, 4);
   assert.deepEqual(readFileSync(join(f.root, first.entries['js/lq/index.js'])), original);
+  assert.deepEqual(readFileSync(join(f.root, first.entries['js/lq/index.js'] + '.gz')), originalGzip);
   assert.deepEqual(readFileSync(f.artifact('js/lq/index.js')), original);
   assert.equal(f.manifest().sourceHashes['js/lq/index.js'], createHash('sha256').update(readFileSync(join(f.root, 'js/lq/index.js'))).digest('hex'));
   assert.equal(Object.keys(f.manifest().sourceHashes).length, Object.keys(f.manifest().entries).length);

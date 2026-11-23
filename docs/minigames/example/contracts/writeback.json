@@ -1,0 +1,19 @@
+{
+  "formatVersion": 1,
+  "series": "coast",
+  "saveVersion": 1,
+  "privateFields": {
+    "sound": { "type": "boolean", "default": true },
+    "mapStyle": { "type": "enum", "values": ["paper", "night"], "default": "paper" },
+    "mapPins": {
+      "type": "document",
+      "schema": { "type": "array", "maxItems": 12, "items": { "type": "integer", "minimum": 0, "maximum": 99 } },
+      "default": []
+    }
+  },
+  "milestones": [
+    { "id": "pier", "label": "码头", "resumeState": "atPier" },
+    { "id": "bay", "label": "海湾", "resumeState": "atBay" },
+    { "id": "cape", "label": "海角", "resumeState": "atCape" }
+  ]
+}

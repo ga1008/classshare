@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LanShare 双人连线规则 v1",
+  "type": "object", "additionalProperties": false,
+  "required": ["engine", "size", "line"],
+  "properties": {
+    "engine": { "const": "grid-line-v1" },
+    "size": { "type": "integer", "minimum": 3, "maximum": 19 },
+    "line": { "type": "integer", "minimum": 3, "maximum": 19 }
+  }
+}

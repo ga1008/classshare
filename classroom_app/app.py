@@ -177,6 +177,9 @@ from .services.trusted_network_service import TrustedProxySchemeMiddleware
 @app.middleware("http")
 async def deployment_cache_middleware(request: Request, call_next):
     response = await call_next(request)
+    if request.url.path.startswith("/api/games/v1/"):
+        response.headers["Cache-Control"] = "private, no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
     apply_deployment_cache_headers(request, response)
     return response
 
@@ -239,12 +242,16 @@ async def startup_event():
     # （尽管 uvicorn reload 模式下可能不需要，但这是个好习惯）
     ensure_runtime_directories()
     init_database()
+    from .services.minigame_platform import start_minigames
+    await start_minigames(app)
     from .services.interaction_expression_refresh import arm_expression_timer
     try:
         arm_expression_timer()
     except Exception as exc:
         print(f"[RADAR] Expression timer registration deferred: {type(exc).__name__}")
     presence_service.start_presence_runtime()
+    from .services.login_attendance_access_service import start_collector_heartbeat
+    await start_collector_heartbeat()
     from .services.login_attendance_jobs import ensure_tasks as ensure_login_attendance_tasks
     from .services.smart_classroom_alignment_jobs import ensure_tasks as ensure_smart_classroom_alignment_tasks
     with get_db_connection() as attendance_conn:
@@ -396,6 +403,8 @@ async def startup_event():
 async def shutdown_event():
     """应用关闭时执行"""
     await anyio.to_thread.run_sync(_health_snapshots.stop)
+    from .services.minigame_platform import stop_minigames
+    await stop_minigames(app)
     from .services.password_verification_service import stop_password_verifier
     await anyio.to_thread.run_sync(stop_password_verifier)
     await social_push_service.stop_outbound_writers()
@@ -828,6 +837,11 @@ app.mount("/static", CacheControlStaticFiles(directory=STATIC_DIR), name="static
 # -----------------
 # 组装路由
 # -----------------
+from .routers import minigame_admin, minigame_runtime, minigames
+app.include_router(minigames.pages)
+app.include_router(minigames.router)
+app.include_router(minigame_admin.router)
+app.include_router(minigame_runtime.router)
 app.include_router(manage_redirects.router)
 app.include_router(ui.router)
 # /ws/social must precede files.router's /ws/{class_offering_id}, which would otherwise capture it.

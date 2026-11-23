@@ -4,8 +4,12 @@ import { getLayerSystem } from './layer.js';
 import { tone } from './tones.js';
 
 const runtimeKey = Symbol.for('lanshare.lq.runtime.v1');
-const chipRow = () => import('./chip-row.js');
-const features = { chipRow, forms: () => import('./forms.js'), navigation: () => import('./navigation.js'), dialogs: () => import('./dialogs.js'), collapsible: () => import('./collapsible.js'), tones: () => import('./tones.js'), toast: () => import('./toast.js'), content: () => import('./content.js'), menus: () => import('./menus.js'), tooltips: () => import('./tooltips.js'), status: () => import('./status.js'), tables: () => import('./tables.js'), selection: () => import('./selection.js'), dropdown: () => import('./dropdown.js'), business: () => import('./business.js'), dirtyGuard: () => import('./dirty-guard.js'), upload: () => import('./upload.js'), workspace: () => import('./workspace.js'), insights: () => import('./insights.js'), shells: () => import('./shells.js'), composer: () => import('./composer.js') };
+// A public feature name resolves only to a sibling of this immutable module.
+const featureModules = new Map([
+    'chip-row', 'forms', 'navigation', 'dialogs', 'collapsible', 'tones', 'toast', 'content',
+    'menus', 'tooltips', 'status', 'tables', 'selection', 'dropdown', 'business', 'dirty-guard',
+    'upload', 'workspace', 'insights', 'shells', 'composer',
+].map(file => [file.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase()), file]));
 
 function deferredDialog(api, name, props, options, doc) {
     let current, canceled = false, finish;
@@ -62,8 +66,9 @@ export function getLQ(doc = document) {
         const modules = new Map();
         Object.assign(api, {
             load(name) {
-                if (!Object.hasOwn(features, name)) return Promise.reject(new TypeError('Unknown LQ feature'));
-                if (!modules.has(name)) modules.set(name, features[name]().catch(error => { modules.delete(name); throw error; }));
+                const file = featureModules.get(name);
+                if (!file) return Promise.reject(new TypeError('Unknown LQ feature'));
+                if (!modules.has(name)) modules.set(name, import(`./${file}.js`).catch(error => { modules.delete(name); throw error; }));
                 return modules.get(name);
             },
             confirm: (props, options) => deferredDialog(api, 'confirm', props, options, doc),

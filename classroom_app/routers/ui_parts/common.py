@@ -1234,9 +1234,10 @@ def _build_manage_template_context(
     page_title: str,
     active_page: str,
     extra: dict | None = None,
+    teacher_is_super_admin: bool | None = None,
 ) -> dict:
-    current_teacher_is_super_admin = False
-    if user.get("role") == "teacher":
+    current_teacher_is_super_admin = user.get("role") == "teacher" and bool(teacher_is_super_admin)
+    if user.get("role") == "teacher" and teacher_is_super_admin is None:
         try:
             with get_db_connection() as conn:
                 current_teacher_is_super_admin = is_super_admin_teacher(conn, user.get("id"))

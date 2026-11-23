@@ -43,7 +43,7 @@
     "title": "Motion 动效参数",
     "layer": "foundation",
     "summary": "按压 / 释放 / 浮层出入场 / 菜单 / 反馈的时长与曲线变量；`data-lq-motion=\"off|quiet|standard|expressive\"` 可设在 html、组件或子树；系统 prefers-reduced-motion 优先。",
-    "rules": "只动画 transform/opacity，不动画 blur、宽高；不用动画时长当网络完成信号。"
+    "rules": "只动画 transform/opacity，不动画 blur、宽高；不用动画时长当网络完成信号。小游戏大厅游戏卡使用单个委托指针控制器、当前卡装饰光层与按需动画帧；粗指针、减少动效、强制色时保留静态焦点。"
   },
   "page-backdrop": {
     "title": "Page backdrop 页面背景层",
@@ -397,9 +397,18 @@
       "params": "复用LQ Switch/Input/NativeSelect/Progress与原生文本槽；登录跨度及学习时长升降序，未知排末，同值保持名单顺序。共享控件未改，领域CSS仅布局。",
       "states": "开关隐藏保留网段草稿、422保留配置；服务器时钟缺失显示校准，server_now_ms+performance.now单一锚点，客户端时钟偏差不改变计时。结束显示补报倒计时/排队/真实阶段/完成/失败；不把倒计时伪作计算百分比。",
       "rules": "一套每秒文本时钟，仅可见顶层更新，关闭清理；计时不重建表单或学生卡，不决定业务权限。六态筛选与排序不是未保存改签，搜索/选择/批量功能保留。登录跨度仅首末服务器接入间隔，不代表连续在线；学习时长只展示有效来源，null不作为0。旧算法仅点击立即结算并确认后adopt_current_rules，保留旧IP限定、原时间窗口及人工决定。浏览器隔离合成验证，不连接真实数据。 关闭IP限制时省略networks字段以保留已存网段，隐藏的未完成输入不验证。结束请求已返回较新round时立即采用其gate/processing快照并废弃旧GET，任务代次不倒退，未知提交恢复键不清空。"
+    },
+    "minigames": {
+      "title": "独立 HTML 小游戏大厅、宿主与管理台 static/css/lq/pages/minigames.css",
+      "layer": "composite",
+      "summary": "游玩大厅（/games）、沉浸沙盒宿主（/games/{slug}）与教师游戏库管理（/manage/library/games）。大厅首屏 SSR 直出目录与四栏动态，配合单委托指针光晕与即时模式芯片筛选；宿主以 48px 顶栏、舞台模式选择卡、环形倒计时、席位圆点与无同源权限的 iframe MessageChannel 桥承载单机与多人对局；管理台采用双栏编目、拖放上传区、语义状态芯片与两步彻底删除。",
+      "params": "复用 LQ Topbar、Surface(content/embedded)、Button(lq_props/createComponent)、Chip(filter/status)、Choice 复合卡(data-lq-shape=surface)、Form(input/textarea/select/checkbox/file)、Dropdown、Progress、Dialog/Drawer/Sheet/Confirm、Composer 与 bindTooltip；局部绘制游戏矢量图标沿用 lq-btn__icon 槽位，不扩首屏共享图标包。",
+      "states": "大厅 SSR 已注水零冗余首屏请求、空结果、游标分页；宿主加载、舞台模式选择、私房邀请码、随机排队、5 秒环形倒计时、队友重连、只读多开接管、终局结算、静音 409 自动重试与舞台焦点归还；教师草稿、隔离验收、人工试玩、发布、下架、409 冲突留稿与彻底删除进度。",
+      "rules": "页面 CSS 仅负责网格、比例、席位与徽记几何，零硬编码字面色值、零私有 backdrop-filter、零字面 z-index；精细指针仅激活当前卡光晕并在粗指针/减少动效/强制色下完全关闭，空闲零 rAF。"
     }
   },
   "_tools": {
+    "native-esm": "正式原生 LQ 入口与共享浮层工具在构建时用固定版本 Zopfli 编码 gzip；npm run check:lq-size 按各模块实际响应计量。LQ.load 依据功能清单从当前静态图按需导入同目录模块，chipRow 与 dirtyGuard 继续使用既有名称。",
     "probe": "tools/ui/probe_layout_readability.cjs —— 隔离合成环境里按亮/暗外观遍历路由（可带点击步骤），统计\"有底无内边距 / 板块相贴 / 文字对比不足 / 浮层无磨砂\"四类候选；npm run probe:lq-layout。 2026-10-24 增加 capsule 检查：胶囊里文字超过两行，或嵌套的带底色元素离圆角端小于半个圆角。",
     "adaptive-fills": "tools/ui/adaptive_light_fills.py —— 把遗留 CSS 与模板内联 <style> 里写死的浅色底（含 --ls-c-* 调色板常量）改成 light-dark(原值, 同色相深色玻璃)，并把只为亮色写的语义色文字改成自适应；亮色外观逐像素不变，旧浏览器回退原值；幂等；npm run fix:lq-light-fills。"
   },

@@ -243,7 +243,7 @@ def render_nginx(source, *, client_ip, release_id):
         raise ValueError("An explicit exact Docker-host private IPv4 is required")
     if source.count("location = /api/internal/health {") != 2 or source.count("listen 443 ssl;") != 1:
         raise ValueError("Production Nginx structure changed; review the lab derivation")
-    result = source.replace("server_name guardianangel.net.cn;", "server_name localhost;")
+    result = source.replace("server_name guardianangel.net.cn www.guardianangel.net.cn;", "server_name localhost;")
     result = result.replace("guardianangel.net.cn_bundle.crt", "capacity-lab.crt").replace("guardianangel.net.cn.key", "capacity-lab.key")
     result = result.replace("location = /api/internal/health {", f"location = /api/internal/health {{\n        allow {address};\n        allow 127.0.0.1;\n        deny all;")
     identity = ("    location = /api/internal/capacity-lab-identity {\n"

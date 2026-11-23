@@ -3785,6 +3785,366 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/games/v1/admin/games",
+    "methods": [
+      "GET"
+    ],
+    "name": "games",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games",
+    "methods": [
+      "POST"
+    ],
+    "name": "create",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "delete",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "update",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}/deletion-plans",
+    "methods": [
+      "POST"
+    ],
+    "name": "plan",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}/publish",
+    "methods": [
+      "POST"
+    ],
+    "name": "publish",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}/suggestions",
+    "methods": [
+      "POST"
+    ],
+    "name": "suggestions",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}/unlist",
+    "methods": [
+      "POST"
+    ],
+    "name": "unlist",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}/versions",
+    "methods": [
+      "POST"
+    ],
+    "name": "upload",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}/versions/{vid}",
+    "methods": [
+      "GET"
+    ],
+    "name": "version",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}/versions/{vid}/playtests",
+    "methods": [
+      "POST"
+    ],
+    "name": "playtest",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}/versions/{vid}/preview",
+    "methods": [
+      "POST"
+    ],
+    "name": "preview",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}/versions/{vid}/retire",
+    "methods": [
+      "POST"
+    ],
+    "name": "retire",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/jobs/{job_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "job",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/catalog",
+    "methods": [
+      "GET"
+    ],
+    "name": "list_games",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/games/{gameId}/queue",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_queue_post_game",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/games/{gameId}/rooms",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_create_post_game",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/games/{gameId}/rooms/join",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_join_post_game",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/games/{gameId}/runs",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_solo_post_game",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/games/{gameId}/takeover",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_takeover_post_game",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/games/{game_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "game_detail",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/games/{game_id}/icon",
+    "methods": [
+      "GET"
+    ],
+    "name": "game_icon",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/games/{game_id}/launches",
+    "methods": [
+      "POST"
+    ],
+    "name": "new_launch",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/launches/{lease_id}/renew",
+    "methods": [
+      "POST"
+    ],
+    "name": "update_launch",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/launches/{lease_id}/revoke",
+    "methods": [
+      "POST"
+    ],
+    "name": "update_launch",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/me/activity",
+    "methods": [
+      "GET"
+    ],
+    "name": "game_activity_get_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/me/heartbeat",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_pulse_post_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/me/history",
+    "methods": [
+      "GET"
+    ],
+    "name": "game_history_get_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/me/preferences",
+    "methods": [
+      "GET"
+    ],
+    "name": "game_prefs_get_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/me/preferences",
+    "methods": [
+      "PUT"
+    ],
+    "name": "game_prefs_put_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/me/progress/{gameId}",
+    "methods": [
+      "GET"
+    ],
+    "name": "game_progress_get_game",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/me/progress/{gameId}/private",
+    "methods": [
+      "PUT"
+    ],
+    "name": "game_private_put_game",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/me/teams",
+    "methods": [
+      "GET"
+    ],
+    "name": "game_teams_get_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/me/teams/{templateId}",
+    "methods": [
+      "DELETE"
+    ],
+    "name": "game_delete_template_delete_template",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/queue/{ticketId}/cancel",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_cancel_post_ticket",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/rooms/{roomId}/chat",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_chat_post_room",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/rooms/{roomId}/leave",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_leave_post_room",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/rooms/{roomId}/rotate-code",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_rotate_post_room",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/runs/{runId}/finish",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_finish_post_run",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/runs/{runId}/intents",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_intent_post_run",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/runs/{runId}/leave",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_leave_post_run",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/sidebar",
+    "methods": [
+      "GET"
+    ],
+    "name": "sidebar",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/sync",
+    "methods": [
+      "GET"
+    ],
+    "name": "game_sync_get_account",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/sync",
+    "methods": [
+      "POST"
+    ],
+    "name": "game_sync_post_account",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/global-search",
     "methods": [
       "GET"
@@ -8761,6 +9121,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/games",
+    "methods": [
+      "GET"
+    ],
+    "name": "hall",
+    "include_in_schema": true
+  },
+  {
+    "path": "/games/{slug}",
+    "methods": [
+      "GET"
+    ],
+    "name": "host",
+    "include_in_schema": true
+  },
+  {
     "path": "/learning-path",
     "methods": [
       "GET"
@@ -9054,6 +9430,22 @@
       "GET"
     ],
     "name": "manage_exams_page",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/library/games",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/library/games/{game_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "manage",
     "include_in_schema": true
   },
   {

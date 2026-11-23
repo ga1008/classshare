@@ -67,7 +67,7 @@ async def run_db(fn: Callable[..., Any], *args: Any) -> Any:
     return await loop.run_in_executor(social_executor(), context.run, functools.partial(fn, *args))
 
 
-def serialize_on(conn: Any, namespace: str, values: Iterable[str]) -> None:
+def serialize_on(conn: Any, namespace: str, values: Iterable[str], *, shared: bool = False) -> None:
     """Transaction-scoped mutual exclusion on ``namespace:value`` keys (sorted, taken at once).
 
     PostgreSQL: ``pg_advisory_xact_lock`` per key (released at commit/rollback).
@@ -82,7 +82,8 @@ def serialize_on(conn: Any, namespace: str, values: Iterable[str]) -> None:
         for key in keys:
             lock_key = int.from_bytes(hashlib.sha256(("lanshare:" + key).encode("utf-8")).digest()[:8], "big",
                                       signed=True)
-            conn.execute("SELECT pg_advisory_xact_lock(?)", (lock_key,))
+            sql = "SELECT pg_advisory_xact_lock_shared(?)" if shared else "SELECT pg_advisory_xact_lock(?)"
+            conn.execute(sql, (lock_key,))
         return
     if not getattr(conn, "in_transaction", True):
         conn.execute("BEGIN IMMEDIATE")

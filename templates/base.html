@@ -17,13 +17,13 @@
     {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}"{% if user_info is defined and user_info %} data-authenticated-user="true"{% endif %} {{ body_attrs(ui_palette) }}>
-    {% include 'partials/lq_page_backdrop.html' with context %}
+    {% if not suppress_page_backdrop|default(false) %}{% include 'partials/lq_page_backdrop.html' with context %}{% endif %}
     {% block body %}{% endblock %}
 
     <!-- Global Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
-    {% if user_info is defined and user_info %}
+    {% if user_info is defined and user_info and not suppress_back_to_top|default(false) %}
     <!-- Global Back-to-top -->
     <button data-lq-component="button" type="button" id="global-back-to-top" class="lq-btn lq-btn--sm lq-btn--glass back-to-top" aria-label="回到顶部" title="回到顶部"{% if navbar_shell_enabled|default(false) %} data-lq-back-to-top{% if user_info.role == 'student' %} data-lq-dock-back-to-top{% endif %}{% endif %} hidden>
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -60,6 +60,7 @@
     {% endif %}
 
     <script type="module" src="{{ asset_url('js/auth.js') }}"></script>
+    {% if not suppress_account_widgets|default(false) %}
     <script type="module" src="{{ asset_url('js/ls_date_picker.js') }}"></script>
     {% if user_info is defined and user_info %}
     <script type="module" src="{{ asset_url('js/cultivation_identity.js') }}"></script>
@@ -71,6 +72,7 @@
     {% endif %}
     {% if user_info is defined and user_info %}
     {% include "partials/vite_islands.html" %}
+    {% endif %}
     {% endif %}
     {% block scripts %}{% endblock %}
 {% include "partials/ai_workspace_mount.html" %}

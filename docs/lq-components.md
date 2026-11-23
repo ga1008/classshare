@@ -158,6 +158,8 @@ Toast的直接ESM接口同步返回handle，`LQ.toast`按需下载后返回Promi
 
 构建仅处理`js/lq/*.js`、共享motion/geometry：Rolldown 1.0.3、compress=false、保留合法注释、不合包、不删代码。初版仅打印；补齐ring后为保持18KB预算，改为 `mangle:{toplevel:false,keepNames:true}`，只缩短内部局部绑定，保留模块顶层、导出、对象属性、函数和类的name。先完成URL重写，再打印；recipeHash绑定构建器、打印器与编译器版本。manifest保留schema1并增加sourceHashes/recipeHash。`npm run check:lq-size`验证完整源码/配方指纹、当前不可变图和实际gzip sidecar的内容；缺失/过期会失败，源码估算不作为通过。10项构建门禁包括闭包隔离、shorthand属性、反射名称、未使用代码保留、URL/旧图与失效检测。
 
+2026-11-23 正式构建对上述 LQ 原生模块采用固定版本的 Zopfli 预生成标准 gzip。浏览器按原生 ESM 加载；编码器版本纳入 recipeHash，旧版本静态地址与侧车仍可读取。LQ.load 先匹配公共功能名，再从当前快照按需加载同目录模块。正式预算仍逐个累计每个立即加载模块实际交付的 gzip 字节。
+
 9个打印/预算Node门禁、11个原静态图Python、1个实际delivery浏览器及typecheck通过。完整build通过；预览修复后的阶段图`fe0b771511b7eb9e99f1d6c6d9700e437628def01b8be03b116fa0f6f12cce42`实测11个入口依赖合计 **17,973/18,432 gzip字节**，逐响应相加。后续并行源文件变化会使这份图过期；最终阶段必须重新构建核对，不能复用此数字签完整S2。日志`lq-s2-production-size-preview-menu-fix.log`与`lq-s2-static-print-report.md`。
 
 尚待完成：AvatarStack/Insight基元、Clock/Job/QuestionNavigator、Upload/Dropzone/FileChip、Split/Viewer、导航壳/EditorShell/七骨架、全状态预览与全部出口回归。现有私有组件后续迁移和删除仍以实际消费者为门禁；本地数据库事故的恢复边界依然待确认。

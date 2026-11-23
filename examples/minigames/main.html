@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>小游戏</title>
+<link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+<main class="shell">
+<header class="topbar">
+<img id="icon" alt="" width="48" height="48">
+<div class="meta">
+<h1 id="title"></h1>
+<span id="player" class="badge"></span>
+</div>
+<div class="tools">
+<button id="style" type="button" class="tool-btn" hidden>切换海图配色</button>
+<button id="export" type="button" class="tool-btn" hidden>导出本机进度</button>
+<label id="import-label" class="tool-btn" hidden>导入本机进度<input id="import" type="file" accept=".json"></label>
+</div>
+</header>
+<div id="scene" class="scene" aria-hidden="true"></div>
+<p id="prompt" class="prompt" role="status">正在打开游戏…</p>
+<section id="board" aria-label="操作区"></section>
+<p id="error" class="error" role="alert"></p>
+</main>
+<script src="js/lan-game-sdk.v1.js"></script>
+<script src="js/offline-contracts.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>

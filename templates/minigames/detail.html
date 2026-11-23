@@ -1,0 +1,69 @@
+{% extends 'manage/layout.html' %}
+{% import 'minigames/ui.html' as ui with context %}
+{% block title %}{{ game.title }} · 小游戏管理{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
+{% block header_actions %}{{ ui.btn('小游戏管理', variant='ghost', size='sm', icon='arrow-left', href='/manage/library/games') }}{% endblock %}
+{% block content %}
+<main class="game-management" data-game-detail>
+<header class="lq-surface game-detail-hero" data-lq-component="surface">
+<span data-detail-icon>{{ ui.game_icon(game, eager=true) }}</span>
+<div class="game-detail-title">
+<h1 data-detail-heading>{{ game.title }}</h1>
+<div class="game-row-head" data-detail-status></div>
+</div>
+<div class="game-actions game-section game-hero-actions">
+{{ ui.action('下架游戏', 'unlist', variant='soft', icon='pause') }}
+{{ ui.action('彻底删除游戏', 'delete', variant='destructive', icon='trash') }}
+</div>
+</header>
+{{ ui.notice() }}
+<div class="game-detail-grid">
+<section class="lq-surface game-section" data-lq-component="surface">
+<h2 class="game-section-title">{{ ui.g_icon('sliders', 'game-mini-icon') }}<span>编目与权限</span><small class="game-policy-pill" data-policy-summary></small></h2>
+<form class="game-form" data-game-attributes>
+{{ ui.field('展示名称', 'title', value=game.title, required=true, maxlength=48) }}
+<div class="game-field"><label for="game-summary">简介</label><textarea class="lq-textarea" data-lq-component="textarea" id="game-summary" name="summary" rows="3" maxlength="240" placeholder="一句话说明核心玩法…">{{ game.summary|default('') }}</textarea></div>
+<div class="game-form-split">
+{{ ui.field('标签（以逗号分隔）', 'tags', value=(game.tags|default([], true))|join('，'), placeholder='逻辑，合作') }}
+<div class="game-featured-box">{{ ui.check('教师精选', 'featured', game.featured) }}</div>
+</div>
+{{ ui.select('可见范围', 'scope', [('private', '私有'), ('classroom', '指定课堂'), ('class', '指定行政班'), ('department', '本系部'), ('college', '本学院'), ('school', '本校'), ('public', '全平台')], game.scope) }}
+<fieldset class="game-targets-set" data-targets hidden><legend>授权对象</legend><div class="game-targets"></div></fieldset>
+<div class="game-form-split">
+{{ ui.field('修为下限（含）', 'minTier', 'number', game.min_tier|default(0), true, 0, 10) }}
+{{ ui.field('修为上限（含）', 'maxTier', 'number', game.max_tier|default(10), true, 0, 10) }}
+</div>
+<div class="game-actions">
+{{ ui.form_button('保存属性', icon='check') }}
+{{ ui.action('拟写简介与标签', 'suggest', variant='soft', icon='sparkles') }}
+</div>
+</form>
+</section>
+<div class="game-detail-stack">
+<section class="lq-surface game-section" data-lq-component="surface">
+<h2 class="game-section-title">{{ ui.g_icon('upload', 'game-mini-icon') }}<span>上传与验收</span></h2>
+<form class="game-form" data-version-upload>
+<label class="game-dropzone" data-dropzone>
+<span class="game-dropzone__icon" aria-hidden="true">{{ ui.g_icon('upload') }}</span>
+<span class="game-dropzone__title">独立 HTML 游戏包（ZIP）</span>
+<small class="game-muted" data-file-meta>支持单根 ZIP（≤ 64 MiB）</small>
+<input class="lq-native-file game-dropzone__input" data-lq-component="file" type="file" name="file" accept=".zip,application/zip" required>
+</label>
+<div class="game-actions">
+{{ ui.form_button('上传并验收', icon='upload') }}
+</div>
+<progress class="lq-progress" aria-label="游戏包传输进度" data-upload-progress hidden></progress>
+</form>
+<h3 class="game-subhead">{{ ui.g_icon('shield', 'game-mini-icon') }}<span>验收记录</span></h3>
+<ul class="lq-list game-jobs" data-jobs></ul>
+</section>
+<section class="lq-surface game-section" data-lq-component="surface">
+<h2 class="game-section-title">{{ ui.g_icon('rocket', 'game-mini-icon') }}<span>版本与发布</span></h2>
+<ul class="lq-list game-versions" data-game-versions></ul>
+</section>
+</div>
+</div>
+</main>
+{{ ui.boot({'gameId': game.id, 'scopeOptions': scope_options|default({})}) }}
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ asset_url('js/minigames/manage.js') }}"></script>{% endblock %}

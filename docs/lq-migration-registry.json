@@ -13,8 +13,8 @@
     "旧代码可删除"
   ],
   "coverage": {
-    "templateCount": 210,
-    "entryCount": 231,
+    "templateCount": 215,
+    "entryCount": 238,
     "unresolvedTemplates": [
       "error.html",
       "macros/lq/dialogs.html",
@@ -26,6 +26,34 @@
       "teacher_register_v4.html"
     ],
     "dynamicTemplateEndpoints": [
+      {
+        "routePattern": "/manage/library/games",
+        "method": "GET",
+        "source": "classroom_app/routers/minigames.py",
+        "line": 103,
+        "endpoint": "manage",
+        "templates": [
+          "minigames/detail.html",
+          "minigames/manage.html"
+        ],
+        "templatePatterns": [],
+        "dependencies": [],
+        "dynamicTemplate": true
+      },
+      {
+        "routePattern": "/manage/library/games/{game_id}",
+        "method": "GET",
+        "source": "classroom_app/routers/minigames.py",
+        "line": 103,
+        "endpoint": "manage",
+        "templates": [
+          "minigames/detail.html",
+          "minigames/manage.html"
+        ],
+        "templatePatterns": [],
+        "dependencies": [],
+        "dynamicTemplate": true
+      },
       {
         "routePattern": "/profile",
         "method": "GET",
@@ -990,6 +1018,8 @@
         "/dev/lq",
         "/exam/take/{assignment_id}",
         "/feedback-review",
+        "/games",
+        "/games/{slug}",
         "/learning-path",
         "/materials/lessondoc-editor/{pack_id}",
         "/materials/render-view/{material_id}",
@@ -1080,7 +1110,7 @@
       ],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "421aa25910166c6eefdde1ab59c5fbf0d1e99b7b0c3265ade28e9c98d4e237ee",
+      "inventorySourceSha256": "017f73f03c0f3ea9576cc03e73f9fc17fdffd9f7f11964467e5aea820d2d8fe5",
       "before": {
         "sourceSha256": "773256214f65689dce93cc62bfcaa6cd279b78a53e1579a70a7f4b2ee57b37b4",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/base.html",
@@ -4517,6 +4547,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -4629,6 +4661,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -4883,6 +4917,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -5488,6 +5524,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -5608,6 +5646,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -5774,6 +5814,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -5887,6 +5929,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -6095,6 +6139,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -6495,6 +6541,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -6543,7 +6591,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "9f55577ede24e1ed24e6be392e6bee4b7edc27add8374638e0a1ca2d31ddf68e",
+      "inventorySourceSha256": "d51a66b9b3e23dea948dcaf43d9a98a3920f50065c3687050b228c15c0c5bbdb",
       "before": {
         "sourceSha256": "5e17c4183c8e8cdec64cf73d2778cdbf76ad54932e3230b0e20023a521da27ee",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/macros/manage_icons.html",
@@ -6774,6 +6822,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -6887,6 +6937,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -8973,6 +9025,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -9514,6 +9568,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -9628,6 +9684,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -9733,6 +9791,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -9776,6 +9836,7 @@
         "macros/lq/button.html",
         "macros/lq/icons.generated.html",
         "macros/user_ui_preferences.html",
+        "minigames/ui.html",
         "partials/social_entry.html"
       ],
       "controller": [],
@@ -9784,7 +9845,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "cb04f6f3bdad39de49d653696e297e4ec31fea8e97b69ea521a23ae03adec5ce",
+      "inventorySourceSha256": "d077dcb6629f6c23f006ab06c6a5bc197f514b5965f054ca7a7e90926f568c5e",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -15380,6 +15441,517 @@
       ]
     },
     {
+      "id": "GET /manage/library/games::minigames/detail.html",
+      "routePattern": "/manage/library/games",
+      "method": "GET",
+      "template": "templates/minigames/detail.html",
+      "kind": "template",
+      "ownerRoutes": [
+        "/manage/library/games",
+        "/manage/library/games/{game_id}"
+      ],
+      "routeEvidence": {
+        "routePattern": "/manage/library/games",
+        "method": "GET",
+        "source": "classroom_app/routers/minigames.py",
+        "line": 103,
+        "endpoint": "manage",
+        "templates": [
+          "minigames/detail.html",
+          "minigames/manage.html"
+        ],
+        "templatePatterns": [],
+        "dependencies": [],
+        "dynamicTemplate": true
+      },
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [
+        "css/lq/pages/minigames.css",
+        "js/minigames/manage.js"
+      ],
+      "islands": [],
+      "templateReferences": [
+        "manage/layout.html",
+        "minigames/ui.html"
+      ],
+      "controller": [],
+      "domHooks": [
+        "game-summary"
+      ],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "7d23a202fe61bd462d4258b1b3947301b9911cf9538c6d5398a29ab4aa429ae3",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/minigames/detail.html"
+        ],
+        "assets": [
+          "css/lq/pages/minigames.css",
+          "js/minigames/manage.js"
+        ],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
+    },
+    {
+      "id": "GET /manage/library/games/{game_id}::minigames/detail.html",
+      "routePattern": "/manage/library/games/{game_id}",
+      "method": "GET",
+      "template": "templates/minigames/detail.html",
+      "kind": "template",
+      "ownerRoutes": [
+        "/manage/library/games",
+        "/manage/library/games/{game_id}"
+      ],
+      "routeEvidence": {
+        "routePattern": "/manage/library/games/{game_id}",
+        "method": "GET",
+        "source": "classroom_app/routers/minigames.py",
+        "line": 103,
+        "endpoint": "manage",
+        "templates": [
+          "minigames/detail.html",
+          "minigames/manage.html"
+        ],
+        "templatePatterns": [],
+        "dependencies": [],
+        "dynamicTemplate": true
+      },
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [
+        "css/lq/pages/minigames.css",
+        "js/minigames/manage.js"
+      ],
+      "islands": [],
+      "templateReferences": [
+        "manage/layout.html",
+        "minigames/ui.html"
+      ],
+      "controller": [],
+      "domHooks": [
+        "game-summary"
+      ],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "7d23a202fe61bd462d4258b1b3947301b9911cf9538c6d5398a29ab4aa429ae3",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/minigames/detail.html"
+        ],
+        "assets": [
+          "css/lq/pages/minigames.css",
+          "js/minigames/manage.js"
+        ],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
+    },
+    {
+      "id": "GET /games::minigames/hall.html",
+      "routePattern": "/games",
+      "method": "GET",
+      "template": "templates/minigames/hall.html",
+      "kind": "template",
+      "ownerRoutes": [
+        "/games"
+      ],
+      "routeEvidence": {
+        "routePattern": "/games",
+        "method": "GET",
+        "source": "classroom_app/routers/minigames.py",
+        "line": 38,
+        "endpoint": "hall",
+        "templates": [
+          "minigames/hall.html"
+        ],
+        "templatePatterns": [],
+        "dependencies": [],
+        "dynamicTemplate": false
+      },
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [
+        "css/lq/pages/minigames.css",
+        "js/minigames/hall.js"
+      ],
+      "islands": [],
+      "templateReferences": [
+        "base.html",
+        "minigames/ui.html"
+      ],
+      "controller": [],
+      "domHooks": [
+        "game-directory",
+        "preferences-form"
+      ],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "b0e3552452f11f6c93f590440c9d7948975fe2d67c58f7ab57313ce68ac1c359",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/minigames/hall.html"
+        ],
+        "assets": [
+          "css/lq/pages/minigames.css",
+          "js/minigames/hall.js"
+        ],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
+    },
+    {
+      "id": "GET /games/{slug}::minigames/host.html",
+      "routePattern": "/games/{slug}",
+      "method": "GET",
+      "template": "templates/minigames/host.html",
+      "kind": "template",
+      "ownerRoutes": [
+        "/games/{slug}"
+      ],
+      "routeEvidence": {
+        "routePattern": "/games/{slug}",
+        "method": "GET",
+        "source": "classroom_app/routers/minigames.py",
+        "line": 67,
+        "endpoint": "host",
+        "templates": [
+          "minigames/host.html"
+        ],
+        "templatePatterns": [],
+        "dependencies": [],
+        "dynamicTemplate": false
+      },
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [
+        "css/lq/pages/minigames.css",
+        "js/minigames/host.js"
+      ],
+      "islands": [],
+      "templateReferences": [
+        "base.html",
+        "minigames/ui.html"
+      ],
+      "controller": [],
+      "domHooks": [],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "ccb3cdd9681f9c0d022123ae24d35595f004fc4395e9400eb625e2861540fdf0",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/minigames/host.html"
+        ],
+        "assets": [
+          "css/lq/pages/minigames.css",
+          "js/minigames/host.js"
+        ],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
+    },
+    {
+      "id": "GET /manage/library/games::minigames/manage.html",
+      "routePattern": "/manage/library/games",
+      "method": "GET",
+      "template": "templates/minigames/manage.html",
+      "kind": "template",
+      "ownerRoutes": [
+        "/manage/library/games",
+        "/manage/library/games/{game_id}"
+      ],
+      "routeEvidence": {
+        "routePattern": "/manage/library/games",
+        "method": "GET",
+        "source": "classroom_app/routers/minigames.py",
+        "line": 103,
+        "endpoint": "manage",
+        "templates": [
+          "minigames/detail.html",
+          "minigames/manage.html"
+        ],
+        "templatePatterns": [],
+        "dependencies": [],
+        "dynamicTemplate": true
+      },
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [
+        "css/lq/pages/minigames.css",
+        "js/minigames/manage.js"
+      ],
+      "islands": [],
+      "templateReferences": [
+        "manage/layout.html",
+        "minigames/ui.html"
+      ],
+      "controller": [],
+      "domHooks": [],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "8a22fa774aa76b76cf883c04c4954de1fc14fc9133beac2712bb2fa216008ec8",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/minigames/manage.html"
+        ],
+        "assets": [
+          "css/lq/pages/minigames.css",
+          "js/minigames/manage.js"
+        ],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
+    },
+    {
+      "id": "GET /manage/library/games/{game_id}::minigames/manage.html",
+      "routePattern": "/manage/library/games/{game_id}",
+      "method": "GET",
+      "template": "templates/minigames/manage.html",
+      "kind": "template",
+      "ownerRoutes": [
+        "/manage/library/games",
+        "/manage/library/games/{game_id}"
+      ],
+      "routeEvidence": {
+        "routePattern": "/manage/library/games/{game_id}",
+        "method": "GET",
+        "source": "classroom_app/routers/minigames.py",
+        "line": 103,
+        "endpoint": "manage",
+        "templates": [
+          "minigames/detail.html",
+          "minigames/manage.html"
+        ],
+        "templatePatterns": [],
+        "dependencies": [],
+        "dynamicTemplate": true
+      },
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [
+        "css/lq/pages/minigames.css",
+        "js/minigames/manage.js"
+      ],
+      "islands": [],
+      "templateReferences": [
+        "manage/layout.html",
+        "minigames/ui.html"
+      ],
+      "controller": [],
+      "domHooks": [],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "8a22fa774aa76b76cf883c04c4954de1fc14fc9133beac2712bb2fa216008ec8",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/minigames/manage.html"
+        ],
+        "assets": [
+          "css/lq/pages/minigames.css",
+          "js/minigames/manage.js"
+        ],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
+    },
+    {
+      "id": "template::minigames/ui.html",
+      "routePattern": null,
+      "method": null,
+      "template": "templates/minigames/ui.html",
+      "kind": "template",
+      "ownerRoutes": [
+        "/achievements",
+        "/blog",
+        "/dashboard",
+        "/feedback-review",
+        "/games",
+        "/games/{slug}",
+        "/learning-path",
+        "/manage",
+        "/manage/academic",
+        "/manage/academic/classrooms",
+        "/manage/academic/course-schedule",
+        "/manage/academic/course-schedule/editor",
+        "/manage/academic/gongwen",
+        "/manage/academic/gongwen-sync",
+        "/manage/academic/integrations",
+        "/manage/academic/smart-classroom",
+        "/manage/academic/teachers/schedule",
+        "/manage/archive",
+        "/manage/archive/academic-exam-analyses",
+        "/manage/archive/academic-grade-registers",
+        "/manage/archive/assessment-plans",
+        "/manage/archive/attendance-reports",
+        "/manage/archive/attendance-reports/{report_id}",
+        "/manage/archive/exam-grade-records",
+        "/manage/archive/final-grade-transcripts",
+        "/manage/archive/grading-rubrics",
+        "/manage/archive/ordinary-grade-records",
+        "/manage/archive/postclass-materials",
+        "/manage/archive/teacher-evaluations",
+        "/manage/library",
+        "/manage/library/courses",
+        "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
+        "/manage/library/lesson-plans",
+        "/manage/library/materials",
+        "/manage/library/polls",
+        "/manage/library/textbooks",
+        "/manage/me/credentials",
+        "/manage/me/inbox",
+        "/manage/me/password-resets",
+        "/manage/me/signature-workflows",
+        "/manage/me/signatures",
+        "/manage/students/{student_id}",
+        "/manage/system/agent-keys",
+        "/manage/system/ai-usage",
+        "/manage/system/blog-crawler",
+        "/manage/system/blog-review",
+        "/manage/system/diagnostics",
+        "/manage/system/feedback",
+        "/manage/system/life-tips",
+        "/manage/system/monitor",
+        "/manage/system/organizations",
+        "/manage/system/users",
+        "/manage/system/wanderers",
+        "/manage/teacher-evaluations",
+        "/manage/teaching",
+        "/manage/teaching/ai",
+        "/manage/teaching/classes",
+        "/manage/teaching/classroom-hub",
+        "/manage/teaching/offering-merge",
+        "/manage/teaching/offerings",
+        "/manage/teaching/semesters",
+        "/points",
+        "/profile",
+        "/report-card",
+        "/wanderers/{slug}",
+        "/wrong-book"
+      ],
+      "routeEvidence": null,
+      "roles": [],
+      "resourceScope": "待人工核对端点及服务端权限",
+      "layout": "待核对",
+      "assets": [],
+      "islands": [],
+      "templateReferences": [],
+      "controller": [],
+      "domHooks": [
+        "game-bootstrap"
+      ],
+      "apis": [],
+      "versionFields": [],
+      "states": [],
+      "components": [],
+      "inventorySourceSha256": "bbf1a4c52bd3f14d7db6f1ed4b28c3cced75a4077c53f85911389e1a8bdca8ee",
+      "before": {
+        "sourceSha256": null,
+        "screenshots": [],
+        "status": "未采集；当前盘点源码不能冒充改动前快照"
+      },
+      "tests": [],
+      "migrationFlag": null,
+      "sharedCssConsumers": [],
+      "exceptions": [],
+      "rollbackUnit": {
+        "templates": [
+          "templates/minigames/ui.html"
+        ],
+        "assets": [],
+        "schema": [],
+        "verified": false
+      },
+      "status": "未盘点",
+      "notes": []
+    },
+    {
       "id": "template::partials/ability_radar.html",
       "routePattern": null,
       "method": null,
@@ -15402,7 +15974,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "c7de90e600f780f3af3da6ebc766fbf35d0f1391158ad4cc009c4c628969ab53",
+      "inventorySourceSha256": "e0ca97957f1336181cd1a1f00534fe2c33f72ec27dcf6eec9322640311cfdccf",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -15497,6 +16069,8 @@
         "/exam/take/{assignment_id}",
         "/exam/{exam_id}/edit",
         "/feedback-review",
+        "/games",
+        "/games/{slug}",
         "/learning-path",
         "/lesson-plan/{plan_id}/edit",
         "/manage",
@@ -15524,6 +16098,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -15639,6 +16215,8 @@
         "/exam/take/{assignment_id}",
         "/exam/{exam_id}/edit",
         "/feedback-review",
+        "/games",
+        "/games/{slug}",
         "/learning-path",
         "/lesson-plan/{plan_id}/edit",
         "/manage",
@@ -15666,6 +16244,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -15782,6 +16362,8 @@
         "/exam/take/{assignment_id}",
         "/exam/{exam_id}/edit",
         "/feedback-review",
+        "/games",
+        "/games/{slug}",
         "/learning-path",
         "/lesson-plan/{plan_id}/edit",
         "/manage",
@@ -15809,6 +16391,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -16017,6 +16601,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -16065,6 +16651,7 @@
       "templateReferences": [
         "macros/app_topbar.html",
         "macros/app_utility_menus.html",
+        "minigames/ui.html",
         "partials/social_entry.html"
       ],
       "controller": [],
@@ -16075,7 +16662,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "7222aa91a2da79b3e244768f85a0aec63b9bfd1fad818eb94677f379a1fea281",
+      "inventorySourceSha256": "d3d0871fade257ed64226d52078d43106ef0ab926adf415b1a3014dabce1b8b8",
       "before": {
         "sourceSha256": "adca56d1d5d7b455314f5df391f830c0aaecd26f39a72052783946c8166e2f37",
         "sourceSnapshot": ".codex-temp/lq-baseline-source/templates/partials/app_topbar_utility_actions.html",
@@ -17430,6 +18017,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -17787,6 +18376,8 @@
         "/exam/take/{assignment_id}",
         "/exam/{exam_id}/edit",
         "/feedback-review",
+        "/games",
+        "/games/{slug}",
         "/learning-path",
         "/lesson-plan/{plan_id}/edit",
         "/manage",
@@ -17814,6 +18405,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -17964,7 +18557,8 @@
       "templateReferences": [
         "macros/lq/button.html",
         "macros/lq/icons.generated.html",
-        "macros/user_ui_preferences.html"
+        "macros/user_ui_preferences.html",
+        "minigames/ui.html"
       ],
       "controller": [],
       "domHooks": [],
@@ -17972,7 +18566,7 @@
       "versionFields": [],
       "states": [],
       "components": [],
-      "inventorySourceSha256": "01c48caaf481a3035079fcdd4dfd1f94d4800a9d6db78b08435cf752f53d6322",
+      "inventorySourceSha256": "6741e26d193658bc10e0ea4502b5260efd78367d2e8f53dc8c39731c41ea4bb0",
       "before": {
         "sourceSha256": null,
         "screenshots": [],
@@ -18016,6 +18610,8 @@
         "/exam/take/{assignment_id}",
         "/exam/{exam_id}/edit",
         "/feedback-review",
+        "/games",
+        "/games/{slug}",
         "/learning-path",
         "/lesson-plan/{plan_id}/edit",
         "/manage",
@@ -18043,6 +18639,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -18224,6 +18822,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -18318,6 +18918,8 @@
         "/exam/take/{assignment_id}",
         "/exam/{exam_id}/edit",
         "/feedback-review",
+        "/games",
+        "/games/{slug}",
         "/learning-path",
         "/lesson-plan/{plan_id}/edit",
         "/manage",
@@ -18345,6 +18947,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -18458,6 +19062,8 @@
         "/exam/take/{assignment_id}",
         "/exam/{exam_id}/edit",
         "/feedback-review",
+        "/games",
+        "/games/{slug}",
         "/learning-path",
         "/lesson-plan/{plan_id}/edit",
         "/manage",
@@ -18485,6 +19091,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -18615,6 +19223,8 @@
         "/exam/take/{assignment_id}",
         "/exam/{exam_id}/edit",
         "/feedback-review",
+        "/games",
+        "/games/{slug}",
         "/learning-path",
         "/lesson-plan/{plan_id}/edit",
         "/manage",
@@ -18642,6 +19252,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -20319,6 +20931,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -20609,6 +21223,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -20759,6 +21375,8 @@
         "/exam/take/{assignment_id}",
         "/exam/{exam_id}/edit",
         "/feedback-review",
+        "/games",
+        "/games/{slug}",
         "/learning-path",
         "/lesson-plan/{plan_id}/edit",
         "/manage",
@@ -20786,6 +21404,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",
@@ -20907,6 +21527,8 @@
         "/dev/lq",
         "/exam/take/{assignment_id}",
         "/feedback-review",
+        "/games",
+        "/games/{slug}",
         "/learning-path",
         "/manage",
         "/manage/academic",
@@ -20933,6 +21555,8 @@
         "/manage/library",
         "/manage/library/courses",
         "/manage/library/exams",
+        "/manage/library/games",
+        "/manage/library/games/{game_id}",
         "/manage/library/lesson-plans",
         "/manage/library/materials",
         "/manage/library/polls",

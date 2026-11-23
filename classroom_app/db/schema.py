@@ -551,6 +551,8 @@ def _init_database_unlocked():
             ensure_academic_final_material_schema(conn)
             ensure_academic_evaluation_schema(conn)
             ensure_blog_closed_loop_schema(conn)
+            from ..services.minigame_platform import ensure_all_schema
+            ensure_all_schema(conn)
             conn.commit()
             mark_schema_ready_after_commit()
         except Exception:

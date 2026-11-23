@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% set embedded_mode=true %}
+{% set suppress_account_widgets=true %}
+{% import "minigames/ui.html" as ui with context %}
+{% block title %}小游戏{% endblock %}
+{% block css %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
+{% block body %}
+{% set params = request.query_params %}
+{% set cur_mode = params.get('mode', '') %}
+<a class="lq-navbar-skip" href="#game-directory">跳转到游戏列表</a>
+<header class="lq-topbar lq-glass game-topbar" aria-label="小游戏导航">
+{{ ui.btn('工作台', variant='ghost', size='sm', icon='arrow-left', href='/dashboard') }}
+<h1 class="game-brand">{{ ui.g_icon('gamepad', 'game-brand-icon') }}<span>小游戏</span></h1>
+<nav>
+{{ ui.action('刷新动态', 'refresh', variant='ghost', icon='refresh', icon_only=true) }}
+{{ ui.action('游玩设置', 'preferences', variant='ghost', icon='sliders', icon_only=true) }}
+{% if user_info.role == 'teacher' %}{{ ui.btn('管理', variant='soft', size='sm', icon='sparkles', href='/manage/library/games') }}{% endif %}
+</nav>
+</header>
+<main class="game-hall">
+<section id="game-directory" tabindex="-1">
+<form action="/games" method="get" class="game-filters game-hall-toolbar" data-game-search>
+<label class="lq-search game-search-box"><span class="sr-only">搜索名称或标签</span><input class="lq-input" data-lq-component="input" type="search" name="q" placeholder="搜索游戏或标签…" value="{{ params.get('q', '') }}"></label>
+<input type="hidden" name="mode" value="{{ cur_mode }}">
+<div class="game-mode-bar" role="group" aria-label="玩法筛选">
+{{ ui.filter_chip('全部', '', cur_mode, 'grid') }}
+{{ ui.filter_chip('单人', 'solo', cur_mode, 'solo') }}
+{{ ui.filter_chip('合作', 'coop', cur_mode, 'coop') }}
+{{ ui.filter_chip('对战', 'versus', cur_mode, 'versus') }}
+</div>
+</form>
+<p class="sr-only">游戏在新标签页打开</p>
+<ul class="game-grid" data-games-grid>{% for g in games %}{{ ui.tile(g, eager=loop.index0 < 8) }}{% endfor %}</ul>
+<div class="lq-surface game-empty-box" data-lq-component="surface" data-grid-empty {% if games %}hidden{% endif %}>
+{{ ui.g_icon('gamepad', 'game-empty-icon') }}
+<span>{{ '未找到匹配游戏' if params.get('q') or cur_mode else '暂无可玩游戏' }}</span>
+</div>
+<nav aria-label="游戏列表分页" class="game-actions game-pager">
+<a data-game-prev href="/games" class="lq-btn lq-btn--ghost lq-btn--sm"{% if not has_prev|default(false) %} hidden{% endif %}>{{ ui.g_icon('chevron-left', 'lq-icon') }}<span>上一页</span></a>
+<a data-game-next href="/games{% if next_cursor|default(none) %}?cursor={{ next_cursor|urlencode }}{% endif %}" class="lq-btn lq-btn--ghost lq-btn--sm"{% if not next_cursor|default(none) %} hidden{% endif %}><span>下一页</span>{{ ui.g_icon('chevron-right', 'lq-icon') }}</a>
+</nav>
+{{ ui.notice() }}
+</section>
+<aside class="lq-surface game-aside" data-lq-component="surface" aria-label="游玩动态">
+{% for key, label, icon_name, empty in [
+  ('recent', '最近游玩', 'clock', '暂无记录'),
+  ('popular', '热门排行', 'trophy', '暂无上榜'),
+  ('friends', '好友在玩', 'coop', '暂无在线'),
+  ('recommended', '精选推荐', 'sparkles', '暂无推荐')
+] %}
+<section class="game-side-section" data-lq-surface="embedded">
+<h2 class="game-side-head">{{ ui.g_icon(icon_name, 'game-mini-icon') }}<span>{{ label }}</span></h2>
+<ul data-sidebar="{{ key }}" data-empty="{{ empty }}">
+{% for g in (sidebar or {}).get(key, []) %}
+<li><a class="game-side-row" href="/games/{{ g.slug|urlencode }}" rel="noopener noreferrer" target="_blank">
+{%- if key == 'popular' %}<b class="game-rank"{% if loop.index <= 3 %} data-top="{{ loop.index }}"{% endif %}>{{ loop.index }}</b>{% endif -%}
+{{ ui.game_icon(g) }}
+<span class="game-side-main">
+{%- if key == 'friends' and g.displayName -%}
+<span class="game-friend-line"><i class="game-live-dot" aria-hidden="true"></i><strong>{{ g.displayName }}</strong></span><small>{{ g.title }}</small>
+{%- else -%}
+<span>{{ g.title }}</span>
+{%- endif -%}
+</span>
+{%- if key == 'popular' and g.playerCount is defined and g.playerCount is not none -%}
+<small class="game-side-badge">{{ ui.g_icon('solo', 'game-mini-icon') }}{{ g.playerCount }}</small>
+{%- elif g.reason -%}
+<small class="game-side-badge">{{ g.reason|replace('同标签 · ', '#')|replace('教师精选', '精选')|replace('近期热门', '热门')|replace('最近更新', '新上') }}</small>
+{%- endif -%}
+</a></li>
+{% else %}
+<li class="game-muted game-side-empty">{{ empty }}</li>
+{% endfor %}
+</ul>
+</section>
+{% endfor %}
+</aside>
+</main>
+<template id="preferences-form"><form class="game-form">{{ ui.field('游戏昵称', 'displayAlias', maxlength=32, placeholder='留空使用默认姓名') }}{{ ui.check('向好友公开在玩状态', 'sharePlaying') }}{{ ui.form_button('保存设置', icon='check') }}</form></template>
+{{ ui.boot({'hydrated': sidebar_hydrated|default(false), 'nextCursor': next_cursor|default(none)}) }}
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ asset_url('js/minigames/hall.js') }}"></script>{% endblock %}

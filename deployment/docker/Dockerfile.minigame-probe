@@ -1,0 +1,7 @@
+# Build separately on the probe host. No production application or runtime volume is included.
+FROM mcr.microsoft.com/playwright/python:v1.59.0-noble
+RUN python -m pip install --no-cache-dir playwright==1.59.0
+COPY tools/minigame_browser_probe.py /opt/probe.py
+COPY tools/minigame_probe_assets.js /opt/minigame_probe_assets.js
+USER pwuser
+ENTRYPOINT ["python", "-I", "-B", "/opt/probe.py"]

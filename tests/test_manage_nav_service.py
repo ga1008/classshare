@@ -93,7 +93,7 @@ class ManageNavServiceTests(unittest.TestCase):
             by_domain["teaching"],
         )
         self.assertEqual(
-            ["material_hub", "courses", "textbooks", "exams", "materials", "lesson_plans", "polls"],
+            ["material_hub", "courses", "textbooks", "exams", "materials", "games", "lesson_plans", "polls"],
             by_domain["library"],
         )
         self.assertEqual(

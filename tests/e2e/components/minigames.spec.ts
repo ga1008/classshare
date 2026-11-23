@@ -1,0 +1,163 @@
+import { test, expect, type Page } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+
+const repo = path.resolve(__dirname, '../../..');
+const origin = 'https://classroom.test', content = 'https://isolated-game.test';
+const example = path.join(repo,'docs/minigames/example');
+const config = JSON.parse(fs.readFileSync(path.join(example,'config.json'),'utf-8'));
+const definition = {config,rules:JSON.parse(fs.readFileSync(path.join(example,'contracts/rules.json'),'utf-8')),
+  writeback:JSON.parse(fs.readFileSync(path.join(example,'contracts/writeback.json'),'utf-8'))};
+const game = {id:'g1',slug:'beacon-relay',title:'航标接力',summary:'点亮航标',config,tags:[],min_tier:0,max_tier:10,
+  minTier:0,maxTier:10,scope:'public',status:'listed',revision:4,currentVersionId:'v1',iconUrl:'/api/games/v1/games/g1/icon'};
+function render(view:string, role:string){
+  const python = fs.existsSync(path.join(repo,'venv/Scripts/python.exe'))?path.join(repo,'venv/Scripts/python.exe'):'python';
+  return execFileSync(python,[path.join(__dirname,'fixtures/minigame_templates.py')],{
+    cwd:repo,input:JSON.stringify({page:view,role,game}),encoding:'utf8',
+    env:{...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONUTF8:'1'}
+  });
+}
+async function fixture(page:Page,view:string,role='student'){
+  const html=render(view,role), writes:{path:string,body:any}[]=[], errors:string[]=[];
+  const me={playerId:'p1',displayName:'合成玩家',seat:1}, pref={revision:1,displayAlias:'',sharePlaying:false,audioMuted:false};
+  let current:any=null,attr:any={...game},roomTries=0,uploaded=false,deleted=false,suggested=false;
+  page.on('pageerror',err=>errors.push(err.message));
+  await page.route('**/*',async route=>{
+    const req=route.request(),u=new URL(req.url()),p=u.pathname.replace('/api/games/v1','');
+    const body=req.headers()['content-type']?.includes('application/json')?req.postDataJSON():{};
+    const json=(data:any,status=200)=>route.fulfill({status,json:data});
+    if(u.origin===content){
+      if(p==='/main.html')return route.fulfill({contentType:'text/html; charset=utf-8',body:'<html><body><button id="turn">点灯</button><p id="result"></p><script src="/sdk.js"></script><script>LanGame.ready().then(c=>document.querySelector("#result").textContent=c.me.displayName);document.querySelector("#turn").onclick=async()=>{const s=await LanGame.session.snapshot();const r=await LanGame.game.intent({type:"light",payload:{bearing:"east"}},{expectedRevision:s.revision,requestId:"unique-click-0001"});document.querySelector("#result").textContent="已点灯"}</script></body></html>'});
+      if(p==='/sdk.js')return route.fulfill({contentType:'application/javascript',body:fs.readFileSync(path.join(repo,'static/minigames/lan-game-sdk.v1.js'))});
+      return route.abort();
+    }
+    if(u.origin!==origin)return route.abort();
+    if(u.pathname.startsWith('/static/')){
+      const f=path.resolve(repo,'.'+u.pathname);
+      if(!f.startsWith(path.join(repo,'static')+path.sep)||!fs.existsSync(f))return route.fulfill({status:404,body:''});
+      return route.fulfill({contentType:f.endsWith('.css')?'text/css':f.endsWith('.js')?'application/javascript':'application/octet-stream',body:fs.readFileSync(f)});
+    }
+    if(req.isNavigationRequest())return route.fulfill({contentType:'text/html; charset=utf-8',body:html});
+    if(req.method()!=='GET'&&u.pathname.startsWith('/api/games/v1'))writes.push({path:p,body});
+    if(p==='/catalog')return json({items:u.searchParams.get('q')==='无此游戏'?[]:[game],nextCursor:null});
+    if(p==='/sidebar')return json({recent:[game],popular:[game],friends:[],recommended:[game]});
+    if(p==='/me/preferences')return json(req.method()==='GET'?pref:Object.assign(pref,body));
+    if(p==='/me/activity')return json({solo:null,multiplayer:null});
+    if(p==='/me/progress/g1')return json({privateSave:{sound:true,mapStyle:'paper'},privateRevision:1,rank:0});
+    if(p==='/games/g1/launches')return json({leaseId:'l1',expiresAt:Date.now()+90000,contentEntryUrl:content+'/main.html',definition,versionId:'v1',me});
+    if(p==='/games/g1/runs'){
+      current={gameId:'g1',versionId:'v1',runId:'r1',mode:'solo',phase:'running',members:[me],me,publicState:{node:'atPier'},seq:1,revision:1,readOnly:false,controlEpoch:1,serverNow:Date.now()};
+      return json(current);
+    }
+    if(p==='/sync')return json({snapshot:current,throughSeq:current?.seq||0,events:[]});
+    if(p==='/runs/r1/intents'){current={...current,seq:2,revision:2};return json(current);}
+    if(p==='/games/g1/rooms/join'){
+      roomTries++; if(roomTries===1)return json({detail:{code:'ROOM_UNAVAILABLE',message:'暂时无法加入'}},404);
+      current={...current,runId:null,roomId:'rm1',mode:'private',phase:'waiting',code:'M7K3',readOnly:false,targetSize:2};
+      return json(current);
+    }
+    if(p==='/admin/games'&&req.method()==='POST')return json({game:{...body,id:'draft-new'}});
+    if(p==='/admin/games')return json({items:[attr],nextCursor:null});
+    if(p==='/admin/games/g1'&&req.method()==='PATCH'){attr={...attr,...body,revision:attr.revision+1};return json({game:attr});}
+    if(p==='/admin/games/g1'&&req.method()==='DELETE'){deleted=true;return json({jobId:'del1',status:'queued'});}
+    if(p==='/admin/jobs/del1')return json({id:'del1',status:deleted?'succeeded':'pending'});
+    if(p==='/admin/games/g1/versions'){uploaded=true;return json({jobId:'upload1',versionId:'v2',status:'queued'});}
+    if(p==='/admin/games/g1/suggestions'){suggested=true;return json({jobId:'suggest1',status:'queued'});}
+    if(p==='/admin/games/g1'){
+      const versions=[{id:'v1',status:'ready',releaseVersion:'1.0.0'}];
+      if(uploaded)versions.unshift({id:'v2',status:'ready',releaseVersion:'1.1.0'});
+      const jobs:any[]=uploaded?[{id:'upload1',versionId:'v2',status:'succeeded',stage:'隔离验收通过'}]:[];
+      if(suggested)jobs.push({id:'suggest1',kind:'suggest',status:'succeeded',stage:'建议已生成',result:{purpose:'metadata',source:'rules',suggestion:'已按游戏包整理',summary:'沿着海图点灯。',tags:['方向']}});
+      return json({game:attr,versions,jobs});
+    }
+    if(p.endsWith('/versions/v2/playtests'))return json({versionId:'v2',passed:body.passed});
+    if(p.endsWith('/publish')){attr={...attr,currentVersionId:body.versionId,status:'listed',revision:attr.revision+1};return json({game:attr});}
+    if(p.endsWith('/unlist')){attr={...attr,status:'unlisted',revision:attr.revision+1};return json({game:attr});}
+    if(p.endsWith('/versions/v1/preview'))return json({url:'/games/beacon-relay?previewVersion=v1'});
+    if(p.endsWith('/deletion-plans'))return json({confirmationText:'beacon-relay',planToken:'plan',impact:{versions:1,runs:2,messages:0,saves:1}});
+    return json({});
+  });
+  const paths: Record<string,string>={hall:'/games',host:'/games/beacon-relay',manage:'/manage/library/games',detail:'/manage/library/games/g1'};
+  await page.goto(origin+paths[view]);
+  if(view==='hall'||view==='host'){
+    await expect(page.locator('script[src$="/auth.js"]')).toHaveCount(1);
+    await expect(page.locator('script[src$="/lq/index.js"]')).toHaveCount(1);
+    await expect(page.locator('script[src*="cultivation_identity"],script[src*="cultivation_emblems"],[data-lanshare-island="message-center-sync"]')).toHaveCount(0);
+  }
+  return {writes,errors};
+}
+test('游戏大厅布局、原生链接、搜索和游玩偏好',async({page},info)=>{
+  const {writes}=await fixture(page,'hall');
+  const card=page.locator('[data-game-tile]');await expect(card).toHaveAttribute('target','_blank');
+  for(const width of [1920,1024,390,320]){
+    await page.setViewportSize({width,height:900});
+    const layout=await page.evaluate(()=>{const hall=document.querySelector('.game-hall')!,aside=document.querySelector('.game-aside')!,left=document.querySelector('#game-directory')!;return {ratio:aside.clientWidth/(aside.clientWidth+left.clientWidth),grid:getComputedStyle(hall).gridTemplateColumns.split(' ').length,scroll:document.documentElement.scrollWidth};});
+    expect(layout.scroll).toBeLessThanOrEqual(width);if(width>=960){expect(layout.grid).toBe(2);expect(layout.ratio).toBeGreaterThan(.25);expect(layout.ratio).toBeLessThan(.334);}
+    else expect(layout.grid).toBe(1);
+    if(width===1920){
+      await page.evaluate(()=>{document.documentElement.dataset.lqGlass='tinted';document.documentElement.dataset.lqTier='A';});
+      await card.hover({position:{x:17,y:15}});await expect(card).toHaveAttribute('data-halo-active','');
+      await expect(card.locator('.game-halo')).toHaveCSS('opacity','1');
+      await page.mouse.move(1,1);await expect(card).not.toHaveAttribute('data-halo-active','');
+    }
+    if(width===1920||width===390)await page.screenshot({path:info.outputPath('大厅-'+width+'.png')});
+  }
+  await page.getByRole('button',{name:'游玩设置'}).click();
+  await page.getByLabel('游戏昵称').fill('远山');await page.getByRole('button',{name:'保存设置'}).click();
+  await expect.poll(()=>writes.filter(x=>x.path==='/me/preferences').length).toBe(1);
+  await page.getByRole('searchbox').fill('无此游戏');await expect(page.locator('[data-grid-empty]')).toBeVisible();
+});
+test('真实隔离 SDK 单人开局与动作，错码保留原局后转队',async({page})=>{
+  const {writes}=await fixture(page,'host');
+  const gameFrame=page.frameLocator('.game-frame-box iframe');await expect(gameFrame.locator('#result')).toHaveText('合成玩家');
+  await gameFrame.getByRole('button',{name:'点灯'}).click();await expect(gameFrame.locator('#result')).toHaveText('已点灯');
+  expect(writes.find(x=>x.path.endsWith('/intents'))?.body.intent.type).toBe('light');
+  await page.getByRole('button',{name:'加入队伍',exact:true}).click();
+  await page.getByLabel('四位队伍码').fill('k7-m3');await page.getByRole('button',{name:'加入',exact:true}).click();
+  await expect(page.getByText('暂时无法加入',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'加入',exact:true}).click();await expect(page.locator('[data-code-text]')).toHaveText('M7K3');
+  expect(writes.filter(x=>x.path.endsWith('/rooms/join')).every(x=>x.body.fromSolo.runId==='r1')).toBeTruthy();
+});
+test('教师页范围表单、隔离预览、永久删除前可以取消',async({page},info)=>{
+  const {writes}=await fixture(page,'detail','teacher');
+  await page.getByLabel('展示名称').fill('航标接力新版');await page.getByRole('button',{name:'保存属性'}).click();
+  await expect.poll(()=>writes.filter(x=>x.path==='/admin/games/g1'&&x.body.title==='航标接力新版').length).toBe(1);
+  await page.getByRole('button',{name:'教师预览'}).click();await expect(page.getByRole('link',{name:'打开隔离预览'})).toHaveAttribute('target','_blank');
+  await page.keyboard.press('Escape');await page.getByRole('button',{name:'彻底删除游戏',exact:true}).click();
+  await expect(page.getByLabel('输入 beacon-relay 确认')).toBeVisible();await page.keyboard.press('Escape');
+  expect(writes.filter(x=>x.path.endsWith('/deletion-plans'))).toHaveLength(1);
+  await page.setViewportSize({width:390,height:844});await page.screenshot({path:info.outputPath('教师属性-390.png')});
+});
+test('教师管理列表筛选及建立草稿',async({page})=>{
+  const {writes}=await fixture(page,'manage','teacher');
+  await page.getByLabel('搜索名称、标识或标签').fill('航标');await page.getByRole('button',{name:'筛选',exact:true}).click();
+  await expect(page).toHaveURL(/q=%E8%88%AA%E6%A0%87/);
+  await expect(page.locator('[data-admin-list]').getByRole('link',{name:'航标接力'})).toBeVisible();
+  await page.getByRole('button',{name:'上传新游戏'}).click();await page.getByLabel('游戏名称').fill('新游戏');
+  await page.getByRole('button',{name:'创建草稿'}).click();await expect(page).toHaveURL(/draft-new$/);
+  expect(writes.find(x=>x.path==='/admin/games')?.body.scope).toBe('private');
+});
+test('教师上传验收、登记试玩、发布、下架和彻底删除',async({page})=>{
+  const {writes}=await fixture(page,'detail','teacher');
+  await page.getByLabel('独立 HTML 游戏包（ZIP）').setInputFiles({name:'sample.zip',mimeType:'application/zip',buffer:Buffer.from('synthetic')});
+  await page.getByRole('button',{name:'上传并验收'}).click();await expect(page.getByText('隔离验收通过')).toBeVisible();
+  const candidate=page.locator('[data-game-versions] li').filter({hasText:'1.1.0'});
+  await candidate.getByRole('button',{name:'确认已试玩'}).click();await page.getByRole('button',{name:'确认',exact:true}).click();
+  await expect.poll(()=>writes.filter(x=>x.path.endsWith('/playtests')).length).toBe(1);
+  await candidate.getByRole('button',{name:'发布此版本'}).click();await page.getByRole('button',{name:'确认',exact:true}).click();
+  await expect(candidate.getByText('当前版本')).toBeVisible();
+  await page.getByRole('button',{name:'下架游戏'}).click();await page.getByRole('button',{name:'确认执行'}).click();
+  await expect(page.locator('[data-detail-status]')).toContainText('已下架');
+  await page.getByRole('button',{name:'彻底删除游戏',exact:true}).click();
+  await page.getByLabel('输入 beacon-relay 确认').fill('beacon-relay');await page.getByRole('button',{name:'确认彻底删除'}).click();
+  await expect(page.locator('[data-game-notice]')).toHaveText('游戏已彻底删除');
+});
+test('教师手动生成建议并核对属性草稿',async({page})=>{
+  const {writes}=await fixture(page,'detail','teacher');
+  await page.getByRole('button',{name:'拟写简介与标签'}).click();await page.getByRole('button',{name:'查看建议'}).click();
+  await page.getByRole('button',{name:'采用到属性草稿'}).click();await page.keyboard.press('Escape');
+  await expect(page.getByLabel('简介',{exact:true})).toHaveValue('沿着海图点灯。');
+  expect(writes.filter(x=>x.path==='/admin/games/g1')).toHaveLength(0);
+  await page.getByRole('button',{name:'保存属性'}).click();await expect.poll(()=>writes.filter(x=>x.path==='/admin/games/g1').length).toBe(1);
+});

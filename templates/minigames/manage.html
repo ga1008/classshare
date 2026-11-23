@@ -1,0 +1,30 @@
+{% extends 'manage/layout.html' %}
+{% import 'minigames/ui.html' as ui with context %}
+{% block title %}小游戏管理{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
+{% block header_actions %}{{ ui.btn('游玩大厅', variant='ghost', size='sm', icon='gamepad', href='/games') }} {{ ui.action('上传新游戏', 'draft', 'prominent', 'upload') }}{% endblock %}
+{% block content %}
+<section class="game-management" data-game-library>
+<h1 class="sr-only">小游戏管理</h1>
+<form class="lq-surface game-filters game-admin-bar" data-lq-component="surface" data-admin-filters>
+<label class="lq-search game-search-box"><span class="sr-only">搜索名称、标识或标签</span><input class="lq-input" data-lq-component="input" type="search" name="q" placeholder="搜索名称、标识或标签…"></label>
+{{ ui.select('状态', 'status', [('', '全部状态'), ('draft', '草稿'), ('listed', '已上架'), ('unlisted', '已下架'), ('deleting', '删除中')]) }}
+{{ ui.select('玩法', 'mode', [('', '全部玩法'), ('solo', '单人'), ('coop', '合作'), ('versus', '对战')]) }}
+{{ ui.select('范围', 'scope', [('', '全部范围'), ('private', '私有'), ('classroom', '课堂'), ('class', '行政班'), ('department', '本系部'), ('college', '本学院'), ('school', '本校'), ('public', '全平台')]) }}
+{{ ui.field('标签', 'tag', placeholder='按标签过滤', sr_label=true) }}
+{{ ui.form_button('筛选', icon='sliders') }}
+</form>
+<ul class="lq-surface game-admin-list lq-list" data-lq-component="surface" data-admin-list>
+{% for item in games|default([]) %}
+<li class="lq-row game-admin-row">{{ ui.game_icon(item) }}<div class="game-row-main"><a class="game-library-link" href="/manage/library/games/{{ item.id }}">{{ item.title }}</a></div></li>
+{% endfor %}
+</ul>
+<nav class="game-actions game-pager" aria-label="管理列表分页">
+{{ ui.action('上一页', 'previous', variant='ghost', icon='chevron-left', hidden=true) }}
+{{ ui.action('下一页', 'next', variant='ghost', icon='chevron-right', hidden=true) }}
+</nav>
+{{ ui.notice() }}
+</section>
+{{ ui.boot({}) }}
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ asset_url('js/minigames/manage.js') }}"></script>{% endblock %}

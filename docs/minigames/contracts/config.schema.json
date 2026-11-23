@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LanShare 小游戏包主清单 v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "gameKey",
+    "version",
+    "title",
+    "summary",
+    "entry",
+    "icon",
+    "sdk",
+    "standalone",
+    "modes",
+    "capabilities",
+    "contracts"
+  ],
+  "properties": {
+    "formatVersion": { "const": 1 },
+    "gameKey": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,47}$" },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,4})\\.(0|[1-9][0-9]{0,4})\\.(0|[1-9][0-9]{0,4})$"
+    },
+    "title": { "type": "string", "minLength": 1, "maxLength": 48 },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 240 },
+    "entry": { "const": "main.html" },
+    "icon": {
+      "type": "string",
+      "pattern": "^static/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\\.(png|webp)$"
+    },
+    "sdk": { "const": "js/lan-game-sdk.v1.js" },
+    "display": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "aspectRatio": {
+          "enum": ["free", "16:9", "4:3", "1:1", "3:4", "9:16"]
+        },
+        "stageTone": {
+          "enum": ["auto", "dark", "light"]
+        }
+      }
+    },
+    "assets": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 1000,
+      "items": {
+        "type": "string",
+        "minLength": 8,
+        "maxLength": 240,
+        "pattern": "^static/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+(\\.[A-Za-z0-9_-]+)*\\.(png|jpg|jpeg|webp|gif|mp3|ogg|wav|mp4|webm|woff2|json)$"
+      }
+    },
+    "standalone": { "enum": ["solo", "local-seats"] },
+    "modes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["solo", "multiplayer"],
+      "properties": {
+        "solo": { "type": "boolean" },
+        "multiplayer": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "privateRooms", "minPlayers", "maxPlayers", "randomSizes"],
+              "properties": {
+                "kind": { "enum": ["coop", "versus"] },
+                "privateRooms": { "type": "boolean" },
+                "minPlayers": { "$ref": "#/$defs/teamSize" },
+                "maxPlayers": { "$ref": "#/$defs/teamSize" },
+                "randomSizes": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/teamSize" },
+                  "uniqueItems": true,
+                  "maxItems": 9
+                }
+              },
+              "anyOf": [
+                { "properties": { "privateRooms": { "const": true } } },
+                { "properties": { "randomSizes": { "minItems": 1 } } }
+              ]
+            }
+          ]
+        }
+      },
+      "anyOf": [
+        { "properties": { "solo": { "const": true } } },
+        { "properties": { "multiplayer": { "type": "object" } } }
+      ]
+    },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["save.private", "room.chat"] }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["writeback", "rules"],
+      "properties": {
+        "writeback": { "const": "contracts/writeback.json" },
+        "rules": { "enum": [null, "contracts/rules.json"] }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "modes": { "properties": { "multiplayer": { "type": "object" } } } }
+      },
+      "then": {
+        "properties": { "contracts": { "properties": { "rules": { "const": "contracts/rules.json" } } } }
+      },
+      "else": {
+        "properties": {
+          "capabilities": { "not": { "contains": { "const": "room.chat" } } },
+          "standalone": { "const": "solo" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "modes": { "properties": { "solo": { "const": false } } } }
+      },
+      "then": {
+        "properties": { "standalone": { "const": "local-seats" } }
+      }
+    }
+  ],
+  "$defs": {
+    "teamSize": { "type": "integer", "minimum": 2, "maximum": 10 }
+  }
+}

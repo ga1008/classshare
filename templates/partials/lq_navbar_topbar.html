@@ -37,6 +37,7 @@
                     {{ lq_btn('反馈复盘',href='/feedback-review',variant='ghost') }}
                     {% else %}{{ lq_btn('管理中心',href='/manage',variant='ghost') }}{% endif %}
                     <a href="/blog" class="lq-btn lq-btn--ghost lq-btn--md" data-blog-topbar-entry aria-label="打开博客"><span data-blog-topbar-caption>博客</span><span class="lq-badge" data-tone="info" data-blog-today-count hidden>+0</span></a>
+                    {% from 'minigames/ui.html' import entry as game_entry %}{{ game_entry() }}
                     {% if user_info.role == 'student' %}
                     {{ lq_btn('职业路径',href='/career-path',variant='ghost') }}
                     {{ lq_btn('个人简历',href='/resume',variant='ghost') }}
@@ -68,6 +69,7 @@
                     {{ lq_btn('管理中心',href='/manage',variant='ghost',icon='layout-dashboard') }}
                     {%- endif %}
                     <a href="/blog" class="lq-btn lq-btn--ghost lq-btn--md" data-blog-topbar-entry aria-label="打开博客"><span data-blog-topbar-caption>博客</span><span class="lq-badge" data-tone="info" data-blog-today-count hidden>+0</span></a>
+                    {% from 'minigames/ui.html' import entry as game_entry %}{{ game_entry() }}
                 </div>
                 <div class="lq-report-card-tools" role="group" aria-label="通知与账号">
                     <div class="message-center-bell-anchor" data-message-center-bell-shell>

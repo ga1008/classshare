@@ -246,6 +246,16 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         legacy_hrefs=("/manage/materials", "/manage/teaching/materials"),
     ),
     ManageNavItem(
+        key="games",
+        domain=MANAGE_LIBRARY_DOMAIN,
+        group="教学资源",
+        label="小游戏管理",
+        icon="play",
+        href="/manage/library/games",
+        search_text="小游戏 游戏 HTML 包 合作 对战 minigame game",
+        ai_hint="小游戏管理：上传和验收游戏包，设置受众与修为范围，发布及下架。",
+    ),
+    ManageNavItem(
         key="lesson_plans",
         domain=MANAGE_LIBRARY_DOMAIN,
         group="教学资源",

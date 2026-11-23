@@ -5,6 +5,7 @@
 {# Flat native entries stay in the authored topbar pane; no legacy menu portal. #}
 <nav class="lq-manage-utility" aria-label="常用入口">
     <a href="/blog" class="lq-btn lq-btn--ghost lq-btn--sm" data-blog-topbar-entry aria-label="打开博客" title="博客">{{ lq_icon('book-open') }}<span class="lq-manage-utility-label">博客</span><span data-blog-today-count hidden>+0</span><small class="sr-only" data-blog-topbar-caption>观点与交流</small></a>
+    {% from 'minigames/ui.html' import entry as game_entry %}{{ game_entry('sm') }}
     <div class="lq-manage-message" data-message-center-bell-shell>
         <a href="/profile?section=notifications#profile-message-center" class="lq-btn lq-btn--ghost lq-btn--sm" data-message-center-bell aria-label="打开消息中心" title="消息中心">{{ lq_icon('bell') }}<span class="lq-manage-utility-label">消息</span><span data-message-center-bell-count hidden>0</span><small class="sr-only" data-message-center-bell-caption>通知与私信</small></a>
         <div class="message-center-bell-toast" data-message-center-bell-toast hidden><strong>新消息提醒</strong><div data-message-center-bell-toast-body>你有一条新消息。</div><div data-message-center-bell-toast-meta>点击消息入口进入消息中心</div></div>

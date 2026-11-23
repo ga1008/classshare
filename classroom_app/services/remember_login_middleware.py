@@ -14,7 +14,7 @@ from starlette.requests import Request
 
 from . import remember_login_service as remember
 
-_SKIP_PREFIXES = ("/static/", "/assets/", "/api/internal/", "/favicon", "/logout", "/ws/", "/healthz")
+_SKIP_PREFIXES = ("/static/", "/assets/", "/api/internal/", "/api/games/v1/", "/favicon", "/logout", "/ws/", "/healthz")
 _LOGIN_POSTS = frozenset({
     "/student/login", "/teacher/login", "/api/student/login/password",
     "/student/password/setup", "/api/student/password/setup",

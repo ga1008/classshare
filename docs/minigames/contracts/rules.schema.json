@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LanShare 游戏规则契约入口 v1（统一引擎分发）",
+  "oneOf": [
+    {
+      "title": "有限状态与轮次规则 v1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "initial", "states", "transitions"],
+      "properties": {
+        "engine": { "const": "finite-turn-v1" },
+        "initial": { "$ref": "#/$defs/name" },
+        "states": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1024,
+          "propertyNames": { "$ref": "#/$defs/name" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["outcome"],
+            "properties": {
+              "outcome": { "enum": [null, "completed", "draw", "actorWins"] }
+            }
+          }
+        },
+        "transitions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "actor", "type", "payload", "to", "turn"],
+            "properties": {
+              "from": { "$ref": "#/$defs/name" },
+              "actor": { "enum": ["turn", "any"] },
+              "type": { "$ref": "#/$defs/name" },
+              "to": { "$ref": "#/$defs/name" },
+              "payload": {
+                "type": "object",
+                "maxProperties": 8,
+                "propertyNames": { "$ref": "#/$defs/name" },
+                "additionalProperties": {
+                  "oneOf": [
+                    { "$ref": "#/$defs/name" },
+                    { "type": "integer", "minimum": -32768, "maximum": 32767 },
+                    { "type": "boolean" }
+                  ]
+                }
+              },
+              "turn": { "enum": ["keep", "next"] }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "双人连线棋盘规则 v1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "size", "line"],
+      "properties": {
+        "engine": { "const": "grid-line-v1" },
+        "size": { "type": "integer", "minimum": 3, "maximum": 19 },
+        "line": { "type": "integer", "minimum": 3, "maximum": 19 }
+      }
+    }
+  ],
+  "$defs": {
+    "name": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9_]{0,39}$" }
+  }
+}

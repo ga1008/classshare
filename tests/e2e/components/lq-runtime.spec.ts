@@ -52,6 +52,12 @@ test('LQ early/late readiness, repeated bootstrap and duplicate module URLs shar
     return { same: first === second, loaded: Boolean(module), invalid: await api.load('__proto__').catch((error: Error) => error.name) };
   })).toEqual({ same: true, loaded: true, invalid: 'TypeError' });
   expect(formRequests).toBe(1);
+  await page.evaluate(async () => {
+    const names = ['chipRow', 'forms', 'navigation', 'dialogs', 'collapsible', 'tones', 'toast', 'content',
+      'menus', 'tooltips', 'status', 'tables', 'selection', 'dropdown', 'business', 'dirtyGuard',
+      'upload', 'workspace', 'insights', 'shells', 'composer'];
+    await Promise.all(names.map(name => (window as any).LQ.load(name)));
+  });
   expect(await page.locator('.lq-btn').first().evaluate(node => {
     let activated = false;
     node.addEventListener('click', () => { activated = true; });

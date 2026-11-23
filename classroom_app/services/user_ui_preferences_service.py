@@ -8,6 +8,7 @@ import json
 import logging
 import re
 from collections.abc import Mapping
+from contextlib import nullcontext
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -323,7 +324,7 @@ def resolve_backdrop(preferences: Mapping[str, Any], *, seed: str) -> dict[str, 
     }
 
 
-def resolve_user_ui_preferences(request: Any, user: dict | None) -> dict[str, Any]:
+def resolve_user_ui_preferences(request: Any, user: dict | None, *, conn=None) -> dict[str, Any]:
     """Resolve for any page after its route has authenticated the user.
 
     Only a request-local identity cache is used; defaults never create a row.
@@ -340,8 +341,8 @@ def resolve_user_ui_preferences(request: Any, user: dict | None) -> dict[str, An
     if identity in cache:
         return cache[identity]
     try:
-        with get_db_connection() as conn:
-            preferences = get_ui_preferences(conn, user)
+        with (nullcontext(conn) if conn is not None else get_db_connection()) as active_conn:
+            preferences = get_ui_preferences(active_conn, user)
         preferences["available"] = True
     except Exception:
         logger.warning("UI preferences unavailable during page SSR", exc_info=True)

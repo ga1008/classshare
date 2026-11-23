@@ -5,11 +5,15 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, posix, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { gzipSync } from 'node:zlib';
+import zopfli from '@gfx/zopfli';
 import { init, parse } from 'es-module-lexer';
 import { isNativeLqModule, nativeLqCompiler, printNativeLqModule } from './ui/native_lq_print.mjs';
 
 const RECIPE = 'lanshare-static-graph-v1';
+const require = createRequire(import.meta.url);
+const lqEncoder = `@gfx/zopfli@${require('@gfx/zopfli/package.json').version}`;
 const TEXT_EXT = /\.(?:css|js|mjs|svg|json)$/;
 const GENERATED_OR_SOURCE = /(?:\.src\.css|\.test\.js|\.d\.ts|\.map|\.gz|\.br)$/;
 const OWNED_PREFIX = /\/static\/(?:js\/|css\/|vendor\/|fonts\/|google_css\.css)/g;
@@ -52,7 +56,7 @@ export function staticAssetRecipeHash() {
   return createHash('sha256').update(RECIPE + '\0')
     .update(readFileSync(fileURLToPath(import.meta.url))).update('\0')
     .update(readFileSync(new URL('./ui/native_lq_print.mjs', import.meta.url))).update('\0')
-    .update(nativeLqCompiler).digest('hex');
+    .update(nativeLqCompiler).update('\0').update(lqEncoder).digest('hex');
 }
 
 /** Inspect the same complete inputs used by a build, without writing an artifact. */
@@ -142,7 +146,10 @@ export async function buildStaticAssets(staticRoot) {
     const output = `assets/${revision}/${relative}`;
     immutableWrite(join(root, output), bytes);
     if (TEXT_EXT.test(relative) && (bytes.length >= 256 || isNativeLqModule(relative))) {
-      immutableWrite(join(root, `${output}.gz`), gzipSync(bytes, { level: 9 }));
+      const compressed = isNativeLqModule(relative)
+        ? Buffer.from(await zopfli.gzipAsync(bytes, { numiterations: 15 }))
+        : gzipSync(bytes, { level: 9 });
+      immutableWrite(join(root, `${output}.gz`), compressed);
     }
     entries[relative] = output;
     totalBytes += bytes.length;
