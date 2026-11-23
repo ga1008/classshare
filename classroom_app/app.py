@@ -250,8 +250,6 @@ async def startup_event():
     except Exception as exc:
         print(f"[RADAR] Expression timer registration deferred: {type(exc).__name__}")
     presence_service.start_presence_runtime()
-    from .services.login_attendance_access_service import start_collector_heartbeat
-    await start_collector_heartbeat()
     from .services.login_attendance_jobs import ensure_tasks as ensure_login_attendance_tasks
     from .services.smart_classroom_alignment_jobs import ensure_tasks as ensure_smart_classroom_alignment_tasks
     with get_db_connection() as attendance_conn:
