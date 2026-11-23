@@ -53,7 +53,8 @@ function emptyState(message, actions = '') {
 function downloadActions(item) {
     const parts = [];
     if (item?.node_type === 'file' && item.download_allowed !== false) {
-        parts.push(`<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" href="/materials/download/${Number(item.id)}">下载文件</a>`);
+        const href = item.download_url || `/materials/download/${Number(item.id)}`;
+        parts.push(`<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" href="${escapeHtml(href)}">下载文件</a>`);
     }
     if (item?.preview_url) {
         parts.push(`<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" href="${escapeHtml(item.preview_url)}" target="_blank" rel="noopener">新标签打开</a>`);
@@ -107,9 +108,11 @@ registerMaterialRenderer({
         const text = String(data.content || '');
         const lines = text.split('\n');
         const kind = getMaterialKind(item);
+        const sizeLabel = formatSize(data.size ?? new Blob([text]).size);
+        const truncNote = data.truncated ? ' · 已截断展示前 1 MiB' : '';
         container.innerHTML = `
             <div class="material-renderer__code" data-kind="${escapeHtml(kind.kind)}">
-                <div class="material-renderer__code-head"><span>${escapeHtml(kind.label)}</span><span>${lines.length} 行 · ${escapeHtml(formatSize(new Blob([text]).size))}</span></div>
+                <div class="material-renderer__code-head"><span>${escapeHtml(kind.label)}</span><span>${lines.length} 行 · ${escapeHtml(sizeLabel)}${escapeHtml(truncNote)}</span></div>
                 <pre class="material-renderer__pre"><code>${lines.map((line, index) => `<span class="material-renderer__line"><span class="material-renderer__ln">${index + 1}</span>${escapeHtml(line)}</span>`).join('\n')}</code></pre>
             </div>
         `;

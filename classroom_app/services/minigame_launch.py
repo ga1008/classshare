@@ -51,8 +51,10 @@ def version_for(conn, user, game_id, vid, purpose, *, definition=True):
         raise HTTPException(422, "未知启动用途")
     game = p.require_manager(conn, user, game_id)
     fields = "config_json,rules_json,writeback_json" if definition else "id"
+    allow_reviewing = user["role"] == "teacher" and p.is_super_admin_teacher(conn, user["id"])
+    status_clause = "status IN ('ready','reviewing')" if allow_reviewing else "status='ready'"
     ver = conn.execute(
-        f"SELECT {fields} FROM mg_versions WHERE game_id=? AND id=? AND status='ready'",
+        f"SELECT {fields} FROM mg_versions WHERE game_id=? AND id=? AND {status_clause}",
         (game_id, vid),
     ).fetchone()
     if not ver or game["status"] in ("deleting", "deleted"):

@@ -307,10 +307,7 @@ def detail(conn, user, game_id, version_offset=0):
 
 
 def list_games(conn, user, params):
-    clauses, args = ["g.status<>'deleted'"], []
-    if user["role"] != "teacher" or not is_super_admin_teacher(conn, user["id"]):
-        clauses.append("g.owner_teacher_id=?")
-        args.append(platform.repository_actor_id(user))
+    clauses, args = ["g.status<>'deleted'", "g.owner_teacher_id=?"], [platform.repository_actor_id(user)]
     for field in ("status", "scope"):
         if value := params.get(field):
             clauses.append(f"g.{field}=?")
@@ -679,7 +676,7 @@ def mutate(user, game, action, body, key, vid=""):
             if version["game_id"] != game or version["status"] in {"deleted", "deleting"}:
                 error(404, "NOT_FOUND", "版本不存在或正在删除。")
             if version["status"] == "validating":
-                error(409, "VERSION_NOT_READY", "版本仍在校验中，通过后将自动进入内容审核。")
+                error(409, "VERSION_NOT_READY", "版本仍在第一轮基础校验中，通过后将自动进入审核队列。")
             if version["status"] == "reviewing":
                 error(409, "ALREADY_REVIEWING", "此版本已在审核队列中。")
             if version["status"] == "ready" and row["status"] == "listed" and row["current_version_id"] == vid:
@@ -1450,11 +1447,17 @@ def validate_job(job, probe_blocked_until=0):
                 summary=CASE WHEN current_version_id IS NULL THEN ? ELSE summary END,revision=revision+1,updated_at=? WHERE id=?""",
                 (config["gameKey"], config["title"], config["summary"], platform.now_ms(), game),
             )
+            review_stage = "隔离验收通过"
             if student:
                 from . import minigame_moderation as moderation
-                moderation.enqueue(conn, game, vid, meta["digest"])
+                enqueued_status = moderation.enqueue(conn, game, vid, meta["digest"])
+                review_stage = (
+                    "基础校验通过，已提交 AI 风险查验"
+                    if enqueued_status == "queued"
+                    else "基础校验通过，等待超管审核"
+                )
             finish_job(
-                conn, job, "succeeded", "静态检查通过，等待内容审查" if student else "隔离验收通过",
+                conn, job, "succeeded", review_stage,
                 result={"versionId": vid, "probe": meta["probe"]}
             )
         conn.commit()

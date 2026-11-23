@@ -69,7 +69,7 @@ class RepositoryTests(GamePlatformFixture):
         self.assertTrue(packages.worker_once())
         detail=self.request(931,"GET","/admin/games/"+gid).json()
         self.assertEqual((detail["game"]["title"], detail["versions"][0]["status"]),("第一版","reviewing"))
-        self.assertEqual(detail["versions"][0]["review"]["status"],"queued")
+        self.assertEqual(detail["versions"][0]["review"]["status"],"manual")
         source="/games/"+gid+"/source"
         self.assertEqual(self.request(932,"GET",source).status_code,404)
         self.approve_fixture(gid,vid)
@@ -180,7 +180,7 @@ class RepositoryTests(GamePlatformFixture):
         self.assertEqual(resubmitted.status_code, 200, resubmitted.text)
         after_resubmit = self.request(931, "GET", "/admin/games/" + gid).json()
         self.assertEqual(after_resubmit["versions"][0]["status"], "reviewing")
-        self.assertEqual(after_resubmit["versions"][0]["review"]["status"], "queued")
+        self.assertEqual(after_resubmit["versions"][0]["review"]["status"], "manual")
         self.approve_fixture(gid, vid)
         relisted = self.request(931, "GET", "/admin/games/" + gid).json()
         self.assertEqual(relisted["game"]["status"], "listed")

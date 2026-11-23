@@ -37,7 +37,7 @@ MANAGE_DOMAIN_META: dict[str, dict[str, str]] = {
         "label": "资源库",
         "short_label": "资源",
         "title": "资源库",
-        "description": "课程、教材、试卷、学习文档、教案、投票，以及跨类别的材料检索。",
+        "description": "课程、教材、试卷、学习文档、教案、投票、小游戏，以及跨类别的材料检索。",
         "tone": "indigo",
     },
     MANAGE_ARCHIVE_DOMAIN: {
@@ -246,16 +246,6 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         legacy_hrefs=("/manage/materials", "/manage/teaching/materials"),
     ),
     ManageNavItem(
-        key="games",
-        domain=MANAGE_LIBRARY_DOMAIN,
-        group="教学资源",
-        label="小游戏管理",
-        icon="play",
-        href="/manage/library/games",
-        search_text="小游戏 游戏 HTML 包 合作 对战 minigame game",
-        ai_hint="小游戏管理：上传和验收游戏包，设置受众与修为范围，发布及下架。",
-    ),
-    ManageNavItem(
         key="lesson_plans",
         domain=MANAGE_LIBRARY_DOMAIN,
         group="教学资源",
@@ -276,6 +266,27 @@ MANAGE_NAV_ITEMS: tuple[ManageNavItem, ...] = (
         search_text="投票 表决 调查 vote poll survey",
         ai_hint="投票：创建跨班级共享的投票活动，分配到一个或多个班级并查看统计。",
         legacy_hrefs=("/manage/polls", "/manage/teaching/polls"),
+    ),
+    ManageNavItem(
+        key="games",
+        domain=MANAGE_LIBRARY_DOMAIN,
+        group="小游戏",
+        label="小游戏管理",
+        icon="play",
+        href="/manage/library/games",
+        search_text="小游戏 游戏 HTML 包 合作 对战 作品管理 minigame game",
+        ai_hint="小游戏管理：管理个人小游戏作品与版本，设置可见范围与属性，提交审核或上架下架。",
+    ),
+    ManageNavItem(
+        key="game_reviews",
+        domain=MANAGE_LIBRARY_DOMAIN,
+        group="小游戏",
+        label="小游戏审核",
+        icon="shield",
+        href="/manage/library/games/reviews",
+        search_text="小游戏审核 审核 内容复核 学生作品 AI 审核 minigame review moderation",
+        ai_hint="小游戏审核：超管查看通过基础校验的待审小游戏，树形浏览与预览文件包、下载完整包、触发 AI 风险查验或人工通过发布与退回。",
+        required_flag="super_admin",
     ),
     # ── 成绩与归档（按学期末流程排步） ───────────────────────────────
     ManageNavItem(

@@ -29,7 +29,7 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
   const html=render(view,role,discovery);
   const me={playerId:'p1',displayName:'合成玩家',seat:1}, pref={revision:1,displayAlias:'',sharePlaying:false,audioMuted:false};
   let current:any=null,attr:any={...game},roomTries=0,uploaded=false,deleted=false,suggested=false,removed=false;
-  let reviewStatus='manual', allowed=true, retired=false, playtestedV2=false, resubmitted=false;
+  let reviewStatus='manual', reviewReason='AI 审核存在不确定项，请超管人工复核：需结合上下文确认', allowed=true, retired=false, playtestedV2=false, resubmitted=false, autoAiReview=false;
   page.on('pageerror',err=>errors.push(err.message));
   await page.route('**/*',async route=>{
     const req=route.request(),u=new URL(req.url()),p=u.pathname.replace('/api/games/v1','');
@@ -84,15 +84,94 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
     if(p==='/admin/games/g1/versions/v1/submit-review'){resubmitted=true;retired=false;attr={...attr,revision:attr.revision+1};return json({game:attr});}
     if(p==='/admin/games/g1/versions/v1' && req.method()==='DELETE'){removed=true;return json({jobId:'delete-v1'},202);}
     if(p.startsWith('/moderation/reviews')){
-      const item={versionId:'v1',gameId:'g1',title:game.title,version:'1.0.0',status:reviewStatus,digest:'a'.repeat(64),
-        reason:'需人工核对',categories:[],evidence:[{file:'js/game.js',reason:'需结合上下文确认'}],files:[{path:'main.html',size:251}]};
-      if(p.endsWith('/decision')){reviewStatus=body.decision==='approve'?'approved':'rejected';return json({...item,status:reviewStatus});}
-      return json(p==='/moderation/reviews'?{items:u.searchParams.get('status')===reviewStatus?[item]:[],hasMore:false}:item);
+      if(p==='/moderation/reviews/settings'){
+        if(req.method()==='PATCH')autoAiReview=Boolean(body.autoAiReview);
+        return json({autoAiReview});
+      }
+      const tree={
+        id:1,parent_id:null,name:game.title+' (1.0.0)',node_type:'folder',material_path:'/',rel_path:'',
+        document_kind:'html_package',kind_label:'游戏包目录',kind_color:'#4f46e5',preview_mode:'folder',
+        file_size:621,child_count:3,can_manage:false,editable:false,download_allowed:false,ai_findings:[],ai_finding_count:1,
+        children:[
+          {
+            id:2,parent_id:1,name:'js',node_type:'folder',material_path:'/js',rel_path:'js',
+            document_kind:'folder',kind_label:'文件夹',kind_color:'#0ea5e9',preview_mode:'folder',
+            file_size:320,child_count:1,can_manage:false,editable:false,download_allowed:false,ai_findings:[],ai_finding_count:1,
+            children:[
+              {
+                id:3,parent_id:2,name:'game.js',node_type:'file',material_path:'/js/game.js',rel_path:'js/game.js',
+                file_ext:'js',mime_type:'text/javascript',file_size:320,sha256:'b'.repeat(64),
+                document_kind:'code',kind_label:'源码',kind_color:'#0284c7',preview_mode:'text',
+                preview_content_url:'/api/games/v1/moderation/reviews/v1/file-content?path=js%2Fgame.js',
+                download_url:'/api/games/v1/moderation/reviews/v1/file?path=js%2Fgame.js&download=1',
+                can_manage:false,editable:false,download_allowed:true,ai_findings:['需结合上下文确认'],ai_finding_count:1,
+              },
+            ],
+          },
+          {
+            id:4,parent_id:1,name:'main.html',node_type:'file',material_path:'/main.html',rel_path:'main.html',
+            file_ext:'html',mime_type:'text/html',file_size:251,sha256:'c'.repeat(64),
+            document_kind:'html_page',kind_label:'HTML 源码',kind_color:'#d97706',preview_mode:'text',
+            preview_content_url:'/api/games/v1/moderation/reviews/v1/file-content?path=main.html',
+            download_url:'/api/games/v1/moderation/reviews/v1/file?path=main.html&download=1',
+            can_manage:false,editable:false,download_allowed:true,ai_findings:[],ai_finding_count:0,
+          },
+          {
+            id:5,parent_id:1,name:'config.json',node_type:'file',material_path:'/config.json',rel_path:'config.json',
+            file_ext:'json',mime_type:'application/json',file_size:50,sha256:'d'.repeat(64),
+            document_kind:'code',kind_label:'源码',kind_color:'#0284c7',preview_mode:'text',
+            preview_content_url:'/api/games/v1/moderation/reviews/v1/file-content?path=config.json',
+            download_url:'/api/games/v1/moderation/reviews/v1/file?path=config.json&download=1',
+            can_manage:false,editable:false,download_allowed:true,ai_findings:[],ai_finding_count:0,
+          },
+        ],
+      };
+      const item={
+        versionId:'v1',gameId:'g1',slug:game.slug,gameKey:game.slug,title:game.title,summary:game.summary,
+        version:'1.0.0',status:reviewStatus,versionStatus:'reviewing',gameStatus:'draft',digest:'a'.repeat(64),
+        reason:reviewReason,
+        aiReason:'需结合上下文确认',decider:reviewStatus==='manual'?'ai':'teacher:97',
+        categories:['sexual'],aiVerdict:'uncertain',findingCount:1,authorName:'合成学生',ownerRole:'student',
+        fileCount:3,totalBytes:621,tags:['像素风'],allowRemix:true,config,
+        aiReport:{
+          verdict:'uncertain',
+          summary:'已核查入口、脚本与配置，发现一段剧情台词需人工结合上下文确认。',
+          adultElementsNote:'含少量轻度浪漫对白，整体在常规游戏允许范围内。',
+          reviewAdvice:'请打开 js/game.js 查看对白上下文后决定发布或退回。',
+          categoryStates:{sexual:'uncertain',political:'clear',drugs:'clear',severe_harm:'clear'},
+          checkedCount:3,totalCount:3,unreadCount:0,checkedAt:Date.now(),
+        },
+        evidence:[{file:'js/game.js',reason:'需结合上下文确认'}],
+        files:[{path:'js/game.js',size:320,mime:'text/javascript'},{path:'main.html',size:251,mime:'text/html'}],
+        treeUrl:'/api/games/v1/moderation/reviews/v1/tree',
+        packageUrl:'/api/games/v1/moderation/reviews/v1/package',
+        canPreview:true,manageUrl:'/manage/library/games/g1?version=v1',
+        createdAt:Date.now()-60000,updatedAt:Date.now(),
+      };
+      if(p.endsWith('/tree'))return json({tree,selected_id:1,stats:{folder_count:1,file_count:3,total_size:621}});
+      if(p.endsWith('/file-content')){
+        const fp=u.searchParams.get('path')||'';
+        const src=fp==='js/game.js'?'// 合成游戏脚本\nexport function startGame() { return "beacon"; }\n':'<!doctype html><title>航标接力</title>';
+        return json({content:src,encoding:'utf-8',truncated:false,size:src.length,path:fp,mime:'text/javascript'});
+      }
+      if(p.endsWith('/ai-review')){reviewStatus='queued';reviewReason='超管已提交 AI 风险查验，正在排队处理…';return json({...item,status:'queued',reason:reviewReason});}
+      if(p.endsWith('/preview'))return json({url:'/games/beacon-relay?previewVersion=v1',versionId:'v1'});
+      if(p.endsWith('/decision')){reviewStatus=body.decision==='approve'?'approved':'rejected';reviewReason=body.reason;return json({...item,status:reviewStatus,reason:reviewReason});}
+      const counts={
+        manual:reviewStatus==='manual'?1:0,
+        aiPending:reviewStatus==='queued'||reviewStatus==='running'?1:0,
+        approved:reviewStatus==='approved'?1:0,
+        rejected:reviewStatus==='rejected'?1:0,
+        cancelled:0,total:1,
+      };
+      const st=u.searchParams.get('status')||'manual';
+      const matches=st==='all'||st===reviewStatus||(st==='ai_pending'&&(reviewStatus==='queued'||reviewStatus==='running'));
+      return json(p==='/moderation/reviews'?{items:matches?[item]:[],hasMore:false,counts,settings:{autoAiReview}}:item);
     }
     if(p==='/admin/games/g1/suggestions'){suggested=true;return json({jobId:'suggest1',status:'queued'});}
     if(p==='/admin/games/g1'){
       const v1Status=resubmitted?'reviewing':retired?'retired':'ready';
-      const v1Review=role==='student'?(resubmitted?{status:'queued',reason:''}:{status:'approved',reason:'已通过'}):null;
+      const v1Review=role==='student'?(resubmitted?{status:'manual',reason:''}:{status:'approved',reason:'已通过'}):null;
       const versions:any[]=removed?[]:[{id:'v1',status:v1Status,releaseVersion:'1.0.0',allowRemix:allowed,playtested:true,
         authorName:'合成作者',config,sourceAuthor:'原作者',sourceTags:['原作标签'],review:v1Review}];
       if(role==='student')versions.unshift({id:'candidate',status:'reviewing',releaseVersion:'1.1.0',allowRemix:false,
@@ -534,7 +613,7 @@ test('学生工作区按版本切换展示署名与审核，可管理许可、�
   await expect(quickbar.getByRole('button',{name:'停用此版本'})).toHaveCount(0);
   await quickbar.getByRole('button',{name:'提交审核'}).click();
   await page.getByRole('button',{name:'确认',exact:true}).click();
-  await expect(page.locator('[data-status-detail]')).toContainText('等候 AI 审核');
+  await expect(page.locator('[data-status-detail]')).toContainText('待超管审核');
   await quickbar.getByRole('button',{name:'删除此版本'}).click();
   await page.getByRole('button',{name:'确认执行',exact:true}).click();
   await expect(versions.filter({hasText:'1.0.0'})).toHaveCount(0);
@@ -542,18 +621,42 @@ test('学生工作区按版本切换展示署名与审核，可管理许可、�
   expect(errors).toEqual([]);
 });
 
-test('超管从审核队列查看文件并仅对当前摘要提交决定',async({page},info)=>{
-  const {writes}=await fixture(page,'reviews','teacher');
+test('超管在小游戏审核台树形浏览解压包、查看AI报告、触发AI审核并提交决定',async({page},info)=>{
+  const {writes,errors}=await fixture(page,'reviews','teacher');
+  await page.setViewportSize({width:1440,height:900});
+  // Sidebar under 资源库 > 小游戏 shows both 小游戏管理 and 小游戏审核 with 小游戏审核 active.
+  const gameGroup=page.locator('[data-nav-group="library:小游戏"]');
+  await expect(gameGroup.getByRole('link',{name:'小游戏管理'})).toBeVisible();
+  await expect(gameGroup.getByRole('link',{name:'小游戏审核'})).toHaveAttribute('aria-current','page');
+  // Full-width review workbench renders queue, AI report, and embedded Material Explorer tree.
+  await expect(page.locator('[data-review-list]')).toContainText('航标接力');
+  await expect(page.locator('[data-review-report]')).toContainText('含少量轻度浪漫对白');
+  const explorer=page.locator('[data-review-explorer]');
+  await expect(explorer.getByRole('tree')).toContainText('main.html');
+  await page.screenshot({path:info.outputPath('超管审核-1440-概览.png'),animations:'disabled'});
+  // Clicking an AI-flagged file in the report jumps straight into the Material Explorer code preview.
+  await page.locator('.game-review-evidence__jump').filter({hasText:'js/game.js'}).click();
+  await expect(explorer).toContainText('export function startGame()');
+  await expect(page.getByRole('link',{name:'下载完整文件包'})).toHaveAttribute('href','/api/games/v1/moderation/reviews/v1/package');
+  await page.screenshot({path:info.outputPath('超管审核-1440.png'),animations:'disabled'});
+  // Toggle automatic AI review setting.
+  await page.getByRole('switch',{name:'新提交自动 AI 审核'}).click();
+  await expect.poll(()=>writes.filter(x=>x.path==='/moderation/reviews/settings'&&x.body.autoAiReview===true).length).toBe(1);
+  // Trigger on-demand AI review, then verify super admin can still decide cleanly.
+  await page.getByRole('button',{name:'重新 AI 查验'}).click();
+  await page.getByRole('button',{name:'确认',exact:true}).click();
+  await expect.poll(()=>writes.filter(x=>x.path.endsWith('/ai-review')).length).toBe(1);
+  // Responsive check on narrow viewport.
   await page.setViewportSize({width:390,height:844});
-  await page.getByRole('button',{name:'查看审核'}).click();
-  await page.getByText('包内文件（1）').click();
-  await expect(page.getByText('main.html · 251 B')).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({path:info.outputPath('超管审核-390.png'),animations:'disabled'});
   await page.getByRole('button',{name:'退回作者',exact:true}).click();
-  await page.getByLabel('审核意见').fill('请替换此段文本');
+  await page.getByLabel('退回理由（将反馈给作者）').fill('请替换此段文本');
   await page.getByRole('button',{name:'确认退回作者'}).click();
   await expect.poll(()=>writes.filter(x=>x.path.endsWith('/decision')).length).toBe(1);
   expect(writes.find(x=>x.path.endsWith('/decision'))?.body).toEqual({decision:'reject',reason:'请替换此段文本',expectedDigest:'a'.repeat(64)});
-  await expect(page.getByText('已保存审核决定')).toBeAttached();
+  await expect(page.locator('[data-game-notice]')).toContainText('已退回作者');
+  await expect(page.locator('[data-review-report]')).toContainText('请替换此段文本');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(errors).toEqual([]);
 });

@@ -557,14 +557,14 @@ async function publish(v) {
 async function submitReview(v) {
     if (
         !(await confirmAction(
-            '提交内容审核',
-            '将版本 ' + (v.releaseVersion || '此版本') + ' 重新送入内容审核队列，通过后自动公开上架。'
+            '提交审核',
+            '将版本 ' + (v.releaseVersion || '此版本') + ' 提交至小游戏审核队列，审核通过后即正式发布。'
         ))
     )
         return;
     await mutation('/versions/' + encodeURIComponent(v.id) + '/submit-review');
     await reloadDetail(false);
-    notice('已提交内容审核');
+    notice('已提交审核');
 }
 
 async function unlistGame() {
@@ -656,11 +656,13 @@ function renderStatusBanner() {
             items.push(makeAlert('info', '验收中', 'info', vJob?.stage || '正在执行包校验与隔离验收'));
         }
     } else if (v.status === 'reviewing') {
-        const rStatus = v.review?.status || 'queued';
+        const rStatus = v.review?.status || 'manual';
         const tone = rStatus === 'manual' ? 'warning' : 'info';
         const desc =
             v.review?.reason ||
-            (rStatus === 'manual' ? '已转交超级管理员人工复核，通过后自动上架' : '已通过包校验，正在进行内容审核');
+            (rStatus === 'manual'
+                ? '已通过第一轮基础校验，等待超级管理员审核，通过后正式发布'
+                : '已通过基础校验，AI 正在进行内容风险查验');
         items.push(makeAlert(tone, reviewNames[rStatus] || rStatus, tone, desc));
     } else if (v.status === 'rejected') {
         if (v.review?.status === 'rejected') {

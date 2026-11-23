@@ -1,20 +1,57 @@
 {% extends 'manage/layout.html' %}
 {% import 'minigames/ui.html' as ui with context %}
-{% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
-{% block header_actions %}{{ ui.btn('返回小游戏管理', variant='ghost', icon='arrow-left', href='/manage/library/games') }}{% endblock %}
+{% block title %}小游戏审核{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ asset_url('css/materials_library.css') }}">
+<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">
+{% endblock %}
+{% block header_actions %}
+{{ ui.btn('游玩大厅', variant='ghost', size='sm', icon='gamepad', href='/games') }}
+{{ ui.btn('小游戏管理', variant='ghost', size='sm', icon='layers', href='/manage/library/games') }}
+{% endblock %}
 {% block content %}
-<section class="game-management" data-game-reviews>
-    <form class="lq-surface game-filters game-admin-bar" data-lq-component="surface" data-review-filter>
-        {{ ui.select('审核状态','status',[('manual','待人工审核'),('approved','已通过'),('rejected','已退回'),('queued','等候 AI'),('running','AI 审核中'),('cancelled','已取消')]) }}
-        {{ ui.form_button('查询', icon='sliders') }}
-    </form>
+<section class="game-management game-reviews-page" data-game-reviews>
+    <header class="lq-surface game-review-bar" data-lq-component="surface">
+        <div class="game-review-bar__top">
+            <div class="game-review-tabs" data-review-tabs role="tablist" aria-label="审核队列筛选">
+                <button type="button" class="lq-chip lq-chip--filter" data-lq-component="chip" role="tab" data-review-status="manual" aria-selected="true" aria-pressed="true"><span>待人工审核</span><span class="lq-badge" data-count-for="manual">0</span></button>
+                <button type="button" class="lq-chip lq-chip--filter" data-lq-component="chip" role="tab" data-review-status="ai_pending" aria-selected="false" aria-pressed="false"><span>AI 审核中</span><span class="lq-badge" data-count-for="aiPending">0</span></button>
+                <button type="button" class="lq-chip lq-chip--filter" data-lq-component="chip" role="tab" data-review-status="approved" aria-selected="false" aria-pressed="false"><span>已通过</span><span class="lq-badge" data-count-for="approved">0</span></button>
+                <button type="button" class="lq-chip lq-chip--filter" data-lq-component="chip" role="tab" data-review-status="rejected" aria-selected="false" aria-pressed="false"><span>已退回</span><span class="lq-badge" data-count-for="rejected">0</span></button>
+                <button type="button" class="lq-chip lq-chip--filter" data-lq-component="chip" role="tab" data-review-status="all" aria-selected="false" aria-pressed="false"><span>全部</span><span class="lq-badge" data-count-for="total">0</span></button>
+            </div>
+            <div class="game-review-policy">
+                <label class="lq-choice game-review-switch" title="开启后，学生提交的游戏通过基础校验将自动送 AI 风险查验；正常自动发布，存在重大风险或不确定时转交超管人工审核。">
+                    <input class="lq-switch" data-lq-component="switch" type="checkbox" role="switch" data-auto-ai-toggle>
+                    <span class="lq-choice__text">新提交自动 AI 审核</span>
+                </label>
+            </div>
+        </div>
+        <form class="game-review-search" data-review-filter>
+            <label class="lq-search game-search-box">
+                <span class="sr-only">搜索作品名称、标识、作者或版本</span>
+                <input class="lq-input" data-lq-component="input" type="search" name="q" placeholder="搜索游戏名称、gameKey、作者或版本号…" autocomplete="off">
+            </label>
+            {{ ui.form_button('筛选', icon='sliders') }}
+            {{ ui.action('刷新', 'refresh', variant='ghost', icon='refresh') }}
+        </form>
+    </header>
     {{ ui.notice() }}
-    <ul class="lq-surface game-admin-list" data-lq-component="surface" data-review-list aria-label="审核列表"></ul>
-    <nav class="game-actions" aria-label="审核分页">
-        {{ ui.action('上一页','previous',variant='ghost',hidden=true) }}
-        {{ ui.action('下一页','next',variant='ghost',hidden=true) }}
-    </nav>
+    <div class="game-review-split">
+        <aside class="lq-surface game-review-queue" data-lq-component="surface" aria-label="待审核小游戏列表">
+            <div class="game-section-head game-review-queue__head">
+                <h2 class="game-section-title">{{ ui.g_icon('shield', 'game-mini-icon') }}<span data-queue-heading>待人工审核</span></h2>
+                <small class="game-key-pill" data-queue-total>0 项</small>
+            </div>
+            <ul class="game-review-list" data-review-list aria-label="审核队列"></ul>
+            <nav class="game-actions game-review-pager" aria-label="审核分页">
+                {{ ui.action('上一页', 'previous', variant='ghost', icon='chevron-left', hidden=true) }}
+                {{ ui.action('下一页', 'next', variant='ghost', icon='chevron-right', hidden=true) }}
+            </nav>
+        </aside>
+        <div class="game-review-stage" data-review-stage aria-live="polite"></div>
+    </div>
 </section>
-{{ ui.boot({}) }}
+{{ ui.boot({'genreOptions': genre_options|default([])}) }}
 {% endblock %}
 {% block scripts %}<script type="module" src="{{ asset_url('js/minigames/reviews.js') }}"></script>{% endblock %}

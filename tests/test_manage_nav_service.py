@@ -93,7 +93,7 @@ class ManageNavServiceTests(unittest.TestCase):
             by_domain["teaching"],
         )
         self.assertEqual(
-            ["material_hub", "courses", "textbooks", "exams", "materials", "games", "lesson_plans", "polls"],
+            ["material_hub", "courses", "textbooks", "exams", "materials", "lesson_plans", "polls", "games", "game_reviews"],
             by_domain["library"],
         )
         self.assertEqual(
@@ -292,6 +292,27 @@ class ManageNavServiceTests(unittest.TestCase):
 
         nav = build_manage_nav({"id": 1, "role": "teacher"}, "material_hub", is_super_admin=False)
         self.assertEqual("library", nav["active_domain"])
+        self.assertIn("games", nav["hrefs"])
+        self.assertNotIn("game_reviews", nav["hrefs"])
+        library_groups_teacher = {
+            group["label"]: [item["key"] for item in group["items"]]
+            for domain in nav["domains"]
+            if domain["key"] == "library"
+            for group in domain["groups"]
+        }
+        self.assertEqual(["games"], library_groups_teacher.get("小游戏"))
+
+        admin_nav = build_manage_nav({"id": 1, "role": "teacher"}, "game_reviews", is_super_admin=True)
+        self.assertEqual("library", admin_nav["active_domain"])
+        self.assertIn("game_reviews", admin_nav["hrefs"])
+        library_groups_admin = {
+            group["label"]: [item["key"] for item in group["items"]]
+            for domain in admin_nav["domains"]
+            if domain["key"] == "library"
+            for group in domain["groups"]
+        }
+        self.assertEqual(["games", "game_reviews"], library_groups_admin.get("小游戏"))
+        self.assertEqual("game_reviews", admin_nav["active_item"]["key"])
         categories = nav["library_categories"]
         keys = [category["key"] for category in categories]
         self.assertIn("learning_docs", keys)

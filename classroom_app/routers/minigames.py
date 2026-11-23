@@ -113,7 +113,7 @@ def host(request: Request, slug: str, user: Player, previewVersion: str = ""):
     )
 
 
-def management_context(request, user, conn, page_title, **fields):
+def management_context(request, user, conn, page_title, *, active_page="games", **fields):
     from ..services.user_ui_preferences_service import resolve_user_ui_preferences
     from .ui_parts.common import _build_manage_template_context
 
@@ -125,7 +125,7 @@ def management_context(request, user, conn, page_title, **fields):
         request,
         extra["user"],
         page_title=page_title,
-        active_page="games",
+        active_page=active_page,
         teacher_is_super_admin=p.is_super_admin_teacher(conn, user["id"]),
         extra=extra,
     )
@@ -161,8 +161,8 @@ def moderation_queue(request: Request, user: Manager):
 
     with p.game_db() as conn:
         if user["role"] != "teacher" or not p.is_super_admin_teacher(conn, user["id"]):
-            raise HTTPException(403, "仅超级管理员可复核学生游戏。")
-        ctx = management_context(request, user, conn, "学生游戏内容复核")
+            raise HTTPException(403, "仅超级管理员可进入小游戏审核。")
+        ctx = management_context(request, user, conn, "小游戏审核", active_page="game_reviews")
     return templates.TemplateResponse(request, "minigames/reviews.html", ctx, headers=NO_STORE)
 
 

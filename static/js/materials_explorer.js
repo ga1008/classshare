@@ -57,8 +57,18 @@ export function createMaterialsExplorer(options = {}) {
     const mount = options.mount;
     if (!mount) throw new TypeError('materials explorer needs a mount element');
     const modalId = options.modalId || 'materials-detail-modal';
+    const embedded = options.mode === 'embedded';
+    const readOnly = Boolean(options.readOnly);
+    const viewStorageKey = options.storageKeyPrefix ? `${options.storageKeyPrefix}:view` : VIEW_STORAGE_KEY;
+    const paneStorageKey = options.storageKeyPrefix ? `${options.storageKeyPrefix}:details` : PANE_STORAGE_KEY;
+    const defaultDetails = options.defaultDetailsOpen === false ? 'closed' : 'open';
+    const downloadHrefFor = (item) => {
+        if (typeof options.downloadUrl === 'function') return options.downloadUrl(item);
+        return item?.download_url || `/materials/download/${Number(item?.id)}`;
+    };
 
     const state = {
+        rootKey: null,
         rootId: null,
         root: null,
         nodes: new Map(),
@@ -68,8 +78,8 @@ export function createMaterialsExplorer(options = {}) {
         history: [],
         future: [],
         filter: '',
-        view: readStorage(VIEW_STORAGE_KEY, 'list'),
-        detailsOpen: readStorage(PANE_STORAGE_KEY, 'open') !== 'closed',
+        view: readStorage(viewStorageKey, 'list'),
+        detailsOpen: readStorage(paneStorageKey, defaultDetails) !== 'closed',
         treeRequest: 0,
         detailRequest: 0,
         editing: false,
@@ -112,9 +122,11 @@ export function createMaterialsExplorer(options = {}) {
         return path;
     }
 
-    async function loadTree(materialId, { keepSelection = false } = {}) {
+    async function loadTree(targetKey, { keepSelection = false } = {}) {
         const request = ++state.treeRequest;
-        const data = await apiFetch(`/api/materials/${Number(materialId)}/tree`, { silent: true });
+        const data = typeof options.loadTree === 'function'
+            ? await options.loadTree(targetKey, { keepSelection })
+            : await apiFetch(`/api/materials/${Number(targetKey)}/tree`, { silent: true });
         if (request !== state.treeRequest) return null;
         state.nodes = new Map();
         state.root = data.tree || null;
@@ -124,7 +136,7 @@ export function createMaterialsExplorer(options = {}) {
         state.expanded = new Set([...state.expanded].filter((id) => state.nodes.has(id)));
         if (state.rootId) state.expanded.add(state.rootId);
         if (!keepSelection || !state.nodes.has(Number(state.selectedId))) {
-            state.selectedId = Number(data.selected_id || materialId);
+            state.selectedId = Number(data.selected_id || state.rootId || targetKey);
         }
         for (const node of pathTo(state.selectedId)) {
             if (node.node_type === 'folder') state.expanded.add(Number(node.id));
@@ -134,9 +146,12 @@ export function createMaterialsExplorer(options = {}) {
 
     async function loadDetail(materialId) {
         const request = ++state.detailRequest;
-        const data = await apiFetch(`/api/materials/${Number(materialId)}`, { silent: true });
+        const node = state.nodes.get(Number(materialId)) || null;
+        const data = typeof options.loadDetail === 'function'
+            ? await options.loadDetail(Number(materialId), node)
+            : await apiFetch(`/api/materials/${Number(materialId)}`, { silent: true });
         if (request !== state.detailRequest) return null;
-        state.detail = data.material || null;
+        state.detail = data?.material || data || null;
         options.onDetailChange?.(state.detail);
         options.onNavigate?.(state.detail);
         return state.detail;
@@ -157,7 +172,7 @@ export function createMaterialsExplorer(options = {}) {
                     </div>
                     <nav class="mx__address lq-surface" data-lq-component="surface" data-lq-surface="embedded" aria-label="当前位置" data-mx-address></nav>
                     <label class="mx__search lq-search">
-                        <input data-lq-component="input" type="search" class="lq-input" placeholder="在当前文档库中筛选" data-mx-search autocomplete="off">
+                        <input data-lq-component="input" type="search" class="lq-input" placeholder="${escapeHtml(options.searchPlaceholder || '在当前文档库中筛选')}" data-mx-search autocomplete="off">
                     </label>
                     <div class="mx__view" role="group" aria-label="内容视图">
                         <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--glass lq-btn--icon" data-mx="view-list" title="详细信息" aria-label="详细信息" aria-pressed="false">${kindIcon('list')}</button>
@@ -198,7 +213,7 @@ export function createMaterialsExplorer(options = {}) {
                 const last = index === path.length - 1;
                 return `${index ? `<span class="mx__crumb-sep" aria-hidden="true">${kindIcon('chevron', 14)}</span>` : ''}<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm lq-btn--ghost mx__crumb${last ? ' is-current' : ''}" data-mx-go="${node.id}" ${last ? 'aria-current="location"' : ''} title="${escapeHtml(node.material_path || '')}">${index === 0 ? `<span class="mx__crumb-icon" style="--kind-color:${escapeHtml(kind.color)}">${kindIcon(kind.icon, 14)}</span>` : ''}${escapeHtml(node.name || '')}</button>`;
             }).join('')
-            : '<span class="mx__crumb is-current">材料库</span>';
+            : `<span class="mx__crumb is-current">${escapeHtml(options.rootLabel || '材料库')}</span>`;
         mount.querySelector('[data-mx="back"]').disabled = !state.history.length;
         mount.querySelector('[data-mx="forward"]').disabled = !state.future.length;
         const current = state.nodes.get(Number(state.selectedId));
@@ -227,15 +242,19 @@ export function createMaterialsExplorer(options = {}) {
         const expanded = state.expanded.has(id) || Boolean(state.filter);
         const selected = id === Number(state.selectedId);
         const inPath = pathTo(state.selectedId).some((item) => Number(item.id) === id);
+        const findingCount = Number(node.ai_finding_count || 0);
+        const flagBadge = findingCount > 0
+            ? `<span class="lq-badge" data-tone="warning" title="AI 提示人工核查（${findingCount}）">${findingCount}</span>`
+            : '';
         return `
             <div class="mx__tree-node" role="treeitem" aria-expanded="${hasChildren ? String(expanded) : 'false'}" aria-selected="${String(selected)}" data-mx-node="${id}" style="--depth:${depth}">
                 <div class="mx__tree-row${inPath && !selected ? ' is-ancestor' : ''}">
                     <button type="button" class="mx__tree-toggle lq-btn lq-btn--ghost lq-btn--sm lq-btn--icon" data-lq-component="button" data-mx-toggle="${id}" aria-label="${expanded ? '收起' : '展开'} ${escapeHtml(node.name || '')}" ${hasChildren ? '' : 'disabled'}>${hasChildren ? kindIcon('chevron', 12) : ''}</button>
                     <button type="button" class="mx__tree-select lq-btn lq-btn--ghost lq-domain-choice" data-lq-component="choice" data-lq-shape="surface" data-mx-row="${id}" aria-pressed="${selected}" tabindex="${selected ? 0 : -1}">
                         <span class="mx__kind" data-lq-visual="category" style="--kind-color:${escapeHtml(kind.color)}">${kindIcon(kind.icon, 15)}</span>
-                        <span class="mx__tree-label" title="${escapeHtml(node.material_path || node.name || '')}">${escapeHtml(node.name || '未命名')}</span>
+                        <span class="mx__tree-label" title="${escapeHtml(node.material_path || node.name || '')}">${escapeHtml(node.name || '未命名')}</span>${flagBadge}
                     </button>
-                    ${menuButton(node)}
+                    ${readOnly ? '' : menuButton(node)}
                 </div>
                 ${hasChildren && expanded ? `<div class="mx__tree-children" role="group">${node.children.map((child) => renderTreeNode(child, depth + 1)).join('')}</div>` : ''}
             </div>
@@ -266,29 +285,40 @@ export function createMaterialsExplorer(options = {}) {
                 <div class="mx__grid" role="list" aria-label="文件夹内容">
                     ${children.map((child) => {
                         const kind = getMaterialKind(child);
+                        const flag = Number(child.ai_finding_count || 0) > 0
+                            ? `<span class="lq-badge" data-tone="warning">${Number(child.ai_finding_count)}</span>`
+                            : '';
                         return `
                             <div class="mx__tile" role="listitem" data-mx-item="${child.id}" data-node-type="${escapeHtml(child.node_type)}" tabindex="-1">
                             <button type="button" class="mx__tile-open lq-btn lq-btn--ghost lq-domain-choice" data-lq-component="choice" data-lq-shape="surface" data-mx-open="${child.id}" aria-pressed="false" title="${escapeHtml(child.name || '')}">
                                 <span class="mx__tile-icon" style="--kind-color:${escapeHtml(kind.color)}">${kindIcon(kind.icon, 30)}</span>
-                                <span class="mx__tile-name">${escapeHtml(child.name || '')}</span>
+                                <span class="mx__tile-name">${escapeHtml(child.name || '')} ${flag}</span>
                                 <span class="mx__tile-meta">${escapeHtml(kind.label)} · ${escapeHtml(nodeMeta(child))}</span>
-                            </button>${menuButton(child)}</div>`;
+                            </button>${readOnly ? '' : menuButton(child)}</div>`;
                     }).join('')}
                 </div>`;
             return;
         }
         container.innerHTML = `
             <table class="mx__list" role="grid" aria-label="文件夹内容">
-                <thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">大小 / 项目</th><th scope="col">修改时间</th><th scope="col"><span class="sr-only">操作</span></th></tr></thead>
+                <thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">大小 / 项目</th>${readOnly ? '' : '<th scope="col">修改时间</th>'}<th scope="col"><span class="sr-only">操作</span></th></tr></thead>
                 <tbody>
                     ${children.map((child) => {
                         const kind = getMaterialKind(child);
+                        const flag = Number(child.ai_finding_count || 0) > 0
+                            ? `<span class="lq-badge" data-tone="warning" title="AI 提示复核">${Number(child.ai_finding_count)}</span>`
+                            : '';
+                        const trail = readOnly
+                            ? (child.node_type === 'file' && child.download_allowed !== false
+                                ? `<a data-lq-component="button" class="lq-btn lq-btn--ghost lq-btn--sm lq-btn--icon" href="${escapeHtml(downloadHrefFor(child))}" title="下载 ${escapeHtml(child.name || '')}" aria-label="下载 ${escapeHtml(child.name || '')}">${kindIcon('download', 14)}</a>`
+                                : '')
+                            : menuButton(child);
                         return `
                             <tr class="mx__list-row" data-mx-item="${child.id}" data-node-type="${escapeHtml(child.node_type)}" tabindex="-1" aria-selected="false">
-                                <td><button type="button" class="mx__list-name lq-btn lq-btn--ghost lq-domain-choice" data-lq-component="choice" data-lq-shape="surface" data-mx-open="${child.id}" aria-pressed="false"><span class="mx__kind" style="--kind-color:${escapeHtml(kind.color)}">${kindIcon(kind.icon, 16)}</span><span title="${escapeHtml(child.material_path || '')}">${escapeHtml(child.name || '')}</span></button></td>
+                                <td><button type="button" class="mx__list-name lq-btn lq-btn--ghost lq-domain-choice" data-lq-component="choice" data-lq-shape="surface" data-mx-open="${child.id}" aria-pressed="false"><span class="mx__kind" style="--kind-color:${escapeHtml(kind.color)}">${kindIcon(kind.icon, 16)}</span><span title="${escapeHtml(child.material_path || '')}">${escapeHtml(child.name || '')}</span>${flag}</button></td>
                                 <td><span class="mx__kind-pill" style="--kind-color:${escapeHtml(kind.color)}">${escapeHtml(kind.label)}</span></td>
                                 <td>${escapeHtml(nodeMeta(child))}</td>
-                                <td>${escapeHtml(formatDate(child.updated_at || child.created_at || '') || '')}</td><td>${menuButton(child)}</td>
+                                ${readOnly ? '' : `<td>${escapeHtml(formatDate(child.updated_at || child.created_at || '') || '')}</td>`}<td>${trail}</td>
                             </tr>`;
                     }).join('')}
                 </tbody>
@@ -314,19 +344,20 @@ export function createMaterialsExplorer(options = {}) {
                 </div>
                 <div class="mx__content-tools">
                     ${detail.preview_url ? `<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" href="${escapeHtml(detail.preview_url)}" target="_blank" rel="noopener">${kindIcon('external', 14)} 新标签打开</a>` : ''}
-                    ${detail.node_type === 'file' && detail.download_allowed !== false ? `<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" href="/materials/download/${Number(detail.id)}">${kindIcon('download', 14)} 下载</a>` : ''}
-                    ${canEditMaterial(detail) && detail.can_manage !== false ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ${state.editing ? 'lq-btn--prominent' : 'lq-btn--glass'}" data-mx="edit" aria-pressed="${String(state.editing)}">${kindIcon('pencil', 14)} ${state.editing ? '正在编辑' : '编辑'}</button>` : ''}
+                    ${detail.node_type === 'file' && detail.download_allowed !== false ? `<a data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass" href="${escapeHtml(downloadHrefFor(detail))}">${kindIcon('download', 14)} 下载</a>` : ''}
+                    ${!readOnly && canEditMaterial(detail) && detail.can_manage !== false ? `<button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ${state.editing ? 'lq-btn--prominent' : 'lq-btn--glass'}" data-mx="edit" aria-pressed="${String(state.editing)}">${kindIcon('pencil', 14)} ${state.editing ? '正在编辑' : '编辑'}</button>` : ''}
                 </div>
             </header>`;
         dom.content.innerHTML = `${head}<div class="mx__content-body" data-mx-body></div>`;
         const body = dom.content.querySelector('[data-mx-body]');
-        if (state.editing && canEditMaterial(detail)) {
+        if (!readOnly && state.editing && canEditMaterial(detail)) {
             mountEditor(body, detail);
             return;
         }
         const request = state.detailRequest;
         renderMaterialPreview(body, detail, {
             isCurrent: () => request === state.detailRequest,
+            fetchContent: options.fetchContent,
             renderFolder: (container, folder) => renderFolderContents(container, state.nodes.get(Number(folder.id)) || folder),
             onContentLoaded: (data) => { state.editorContent = data; },
         });
@@ -397,6 +428,26 @@ export function createMaterialsExplorer(options = {}) {
             return;
         }
         const kind = getMaterialKind(detail);
+        if (readOnly) {
+            dom.details.innerHTML = `
+                <div class="mx__pane-head"><span>${kindIcon('info')} 文件信息</span></div>
+                <div class="mx__details-body">
+                    <div class="mx__details-hero" style="--kind-color:${escapeHtml(kind.color)}">
+                        <span class="mx__kind mx__kind--xl">${kindIcon(kind.icon, 34)}</span>
+                        <span class="mx__kind-pill">${escapeHtml(kind.label)}</span>
+                    </div>
+                    <dl class="mx__props">
+                        <div><dt>名称</dt><dd>${escapeHtml(detail.name || '未命名')}</dd></div>
+                        <div><dt>路径</dt><dd title="${escapeHtml(detail.material_path || '')}">${escapeHtml(detail.material_path || '/')}</dd></div>
+                        <div><dt>大小 / 子项</dt><dd>${escapeHtml(nodeMeta(detail))}</dd></div>
+                        ${detail.mime_type ? `<div><dt>MIME</dt><dd><code>${escapeHtml(detail.mime_type)}</code></dd></div>` : ''}
+                        ${detail.sha256 ? `<div><dt>SHA-256</dt><dd><code title="${escapeHtml(detail.sha256)}">${escapeHtml(String(detail.sha256).slice(0, 16))}…</code></dd></div>` : ''}
+                    </dl>
+                    ${typeof options.renderExtraDetails === 'function' ? (options.renderExtraDetails(detail) || '') : ''}
+                </div>
+            `;
+            return;
+        }
         const canManage = detail.can_manage !== false;
         const assignments = Array.isArray(detail.assignments) ? detail.assignments : [];
         const isRepo = Boolean(detail.is_git_repository);
@@ -632,8 +683,8 @@ export function createMaterialsExplorer(options = {}) {
         closeContextMenu();
         const items = [{ action: 'open', label: node.node_type === 'folder' ? '打开' : '查看' }];
         if (node.preview_url) items.push({ action: 'external', label: '新标签打开', href: node.preview_url, target: '_blank' });
-        if (node.node_type === 'file' && node.download_allowed !== false) items.push({ action: 'download', label: '下载', href: `/materials/download/${Number(node.id)}`, target: '_blank' });
-        const canManage = node.can_manage !== false && state.detail?.can_manage !== false;
+        if (node.node_type === 'file' && node.download_allowed !== false) items.push({ action: 'download', label: '下载', href: downloadHrefFor(node), target: '_blank' });
+        const canManage = !readOnly && node.can_manage !== false && state.detail?.can_manage !== false;
         if (node.editable && canManage) items.push({ action: 'edit', label: '编辑源码' });
         if (canManage) {
             items.push({ action: 'rename', label: '重命名' });
@@ -661,7 +712,7 @@ export function createMaterialsExplorer(options = {}) {
         if (!node) return;
         if (action === 'open') return select(targetId);
         if (action === 'external' && node.preview_url) return window.open(node.preview_url, '_blank', 'noopener');
-        if (action === 'download') return window.open(`/materials/download/${targetId}`, '_blank', 'noopener');
+        if (action === 'download') return window.open(downloadHrefFor(node), '_blank', 'noopener');
         if (action === 'edit') {
             if (!await select(targetId)) return;
             state.editing = true;
@@ -702,12 +753,12 @@ export function createMaterialsExplorer(options = {}) {
                 else if (command === 'reload') refresh();
                 else if (command === 'view-list' || command === 'view-grid') {
                     state.view = command === 'view-grid' ? 'grid' : 'list';
-                    writeStorage(VIEW_STORAGE_KEY, state.view);
+                    writeStorage(viewStorageKey, state.view);
                     renderAddress();
                     renderContent();
                 } else if (command === 'toggle-details') {
                     state.detailsOpen = !state.detailsOpen;
-                    writeStorage(PANE_STORAGE_KEY, state.detailsOpen ? 'open' : 'closed');
+                    writeStorage(paneStorageKey, state.detailsOpen ? 'open' : 'closed');
                     renderAddress();
                 } else if (command === 'edit') {
                     if (state.editing && !await mayDiscardDraft()) return;
@@ -811,30 +862,64 @@ export function createMaterialsExplorer(options = {}) {
 
     /* ---------- public ---------- */
 
-    async function open(materialId) {
+    async function selectByPath(relPath) {
+        const clean = String(relPath || '').replace(/^\/+/, '');
+        for (const node of state.nodes.values()) {
+            const candidate = String(node.rel_path || node.material_path || '').replace(/^\/+/, '');
+            if (candidate === clean) return select(node.id);
+        }
+        return false;
+    }
+
+    async function open(targetKey, { selectPath = '' } = {}) {
         ensureShell();
+        state.rootKey = targetKey;
         state.history = [];
         state.future = [];
         state.editing = false;
         state.git = { progress: null, result: null, plan: null, planLoading: false, running: false };
-        state.selectedId = Number(materialId);
+        state.selectedId = Number.isFinite(Number(targetKey)) ? Number(targetKey) : null;
         dom.search.value = '';
         state.filter = '';
-        dom.content.innerHTML = '<div class="mx__empty">正在加载材料…</div>';
+        dom.content.innerHTML = '<div class="mx__empty">正在加载内容…</div>';
         dom.tree.innerHTML = '<div class="mx__empty">正在加载目录…</div>';
         dom.details.innerHTML = '';
-        document.getElementById(modalId)?.setAttribute('aria-hidden', 'false');
-        openModal(modalId);
-        await Promise.all([loadTree(materialId), loadDetail(materialId)]);
+        if (!embedded) {
+            document.getElementById(modalId)?.setAttribute('aria-hidden', 'false');
+            openModal(modalId);
+        }
+        if (typeof options.loadTree === 'function') {
+            const root = await loadTree(targetKey);
+            if (!root) return;
+            if (selectPath) {
+                const clean = String(selectPath).replace(/^\/+/, '');
+                for (const node of state.nodes.values()) {
+                    const candidate = String(node.rel_path || node.material_path || '').replace(/^\/+/, '');
+                    if (candidate === clean) {
+                        state.selectedId = Number(node.id);
+                        for (const anc of pathTo(state.selectedId)) {
+                            if (anc.node_type === 'folder') state.expanded.add(Number(anc.id));
+                        }
+                        break;
+                    }
+                }
+            }
+            await loadDetail(state.selectedId);
+        } else {
+            await Promise.all([loadTree(targetKey), loadDetail(targetKey)]);
+        }
         renderAll();
-        dom.content.focus({ preventScroll: true });
+        if (!embedded) dom.content.focus({ preventScroll: true });
     }
 
     async function refresh({ keepEditor = false } = {}) {
         if (!state.rootId) return;
         const anchor = Number(state.selectedId);
         try {
-            const root = await loadTree(state.nodes.has(anchor) ? anchor : state.rootId, { keepSelection: true });
+            const refreshKey = typeof options.loadTree === 'function'
+                ? state.rootKey
+                : (state.nodes.has(anchor) ? anchor : state.rootId);
+            const root = await loadTree(refreshKey, { keepSelection: true });
             if (!root) return;
         } catch (error) {
             if (error?.status === 404) {
@@ -854,7 +939,7 @@ export function createMaterialsExplorer(options = {}) {
     function close() {
         destroyEditor();
         closeContextMenu();
-        closeModal(modalId);
+        if (!embedded) closeModal(modalId);
     }
 
     function presentGitResult(materialId, result) {
@@ -869,6 +954,7 @@ export function createMaterialsExplorer(options = {}) {
         refresh,
         close,
         select,
+        selectByPath,
         presentGitResult,
         get activeId() { return state.selectedId; },
         get detail() { return state.detail; },

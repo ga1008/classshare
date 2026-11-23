@@ -1,6 +1,6 @@
 # LanShare 前端迁移清单
 
-> 生成时间：2026-11-23 23:02:48（Asia/Shanghai）。
+> 生成时间：2026-11-24 00:07:14（Asia/Shanghai）。
 > 生成命令：`python tools/frontend_migration_inventory.py`。
 
 ## 用途
@@ -167,7 +167,7 @@
 | `minigames/hall.html` | `base.html` | `css/lq/pages/minigames.css`, `js/minigames/hall.js` | - | - |
 | `minigames/host.html` | `base.html`, `macros/lq/button.html` | `css/lq/pages/minigames.css`, `js/minigames/host.js` | - | - |
 | `minigames/manage.html` | `minigames/student_workspace.html`, `minigames/upload_form.html`, `macros/lq/button.html` | `css/lq/pages/minigames.css`, `js/minigames/manage.js` | - | - |
-| `minigames/reviews.html` | `manage/layout.html` | `css/lq/pages/minigames.css`, `js/minigames/reviews.js` | - | - |
+| `minigames/reviews.html` | `manage/layout.html` | `css/materials_library.css`, `css/lq/pages/minigames.css`, `js/minigames/reviews.js` | - | - |
 | `minigames/student_workspace.html` | `base.html` | - | - | - |
 | `minigames/ui.html` | - | - | - | - |
 | `minigames/upload_form.html` | - | - | - | - |
@@ -336,7 +336,7 @@
 | `classroom_app/routers/materials_parts/node_ops.py` | 6 | `POST /api/materials/folders`, `POST /api/materials/files`, `GET /api/materials/folder-options`, `POST /api/materials/{material_id}/move` 等 6 项 | - |
 | `classroom_app/routers/message_center.py` | 19 | `GET /message-center`, `GET /api/message-center/bootstrap`, `GET /api/message-center/summary`, `GET /api/message-center/items` 等 8 项 | - |
 | `classroom_app/routers/minigame_admin.py` | 19 | `GET /games`, `GET /games/{game_id}`, `POST /games`, `PATCH /games/{game_id}` 等 8 项 | - |
-| `classroom_app/routers/minigame_moderation.py` | 3 | `GET /{vid}`, `POST /{vid}/decision`, `GET /{vid}/package` | - |
+| `classroom_app/routers/minigame_moderation.py` | 11 | `GET /settings`, `PATCH /settings`, `GET /{vid}`, `GET /{vid}/tree` 等 8 项 | - |
 | `classroom_app/routers/minigames.py` | 0 | - | `minigames/hall.html`, `minigames/host.html`, `minigames/author_guide.html`, `minigames/reviews.html`, `minigames/detail.html` 等 6 项 |
 | `classroom_app/routers/mp/auth.py` | 5 | `POST /login`, `POST /bind/student`, `POST /bind/teacher`, `GET /me` 等 5 项 | - |
 | `classroom_app/routers/mp/classroom.py` | 1 | `GET /live` | - |

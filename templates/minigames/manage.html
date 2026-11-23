@@ -3,7 +3,7 @@
 {% from 'macros/lq/button.html' import lq_btn %}
 {% block title %}{{ page_title }}{% endblock %}
 {% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
-{% block header_actions %}{{ ui.btn('游玩大厅', variant='ghost', size='sm', icon='gamepad', href='/games') }} {% if current_teacher_is_super_admin %}{{ ui.btn('内容审核', href='/manage/library/games/reviews', icon='shield') }}{% endif %} {{ ui.action('上传新游戏', 'draft', 'prominent', 'upload') }}{% endblock %}
+{% block header_actions %}{{ ui.btn('游玩大厅', variant='ghost', size='sm', icon='gamepad', href='/games') }} {{ ui.action('上传新游戏', 'draft', 'prominent', 'upload') }}{% endblock %}
 {% block content %}
 <section class="game-management" data-game-library>
 {% set workspace = '/games/workshop' if user_info.role == 'student' else '/manage/library/games' %}

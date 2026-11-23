@@ -401,10 +401,10 @@
     "minigames": {
       "title": "独立 HTML 小游戏大厅、宿主与管理台 static/css/lq/pages/minigames.css",
       "layer": "composite",
-      "summary": "游玩大厅（/games）、沉浸沙盒宿主（/games/{slug}）与教师游戏库管理（/manage/library/games）。大厅首屏 SSR 直出目录与四栏动态，配合单委托指针光晕与即时模式芯片筛选；宿主以 48px 顶栏、舞台模式选择卡、环形倒计时、席位圆点与无同源权限的 iframe MessageChannel 桥承载单机与多人对局；管理列表承载筛选与弹窗上传，作品详情页默认展示当前状态、快捷切换操作（预览试玩、上架/重新上架、提交审核、下架、二开许可、验收报告、删版本与彻底删除）、只读属性卡（点击编辑后保存或取消）以及同游戏版本与关联作品的快捷跳转列表。师生共用的上传弹窗支持选择、拖入及粘贴 ZIP 或游戏目录；在本机保留层级并打包，确认标签及源码许可后手动提交，表单文本仍可普通粘贴。师生可在工作区打开开发规范或下载整包；阅读页使用原生可折叠章节目录、LQ Prose 和普通下载链接，支持键盘及窄屏。",
-      "params": "复用 LQ Topbar、Surface(content/embedded)、Button(lq_props/createComponent)、Chip(filter/status)、Alert、Choice 复合卡(data-lq-shape=surface)、Form(input/textarea/select/checkbox/file)、Dropdown、Progress、Dialog/Drawer/Sheet/Confirm、Composer 与 bindTooltip；局部绘制游戏矢量图标沿用 lq-btn__icon 槽位，不扩首屏共享图标包。",
-      "states": "大厅 SSR 已注水零冗余首屏请求、空结果、游标分页；宿主加载、舞台模式选择、私房邀请码、随机排队、5 秒环形倒计时、队友重连、只读多开接管、终局结算、静音 409 自动重试与舞台焦点归还；师生按包内标识管理作品文件夹与版本，详情页按 ?version 切换查看同游戏各版本并展示关联作品快捷跳转；大厅组合类型和标签并保存账户喜好；上传默认授权二开，每版可独立关闭；学生包深度内容审查、停用/下架后重新提交审核与超管人工复核；教师草稿、待浏览器验收、隔离验收、人工试玩、上架/重新上架、下架、属性查看/编辑态切换、409 冲突留稿与彻底删除进度。仅有待浏览器验收任务时，可见管理页每分钟刷新一次。",
-      "rules": "页面 CSS 仅负责网格、比例、属性列表、版本跳转行、席位与徽记几何，零硬编码字面色值、零私有 backdrop-filter、零字面 z-index；精细指针仅激活当前卡光晕并在粗指针/减少动效/强制色下完全关闭，空闲零 rAF。"
+      "summary": "游玩大厅（/games）、沉浸沙盒宿主（/games/{slug}）、个人作品管理（/manage/library/games 与 /games/workshop）及超管小游戏审核台（/manage/library/games/reviews）。左侧资源库下设“小游戏”分类，包含所有人一致的“小游戏管理”与超管独有的“小游戏审核”；作品详情页默认展示当前状态、快捷切换操作、只读属性卡（编辑/保存/取消）及同游戏版本与关联作品跳转；超管审核台采用状态芯片筛选、自动 AI 审核策略开关、主从分栏队列、AI 风险查验报告与可点击跳转证据，并内嵌复用材料管理器（createMaterialsExplorer 只读模式 + material_renderers）实现已解压文件包树形浏览、源码/图片/音视频在线预览、原包下载与隔离试玩。",
+      "params": "复用 LQ Topbar、Surface(content/embedded)、Button(lq_props/createComponent)、Chip(filter/status)、Badge、Alert、Choice 复合卡(data-lq-shape=surface)、Form(input/textarea/select/checkbox/file)、Dropdown、Progress、Dialog/Drawer/Sheet/Confirm、Composer、bindTooltip 及材料管理器 createMaterialsExplorer(mode=embedded,readOnly=true) / renderMaterialPreview；局部绘制游戏矢量图标沿用 lq-btn__icon 槽位，不扩首屏共享图标包。",
+      "states": "大厅 SSR 已注水零冗余首屏请求、空结果、游标分页；宿主加载、舞台模式选择、私房邀请码、随机排队、5 秒环形倒计时、队友重连、只读多开接管、终局结算、静音 409 自动重试与舞台焦点归还；小游戏管理按个人所有权过滤，详情页按 ?version 切换版本；学生上传经第一轮后端基础校验后进入超管待审队列（或按超管开关自动送 AI 查验）；AI 仅排查重大内容风险并允许正常游戏的少量成人元素，正常则自动回写发布，存在重大风险或不确定时转人工并附查验报告与可定位证据；超管可树形浏览解压包、预览文件、下载原包、隔离试玩、触发 AI 查验或手工通过发布与退回。",
+      "rules": "页面 CSS 仅负责网格、主从分栏、嵌入式文件浏览器尺寸、属性列表、版本跳转行、席位与徽记几何，零硬编码字面色值、零私有 backdrop-filter、零字面 z-index；精细指针仅激活当前卡光晕并在粗指针/减少动效/强制色下完全关闭，空闲零 rAF。"
     }
   },
   "_tools": {

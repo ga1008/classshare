@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-23",
+ "generatedAt": "2026-11-24",
  "generator": "python tools/ui/lq_module_registry.py",
  "modules": {
   "materials": {
@@ -28,7 +28,7 @@
     "rules": "玻璃上的文字只读 `--lq-material-ink/muted/accent`，禁用随主题翻转的灰阶；普通内容面板与重复行不得各自开 backdrop-filter；真源 docs/lq-scene-ink-2026-09-26.md。"
    },
    "consumers": {
-    "count": 195,
+    "count": 196,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -168,6 +168,10 @@
      },
      {
       "path": "static/js/message_center.js",
+      "hits": 5
+     },
+     {
+      "path": "static/js/minigames/reviews.js",
       "hits": 5
      },
      {
@@ -1011,12 +1015,12 @@
       "hits": 92
      },
      {
-      "path": "templates/manage/offering_hub.html",
-      "hits": 88
+      "path": "static/js/materials_explorer.js",
+      "hits": 89
      },
      {
-      "path": "static/js/materials_explorer.js",
-      "hits": 84
+      "path": "templates/manage/offering_hub.html",
+      "hits": 88
      },
      {
       "path": "static/js/resume_list.js",
@@ -1523,6 +1527,10 @@
       "hits": 14
      },
      {
+      "path": "static/js/minigames/reviews.js",
+      "hits": 13
+     },
+     {
       "path": "static/js/process_material_modal.js",
       "hits": 13
      },
@@ -1979,10 +1987,6 @@
       "hits": 3
      },
      {
-      "path": "static/js/minigames/reviews.js",
-      "hits": 3
-     },
-     {
       "path": "static/js/minigames/ui.js",
       "hits": 3
      },
@@ -2244,8 +2248,12 @@
     "rules": "芯片是单行胶囊：不换行，过长标签以省略号截断（2026-10-24）。"
    },
    "consumers": {
-    "count": 46,
+    "count": 47,
     "files": [
+     {
+      "path": "templates/minigames/reviews.html",
+      "hits": 15
+     },
      {
       "path": "static/js/materials_sync_report.js",
       "hits": 14
@@ -2662,7 +2670,7 @@
     "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。"
    },
    "consumers": {
-    "count": 192,
+    "count": 191,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -3278,10 +3286,6 @@
      },
      {
       "path": "static/js/minigames/manage.js",
-      "hits": 1
-     },
-     {
-      "path": "static/js/minigames/reviews.js",
       "hits": 1
      },
      {
@@ -4848,7 +4852,7 @@
     "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。课堂 AI 使用原生复选框，由学生为本次提问明确选择课堂归属。"
    },
    "consumers": {
-    "count": 195,
+    "count": 196,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -5283,6 +5287,10 @@
       "hits": 6
      },
      {
+      "path": "templates/minigames/reviews.html",
+      "hits": 6
+     },
+     {
       "path": "templates/minigames/ui.html",
       "hits": 6
      },
@@ -5680,7 +5688,7 @@
     "rules": "放在已选中/主色按钮或已按下芯片里的 Badge 跟随宿主按钮的墨色（currentColor 18% 底），不再固定灰色。 学生头像旁的境界标志由 static/js/cultivation_emblems.js 自动挂载（components/cultivation-emblem.css），不要在页面里手写标志；首字头像加 data-cultivation-student-id，退出用 data-cultivation-emblem=\"off\"。 2026-10-27 四种顶栏好友入口共用 data-social 钩子与 LQ Badge，数字放入口右上角；免打扰消息仍纳入未读。角标是显示状态，不能承载读取确认或权限逻辑。 2026-11-12学校同步使用同一Progress：百分比只消费后台已确认阶段/学生数，未知值保持不定进度；partial/conflict/验证码不冒充100%成功。 立即结算复用原生Progress条，0阶段排队/读取的null进度不变成0%；实际阶段2/4可显示50%，快任务完成直接显示最终结果，不添加计时器假进度。"
    },
    "consumers": {
-    "count": 24,
+    "count": 26,
     "files": [
      {
       "path": "templates/dev/lq_presentation.html",
@@ -5695,12 +5703,20 @@
       "hits": 6
      },
      {
+      "path": "templates/minigames/reviews.html",
+      "hits": 5
+     },
+     {
       "path": "templates/partials/lq_navbar_topbar.html",
       "hits": 4
      },
      {
       "path": "templates/partials/social_entry.html",
       "hits": 4
+     },
+     {
+      "path": "static/js/materials_explorer.js",
+      "hits": 3
      },
      {
       "path": "static/js/materials_sync_report.js",
@@ -6532,7 +6548,7 @@
     "rules": "不要再给搜索框外面画一层框或自放图标。 不覆盖共享粗指针44px命中高度；清空动作仍发送一次input，提交使用原生form。验证：tests/e2e/components/lq-search-stacking.spec.ts。"
    },
    "consumers": {
-    "count": 14,
+    "count": 15,
     "files": [
      {
       "path": "templates/manage/academic_final_materials.html",
@@ -6588,6 +6604,10 @@
      },
      {
       "path": "templates/minigames/manage.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/minigames/reviews.html",
       "hits": 1
      }
     ]
@@ -7012,7 +7032,7 @@
     "rules": "警告/错误/保存语义优先复用这里的填充与前景配对，不把有色前景放到任意透明背景。 classroom-page、assignment_detail_student、exam_take 共用 behavior_tracker.js。202 表示持久接收，200 可为已应用回执。b1 批次按账号和课堂固定编号重试 7 天，服务端回执保留至少 10 天，beacon 与 keepalive 发送均不视为确认。断网、限流和未知提交保留原批并退避；401 冻结新计时并等待同账号原批回执恢复，认证缺口不补算。结构化 409/413/422 明确终止时隔离原批并允许后续合法队列继续；未知 409 保留探测，不改编号；切换账号锁定旧页面并隔离旧队列。独立 diagnostics 幂等保存采集失败及恢复证据，不增加操作或学习时长。心跳用单调时钟记录有界区间，在可见性、焦点或 AI 面板状态切换时结算。页面离开时可独立发送仍在缓冲区的时长证据，服务器按时间区间去重。交卷、投票、聊天等业务提交保持各自的接口和重试策略。 2026-11-08容量改进：材料viewer/render-shell也复用同一采集器，material namespace隔离本地队列，onReceipt仅在durable ACK持久化后触发。递归错峰心跳/恢复、单fetch、普通buffer及诊断/档案均有硬边界，满时暂停采样并显式记录gap；未确认原文不能静默裁剪。材料v2以有界区间合并进度与课堂入box同事务，不阻塞async事件循环或同步重建全班修为。"
    },
    "consumers": {
-    "count": 29,
+    "count": 30,
     "files": [
      {
       "path": "templates/dev/lq_status.html",
@@ -7060,6 +7080,10 @@
      },
      {
       "path": "frontend/src/islands/dashboard-workspace.tsx",
+      "hits": 2
+     },
+     {
+      "path": "static/js/minigames/reviews.js",
       "hits": 2
      },
      {
@@ -8349,6 +8373,7 @@
    "declarative",
    "dialogs",
    "forms",
+   "indicators",
    "materials",
    "search",
    "status",
@@ -8420,8 +8445,9 @@
   ],
   "static/js/minigames/reviews.js": [
    "button",
-   "content",
-   "declarative"
+   "declarative",
+   "materials",
+   "status"
   ],
   "static/js/minigames/ui.js": [
    "button",
@@ -9403,8 +9429,12 @@
    "search"
   ],
   "templates/minigames/reviews.html": [
+   "chip",
    "content",
-   "materials"
+   "forms",
+   "indicators",
+   "materials",
+   "search"
   ],
   "templates/minigames/student_workspace.html": [
    "materials",
