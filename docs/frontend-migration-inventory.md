@@ -1,6 +1,6 @@
 # LanShare 前端迁移清单
 
-> 生成时间：2026-11-23 20:45:54（Asia/Shanghai）。
+> 生成时间：2026-11-23 21:30:19（Asia/Shanghai）。
 > 生成命令：`python tools/frontend_migration_inventory.py`。
 
 ## 用途

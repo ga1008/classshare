@@ -21,6 +21,7 @@ import {
     statusChip,
     svgIcon,
 } from './ui.js';
+import { captureGameTransfer, prepareGamePackage } from './package-input.js';
 
 const boot = bootstrap(),
     base = '/admin/games';
@@ -145,11 +146,13 @@ function gotoList(cursor, historyMode = 'push') {
 async function draft() {
     const form = document.importNode(document.querySelector('#game-upload-form').content.firstElementChild, true);
     form.elements.sourceVersionId.value = new URL(location.href).searchParams.get('sourceVersionId') || '';
-    bindUpload(form);
+    const lifetime = new AbortController();
+    let send;
     await formPanel('上传新游戏', form, '上传并验收', async () => {
-        const result = await upload(form);
+        const result = await send();
         location.assign(workspace + '/' + encodeURIComponent(result.gameId));
-    });
+    }, { onClose: () => lifetime.abort(), onDestroy: () => lifetime.abort() });
+    send = bindUpload(form, lifetime.signal);
 }
 
 if (filters) {
@@ -579,10 +582,91 @@ function parseTags(value) {
     return [...new Set(value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))];
 }
 
-function bindUpload(form) {
+function bindUpload(form, signal) {
     const fileInput = form.elements.file;
+    const folderInput = form.querySelector('[data-folder-input]');
+    const folderPicker = form.querySelector('[data-pick-folder]');
+    const dropzone = form.querySelector('[data-dropzone]');
     const fileMeta = form.querySelector('[data-file-meta]');
     const hint = fileMeta.textContent;
+    const submit = form.querySelector('[type="submit"]');
+    let selection, reading, sending = false;
+    signal?.addEventListener('abort', () => reading?.abort(), { once: true });
+
+    const reset = () => {
+        reading?.abort();
+        reading = null;
+        selection = null;
+        fileMeta.textContent = hint;
+        submit.disabled = false;
+        dropzone.removeAttribute('aria-busy');
+        uploadAttempts.delete(form);
+    };
+    form.addEventListener('reset', reset);
+    async function select(source) {
+        if (sending) return;
+        reset();
+        const current = new AbortController();
+        reading = current;
+        dropzone.setAttribute('aria-busy', 'true');
+        submit.disabled = true;
+        fileMeta.textContent = '正在读取游戏文件…';
+        try {
+            const file = await prepareGamePackage(source, { signal: current.signal });
+            if (current.signal.aborted) return;
+            selection = file;
+            fileMeta.textContent = file.name + ' · ' + Math.ceil(file.size / 1024) + ' KiB';
+        } catch (error) {
+            if (!current.signal.aborted) fileMeta.textContent = error.message || '读取失败，请重新选择游戏包。';
+        } finally {
+            if (reading === current) {
+                reading = null;
+                submit.disabled = false;
+                dropzone.removeAttribute('aria-busy');
+            }
+        }
+    }
+    form.querySelector('[data-pick-zip]').addEventListener('click', () => fileInput.click());
+    folderPicker.hidden = !('webkitdirectory' in folderInput);
+    folderPicker.addEventListener('click', () => folderInput.click());
+    for (const input of [fileInput, folderInput]) {
+        input.addEventListener('change', () => {
+            const files = Array.from(input.files);
+            input.value = '';
+            if (files.length) void select(files);
+        });
+    }
+    const hasFiles = event => Array.from(event.dataTransfer?.types || []).includes('Files');
+    for (const type of ['dragenter', 'dragover']) {
+        dropzone.addEventListener(type, event => {
+            if (!hasFiles(event)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = sending ? 'none' : 'copy';
+            if (!sending) dropzone.dataset.drag = 'true';
+        });
+    }
+    dropzone.addEventListener('dragleave', event => {
+        if (!dropzone.contains(event.relatedTarget)) delete dropzone.dataset.drag;
+    });
+    dropzone.addEventListener('drop', event => {
+        delete dropzone.dataset.drag;
+        event.preventDefault();
+        const source = captureGameTransfer(event.dataTransfer);
+        if (source) void select(source);
+    });
+    const pasteScope = form.closest('[role="dialog"]') || form;
+    pasteScope.addEventListener('paste', event => {
+        if (event.defaultPrevented) return;
+        const source = captureGameTransfer(event.clipboardData);
+        if (!source) {
+            if (dropzone.contains(event.target) && !selection && !reading) {
+                fileMeta.textContent = '剪贴板中没有可读取的游戏文件。可从文件管理器复制 ZIP，或点“选择文件夹”。';
+            }
+            return;
+        }
+        event.preventDefault();
+        void select(source);
+    }, { signal });
     const license = form.elements.allowRemix;
     const licenseHint = form.querySelector('[data-license-hint]');
     const sharingHint = licenseHint.textContent;
@@ -590,20 +674,25 @@ function bindUpload(form) {
         license.closest('[data-lq-status]').dataset.lqToneLevel = license.checked ? 'info' : 'neutral';
         licenseHint.textContent = license.checked ? sharingHint : '此版本仅供游玩，平台将关闭源码下载和改编入口。';
     });
-    fileInput.addEventListener('change', () => {
-        const file = fileInput.files[0];
-        fileMeta.textContent = file ? file.name + ' · ' + Math.ceil(file.size / 1024) + ' KiB' : hint;
-    });
-    const dropzone = form.querySelector('[data-dropzone]');
-    for (const event of ['dragenter', 'dragover']) dropzone.addEventListener(event, () => dropzone.dataset.drag = 'true');
-    for (const event of ['dragleave', 'drop']) dropzone.addEventListener(event, () => delete dropzone.dataset.drag);
+    return async () => {
+        if (sending) throw new Error('游戏包正在上传。');
+        if (reading) throw new Error('请等待游戏文件读取完成。');
+        if (!selection) throw new Error('请先选择、拖入或粘贴游戏包。');
+        sending = true;
+        const pickZip = form.querySelector('[data-pick-zip]');
+        pickZip.disabled = folderPicker.disabled = true;
+        try {
+            return await upload(form, selection);
+        } finally {
+            sending = false;
+            pickZip.disabled = folderPicker.disabled = false;
+        }
+    };
 }
 
 const uploadAttempts = new WeakMap();
 
-function upload(form) {
-    const file = form.elements.file.files[0];
-    if (!file || file.size > 64 * 1024 * 1024) throw new Error('请选择不超过 64 MiB 的 ZIP 文件');
+function upload(form, file) {
     const tags = parseTags(form.elements.uploadTags.value);
     if (tags.length > 12) throw new Error('最多可填写 12 个标签');
     const license = form.elements.allowRemix.checked;
@@ -714,13 +803,12 @@ if (attributes) {
         run(e.submitter, saveAttributes);
     });
     const form = document.querySelector('[data-version-upload]');
-    if (form) bindUpload(form);
+    const send = form && bindUpload(form);
     form?.addEventListener('submit', (e) => {
         e.preventDefault();
         run(e.submitter, async () => {
-            await upload(form);
+            await send();
             form.reset();
-            form.elements.file.dispatchEvent(new Event('change'));
             form.elements.allowRemix.dispatchEvent(new Event('change'));
             await reloadDetail(false);
             notice('上传成功，可在验收记录中查看进度');

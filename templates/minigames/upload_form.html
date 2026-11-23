@@ -1,11 +1,17 @@
 {% import 'minigames/ui.html' as ui with context %}
 <form class="game-form" data-version-upload>
-    <label class="game-dropzone" data-dropzone>
+    <div class="game-dropzone" data-dropzone role="group" tabindex="0" aria-label="游戏包上传区" aria-describedby="game-upload-help">
         <span class="game-dropzone__icon" aria-hidden="true">{{ ui.g_icon('upload') }}</span>
-        <span class="game-dropzone__title">独立 HTML 游戏包（ZIP）</span>
-        <small class="game-muted" data-file-meta>不超过 64 MiB，名称、游戏类型与版本从 config.json 读取</small>
-        <input class="lq-native-file game-dropzone__input" data-lq-component="file" type="file" name="file" aria-label="独立 HTML 游戏包（ZIP）" accept=".zip,application/zip" required>
-    </label>
+        <strong class="game-dropzone__title">拖入游戏 ZIP 或完整文件夹</strong>
+        <small class="game-muted" id="game-upload-help">也可复制后按 Ctrl+V 或 ⌘V 粘贴。文件夹将在本机打包，ZIP 上限 64 MiB。</small>
+        <div class="game-actions game-dropzone__pickers">
+            {{ ui.btn('选择 ZIP', attrs={'data-pick-zip': ''}) }}
+            {{ ui.btn('选择文件夹', attrs={'data-pick-folder': ''}) }}
+        </div>
+        <input data-lq-component="file" type="file" name="file" aria-label="独立 HTML 游戏包（ZIP）" accept=".zip,application/zip" hidden>
+        <input data-lq-component="file" type="file" data-folder-input aria-label="游戏文件夹" webkitdirectory multiple hidden>
+        <small class="game-muted" data-file-meta role="status" aria-live="polite">尚未选择游戏包</small>
+    </div>
     {{ ui.field('作品标签（用逗号分隔）', 'uploadTags', placeholder='像素风，3D') }}
     {{ ui.field('原作版本 ID（改编时填写）', 'sourceVersionId', placeholder='包内已声明完整出处时可留空') }}
     <div class="lq-alert game-remix-license" data-lq-component="alert" data-lq-status="alert" data-lq-tone-level="info">

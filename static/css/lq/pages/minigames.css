@@ -1137,7 +1137,6 @@
     border: 1.5px dashed hsl(var(--ls-control-line));
     background: hsl(var(--ls-primary-soft));
     text-align: center;
-    cursor: pointer;
     transition: border-color var(--ls-dur-fast) var(--ls-ease-out);
 }
 
@@ -1163,9 +1162,14 @@
     font-weight: 700;
 }
 
-.game-dropzone__input {
-    max-width: 15rem;
-    font-size: var(--ls-t-footnote);
+.game-dropzone__pickers {
+    justify-content: center;
+    margin-block: var(--ls-s-2);
+}
+
+.game-dropzone [data-file-meta] {
+    max-width: 100%;
+    overflow-wrap: anywhere;
 }
 
 .game-version-row .game-actions,

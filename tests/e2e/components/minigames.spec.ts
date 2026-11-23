@@ -1,9 +1,14 @@
 import { test, expect, type Page } from '@playwright/test';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 const repo = path.resolve(__dirname, '../../..');
+const python = process.env.LQ_TEST_PYTHON ||
+  (fs.existsSync(path.join(repo,'venv/Scripts/python.exe')) ? path.join(repo,'venv/Scripts/python.exe') : 'python');
 const origin = 'https://classroom.test', content = 'https://isolated-game.test';
 const example = path.join(repo,'docs/minigames/example');
 const config = JSON.parse(fs.readFileSync(path.join(example,'config.json'),'utf-8'));
@@ -13,13 +18,12 @@ const game = {id:'g1',slug:'beacon-relay',title:'航标接力',summary:'点亮�
   minTier:0,maxTier:10,scope:'public',status:'listed',revision:4,currentVersionId:'v1',iconUrl:'/api/games/v1/games/g1/icon',
   authorName:'合成作者',allowRemix:true,versionCount:2,sourceVersionId:'v1',sourceUrl:'/api/games/v1/games/g1/source'};
 function render(view:string, role:string, preference?:any){
-  const python = fs.existsSync(path.join(repo,'venv/Scripts/python.exe'))?path.join(repo,'venv/Scripts/python.exe'):'python';
   return execFileSync(python,[path.join(__dirname,'fixtures/minigame_templates.py')],{
     cwd:repo,input:JSON.stringify({page:view,role,game,preference}),encoding:'utf8',
     env:{...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONUTF8:'1'}
   });
 }
-async function fixture(page:Page,view:string,role='student',waitingForProbe=false){
+async function fixture(page:Page,view:string,role='student',waitingForProbe=false,siteOrigin=origin){
   const writes:{path:string,body:any}[]=[], errors:string[]=[];
   let discovery={genres:[],tags:[],revision:0};
   const html=render(view,role,discovery);
@@ -29,6 +33,7 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
   page.on('pageerror',err=>errors.push(err.message));
   await page.route('**/*',async route=>{
     const req=route.request(),u=new URL(req.url()),p=u.pathname.replace('/api/games/v1','');
+    if(siteOrigin!==origin && u.origin===siteOrigin && p==='/admin/imports')return route.continue();
     const contentType=req.headers()['content-type'] || '';
     const body=contentType.includes('application/json')?req.postDataJSON():
       contentType.includes('multipart/form-data') ? Object.fromEntries(await new Response(req.postDataBuffer(),{headers:{'Content-Type':contentType}}).formData()) : {};
@@ -38,7 +43,7 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
       if(p==='/sdk.js')return route.fulfill({contentType:'application/javascript',body:fs.readFileSync(path.join(repo,'static/minigames/lan-game-sdk.v1.js'))});
       return route.abort();
     }
-    if(u.origin!==origin)return route.abort();
+    if(u.origin!==siteOrigin)return route.abort();
     if(u.pathname.startsWith('/static/')){
       const f=path.resolve(repo,'.'+u.pathname);
       if(!f.startsWith(path.join(repo,'static')+path.sep)||!fs.existsSync(f))return route.fulfill({status:404,body:''});
@@ -104,7 +109,7 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
   });
   const workspace=role==='student'?'/games/workshop':'/manage/library/games';
   const paths: Record<string,string>={hall:'/games',host:'/games/beacon-relay',manage:workspace,detail:workspace+'/g1',reviews:'/manage/library/games/reviews'};
-  await page.goto(origin+paths[view]);
+  await page.goto(siteOrigin+paths[view]);
   if(view==='hall'||view==='host'){
     await expect(page.locator('script[src$="/auth.js"]')).toHaveCount(1);
     await expect(page.locator('script[src$="/lq/index.js"]')).toHaveCount(1);
@@ -112,6 +117,159 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
   }
   return {writes,errors};
 }
+
+// Chromium itself creates the FileList and directory entries from these filesystem paths.
+async function dropFromDisk(page: Page, files: string[]) {
+  const zone = page.locator('[data-dropzone]:visible');
+  await zone.scrollIntoViewIfNeeded();
+  const box = await zone.boundingBox();
+  if (!box) throw Error('Upload target has no visible bounds');
+  const session = await page.context().newCDPSession(page);
+  try {
+    for (const type of ['dragEnter','dragOver','drop'] as const) {
+      await session.send('Input.dispatchDragEvent', {
+        type, x: box.x + box.width / 2, y: box.y + 12,
+        data: { items: [], files, dragOperationsMask: 1 },
+      });
+    }
+  } finally {
+    await session.detach();
+  }
+}
+
+const sampleArchive = path.join(repo,'docs/minigames/downloads/star-map.zip');
+
+// CDP omits disk-backed bytes from intercepted multipart requests. Inspect the HTTP body itself.
+const uploadTest = test.extend<{uploads:{origin:string, forms:FormData[]}}>({
+  uploads: async ({}, use) => {
+    const forms: FormData[] = [];
+    const server = createServer(async (req,res) => {
+      if (req.url !== '/api/games/v1/admin/imports' || req.method !== 'POST') {
+        res.writeHead(404).end();
+        return;
+      }
+      try {
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) chunks.push(chunk);
+        forms.push(await new Response(Buffer.concat(chunks),{headers:{'Content-Type':req.headers['content-type']!}}).formData());
+        res.writeHead(202,{'Content-Type':'application/json'}).end(JSON.stringify({gameId:'g1',jobId:'upload1',versionId:'v2',status:'queued'}));
+      } catch {
+        res.writeHead(400).end();
+      }
+    });
+    await new Promise<void>((resolve,reject) => server.once('error',reject).listen(0,'127.0.0.1',resolve));
+    try {
+      await use({origin:'http://127.0.0.1:'+(server.address() as AddressInfo).port,forms});
+    } finally {
+      await new Promise<void>(resolve => {server.close(() => resolve());server.closeAllConnections();});
+    }
+  },
+});
+
+uploadTest('拖入 ZIP 后可取消、重新选择并手动提交同一份原始文件', async ({page,uploads}) => {
+  const {errors} = await fixture(page,'manage','teacher',false,uploads.origin);
+  const open = page.getByRole('button',{name:'上传新游戏'});
+  await open.click();
+  await dropFromDisk(page,[sampleArchive]);
+  const dialog = page.getByRole('dialog').filter({has:page.locator('[data-version-upload]')});
+  await expect(dialog.locator('[data-file-meta]')).toContainText('star-map.zip');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  expect(uploads.forms).toHaveLength(0);
+  await open.click();
+  await expect(dialog.locator('[data-file-meta]')).not.toContainText('star-map.zip');
+  await dropFromDisk(page,[path.join(example,'config.json')]);
+  await expect(dialog.locator('[data-file-meta]')).toContainText(/ZIP|目录|文件夹|main\.html/i);
+  await dropFromDisk(page,[sampleArchive]);
+  await expect(dialog.locator('[data-file-meta]')).toContainText('star-map.zip');
+  expect(uploads.forms).toHaveLength(0);
+  await dialog.locator('form').evaluate((form: HTMLFormElement) => {
+    form.requestSubmit();
+    form.requestSubmit();
+  });
+  await expect(page).toHaveURL(/\/games\/g1$/);
+  expect(uploads.forms).toHaveLength(1);
+  const file = uploads.forms[0].get('file') as File;
+  expect(Buffer.from(await file.arrayBuffer()).equals(fs.readFileSync(sampleArchive))).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+uploadTest('续版拖入完整文件夹保留嵌套路径、跨页读取并通过正式包校验', async ({page,uploads}) => {
+  const {errors} = await fixture(page,'detail','student',false,uploads.origin);
+  const scratch = fs.mkdtempDisposableSync(path.join(os.tmpdir(),'minigame-e2e-'));
+  try {
+    const folder = path.join(scratch.path,'星图');
+    execFileSync(python,['-m','zipfile','-e',sampleArchive,folder]);
+    const levels = path.join(folder,'static','关卡');
+    fs.mkdirSync(levels);
+    for (let i = 0; i < 103; i++) fs.writeFileSync(path.join(levels,`图-${i}.json`),JSON.stringify({level:i}));
+    await dropFromDisk(page,[folder]);
+    await expect(page.locator('[data-file-meta]')).toContainText('星图');
+    expect(uploads.forms).toHaveLength(0);
+    await page.getByRole('button',{name:'上传并验收'}).click();
+    await expect.poll(() => uploads.forms.length).toBe(1);
+    const body = uploads.forms[0];
+    expect(body.get('targetGameId')).toBe('g1');
+    expect(body.get('expectedRevision')).toBe('4');
+    const archive = path.join(scratch.path,'received.zip');
+    fs.writeFileSync(archive,Buffer.from(await (body.get('file') as File).arrayBuffer()));
+    const report = execFileSync(python,['tools/minigame_pack.py','validate',archive],
+      {cwd:repo,encoding:'utf8',env:{...process.env,PYTHONUTF8:'1'}});
+    expect(JSON.parse(report)).toMatchObject({staticValidation:'passed',gameKey:'star-map',files:112});
+    const parity = [
+      'import pathlib,sys,zipfile',
+      'root=pathlib.Path(sys.argv[2])',
+      'with zipfile.ZipFile(sys.argv[1]) as archive:',
+      '    for file in root.rglob("*"):',
+      '        if file.is_file(): assert archive.read(file.relative_to(root).as_posix())==file.read_bytes()',
+    ].join('\n');
+    execFileSync(python,['-c',parity,archive,folder]);
+    expect(errors).toEqual([]);
+  } finally {
+    scratch.remove();
+  }
+});
+
+uploadTest('上传弹窗可粘贴游戏文件并保留标签框的普通文本粘贴', async ({page,uploads},info) => {
+  await page.setViewportSize({width:320,height:760});
+  const {errors} = await fixture(page,'manage','student',false,uploads.origin);
+  await page.getByRole('button',{name:'上传新游戏'}).click();
+  const dialog = page.getByRole('dialog');
+  const tags = dialog.getByLabel('作品标签（用逗号分隔）');
+  await tags.focus();
+  // Synthetic clipboard data exercises the browser's paste event without using the operator's clipboard.
+  const textConsumed = await tags.evaluate(input => {
+    const transfer = new DataTransfer();
+    transfer.setData('text/plain','像素风');
+    const event = new ClipboardEvent('paste',{clipboardData:transfer,bubbles:true,cancelable:true});
+    input.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(textConsumed).toBe(false);
+  const original = fs.readFileSync(sampleArchive);
+  const fileConsumed = await tags.evaluate((input,base64) => {
+    const transfer = new DataTransfer();
+    const bytes = Uint8Array.from(atob(base64),c => c.charCodeAt(0));
+    transfer.items.add(new File([bytes],'粘贴游戏.zip',{type:'application/zip'}));
+    const event = new ClipboardEvent('paste',{clipboardData:transfer,bubbles:true,cancelable:true});
+    input.dispatchEvent(event);
+    return event.defaultPrevented;
+  },original.toString('base64'));
+  expect(fileConsumed).toBe(true);
+  await expect(dialog.locator('[data-file-meta]')).toContainText('粘贴游戏.zip');
+  expect(uploads.forms).toHaveLength(0);
+  const submit = dialog.getByRole('button',{name:'上传并验收'});
+  await submit.scrollIntoViewIfNeeded();
+  await expect(submit).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await page.screenshot({path:info.outputPath('文件粘贴上传-320.png'),animations:'disabled'});
+  await submit.click();
+  await expect(page).toHaveURL(/\/games\/workshop\/g1$/);
+  expect(uploads.forms).toHaveLength(1);
+  expect(Buffer.from(await (uploads.forms[0].get('file') as File).arrayBuffer()).equals(original)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
 test('游戏大厅布局、原生链接、搜索和游玩偏好',async({page},info)=>{
   const {writes}=await fixture(page,'hall');
   const card=page.locator('[data-game-tile]');await expect(card).toHaveAttribute('target','_blank');
