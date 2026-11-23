@@ -703,18 +703,18 @@ def _receive_locked(user, game, rev, key, stream):
             error(409, "GAME_REMOVED", "游戏已删除或正在清理。")
         if not old:
             check_revision(row, {"expectedRevision": rev})
-            owned, total = conn.execute(
-                """SELECT COALESCE(SUM(CASE WHEN g.owner_teacher_id=? THEN a.bytes_used ELSE 0 END),0),
-                COALESCE(SUM(a.bytes_used),0) FROM mg_admin_assets a JOIN mg_games g ON g.id=a.game_id""",
+            usage = conn.execute(
+                """SELECT COALESCE(SUM(CASE WHEN g.owner_teacher_id=? THEN a.bytes_used ELSE 0 END),0) AS owned,
+                COALESCE(SUM(a.bytes_used),0) AS total FROM mg_admin_assets a JOIN mg_games g ON g.id=a.game_id""",
                 (row["owner_teacher_id"],),
             ).fetchone()
             # The original and the immutable copy overlap until directory promotion completes.
             reserve = 2 * validation.MAX_ZIP + validation.MAX_TOTAL + 16 * validation.MIB
             quota = int(os.environ.get("MINIGAMES_TEACHER_QUOTA_MIB", "2048")) * validation.MIB
-            if int(owned) + reserve > quota:
+            if int(usage["owned"]) + reserve > quota:
                 error(413, "STORAGE_QUOTA", "该教师的游戏包存储额度不足。")
             budget = int(os.environ.get("MINIGAMES_STORAGE_BUDGET_MIB", "768")) * validation.MIB
-            if int(total) + reserve > budget:
+            if int(usage["total"]) + reserve > budget:
                 error(507, "PLATFORM_STORAGE_QUOTA", "小游戏平台的存储额度暂时不足，请稍后重试或清理旧游戏。")
             conn.execute("INSERT INTO mg_admin_assets VALUES(?,?,?,?)", (game, "stage", stage, reserve))
             job_new(conn, stage, game, vid, user, "validate", "receiving", "接收文件")
