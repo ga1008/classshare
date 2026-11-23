@@ -1,6 +1,7 @@
 """Database-filtered catalog and keyset pagination for both supported engines."""
 
 import base64
+from collections import Counter
 import hashlib
 import hmac
 import json
@@ -8,7 +9,8 @@ import json
 from . import minigame_platform as p
 
 CATALOG = (
-    "mg_games g JOIN mg_versions v ON v.id=g.current_version_id AND v.game_id=g.id"
+    "mg_games g JOIN mg_versions v ON v.id=g.current_version_id AND v.game_id=g.id "
+    "LEFT JOIN mg_version_authorship va ON va.version_id=v.id"
 )
 
 
@@ -17,9 +19,9 @@ class CatalogQuery:
         self.pg = p.get_configured_db_engine() == "postgres"
         self.args = []
         scope = ["g.scope='public'"]
-        if user["role"] == "teacher":
-            scope.append("(g.scope='private' AND (g.owner_teacher_id=? OR ?=1))")
-            self.args.extend([user["id"], int(audience["admin"])])
+        scope.append("(g.scope='private' AND (g.owner_teacher_id=? OR ?=1))")
+        owner = p.repository_actor_id(user)
+        self.args.extend([owner, int(audience["admin"])])
         for name, ids in (
             ("class", audience["classes"]),
             ("classroom", audience["offers"]),
@@ -71,13 +73,15 @@ class CatalogQuery:
 
     @property
     def card_columns(self):
-        return "g.*, " + self.field("v.config_json", "modes") + " AS modes_json"
+        return ("g.*, va.author AS author_name, va.allow_remix AS allow_remix, "
+                + self.field("v.config_json", "modes") + " AS modes_json, "
+                + self.field("v.config_json", "genre") + " AS genre_id")
 
     @property
     def visible(self):
         return " AND ".join(self.filters)
 
-    def search(self, q, mode, tag):
+    def search(self, q, mode, tag, genres=(), selected_tags=()):
         tags = self.values("g.tags_json", "tag")
         if q:
             term = (
@@ -92,6 +96,14 @@ class CatalogQuery:
         if tag:
             self.filters.append(f"EXISTS (SELECT 1 FROM {tags} WHERE tag.value=?)")
             self.args.append(tag)
+        if selected_tags:
+            marks = ",".join("?" for _ in selected_tags)
+            self.filters.append(f"EXISTS (SELECT 1 FROM {tags} WHERE tag.value IN ({marks}))")
+            self.args.extend(selected_tags)
+        if genres:
+            field = self.field("v.config_json", "genre")
+            self.filters.append("COALESCE(" + field + ",'other') IN (" + ",".join("?" for _ in genres) + ")")
+            self.args.extend(genres)
         if mode == "solo":
             self.filters.append(self.field("v.config_json", "modes", "solo") + "=?")
             self.args.append("true" if self.pg else 1)
@@ -147,16 +159,16 @@ def decode_cursor(token, filters):
     return None
 
 
-def page(conn, user, q="", mode="", tag="", cursor="", limit=24, audience=None):
+def page(conn, user, q="", mode="", tag="", cursor="", limit=24, audience=None, *, genres=(), tags=()):
     q = q.strip()[:128]
     tag = tag.strip()[:64]
     mode = mode[:16]
-    filters = json.dumps([user["actor"], q, mode, tag], ensure_ascii=True).encode()
+    filters = json.dumps([user["actor"], q, mode, tag, genres, tags], ensure_ascii=True).encode()
     anchor = decode_cursor(cursor, filters)
     query = CatalogQuery(
         user, audience if audience is not None else p._audience(conn, user)
     )
-    query.search(q, mode, tag)
+    query.search(q, mode, tag, genres, tags)
     rows = query.rows(conn, limit + 1, anchor)
     next_cursor = (
         encode_cursor([rows[limit - 1]["updated_at"], rows[limit - 1]["id"]], filters)
@@ -209,3 +221,11 @@ def recommended(conn, query, recent, popular, limit):
             cards[game["id"]]["reason"] = "近期热门"
     pick("1=1", (), lambda _: "最近更新")
     return list(cards.values())
+
+
+def tag_options(conn, user, audience):
+    query = CatalogQuery(user, audience)
+    rows = conn.execute(f"""SELECT g.tags_json FROM {CATALOG} WHERE {query.visible}
+        ORDER BY g.updated_at DESC,g.id LIMIT 64""", tuple(query.args)).fetchall()
+    counts = Counter(tag for row in rows for tag in json.loads(row[0]))
+    return [tag for tag, _ in counts.most_common(16)]

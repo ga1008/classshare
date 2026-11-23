@@ -28,7 +28,7 @@
     "rules": "玻璃上的文字只读 `--lq-material-ink/muted/accent`，禁用随主题翻转的灰阶；普通内容面板与重复行不得各自开 backdrop-filter；真源 docs/lq-scene-ink-2026-09-26.md。"
    },
    "consumers": {
-    "count": 193,
+    "count": 195,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -507,6 +507,10 @@
       "hits": 2
      },
      {
+      "path": "templates/minigames/reviews.html",
+      "hits": 2
+     },
+     {
       "path": "templates/partials/classroom_members/settings.html",
       "hits": 2
      },
@@ -747,6 +751,10 @@
       "hits": 1
      },
      {
+      "path": "templates/minigames/student_workspace.html",
+      "hits": 1
+     },
+     {
       "path": "templates/minigames/ui.html",
       "hits": 1
      },
@@ -936,7 +944,7 @@
     "rules": "禁止 div 模拟按钮；颜色只来自变体及显式语义槽位，不传任意色；固定宽度长标签用 overflow-label。课次详情的操作共用 LQ Button 规格，知识树等状态另行显示，窄屏允许操作组换行。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。2026-11-12 对齐课次使用 soft 的 warning/success 槽位，动作保持原生 Button，不借用 filter Chip 的 toggle 语义；共享禁用/忙碌/强制颜色配方继续生效。 课堂分组与派题共用 Lucide 图标和 Button。发布、抽组保留短标签，刷新、返回、下载等图标按钮提供可访问名称；触屏仍有独立命中区。"
    },
    "consumers": {
-    "count": 293,
+    "count": 294,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -1595,6 +1603,10 @@
       "hits": 12
      },
      {
+      "path": "templates/minigames/host.html",
+      "hits": 12
+     },
+     {
       "path": "templates/partials/app_topbar_utility_actions.html",
       "hits": 12
      },
@@ -1628,10 +1640,6 @@
      },
      {
       "path": "static/js/whiteboard/toolbar.js",
-      "hits": 10
-     },
-     {
-      "path": "templates/minigames/host.html",
       "hits": 10
      },
      {
@@ -1796,6 +1804,10 @@
      },
      {
       "path": "static/js/manage_wanderers.js",
+      "hits": 5
+     },
+     {
+      "path": "static/js/minigames/manage.js",
       "hits": 5
      },
      {
@@ -1967,6 +1979,10 @@
       "hits": 3
      },
      {
+      "path": "static/js/minigames/reviews.js",
+      "hits": 3
+     },
+     {
       "path": "static/js/minigames/ui.js",
       "hits": 3
      },
@@ -2024,10 +2040,6 @@
      },
      {
       "path": "static/js/login_scene.js",
-      "hits": 2
-     },
-     {
-      "path": "static/js/minigames/manage.js",
       "hits": 2
      },
      {
@@ -2650,7 +2662,7 @@
     "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。"
    },
    "consumers": {
-    "count": 190,
+    "count": 192,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -3149,6 +3161,10 @@
       "hits": 2
      },
      {
+      "path": "templates/minigames/reviews.html",
+      "hits": 2
+     },
+     {
       "path": "templates/partials/classroom_members/settings.html",
       "hits": 2
      },
@@ -3262,6 +3278,10 @@
      },
      {
       "path": "static/js/materials_library_cards.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/minigames/reviews.js",
       "hits": 1
      },
      {
@@ -3559,7 +3579,7 @@
     "rules": "声明必须与规范 class、正确 DOM、实际 owner 同时存在；纯布局 toolbar/region 不因声明获得模糊。 作者把声明 Surface 设计成扁平分组（`background: transparent; padding: 0`）时必须同时加 `data-lq-surface=\"embedded\"`，否则声明的 `!important` 底色会铺回来，形成\"有底无边距\"的框套框。空的 `.lq-btn.btn-close` 自动画共享叉号。 `lq-domain-choice[data-lq-shape=\"surface\"]` 退出胶囊后高度即内容高度（2026-10-26），在滚动列里不会被压缩；需要固定格高的网格单元（学期日历）在 domain-controls.css 以更高特异性自设 min-height。 2026-10-27材料资源管理器工具栏/窗格头/状态栏用embedded Surface，不各自采样模糊；树节点/文件选择和卡片主入口为原生button+Choice，菜单按钮为兄弟节点。 2026-11-08材料浏览器窄屏的标题与操作区允许换行，操作区独占一行；领域CSS只调整布局，避免元信息逐字纵排挤掉正文高度；窄屏正文不被flex压缩，由既有内容区滚动，不改共享按钮材质与事件。"
    },
    "consumers": {
-    "count": 161,
+    "count": 162,
     "files": [
      {
       "path": "templates/assignment_detail_teacher.html",
@@ -4119,6 +4139,10 @@
      },
      {
       "path": "static/js/minigames/host.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/minigames/reviews.js",
       "hits": 1
      },
      {
@@ -4824,7 +4848,7 @@
     "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。课堂 AI 使用原生复选框，由学生为本次提问明确选择课堂归属。"
    },
    "consumers": {
-    "count": 194,
+    "count": 195,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -5359,7 +5383,7 @@
       "hits": 4
      },
      {
-      "path": "templates/minigames/detail.html",
+      "path": "templates/minigames/hall.html",
       "hits": 4
      },
      {
@@ -5543,11 +5567,15 @@
       "hits": 2
      },
      {
-      "path": "templates/minigames/hall.html",
+      "path": "templates/minigames/detail.html",
       "hits": 2
      },
      {
       "path": "templates/minigames/manage.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/minigames/upload_form.html",
       "hits": 2
      },
      {
@@ -5735,7 +5763,7 @@
       "hits": 1
      },
      {
-      "path": "templates/minigames/detail.html",
+      "path": "templates/minigames/upload_form.html",
       "hits": 1
      },
      {
@@ -6709,7 +6737,7 @@
     "rules": "FAB 复用 `.lq-fab` 定位与 slot 合同；禁止另做 resize/scroll 测量循环。 2026-10-27修复新增好友入口后的1024–1279管理壳换行：从水平留白收回空间，保留全部11个入口与44px命中区、侧栏展开及原换行兜底；pilot/family同一CSS，8个真实页头两宽度与18项adapter回归。"
    },
    "consumers": {
-    "count": 12,
+    "count": 13,
     "files": [
      {
       "path": "templates/manage/lq_sidebar.html",
@@ -6749,6 +6777,10 @@
      },
      {
       "path": "templates/minigames/host.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/minigames/student_workspace.html",
       "hits": 1
      },
      {
@@ -6980,7 +7012,7 @@
     "rules": "警告/错误/保存语义优先复用这里的填充与前景配对，不把有色前景放到任意透明背景。 classroom-page、assignment_detail_student、exam_take 共用 behavior_tracker.js。202 表示持久接收，200 可为已应用回执。b1 批次按账号和课堂固定编号重试 7 天，服务端回执保留至少 10 天，beacon 与 keepalive 发送均不视为确认。断网、限流和未知提交保留原批并退避；401 冻结新计时并等待同账号原批回执恢复，认证缺口不补算。结构化 409/413/422 明确终止时隔离原批并允许后续合法队列继续；未知 409 保留探测，不改编号；切换账号锁定旧页面并隔离旧队列。独立 diagnostics 幂等保存采集失败及恢复证据，不增加操作或学习时长。心跳用单调时钟记录有界区间，在可见性、焦点或 AI 面板状态切换时结算。页面离开时可独立发送仍在缓冲区的时长证据，服务器按时间区间去重。交卷、投票、聊天等业务提交保持各自的接口和重试策略。 2026-11-08容量改进：材料viewer/render-shell也复用同一采集器，material namespace隔离本地队列，onReceipt仅在durable ACK持久化后触发。递归错峰心跳/恢复、单fetch、普通buffer及诊断/档案均有硬边界，满时暂停采样并显式记录gap；未确认原文不能静默裁剪。材料v2以有界区间合并进度与课堂入box同事务，不阻塞async事件循环或同步重建全班修为。"
    },
    "consumers": {
-    "count": 28,
+    "count": 29,
     "files": [
      {
       "path": "templates/dev/lq_status.html",
@@ -7040,6 +7072,10 @@
      },
      {
       "path": "templates/manage/teacher_schedule_query.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/minigames/upload_form.html",
       "hits": 2
      },
      {
@@ -7480,7 +7516,8 @@
     "templates/minigames/detail.html",
     "templates/minigames/hall.html",
     "templates/minigames/host.html",
-    "templates/minigames/manage.html"
+    "templates/minigames/manage.html",
+    "templates/minigames/reviews.html"
    ],
    "bundledInIndex": false
   },
@@ -8380,6 +8417,11 @@
    "content",
    "forms",
    "status"
+  ],
+  "static/js/minigames/reviews.js": [
+   "button",
+   "content",
+   "declarative"
   ],
   "static/js/minigames/ui.js": [
    "button",
@@ -9336,7 +9378,6 @@
   "templates/minigames/detail.html": [
    "content",
    "forms",
-   "indicators",
    "materials"
   ],
   "templates/minigames/hall.html": [
@@ -9361,12 +9402,25 @@
    "materials",
    "search"
   ],
+  "templates/minigames/reviews.html": [
+   "content",
+   "materials"
+  ],
+  "templates/minigames/student_workspace.html": [
+   "materials",
+   "shells"
+  ],
   "templates/minigames/ui.html": [
    "button",
    "chip",
    "content",
    "forms",
    "materials",
+   "status"
+  ],
+  "templates/minigames/upload_form.html": [
+   "forms",
+   "indicators",
    "status"
   ],
   "templates/partials/ability_radar.html": [

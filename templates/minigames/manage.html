@@ -1,12 +1,12 @@
-{% extends 'manage/layout.html' %}
+{% extends 'minigames/student_workspace.html' if user_info.role == 'student' else 'manage/layout.html' %}
 {% import 'minigames/ui.html' as ui with context %}
 {% from 'macros/lq/button.html' import lq_btn %}
-{% block title %}小游戏管理{% endblock %}
+{% block title %}{{ page_title }}{% endblock %}
 {% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
-{% block header_actions %}{{ ui.btn('游玩大厅', variant='ghost', size='sm', icon='gamepad', href='/games') }} {{ ui.action('上传新游戏', 'draft', 'prominent', 'upload') }}{% endblock %}
+{% block header_actions %}{{ ui.btn('游玩大厅', variant='ghost', size='sm', icon='gamepad', href='/games') }} {% if current_teacher_is_super_admin %}{{ ui.btn('内容审核', href='/manage/library/games/reviews', icon='shield') }}{% endif %} {{ ui.action('上传新游戏', 'draft', 'prominent', 'upload') }}{% endblock %}
 {% block content %}
 <section class="game-management" data-game-library>
-<h1 class="sr-only">小游戏管理</h1>
+{% set workspace = '/games/workshop' if user_info.role == 'student' else '/manage/library/games' %}
 <section class="lq-surface game-guide-tools" data-lq-component="surface" data-lq-padding="md" aria-labelledby="game-guide-heading">
     <div class="game-row-main">
         <h2 class="game-section-title" id="game-guide-heading">{{ ui.g_icon('book', 'game-mini-icon') }}小游戏开发规范</h2>
@@ -25,9 +25,10 @@
 {{ ui.field('标签', 'tag', placeholder='按标签过滤', sr_label=true) }}
 {{ ui.form_button('筛选', icon='sliders') }}
 </form>
-<ul class="lq-surface game-admin-list lq-list" data-lq-component="surface" data-admin-list>
+<h2 class="game-section-title">作品文件夹</h2>
+<ul class="lq-surface game-admin-list lq-list" data-lq-component="surface" data-admin-list aria-label="作品文件夹">
 {% for item in games|default([]) %}
-<li class="lq-row game-admin-row">{{ ui.game_icon(item) }}<div class="game-row-main"><a class="game-library-link" href="/manage/library/games/{{ item.id }}">{{ item.title }}</a></div></li>
+<li class="lq-row game-admin-row">{{ ui.game_icon(item) }}<div class="game-row-main"><a class="game-library-link" href="{{ workspace }}/{{ item.id }}">{{ item.title }}</a></div></li>
 {% endfor %}
 </ul>
 <nav class="game-actions game-pager" aria-label="管理列表分页">
@@ -36,6 +37,7 @@
 </nav>
 {{ ui.notice() }}
 </section>
-{{ ui.boot({}) }}
+<template id="game-upload-form">{% include 'minigames/upload_form.html' %}</template>
+{{ ui.boot({'workspace':workspace,'role':user_info.role}) }}
 {% endblock %}
 {% block scripts %}<script type="module" src="{{ asset_url('js/minigames/manage.js') }}"></script>{% endblock %}

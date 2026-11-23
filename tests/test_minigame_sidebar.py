@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from classroom_app.routers.minigames import sidebar_data
 from classroom_app.services import minigame_platform as platform
+from classroom_app.services.minigame_packages import ensure_package_schema
 from classroom_app.services.minigame_runtime_store import ensure_runtime_schema
 
 
@@ -19,6 +20,7 @@ class SidebarTests(TestCase):
 
     def verify_sidebar(self, conn):
         platform.ensure_catalog_schema(conn)
+        ensure_package_schema(conn)
         ensure_runtime_schema(conn)
         for sql in (
             "CREATE TABLE students(id INTEGER PRIMARY KEY,class_id INTEGER, school_code TEXT, college TEXT,department TEXT,enrollment_status TEXT,control_mode TEXT)",

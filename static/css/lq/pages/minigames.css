@@ -822,6 +822,36 @@
     gap: var(--ls-s-3) var(--ls-s-5);
 }
 
+.game-choice-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 6rem), 1fr));
+    gap: var(--ls-s-2);
+}
+
+.game-remix-license {
+    display: grid;
+    gap: var(--ls-s-1);
+    padding: var(--ls-s-3);
+}
+
+.game-remix-license .game-check {
+    font-weight: var(--ls-weight-title3);
+}
+
+.game-review-files {
+    max-height: 15rem;
+    overflow: auto;
+    overflow-wrap: anywhere;
+}
+
+.game-tile-meta {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--ls-t-caption);
+}
+
 .game-guide-tools p {
     margin: 0;
     font-size: var(--ls-t-sub);
@@ -1216,6 +1246,7 @@
 .game-hall [hidden],
 .game-host [hidden],
 .game-management [hidden],
+[data-version-upload] [hidden],
 .game-topbar [hidden] {
     display: none !important;
 }

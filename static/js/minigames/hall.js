@@ -98,7 +98,10 @@ function tile(g, index) {
         star.append(svgIcon('sparkles', 'game-mini-icon'));
         a.append(star);
     }
-    a.append(el('strong', g.title), modeBadges(g));
+    a.append(el('strong', g.title));
+    const info = [g.genreLabel, ...(g.tags || []).slice(0,2).map((tag) => '#' + tag)].filter(Boolean).join(' · ');
+    if (info) a.append(el('small',info,'game-tile-meta game-muted'));
+    a.append(modeBadges(g));
     li.append(a);
     return li;
 }
@@ -113,7 +116,7 @@ function syncModeChips(value) {
 
 function urlFor(pageCursor) {
     const u = new URL('/games', location.origin);
-    for (const [k, v] of new FormData(filters)) if (v) u.searchParams.set(k, v);
+    for (const [k, v] of new FormData(filters)) if (v || k === 'genres' || k === 'tags') u.searchParams.set(k, v);
     if (pageCursor) u.searchParams.set('cursor', pageCursor);
     return u;
 }
@@ -140,7 +143,7 @@ async function search(url, historyMode) {
         empty.hidden = !!data.items?.length;
         const text = empty.querySelector('span') || empty;
         text.textContent =
-            url.searchParams.get('q') || url.searchParams.get('mode') ? '未找到匹配游戏' : '暂无可玩游戏';
+            ['q','mode','genres','tags'].some((key) => url.searchParams.get(key)) ? '未找到匹配游戏' : '暂无可玩游戏';
         next.hidden = !data.nextCursor;
         if (data.nextCursor) next.href = urlFor(data.nextCursor);
         prev.hidden = !url.searchParams.has('cursor');
@@ -198,9 +201,58 @@ addEventListener('popstate', () => {
     const mode = u.searchParams.get('mode') || '';
     filters.elements.mode.value = mode;
     syncModeChips(mode);
+    for (const key of ['genres','tags']) filters.elements[key].value =
+        u.searchParams.get(key) ?? (savedFilters[key] || []).join(',');
+    discoverySummary();
     if (pages.at(-2) === u.href) pages.pop();
     search(u);
 });
+
+let savedFilters = boot.discovery || {genres:[], tags:[], revision:0};
+const splitTags = (value) => [...new Set(value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))];
+function discoverySummary() {
+    const labels = new Map((boot.genreOptions || []).map((g) => [g.id, g.label]));
+    const genres = splitTags(filters.elements.genres.value).map((id) => labels.get(id) || id);
+    const tags = splitTags(filters.elements.tags.value).map((tag) => '#' + tag);
+    document.querySelector('[data-discovery-summary]').textContent = [...genres, ...tags].join(' · ');
+}
+
+async function chooseDiscovery() {
+    const form = document.importNode(document.querySelector('#discovery-form').content.firstElementChild, true);
+    const selected = new Set(splitTags(filters.elements.genres.value));
+    form.querySelectorAll('[name="genre"]').forEach((input) => { input.checked = selected.has(input.value); });
+    form.elements.tagList.value = filters.elements.tags.value.replaceAll(',', '，');
+    form.addEventListener('click', (event) => {
+        const tag = event.target.closest('[data-pick-tag]')?.dataset.pickTag;
+        if (tag) form.elements.tagList.value = [...new Set([...splitTags(form.elements.tagList.value),tag])].join('，');
+        if (event.target.closest('[data-clear-filters]')) {
+            form.querySelectorAll('[name="genre"]').forEach((input) => { input.checked = false; });
+            form.elements.tagList.value = '';
+        }
+    });
+    await formPanel('类型与标签', form, '确认筛选', async (data) => {
+        const genres = data.getAll('genre');
+        const tags = splitTags(String(data.get('tagList')));
+        if (tags.length > 12 || tags.some((t) => [...t].length > 32))
+            throw new Error('最多 12 个标签，每个标签最多 32 字');
+        if (data.has('remember')) {
+            try {
+                savedFilters = await api('/discovery-preferences', {method:'PUT',
+                    body:{genres,tags,expectedRevision:savedFilters.revision || 0}});
+            } catch (error) {
+                if (error.status !== 409) throw error;
+                savedFilters = await api('/discovery-preferences');
+                throw new Error('其他设备已更新偏好。请核对当前选择，再次确认即可保存。');
+            }
+        }
+        filters.elements.genres.value = genres.join(',');
+        filters.elements.tags.value = tags.join(',');
+        discoverySummary();
+        clearTimeout(timer);
+        await search(urlFor(''), 'replace');
+    });
+}
+discoverySummary();
 
 function shortNote(name, row) {
     if (name === 'popular' && row.playerCount != null) return String(row.playerCount);
@@ -277,6 +329,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 onAction({
+    discovery: chooseDiscovery,
     refresh: updateSidebar,
     preferences: async () => {
         const preferences = await api('/me/preferences');

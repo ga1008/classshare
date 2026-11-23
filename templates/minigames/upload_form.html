@@ -1,0 +1,17 @@
+{% import 'minigames/ui.html' as ui with context %}
+<form class="game-form" data-version-upload>
+    <label class="game-dropzone" data-dropzone>
+        <span class="game-dropzone__icon" aria-hidden="true">{{ ui.g_icon('upload') }}</span>
+        <span class="game-dropzone__title">独立 HTML 游戏包（ZIP）</span>
+        <small class="game-muted" data-file-meta>不超过 64 MiB，名称、游戏类型与版本从 config.json 读取</small>
+        <input class="lq-native-file game-dropzone__input" data-lq-component="file" type="file" name="file" aria-label="独立 HTML 游戏包（ZIP）" accept=".zip,application/zip" required>
+    </label>
+    {{ ui.field('作品标签（用逗号分隔）', 'uploadTags', placeholder='像素风，3D') }}
+    {{ ui.field('原作版本 ID（改编时填写）', 'sourceVersionId', placeholder='包内已声明完整出处时可留空') }}
+    <div class="lq-alert game-remix-license" data-lq-component="alert" data-lq-status="alert" data-lq-tone-level="info">
+        {{ ui.check('允许他人下载完整源码并二次开发', 'allowRemix', true) }}
+        <small data-license-hint>本版本公开后，能游玩的师生可下载原始 ZIP。改编作品会保留原作者和原作标签。</small>
+    </div>
+    <div class="game-actions">{{ ui.form_button('上传并验收', icon='upload') }}</div>
+    <progress class="lq-progress" aria-label="游戏包传输进度" data-upload-progress hidden></progress>
+</form>

@@ -14,7 +14,7 @@
 <nav>
 {{ ui.action('刷新动态', 'refresh', variant='ghost', icon='refresh', icon_only=true) }}
 {{ ui.action('游玩设置', 'preferences', variant='ghost', icon='sliders', icon_only=true) }}
-{% if user_info.role == 'teacher' %}{{ ui.btn('管理', variant='soft', size='sm', icon='sparkles', href='/manage/library/games') }}{% endif %}
+{{ ui.btn('我的作品' if user_info.role == 'student' else '小游戏管理', variant='soft', size='sm', icon='upload', href='/games/workshop' if user_info.role == 'student' else '/manage/library/games') }}
 </nav>
 </header>
 <main class="game-hall">
@@ -22,18 +22,22 @@
 <form action="/games" method="get" class="game-filters game-hall-toolbar" data-game-search>
 <label class="lq-search game-search-box"><span class="sr-only">搜索名称或标签</span><input class="lq-input" data-lq-component="input" type="search" name="q" placeholder="搜索游戏或标签…" value="{{ params.get('q', '') }}"></label>
 <input type="hidden" name="mode" value="{{ cur_mode }}">
+<input type="hidden" name="genres" value="{{ (active_genres|default([]))|join(',') }}">
+<input type="hidden" name="tags" value="{{ (active_tags|default([]))|join(',') }}">
 <div class="game-mode-bar" role="group" aria-label="玩法筛选">
 {{ ui.filter_chip('全部', '', cur_mode, 'grid') }}
 {{ ui.filter_chip('单人', 'solo', cur_mode, 'solo') }}
 {{ ui.filter_chip('合作', 'coop', cur_mode, 'coop') }}
 {{ ui.filter_chip('对战', 'versus', cur_mode, 'versus') }}
 </div>
+{{ ui.action('类型与标签', 'discovery', variant='soft', icon='sliders') }}
+<span class="game-muted" data-discovery-summary></span>
 </form>
 <p class="sr-only">游戏在新标签页打开</p>
 <ul class="game-grid" data-games-grid>{% for g in games %}{{ ui.tile(g, eager=loop.index0 < 8) }}{% endfor %}</ul>
 <div class="lq-surface game-empty-box" data-lq-component="surface" data-grid-empty {% if games %}hidden{% endif %}>
 {{ ui.g_icon('gamepad', 'game-empty-icon') }}
-<span>{{ '未找到匹配游戏' if params.get('q') or cur_mode else '暂无可玩游戏' }}</span>
+<span>{{ '未找到匹配游戏' if params.get('q') or cur_mode or active_genres or active_tags else '暂无可玩游戏' }}</span>
 </div>
 <nav aria-label="游戏列表分页" class="game-actions game-pager">
 <a data-game-prev href="/games" class="lq-btn lq-btn--ghost lq-btn--sm"{% if not has_prev|default(false) %} hidden{% endif %}>{{ ui.g_icon('chevron-left', 'lq-icon') }}<span>上一页</span></a>
@@ -77,6 +81,18 @@
 </aside>
 </main>
 <template id="preferences-form"><form class="game-form">{{ ui.field('游戏昵称', 'displayAlias', maxlength=32, placeholder='留空使用默认姓名') }}{{ ui.check('向好友公开在玩状态', 'sharePlaying') }}{{ ui.form_button('保存设置', icon='check') }}</form></template>
-{{ ui.boot({'hydrated': sidebar_hydrated|default(false), 'nextCursor': next_cursor|default(none)}) }}
+<template id="discovery-form"><form class="game-form">
+    <fieldset class="game-targets-set"><legend>游戏类型</legend><div class="game-choice-grid">
+    {% for genre in genre_options|default([]) %}<label class="game-check"><input class="lq-control" data-lq-component="checkbox" type="checkbox" name="genre" value="{{ genre.id }}"><span>{{ genre.label }}</span></label>{% endfor %}
+    </div></fieldset>
+    {{ ui.field('标签（用逗号分隔）','tagList',placeholder='像素风，3D') }}
+    {% if tag_options %}<div class="game-actions" aria-label="常用标签">
+    {% for tag in tag_options %}{{ ui.btn(tag, attrs={'data-pick-tag':tag}) }}{% endfor %}
+    </div>{% endif %}
+    {{ ui.check('记住此次选择，下次进入大厅自动筛选', 'remember', true) }}
+    <div class="game-actions">{{ ui.form_button('确认筛选', icon='check') }}{{ ui.btn('清除选择', variant='ghost', attrs={'data-clear-filters':''}) }}</div>
+</form></template>
+{{ ui.boot({'hydrated':sidebar_hydrated|default(false),'nextCursor':next_cursor|default(none),
+    'discovery':discovery|default({}),'genreOptions':genre_options|default([])}) }}
 {% endblock %}
 {% block scripts %}<script type="module" src="{{ asset_url('js/minigames/hall.js') }}"></script>{% endblock %}

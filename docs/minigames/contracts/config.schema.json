@@ -25,6 +25,31 @@
       "pattern": "^(0|[1-9][0-9]{0,4})\\.(0|[1-9][0-9]{0,4})\\.(0|[1-9][0-9]{0,4})$"
     },
     "title": { "type": "string", "minLength": 1, "maxLength": 48 },
+    "author": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "\\S" },
+    "genre": {
+      "default": "other",
+      "oneOf": [
+        { "const": "adventure", "title": "冒险" }, { "const": "puzzle", "title": "解谜" },
+        { "const": "brain", "title": "益智" }, { "const": "scifi", "title": "科幻" },
+        { "const": "cultivation", "title": "修仙" }, { "const": "horror", "title": "惊悚" },
+        { "const": "action", "title": "动作" }, { "const": "strategy", "title": "策略" },
+        { "const": "simulation", "title": "模拟经营" }, { "const": "rpg", "title": "角色扮演" },
+        { "const": "sports", "title": "体育竞速" }, { "const": "music", "title": "音乐节奏" },
+        { "const": "education", "title": "学习" }, { "const": "casual", "title": "休闲" },
+        { "const": "other", "title": "其他" }
+      ]
+    },
+    "attribution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["gameKey", "version", "author", "tags"],
+      "properties": {
+        "gameKey": { "$ref": "#/properties/gameKey" },
+        "version": { "$ref": "#/properties/version" },
+        "author": { "$ref": "#/properties/author" },
+        "tags": { "type": "array", "maxItems": 12, "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "\\S" } }
+      }
+    },
     "summary": { "type": "string", "minLength": 1, "maxLength": 240 },
     "entry": { "const": "main.html" },
     "icon": {

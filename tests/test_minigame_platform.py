@@ -107,19 +107,20 @@ class GamePlatformFixture(TestCase):
 
 
 class GamePlatformTests(GamePlatformFixture):
-    def test_teacher_can_read_and_download_the_same_author_spec(self):
+    def test_student_and_teacher_can_read_and_download_the_same_author_spec(self):
         from io import BytesIO
         from zipfile import ZipFile
 
         base = "/manage/library/games/author-guide"
-        for uid in (None, 931):
-            self.client.cookies.clear()
-            if uid:
-                self.client.cookies.set("access_token", self.tokens[uid])
-            for suffix in ("", "/markdown", "/download"):
-                denied = self.client.get(base + suffix, follow_redirects=False)
-                self.assertIn(denied.status_code, (303, 401, 403))
-                self.assertNotIn("attachment", denied.headers.get("Content-Disposition", ""))
+        for suffix in ("", "/markdown", "/download"):
+            denied = self.client.get(base + suffix, follow_redirects=False)
+            self.assertIn(denied.status_code, (303, 401, 403))
+            self.assertNotIn("attachment", denied.headers.get("Content-Disposition", ""))
+        self.client.cookies.set("access_token", self.tokens[931])
+        for suffix in ("", "/markdown", "/download"):
+            self.assertEqual(self.client.get(base + suffix, follow_redirects=False).status_code, 200)
+        self.assertEqual(self.client.get("/games/workshop", follow_redirects=False).status_code, 200)
+        self.assertIn(self.client.get("/manage/library/games/reviews", follow_redirects=False).status_code, (303, 403))
 
         self.client.cookies.clear()
         self.client.cookies.set("access_token", self.tokens[901])
@@ -143,6 +144,38 @@ class GamePlatformTests(GamePlatformFixture):
             if line.startswith("# "):
                 self.assertIn(line[2:], page.text)
                 break
+
+    def test_catalog_remembers_confirmed_filters_by_actor_and_excludes_private_tags(self):
+        with p.game_db() as conn:
+            for i, (genre, tags, scope) in enumerate((
+                ("puzzle", ["像素风", "2D横版"], "public"), ("scifi", ["3D"], "public"),
+                (None, ["怀旧"], "public"), ("puzzle", ["隐藏标签"], "private")
+            )):
+                game = f"filter-{i}"
+                conn.execute("""INSERT INTO mg_games(id,slug,owner_teacher_id,title,tags_json,scope,status,
+                    current_version_id,created_at,updated_at) VALUES(?,?,901,?,?,?,'listed',?,1,1)""",
+                             (game, game, game, json.dumps(tags), scope, game))
+                conn.execute("""INSERT INTO mg_versions(id,game_id,config_json,status,created_at)
+                    VALUES(?,?,?,'ready',1)""", (game, game, json.dumps({"genre": genre} if genre else {})))
+            conn.commit()
+        path = "/discovery-preferences"
+        preferences = {"genres": ["scifi", "puzzle"], "tags": ["像素风"], "expectedRevision": 0}
+        saved = self.api(931, "PUT", path, json=preferences)
+        self.assertEqual(saved["revision"], 1)
+        self.assertEqual(self.api(931, "PUT", path, json=preferences), saved)
+        self.assertEqual(self.api(931, "GET", path), saved)
+        self.assertEqual(self.api(932, "GET", path)["genres"], [])
+        self.assertEqual(self.api(901, "GET", path)["revision"], 0)
+        matched = self.api(931, "GET", "/catalog")["items"]
+        self.assertEqual([(g["id"], g["genreLabel"]) for g in matched], [("filter-0", "解谜")])
+        visible = self.api(931, "GET", "/catalog", params={"genres": "", "tags": ""})
+        self.assertEqual({g["id"] for g in visible["items"]}, {"filter-0","filter-1","filter-2"})
+        old = self.api(931, "GET", "/catalog", params={"genres": "other", "tags": ""})
+        self.assertEqual([g["id"] for g in old["items"]], ["filter-2"])
+        hall = self.client.get("/games")
+        self.assertEqual(hall.status_code, 200)
+        self.assertNotIn("隐藏标签", hall.text)
+        self.assertEqual(self.api(931, "PUT", path, json={"genres": [], "tags": [], "expectedRevision": 1})["revision"], 2)
 
     def test_interrupted_preview_does_not_authorize_playtest(self):
         import asyncio

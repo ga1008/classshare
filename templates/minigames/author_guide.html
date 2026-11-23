@@ -1,9 +1,10 @@
-{% extends 'manage/layout.html' %}
+{% extends 'minigames/student_workspace.html' if user_info.role == 'student' else 'manage/layout.html' %}
 {% from 'macros/lq/button.html' import lq_btn %}
 {% from 'macros/lq/content.html' import lq_prose %}
 
 {% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
-{% block header_actions %}{{ lq_btn('返回小游戏管理', variant='ghost', size='sm', icon='arrow-left', href='/manage/library/games') }}{% endblock %}
+{% block title %}小游戏开发规范{% endblock %}
+{% block header_actions %}{{ lq_btn('返回我的作品' if user_info.role == 'student' else '返回小游戏管理', variant='ghost', size='sm', icon='arrow-left', href='/games/workshop' if user_info.role == 'student' else '/manage/library/games') }}{% endblock %}
 {% block content %}
 <div class="game-management game-author-guide">
     <section class="lq-surface game-guide-tools" data-lq-component="surface" data-lq-padding="md" aria-label="开发资料下载">

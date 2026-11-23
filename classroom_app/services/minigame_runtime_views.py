@@ -278,6 +278,7 @@ def _friends_playing(conn, user, query, now, limit):
         JOIN mg_rt_activity a ON a.id=c.target AND a.phase='running'
         JOIN mg_rt_seats s ON s.activity=a.id AND s.actor=c.actor
         JOIN mg_games g ON g.id=a.game JOIN mg_versions v ON v.id=g.current_version_id AND v.game_id=g.id
+        LEFT JOIN mg_version_authorship va ON va.version_id=v.id
         JOIN mg_versions pinned ON pinned.id=a.version AND pinned.game_id=g.id AND pinned.status='ready'
         WHERE c.expires>? AND c.interacted>0 AND a.run IS NOT NULL AND a.started IS NOT NULL
         AND {VISIBLE_SEAT} AND {query.visible}"""

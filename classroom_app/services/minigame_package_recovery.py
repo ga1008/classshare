@@ -24,28 +24,32 @@ def register_snapshot(directory):
             raise ValueError("删除登记含不完整或未知条目，请封存完整登记后再恢复")
         r = json.loads(path.read_text(encoding="utf-8"))
         if (
-            set(r) != {"gameId", "jobId", "actor", "createdAt"}
+            set(r) not in ({"gameId", "jobId", "actor", "createdAt"},
+                           {"gameId", "jobId", "actor", "createdAt","versionId"})
             or r["jobId"] != path.stem
             or not isinstance(r["gameId"], str)
             or not re.fullmatch(r"[a-f0-9]{32}", r["gameId"])
-            or r["gameId"] in seen
+            or ("versionId" in r and (not isinstance(r["versionId"],str) or
+                                      not re.fullmatch(r"[a-f0-9]{32}",r["versionId"])))
+            or (r["gameId"],r.get("versionId")) in seen
             or type(r["actor"]) is not int
-            or r["actor"] < 1
+            or r["actor"] == 0
             or type(r["createdAt"]) is not int
             or r["createdAt"] < 1
         ):
             raise ValueError("删除登记标识或关联无效")
-        seen.add(r["gameId"])
+        seen.add((r["gameId"],r.get("versionId")))
         digest.update((packages.validation.canonical(r) + "\n").encode())
         records.append(r)
     return digest.hexdigest(), records
 
 
-def verify_versions(excluded):
+def verify_versions(excluded, excluded_versions=()):
     """Prove that every surviving ready/retired runtime matches its database fingerprint."""
     with platform.game_db() as conn:
         rows = conn.execute(
-            "SELECT game_id,id,digest,files_json FROM mg_versions WHERE status IN ('ready','retired')"
+            """SELECT v.game_id,v.id,v.digest,v.files_json,a.package_sha256 FROM mg_versions v
+               LEFT JOIN mg_version_authorship a ON a.version_id=v.id WHERE v.status IN ('ready','retired','reviewing')"""
         ).fetchall()
         dangling = conn.execute("""SELECT g.id FROM mg_games g LEFT JOIN mg_versions v ON v.id=g.current_version_id
             AND v.game_id=g.id AND v.status='ready' WHERE g.status='listed' AND v.id IS NULL""").fetchall()
@@ -53,7 +57,7 @@ def verify_versions(excluded):
         raise ValueError("恢复库的发布指针未指向对应已验收版本")
     count = 0
     for row in rows:
-        if row["game_id"] in excluded:
+        if row["game_id"] in excluded or row["id"] in excluded_versions:
             continue
         path = packages.asset_path("version", row["game_id"], row["id"])
         packages.marker(path, row["game_id"], row["id"])
@@ -74,6 +78,10 @@ def verify_versions(excluded):
         for name in ("thumbnail.png", "upload.zip"):
             if not packages.checked_dir(path, path / name).is_file():
                 raise ValueError("恢复卷缺少原始包或缩略图")
+        if row["package_sha256"]:
+            with (path / "upload.zip").open("rb") as package:
+                if hashlib.file_digest(package, "sha256").hexdigest() != row["package_sha256"]:
+                    raise ValueError("恢复卷中的原始 ZIP 与上传时记录的摘要不一致")
         count += 1
     return count
 
@@ -82,17 +90,54 @@ def reconcile(directory, expected_digest, *, apply=False):
     digest, records = register_snapshot(directory)
     if digest != expected_digest:
         raise ValueError("删除登记与独立封存摘要不符；保持副本离线")
-    excluded = {r["gameId"] for r in records}
-    versions = verify_versions(excluded)
+    excluded = {r["gameId"] for r in records if "versionId" not in r}
+    excluded_versions = {r["versionId"] for r in records if "versionId" in r}
+    versions = verify_versions(excluded,excluded_versions)
     with platform.game_db() as conn:
-        unsealed = conn.execute("SELECT game_id,id FROM mg_admin_jobs WHERE kind='delete'").fetchall()
-        known = {r["jobId"]: r["gameId"] for r in records}
-        if any(known.get(r["id"]) != r["game_id"] for r in unsealed):
+        unsealed = conn.execute("SELECT game_id,version_id,id FROM mg_admin_jobs WHERE kind IN ('delete','delete-version')").fetchall()
+        known = {r["jobId"]: (r["gameId"],r.get("versionId","")) for r in records}
+        if any(known.get(r["id"]) != (r["game_id"],r["version_id"]) for r in unsealed):
             raise ValueError("恢复数据库包含封存登记未覆盖的删除作业")
         leases = conn.execute("SELECT COUNT(*) FROM mg_launch_leases").fetchone()[0]
     affected = []
+    erased_versions = 0
     for r in records:
         game = r["gameId"]
+        if vid := r.get("versionId"):
+            if game in excluded:
+                continue
+            with platform.game_db() as conn:
+                existing = conn.execute("SELECT status FROM mg_versions WHERE id=? AND game_id=?",(vid,game)).fetchone()
+            if not existing or existing["status"] == "deleted":
+                directory = packages.asset_path("version", game, vid)
+                if directory.exists():
+                    packages.marker(directory, game, vid)
+                    erased_versions += 1
+                    if apply:
+                        with packages.game_lock(game), platform.asset_usage(game, exclusive=True):
+                            packages.remove_asset("version", game, vid)
+                continue
+            erased_versions += 1
+            if apply:
+                with packages.game_lock(game), platform.asset_usage(game,exclusive=True):
+                    with platform.game_db() as conn:
+                        platform.db_start(conn,game)
+                        from . import minigame_runtime_rooms as rooms
+                        now = platform.now_ms()
+                        for activity in conn.execute("""SELECT id FROM mg_rt_activity WHERE version=? AND
+                                phase IN ('waiting','countdown','running','reconnecting','paused')""",(vid,)).fetchall():
+                            rooms.close(conn,activity["id"],"closed","version_removed",now)
+                        conn.execute("UPDATE mg_launch_leases SET revoked=1 WHERE version_id=?",(vid,))
+                        packages.withdraw_version(conn,packages.one(conn,"mg_games",game),vid,now)
+                        conn.execute("UPDATE mg_versions SET status='deleting' WHERE id=?",(vid,))
+                        token=packages.uid()
+                        conn.execute("""INSERT INTO mg_admin_jobs(id,game_id,version_id,actor,kind,status,stage,token,created)
+                            VALUES(?,?,?,?,'delete-version','running','恢复重放',?,?) ON CONFLICT(id) DO UPDATE
+                            SET status='running',token=excluded.token""",(r["jobId"],game,vid,r["actor"],token,r["createdAt"]))
+                        job=dict(packages.one(conn,"mg_admin_jobs",r["jobId"]))
+                        conn.commit()
+                    packages.delete_version_job(job)
+            continue
         with platform.game_db() as conn:
             row = conn.execute("SELECT status FROM mg_games WHERE id=?", (game,)).fetchone()
             assets = conn.execute(
@@ -154,6 +199,7 @@ def reconcile(directory, expected_digest, *, apply=False):
         "registerDigest": digest,
         "records": len(records),
         "gamesToErase": len(affected),
+        "versionsToErase":erased_versions,
         "verifiedSurvivingVersions": versions,
         "previousLeases": leases,
     }

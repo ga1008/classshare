@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% set embedded_mode = true %}
+{% set suppress_account_widgets = true %}
+{% set suppress_back_to_top = true %}
+{% block css %}{% block extra_head %}{% endblock %}{% endblock %}
+{% block body %}
+<header class="lq-topbar lq-glass game-topbar" aria-label="创作工作区导航">
+    <h1>{{ page_title }}</h1>
+    <nav aria-label="本页操作">{% block header_actions %}{% endblock %}</nav>
+</header>
+<main>{% block content %}{% endblock %}</main>
+{% endblock %}

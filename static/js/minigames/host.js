@@ -1190,6 +1190,12 @@ onAction({
     rules: () => {
         const box = el('div', null, 'game-form');
         box.append(el('p', game.summary || '在游戏画面内直接操作即可。'));
+        if (game.authorName) box.append(el('p', '作者 ' + game.authorName));
+        const metadata = [game.genreLabel, ...(game.tags || []).map(tag => '#' + tag)].filter(Boolean);
+        if (metadata.length) box.append(el('p', metadata.join(' · '), 'game-muted'));
+        const source = game.config?.attribution;
+        if (source) box.append(el('p', '原作 ' + [source.gameKey, source.version, source.author,
+            ...(source.tags || []).map(tag => '#' + tag)].filter(Boolean).join(' · ')));
         return panel('玩法', box);
     },
     chapters: replay,

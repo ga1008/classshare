@@ -407,9 +407,9 @@ export function gameHue(g) {
     return String(h);
 }
 
-export function libraryLink(g) {
+export function libraryLink(g, workspace = '/manage/library/games') {
     const a = el('a', g.title, 'game-library-link');
-    a.href = '/manage/library/games/' + encodeURIComponent(g.id);
+    a.href = workspace + '/' + encodeURIComponent(g.id);
     return a;
 }
 

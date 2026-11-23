@@ -21,6 +21,7 @@ from fastapi import HTTPException
 
 from . import minigame_platform as platform
 from . import minigame_package_validation as validation
+from . import minigame_repository as repository
 from . import minigame_package_suggestions as suggestions
 from .resource_access_service import is_super_admin_teacher
 
@@ -30,12 +31,28 @@ PROBE_BACKOFF_MS = 120_000
 PROBE_OFFLINE_STAGE = "静态检查已通过，执行器恢复后自动继续"
 KEY = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 GAME_SCOPES = {"private", "classroom", "class", "department", "college", "school", "public"}
+VERSION_WITH_AUTHOR = """SELECT v.id,v.game_id,v.created_at,v.digest,v.release_version,v.status,v.config_json,
+    a.author,a.allow_remix,a.tags_json,a.source_version_id,a.source_author,
+    a.source_tags_json FROM mg_versions v LEFT JOIN mg_version_authorship a ON a.version_id=v.id"""
+FOLDER_SELECT = """SELECT g.*,v.config_json,a.author,a.allow_remix,a.source_version_id,
+    (SELECT COUNT(*) FROM mg_versions vc WHERE vc.game_id=g.id AND vc.status<>'deleted') AS version_count
+    FROM mg_games g LEFT JOIN mg_versions v ON v.id=COALESCE(g.current_version_id,
+    (SELECT vx.id FROM mg_versions vx WHERE vx.game_id=g.id AND vx.status<>'deleted'
+     ORDER BY vx.created_at DESC,vx.id DESC LIMIT 1))
+    LEFT JOIN mg_version_authorship a ON a.version_id=v.id"""
 _executor = _runner = _ai_runner = None
 _stop = None
 
 
 def ensure_package_schema(conn):
     statements = [
+        """CREATE TABLE IF NOT EXISTS mg_version_authorship(
+        version_id TEXT PRIMARY KEY REFERENCES mg_versions(id) ON DELETE CASCADE,author TEXT NOT NULL,
+        allow_remix INTEGER NOT NULL DEFAULT 0,source_version_id TEXT NOT NULL DEFAULT '',
+        source_author TEXT NOT NULL DEFAULT '',source_tags_json TEXT NOT NULL DEFAULT '[]',
+        source_json TEXT NOT NULL DEFAULT '{}',tags_json TEXT NOT NULL DEFAULT '[]',package_sha256 TEXT NOT NULL DEFAULT '',
+        release_rank BIGINT NOT NULL DEFAULT 0)""",
+        "CREATE INDEX IF NOT EXISTS idx_mg_authorship_digest ON mg_version_authorship(package_sha256)",
         """CREATE TABLE IF NOT EXISTS mg_admin_jobs (
            id TEXT PRIMARY KEY, game_id TEXT NOT NULL, version_id TEXT NOT NULL, actor INTEGER NOT NULL,
            kind TEXT NOT NULL, status TEXT NOT NULL, stage TEXT NOT NULL, token TEXT NOT NULL DEFAULT '',
@@ -65,6 +82,21 @@ def ensure_package_schema(conn):
     ]
     for statement in statements:
         conn.execute(statement)
+    # Register historical releases in the new index without granting source distribution.
+    legacy = conn.execute(
+        """SELECT v.id,v.release_version,v.config_json,g.tags_json FROM mg_versions v
+           JOIN mg_games g ON g.id=v.game_id LEFT JOIN mg_version_authorship a ON a.version_id=v.id
+           WHERE a.version_id IS NULL AND v.status IN ('ready','retired') AND v.release_version IS NOT NULL"""
+    ).fetchall()
+    for version in legacy:
+        number = version["release_version"]
+        if re.fullmatch(r"(?:0|[1-9][0-9]{0,4})(?:\.(?:0|[1-9][0-9]{0,4})){2}", number):
+            cfg = json.loads(version["config_json"] or "{}")
+            conn.execute(
+                """INSERT INTO mg_version_authorship(version_id,author,tags_json,release_rank)
+                   VALUES(?,?,?,?) ON CONFLICT(version_id) DO NOTHING""",
+                (version["id"], cfg.get("author", ""), version["tags_json"], repository.release_rank(number)),
+            )
 
 
 def error(status, code, message):
@@ -76,6 +108,10 @@ def uid():
 
 
 def object_game(row):
+    from .minigame_discovery import genre_labels
+
+    row = dict(row)
+    genre = json.loads(row.get("config_json") or "{}").get("genre", "other")
     return {
         "id": row["id"],
         "slug": row["slug"],
@@ -83,6 +119,8 @@ def object_game(row):
         "title": row["title"],
         "summary": row["summary"],
         "tags": json.loads(row["tags_json"]),
+        "genre": genre,
+        "genreLabel": genre_labels().get(genre, "其他"),
         "scope": row["scope"],
         "targets": json.loads(row["targets_json"]),
         "minTier": row["min_tier"],
@@ -94,10 +132,16 @@ def object_game(row):
         "policyRevision": row["policy_revision"],
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
+        "versionCount": row.get("version_count", 0),
+        "author": row.get("author") or "",
+        "allowRemix": bool(row.get("allow_remix")),
+        "sourceVersionId": row.get("source_version_id") or "",
+        "ownerRole": "student" if row["owner_teacher_id"] < 0 else "teacher",
     }
 
 
 def version_info(row):
+    row = dict(row)
     cfg = json.loads(row["config_json"] or "{}")
     return {
         "id": row["id"],
@@ -109,6 +153,13 @@ def version_info(row):
         "digest": row["digest"],
         "status": row["status"],
         "createdAt": row["created_at"],
+        "author": row.get("author") or cfg.get("author") or "",
+        "authorName": row.get("author") or cfg.get("author") or "",
+        "allowRemix": bool(row.get("allow_remix")),
+        "tags": json.loads(row.get("tags_json") or "[]"),
+        "sourceVersionId": row.get("source_version_id") or "",
+        "sourceAuthor": row.get("source_author") or "",
+        "sourceTags": json.loads(row.get("source_tags_json") or "[]"),
     }
 
 
@@ -141,22 +192,28 @@ def require_teacher(user):
         error(403, "TEACHER_REQUIRED", "该操作需要教师身份。")
 
 
-def recheck_teacher(conn, user):
+def recheck_contributor(conn, user):
     platform.assert_session(conn, user)
-    require_teacher(platform.load_actor(conn, user["actor"]))
+    platform.repository_actor_id(platform.load_actor(conn, user["actor"]))
 
 
-def detail(conn, user, game_id):
+def detail(conn, user, game_id, version_offset=0):
+    from . import minigame_moderation as moderation
     game = platform.require_manager(conn, user, game_id)
+    version_rows = conn.execute(
+        VERSION_WITH_AUTHOR + """ WHERE v.game_id=? AND v.status<>'deleted'
+        ORDER BY COALESCE(a.release_rank,0) DESC,v.created_at DESC,v.id DESC LIMIT 101 OFFSET ?""",
+        (game_id,version_offset),
+    ).fetchall()
+    versions = [version_info(v) for v in version_rows[:100]]
+    reviews = moderation.get_summaries(conn, [v["id"] for v in versions]) if game["owner_teacher_id"] < 0 else {}
+    for version in versions:
+        version["review"] = reviews.get(version["id"])
+    info = object_game(conn.execute(FOLDER_SELECT + " WHERE g.id=?", (game_id,)).fetchone())
     return {
-        "game": object_game(game),
-        "versions": [
-            version_info(v)
-            for v in conn.execute(
-                "SELECT * FROM mg_versions WHERE game_id=? ORDER BY created_at DESC,id DESC LIMIT 100",
-                (game_id,),
-            ).fetchall()
-        ],
+        "game": info,
+        "versions": versions,
+        "nextVersionOffset": version_offset + 100 if len(version_rows) > 100 else None,
         "jobs": [
             job_info(j)
             for j in conn.execute(
@@ -168,11 +225,10 @@ def detail(conn, user, game_id):
 
 
 def list_games(conn, user, params):
-    require_teacher(user)
     clauses, args = ["g.status<>'deleted'"], []
-    if not is_super_admin_teacher(conn, user["id"]):
+    if user["role"] != "teacher" or not is_super_admin_teacher(conn, user["id"]):
         clauses.append("g.owner_teacher_id=?")
-        args.append(int(user["id"]))
+        args.append(platform.repository_actor_id(user))
     for field in ("status", "scope"):
         if value := params.get(field):
             clauses.append(f"g.{field}=?")
@@ -191,6 +247,14 @@ def list_games(conn, user, params):
         marker = '"solo":true' if mode == "solo" else '"kind":"' + mode + '"'
         clauses.append("v.config_json LIKE ?")
         args.append("%" + marker + "%")
+    if genre := params.get("genre"):
+        if not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", genre):
+            error(422, "INVALID_GENRE", "请选择有效的内容类型。")
+        clause = "v.config_json LIKE ?"
+        if genre == "other":
+            clause = "(" + clause + """ OR COALESCE(v.config_json,'{}') NOT LIKE '%"genre":%')"""
+        clauses.append(clause)
+        args.append('%"genre":"' + genre + '"%')
     if cursor := params.get("cursor"):
         pair = cursor.split(".", 1)
         if (
@@ -203,7 +267,7 @@ def list_games(conn, user, params):
         clauses.append("(g.updated_at < ? OR (g.updated_at=? AND g.id<?))")
         args.extend((int(pair[0]), int(pair[0]), pair[1]))
     rows = conn.execute(
-        "SELECT g.* FROM mg_games g LEFT JOIN mg_versions v ON v.id=g.current_version_id WHERE "
+        FOLDER_SELECT + " WHERE "
         + " AND ".join(clauses)
         + " ORDER BY g.updated_at DESC,g.id DESC LIMIT 25",
         tuple(args),
@@ -222,7 +286,7 @@ def receipt(conn, user, op, key, digest):
     if not KEY.fullmatch(key or ""):
         error(422, "REQUEST_KEY", "缺少有效的 Idempotency-Key。")
     row = conn.execute(
-        "SELECT * FROM mg_admin_receipts WHERE actor=? AND op=? AND key_value=?", (int(user["id"]), op, key)
+        "SELECT * FROM mg_admin_receipts WHERE actor=? AND op=? AND key_value=?", (platform.repository_actor_id(user), op, key)
     ).fetchone()
     if row and row["digest"] != digest:
         error(409, "REQUEST_KEY_CONFLICT", "该请求键已用于不同内容。")
@@ -232,7 +296,7 @@ def receipt(conn, user, op, key, digest):
 def store_receipt(conn, user, op, key, game_id, digest, result):
     conn.execute(
         "INSERT INTO mg_admin_receipts(actor,op,key_value,game_id,digest,result) VALUES(?,?,?,?,?,?)",
-        (int(user["id"]), op, key, game_id, digest, validation.canonical(result)),
+        (platform.repository_actor_id(user), op, key, game_id, digest, validation.canonical(result)),
     )
 
 
@@ -259,6 +323,13 @@ def set_attributes(conn, user, row, body):
     if not body.keys() <= allowed:
         error(422, "INVALID_PROPERTIES", "请求含未知属性。")
     old = object_game(row)
+    if row["slug"] and "title" in body and body["title"] != old["title"]:
+        error(422, "PACKAGE_TITLE", "名称由游戏包 config.json 的 title 决定。")
+    if row["owner_teacher_id"] < 0:
+        if (set(body) - {"expectedRevision","scope","minTier","maxTier","tags"} or
+                body.get("scope", old["scope"]) not in {"public", "private"} or
+                ("tags" in body and body["tags"] != old["tags"])):
+            error(403, "REVIEWED_METADATA", "学生作品的公开文案与标签随新版本提交审核。")
     new = {**old, **body}
     if (
         not isinstance(new["title"], str)
@@ -299,6 +370,18 @@ def set_attributes(conn, user, row, body):
         )
     new["targets"] = sorted(set(target))
     policy = any(new[k] != old[k] for k in ("scope", "targets", "minTier", "maxTier"))
+    if "tags" in body and row["owner_teacher_id"] > 0:
+        target_version = conn.execute(
+            """SELECT a.version_id,a.source_tags_json FROM mg_version_authorship a
+               JOIN mg_versions v ON v.id=a.version_id WHERE v.game_id=? AND v.status NOT IN ('deleting','deleted')
+               ORDER BY CASE WHEN v.id=? THEN 0 ELSE 1 END,a.release_rank DESC,v.created_at DESC LIMIT 1""",
+            (row["id"], row["current_version_id"]),
+        ).fetchone()
+        if target_version:
+            required = json.loads(target_version["source_tags_json"])
+            new["tags"] = repository.check_tags(list(dict.fromkeys([*required, *new["tags"]])))
+            conn.execute("UPDATE mg_version_authorship SET tags_json=? WHERE version_id=?",
+                         (validation.canonical(new["tags"]),target_version["version_id"]))
     conn.execute(
         """UPDATE mg_games SET title=?,summary=?,tags_json=?,scope=?,targets_json=?,org_json=?,
         min_tier=?,max_tier=?,featured=?,revision=revision+1,policy_revision=policy_revision+?,updated_at=? WHERE id=?""",
@@ -415,7 +498,7 @@ def job_new(conn, job, game, version, user, kind, status, stage):
     conn.execute(
         """INSERT INTO mg_admin_jobs(id,game_id,version_id,actor,kind,status,stage,created)
                     VALUES (?,?,?,?,?,?,?,?)""",
-        (job, game, version, int(user["id"]), kind, status, stage, platform.now_ms()),
+        (job, game, version, platform.repository_actor_id(user), kind, status, stage, platform.now_ms()),
     )
 
 
@@ -455,7 +538,10 @@ def impact(conn, game):
 
 
 def mutate(user, game, action, body, key, vid=""):
-    require_teacher(user)
+    if action in {"create","publish","preview","playtest","suggest"}:
+        require_teacher(user)
+    else:
+        platform.repository_actor_id(user)
     if not isinstance(body, dict):
         error(422, "INVALID_BODY", "需要 JSON 对象。")
     op = "/".join((action, game, vid))
@@ -463,7 +549,7 @@ def mutate(user, game, action, body, key, vid=""):
     with platform.game_db() as conn:
         platform.db_start(conn, game)
         serial(conn)
-        recheck_teacher(conn, user)
+        recheck_contributor(conn, user)
         row = platform.require_manager(conn, user, game) if game else None
         prev = receipt(conn, user, op, key, digest)
         if prev is not None:
@@ -476,12 +562,46 @@ def mutate(user, game, action, body, key, vid=""):
             conn.execute(
                 """INSERT INTO mg_games(id,owner_teacher_id,title,summary,status,created_at,updated_at)
                 VALUES (?,?,?,'','draft',?,?)""",
-                (game, int(user["id"]), "新游戏", now, now),
+                (game, platform.repository_actor_id(user), "新游戏", now, now),
             )
             if body:
                 set_attributes(conn, user, one(conn, "mg_games", game), body)
         elif action == "patch":
             set_attributes(conn, user, row, body)
+        elif action == "license":
+            version = one(conn,"mg_versions",vid)
+            if version["game_id"] != game or version["status"] in {"deleted","deleting"}:
+                error(404,"NOT_FOUND","版本不存在。")
+            if type(body.get("allowRemix")) is not bool:
+                error(422,"INVALID_LICENSE","请明确选择是否允许二次开发。")
+            authorship = conn.execute("SELECT author FROM mg_version_authorship WHERE version_id=?", (vid,)).fetchone()
+            if not authorship or not authorship["author"]:
+                cfg = json.loads(version["config_json"] or "{}")
+                if not cfg.get("version"):
+                    error(409,"VERSION_NOT_READY","等待版本清单识别后再修改授权。")
+                owner_role = "teacher" if row["owner_teacher_id"] > 0 else "student"
+                owner = platform.load_actor(conn, f"{owner_role}:{abs(row['owner_teacher_id'])}")
+                author = cfg.get("author") or owner.get("display_name") or "作者"
+                if authorship:
+                    conn.execute("UPDATE mg_version_authorship SET author=? WHERE version_id=?", (author,vid))
+                else:
+                    repository.store_authorship(conn,vid,cfg,author,body,("",{}), json.loads(row["tags_json"]), "")
+            conn.execute("UPDATE mg_version_authorship SET allow_remix=? WHERE version_id=?",
+                         (int(body["allowRemix"]),vid))
+            conn.execute("UPDATE mg_games SET revision=revision+1,updated_at=? WHERE id=?", (now,game))
+        elif action == "delete-version":
+            from . import minigame_moderation as moderation
+            version = one(conn,"mg_versions",vid)
+            if version["game_id"] != game or version["status"] in {"deleted","deleting"}:
+                error(404,"NOT_FOUND","版本不存在或正在删除。")
+            withdraw_version(conn,row,vid,now)
+            moderation.cancel(conn,game,vid)
+            conn.execute("UPDATE mg_versions SET status='deleting' WHERE id=?", (vid,))
+            conn.execute("""UPDATE mg_admin_jobs SET status='cancelled',token='',expires=0
+                WHERE version_id=? AND kind='validate' AND status IN ('queued','running','retry','waiting_probe')""",(vid,))
+            job = uid()
+            job_new(conn,job,game,vid,user,"delete-version","queued","等待清理版本")
+            result = {"gameId":game,"versionId":vid,"jobId":job,"status":"deleting"}
         elif action in {"publish", "retire", "preview", "playtest"}:
             version = one(conn, "mg_versions", vid or body.get("versionId", ""))
             if version["game_id"] != game:
@@ -502,10 +622,12 @@ def mutate(user, game, action, body, key, vid=""):
                     error(409, "PREVIEW_REQUIRED", "请先在预览页实际打开本版本，再登记试玩结果。")
                 conn.execute(
                     "INSERT INTO mg_admin_playtests VALUES(?,?,?,?,?,?,?)",
-                    (vid, game, int(user["id"]), version["digest"], int(body["passed"]), now, uid()),
+                    (vid, game, platform.repository_actor_id(user), version["digest"], int(body["passed"]), now, uid()),
                 )
                 result = {"versionId": vid, "passed": body["passed"]}
             elif action == "publish":
+                if row["owner_teacher_id"] < 0:
+                    error(403,"MODERATION_REQUIRED","学生作品由内容审查流程决定发布。")
                 platform.content_origins()
                 last = conn.execute(
                     """SELECT passed FROM mg_admin_playtests WHERE version_id=? AND digest=?
@@ -514,28 +636,13 @@ def mutate(user, game, action, body, key, vid=""):
                 ).fetchone()
                 if not last or not last[0]:
                     error(409, "PLAYTEST_REQUIRED", "请先预览并记录本版的试玩结果。")
-                if row["current_version_id"] and row["current_version_id"] != vid:
-                    verify_compatibility(conn, game, row["current_version_id"], version)
-                    from .minigame_runtime import cancel_waiting
-
-                    cancel_waiting(conn, game)
-                w = json.loads(version["writeback_json"])
-                conn.execute(
-                    "INSERT INTO mg_admin_releases VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
-                    (game, vid, w["series"], w["saveVersion"]),
-                )
-                conn.execute(
-                    """UPDATE mg_games SET current_version_id=?,status='listed',revision=revision+1,
-                    policy_revision=policy_revision+?,updated_at=? WHERE id=?""",
-                    (vid, int(row["status"] != "listed"), now, game),
-                )
+                publish_version(conn, row, version)
             else:
-                if row["current_version_id"] == vid or version_in_use(conn, vid):
-                    error(409, "VERSION_IN_USE", "当前发布版本或仍在使用的版本无法退役。")
+                withdraw_version(conn,row,vid,now)
                 conn.execute("UPDATE mg_versions SET status='retired' WHERE id=?", (vid,))
-                conn.execute("UPDATE mg_games SET revision=revision+1,updated_at=? WHERE id=?", (now, game))
         elif action in {"unlist", "delete"}:
             from .minigame_runtime import on_unlist
+            from . import minigame_moderation as moderation
 
             if action == "unlist" and row["status"] != "listed":
                 error(409, "NOT_LISTED", "只有已发布游戏可以下架。")
@@ -544,12 +651,19 @@ def mutate(user, game, action, body, key, vid=""):
                 plan = conn.execute(
                     """SELECT token FROM mg_admin_plans WHERE token=? AND actor=? AND game_id=?
                     AND revision=? AND expires>?""",
-                    (hashlib.sha256(token.encode()).hexdigest(), int(user["id"]), game, row["revision"], now),
+                    (hashlib.sha256(token.encode()).hexdigest(), platform.repository_actor_id(user), game, row["revision"], now),
                 ).fetchone()
                 if not plan or body.get("confirmationText") != (row["slug"] or "draft-" + game):
                     error(409, "DELETE_PLAN", "请重新预览删除影响并输入显示的游戏标识。")
                 conn.execute("DELETE FROM mg_admin_plans WHERE game_id=?", (game,))
             on_unlist(conn, game)
+            moderation.cancel(conn,game)
+            if row["owner_teacher_id"] < 0:
+                conn.execute("""UPDATE mg_versions SET status='rejected' WHERE game_id=?
+                             AND status IN ('reviewing','validating')""", (game,))
+                conn.execute("""UPDATE mg_admin_jobs SET status='rejected',token='',expires=0,stage='已撤回'
+                             WHERE game_id=? AND kind='validate' AND status IN
+                             ('receiving','queued','running','retry','waiting_probe')""",(game,))
             conn.execute("UPDATE mg_launch_leases SET revoked=1 WHERE game_id=? AND revoked=0", (game,))
             status = "deleting" if action == "delete" else "unlisted"
             conn.execute(
@@ -568,7 +682,7 @@ def mutate(user, game, action, body, key, vid=""):
             conn.execute("DELETE FROM mg_admin_plans WHERE expires<=?", (now,))
             conn.execute(
                 "INSERT INTO mg_admin_plans VALUES(?,?,?,?,?)",
-                (hashlib.sha256(token.encode()).hexdigest(), int(user["id"]), game, row["revision"], expires),
+                (hashlib.sha256(token.encode()).hexdigest(), platform.repository_actor_id(user), game, row["revision"], expires),
             )
             result = {
                 "planToken": token,
@@ -578,22 +692,86 @@ def mutate(user, game, action, body, key, vid=""):
             }
         else:
             raise ValueError(action)
-        if action not in {"plan", "preview", "playtest", "delete", "suggest"}:
+        if action not in {"plan", "preview", "playtest", "delete", "delete-version", "suggest"}:
             result = {"game": object_game(one(conn, "mg_games", game))}
         store_receipt(conn, user, op, key, game, digest, result)
         conn.commit()
     return result
 
 
+def withdraw_version(conn, row, vid, now):
+    if row["current_version_id"] == vid:
+        from .minigame_runtime import on_unlist
+        on_unlist(conn,row["id"])
+        conn.execute("UPDATE mg_launch_leases SET revoked=1 WHERE game_id=?", (row["id"],))
+        conn.execute("""UPDATE mg_games SET status='unlisted',current_version_id=NULL,
+                     policy_revision=policy_revision+1 WHERE id=?""",(row["id"],))
+    elif version_in_use(conn, vid):
+        error(409,"VERSION_IN_USE","此旧版仍有对局或预览在使用，结束后可下架或删除。")
+    conn.execute("UPDATE mg_games SET revision=revision+1,updated_at=? WHERE id=?", (now,row["id"]))
+
+
+def publish_version(conn, game, version):
+    from .minigame_runtime import cancel_waiting
+    gid, vid = game["id"], version["id"]
+    if game["current_version_id"] != vid:
+        verify_compatibility(conn, gid, game["current_version_id"], version)
+        cancel_waiting(conn,gid)
+    writeback = json.loads(version["writeback_json"])
+    cfg = json.loads(version["config_json"])
+    authorship = conn.execute("SELECT tags_json FROM mg_version_authorship WHERE version_id=?", (vid,)).fetchone()
+    conn.execute("INSERT INTO mg_admin_releases VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
+                 (gid,vid,writeback["series"],writeback["saveVersion"]))
+    conn.execute("""UPDATE mg_games SET current_version_id=?,status='listed',title=?,summary=?,tags_json=?,
+                 revision=revision+1,policy_revision=policy_revision+?,updated_at=? WHERE id=?""",
+                 (vid,cfg["title"],cfg["summary"],authorship["tags_json"] if authorship else game["tags_json"],
+                  int(game["status"] != "listed"),platform.now_ms(),gid))
+
+
+def publish_reviewed(conn, game_id, version_id):
+    game = one(conn,"mg_games",game_id)
+    version = one(conn,"mg_versions",version_id)
+    if (game["owner_teacher_id"] >= 0 or game["status"] in {"deleted","deleting"} or
+            version["game_id"] != game_id or version["status"] != "reviewing"):
+        error(409,"REVIEW_STALE","此版本的审查已被取消。")
+    if game["current_version_id"] and game["status"] == "listed":
+        current = one(conn,"mg_versions",game["current_version_id"])
+        if repository.release_rank(current["release_version"]) >= repository.release_rank(version["release_version"]):
+            conn.execute("UPDATE mg_versions SET status='ready' WHERE id=?",(version_id,))
+            return
+    publish_version(conn,game,version)
+    conn.execute("UPDATE mg_versions SET status='ready' WHERE id=?", (version_id,))
+
+
 def version_in_use(conn, vid):
     return bool(
         conn.execute(
             """SELECT 1 FROM mg_rt_activity WHERE version=? AND phase IN
-        ('waiting','countdown','running','reconnecting') UNION ALL
+        ('waiting','countdown','running','reconnecting','paused') UNION ALL
         SELECT 1 FROM mg_launch_leases WHERE version_id=? AND revoked=0 AND expires_at>? LIMIT 1""",
             (vid, vid, platform.now_ms()),
         ).fetchone()
     )
+
+
+def download_source(user, game_id, version_id=None):
+    from ..minigame_content import GameFileResponse
+
+    with platform.game_db() as conn:
+        platform.assert_session(conn, user)
+        item = repository.source_info(conn, user, game_id, version_id)
+        vid = item["version_id"]
+    directory = asset_path("version",game_id,vid)
+    if not directory.is_dir():
+        error(404, "SOURCE_UNAVAILABLE", "此版本的游戏包不可用。")
+    marker(directory,game_id,vid)
+    path = checked_dir(directory,directory/"upload.zip")
+    if not path.is_file():
+        error(404,"SOURCE_UNAVAILABLE","此版本的游戏包不可用。")
+    return GameFileResponse(game_id,path,media_type="application/zip",
+                            filename=f"{item['slug']}-{item['release_version']}.zip",
+                            headers={"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff",
+                                     "Referrer-Policy":"no-referrer"})
 
 
 def verify_compatibility(conn, game, current_id, new):
@@ -687,20 +865,90 @@ def receive_upload(user, game, rev, key, stream):
         return _receive_locked(user, game, rev, key, stream)
 
 
-def _receive_locked(user, game, rev, key, stream):
+def import_package(user, key, stream, options):
+    if not KEY.fullmatch(key or ""):
+        error(422, "REQUEST_KEY", "缺少有效的上传请求键。")
+    config, package_sha = repository.read_manifest(stream)
+    slug = config["gameKey"]
+    lock_key = "import-" + hashlib.sha256(slug.encode("ascii")).hexdigest()[:2]
+    with disk_lock(lock_key):
+        with platform.game_db() as conn:
+            row = conn.execute("SELECT id,owner_teacher_id,revision FROM mg_games WHERE slug=?", (slug,)).fetchone()
+            if row and row["owner_teacher_id"] != platform.repository_actor_id(user):
+                error(409, "GAME_KEY_TAKEN", "此 gameKey 已登记；改编作品请使用新的 gameKey。")
+            if target := options.get("targetGameId"):
+                folder = platform.require_manager(conn, user, target)
+                if (row and row["id"] != target or folder["slug"] not in (None, slug)
+                        or folder["owner_teacher_id"] != platform.repository_actor_id(user)):
+                    error(409, "GAME_KEY", "文件夹与 config.json 的 gameKey 不一致。")
+                row = folder
+            game = row["id"] if row else uid()
+            revision = options.get("expectedRevision")
+        with game_lock(game):
+            return _receive_locked(user, game, revision, key, stream, imported=(config, package_sha, options))
+
+
+def _receive_locked(user, game, rev, key, stream, *, imported=None):
     stage, vid = uid(), uid()
-    op = "upload/" + game
+    op = "repository/import" if imported else "upload/" + game
+    created_game = False
+    if imported:
+        config, package_sha, options = imported
+        checksum = hashlib.sha256(validation.canonical([package_sha, options]).encode()).hexdigest()
     with platform.game_db() as conn:
         platform.db_start(conn, game)
         serial(conn)
-        recheck_teacher(conn, user)
+        recheck_contributor(conn, user)
+        if imported:
+            if prev := receipt(conn, user, op, key, checksum):
+                accepted = conn.execute("SELECT status FROM mg_versions WHERE id=?", (prev["versionId"],)).fetchone()
+                if not accepted or accepted["status"] in {"deleting", "deleted"}:
+                    error(410, "VERSION_REMOVED", "此次提交的版本已删除。")
+                return prev
+            created_game = not conn.execute("SELECT 1 FROM mg_games WHERE id=?", (game,)).fetchone()
+            source = repository.import_attribution(conn, user, None if created_game else game, config,
+                                                   options.get("sourceVersionId", ""))
+            if created_game:
+                if conn.execute("SELECT 1 FROM mg_games WHERE slug=?", (config["gameKey"],)).fetchone():
+                    error(409, "GAME_KEY_TAKEN", "作品标识刚刚被登记，请刷新后重试。")
+                now = platform.now_ms()
+                conn.execute(
+                    """INSERT INTO mg_games(id,slug,owner_teacher_id,title,summary,status,scope,created_at,updated_at)
+                       VALUES (?,?,?,?,?,'draft',?,?,?)""",
+                    (game,config["gameKey"],platform.repository_actor_id(user),config["title"],config["summary"],
+                     "public" if user["role"] == "student" else "private",now,now),
+                )
         row = platform.require_manager(conn, user, game)
         old = conn.execute(
             "SELECT 1 FROM mg_admin_receipts WHERE actor=? AND op=? AND key_value=?",
-            (int(user["id"]), op, key),
+            (platform.repository_actor_id(user), op, key),
         ).fetchone()
         if row["status"] in {"deleting", "deleted"}:
             error(409, "GAME_REMOVED", "游戏已删除或正在清理。")
+        if imported:
+            supplied_tags = options.get("tags")
+            tags = repository.check_tags(supplied_tags if supplied_tags is not None else json.loads(row["tags_json"]))
+            tags = repository.check_tags(list(dict.fromkeys([*source[1].get("tags", []), *tags])))
+            duplicate = conn.execute(
+                """SELECT v.id,v.status,a.package_sha256,a.tags_json,a.source_version_id,a.allow_remix,
+                   j.id AS job_id FROM mg_versions v LEFT JOIN mg_version_authorship a ON a.version_id=v.id
+                   LEFT JOIN mg_admin_jobs j ON j.version_id=v.id AND j.kind='validate'
+                   WHERE v.game_id=? AND v.release_version=? AND v.status<>'rejected'
+                   ORDER BY v.created_at DESC,j.created ASC LIMIT 1""", (game,config["version"])
+            ).fetchone()
+            if duplicate:
+                if (duplicate["status"] in {"deleted","deleting","retired"} or
+                        duplicate["package_sha256"] != package_sha or duplicate["source_version_id"] != source[0] or
+                        json.loads(duplicate["tags_json"] or "[]") != tags or
+                        bool(duplicate["allow_remix"]) != options["allowRemix"]):
+                    error(409, "VERSION_CONFLICT", "同一作品的已登记版本不可覆盖，请提高 config.json 的 version。")
+                result = {"gameId":game, "versionId":duplicate["id"], "jobId":duplicate["job_id"],
+                          "status":duplicate["status"]}
+                store_receipt(conn,user,op,key,game,checksum,result)
+                conn.commit()
+                return result
+            if rev is None:
+                rev = row["revision"]
         if not old:
             check_revision(row, {"expectedRevision": rev})
             usage = conn.execute(
@@ -712,7 +960,7 @@ def _receive_locked(user, game, rev, key, stream):
             reserve = 2 * validation.MAX_ZIP + validation.MAX_TOTAL + 16 * validation.MIB
             quota = int(os.environ.get("MINIGAMES_TEACHER_QUOTA_MIB", "2048")) * validation.MIB
             if int(usage["owned"]) + reserve > quota:
-                error(413, "STORAGE_QUOTA", "该教师的游戏包存储额度不足。")
+                error(413, "STORAGE_QUOTA", "此账号的游戏包存储额度不足。")
             budget = int(os.environ.get("MINIGAMES_STORAGE_BUDGET_MIB", "768")) * validation.MIB
             if int(usage["total"]) + reserve > budget:
                 error(507, "PLATFORM_STORAGE_QUOTA", "小游戏平台的存储额度暂时不足，请稍后重试或清理旧游戏。")
@@ -738,21 +986,37 @@ def _receive_locked(user, game, rev, key, stream):
                 digest.update(chunk)
                 if out is not None:
                     out.write(chunk)
-        checksum = hashlib.sha256(f"{rev}:{digest.hexdigest()}".encode()).hexdigest()
+        if imported:
+            if digest.hexdigest() != package_sha:
+                error(409, "PACKAGE_CHANGED", "接收的游戏包与清单读取时不一致，请重传。")
+        else:
+            checksum = hashlib.sha256(f"{rev}:{digest.hexdigest()}".encode()).hexdigest()
         with platform.game_db() as conn:
             platform.db_start(conn, game)
             serial(conn)
-            recheck_teacher(conn, user)
+            recheck_contributor(conn, user)
             row = platform.require_manager(conn, user, game)
             if prev := receipt(conn, user, op, key, checksum):
                 return prev
             if old:
                 error(409, "RECEIPT_EXPIRED", "上传状态已变化，请刷新后重试。")
             check_revision(row, {"expectedRevision": rev})
+            if imported and repository.import_attribution(conn, user, game, config, options.get("sourceVersionId", "")) != source:
+                error(409, "SOURCE_CHANGED", "原作授权信息已变化，请核对后重试。")
             conn.execute(
                 "INSERT INTO mg_versions(id,game_id,status,created_at) VALUES(?,?,'validating',?)",
                 (vid, game, platform.now_ms()),
             )
+            if imported:
+                conn.execute("UPDATE mg_versions SET release_version=?,config_json=? WHERE id=?",
+                             (config["version"],validation.canonical(config),vid))
+                conn.execute("UPDATE mg_games SET slug=? WHERE id=? AND slug IS NULL", (config["gameKey"],game))
+                repository.store_authorship(conn,vid,config,user.get("display_name") or user.get("name") or "作者",
+                                            options,source,tags,package_sha)
+                if not row["current_version_id"]:
+                    conn.execute("UPDATE mg_games SET title=?,summary=?,tags_json=?,updated_at=? WHERE id=?",
+                                 (config["title"],config["summary"],validation.canonical(tags),platform.now_ms(),game))
+                conn.execute("UPDATE mg_games SET revision=revision+1,updated_at=? WHERE id=?", (platform.now_ms(),game))
             conn.execute(
                 "UPDATE mg_admin_jobs SET status='queued',stage='待校验',expires=0 WHERE id=?", (stage,)
             )
@@ -768,6 +1032,9 @@ def _receive_locked(user, game, rev, key, stream):
                 platform.db_start(conn, game)
                 conn.execute("DELETE FROM mg_admin_assets WHERE kind='stage' AND asset_id=?", (stage,))
                 conn.execute("DELETE FROM mg_admin_jobs WHERE id=? AND status='receiving'", (stage,))
+                if created_game:
+                    conn.execute("""DELETE FROM mg_games WHERE id=? AND status='draft'
+                                 AND NOT EXISTS(SELECT 1 FROM mg_versions WHERE game_id=?)""",(game,game))
                 conn.commit()
 
 
@@ -978,9 +1245,27 @@ def validate_job(job, probe_blocked_until=0):
         meta = json.loads((target / "validated.json").read_text(encoding="utf-8"))
     else:
         meta = prepare_static(job, stage, path)
-        if probe_blocked_until > platform.now_ms():
-            error(503, "PROBE_UNAVAILABLE", PROBE_OFFLINE_STAGE)
-        meta["probe"] = probe_package(path / "runtime", meta["digest"])
+        with platform.game_db() as conn:
+            platform.db_start(conn, game)
+            serial(conn)
+            owner = one(conn, "mg_games", game)
+            cfg = meta["config"]
+            if owner["slug"] not in (None, cfg["gameKey"]):
+                validation.fail("GAME_KEY", "上传版本的标识与作品不符。", "config.json", "gameKey")
+            conn.execute("""UPDATE mg_games SET title=?,summary=? WHERE id=? AND current_version_id IS NULL""",
+                         (cfg["title"],cfg["summary"],game))
+            conn.execute("""UPDATE mg_games SET slug=? WHERE id=? AND slug IS NULL
+                         AND NOT EXISTS (SELECT 1 FROM mg_games WHERE slug=?)""",
+                         (cfg["gameKey"], game, cfg["gameKey"]))
+            conn.execute("UPDATE mg_versions SET config_json=?,release_version=? WHERE id=? AND status='validating'",
+                         (validation.canonical(cfg),cfg["version"],vid))
+            conn.commit()
+        if owner["owner_teacher_id"] < 0:
+            meta["probe"] = {"staticValidation":"passed","review":"queued"}
+        else:
+            if probe_blocked_until > platform.now_ms():
+                error(503, "PROBE_UNAVAILABLE", PROBE_OFFLINE_STAGE)
+            meta["probe"] = probe_package(path / "runtime", meta["digest"])
         shutil.copyfile(stage / "upload.zip", path / "upload.zip")
         (path / "validated.json").write_text(validation.canonical(meta), encoding="utf-8")
         (path / "static-check.json").unlink()
@@ -998,12 +1283,13 @@ def validate_job(job, probe_blocked_until=0):
         ).fetchone():
             validation.fail("GAME_KEY", "此 gameKey 已绑定其他游戏。", "config.json", "gameKey")
         old = conn.execute(
-            """SELECT id,digest FROM mg_versions WHERE game_id=? AND release_version=?
-            AND status IN ('ready','retired')""",
-            (game, config["version"]),
+            """SELECT id,digest,status FROM mg_versions WHERE game_id=? AND release_version=? AND id<>?
+            AND status IN ('ready','reviewing','retired','deleting','deleted')""", (game,config["version"],vid)
         ).fetchone()
+        if one(conn,"mg_versions",vid)["status"] != "validating":
+            return
         if old:
-            if old["digest"] != meta["digest"]:
+            if old["digest"] != meta["digest"] or old["status"] in {"deleted","deleting"}:
                 validation.fail(
                     "VERSION_CONFLICT", "已验收的发行版本号不能覆盖，请更换版本号。", "config.json", "version"
                 )
@@ -1028,10 +1314,12 @@ def validate_job(job, probe_blocked_until=0):
                 (game, "version", vid, physical),
             )
             platform.index_version_files(conn, vid, meta["files"])
+            student = current["owner_teacher_id"] < 0
             conn.execute(
-                """UPDATE mg_versions SET status='ready',release_version=?,digest=?,config_json=?,
+                """UPDATE mg_versions SET status=?,release_version=?,digest=?,config_json=?,
                 writeback_json=?,rules_json=?,files_json=? WHERE id=? AND status='validating'""",
                 (
+                    "reviewing" if student else "ready",
                     config["version"],
                     meta["digest"],
                     validation.canonical(config),
@@ -1042,12 +1330,16 @@ def validate_job(job, probe_blocked_until=0):
                 ),
             )
             conn.execute(
-                """UPDATE mg_games SET slug=?, title=CASE WHEN title='新游戏' THEN ? ELSE title END,
-                summary=CASE WHEN summary='' THEN ? ELSE summary END,revision=revision+1,updated_at=? WHERE id=?""",
+                """UPDATE mg_games SET slug=?, title=CASE WHEN current_version_id IS NULL THEN ? ELSE title END,
+                summary=CASE WHEN current_version_id IS NULL THEN ? ELSE summary END,revision=revision+1,updated_at=? WHERE id=?""",
                 (config["gameKey"], config["title"], config["summary"], platform.now_ms(), game),
             )
+            if student:
+                from . import minigame_moderation as moderation
+                moderation.enqueue(conn, game, vid, meta["digest"])
             finish_job(
-                conn, job, "succeeded", "隔离验收通过", result={"versionId": vid, "probe": meta["probe"]}
+                conn, job, "succeeded", "静态检查通过，等待内容审查" if student else "隔离验收通过",
+                result={"versionId": vid, "probe": meta["probe"]}
             )
         conn.commit()
     remove_asset("stage", game, job["id"])
@@ -1095,6 +1387,38 @@ def delete_job(job):
         conn.commit()
 
 
+def delete_version_job(job):
+    """Remove only the target version's owned bytes; preserve shared progress contracts."""
+    game,vid = job["game_id"],job["version_id"]
+    with platform.game_db() as conn:
+        stages = [r[0] for r in conn.execute(
+            "SELECT id FROM mg_admin_jobs WHERE game_id=? AND version_id=? AND kind='validate'",(game,vid)
+        ).fetchall()]
+    for stage in stages:
+        remove_asset("stage",game,stage)
+    remove_asset("version",game,vid)
+    with platform.game_db() as conn:
+        platform.db_start(conn,game)
+        serial(conn)
+        from . import minigame_moderation as moderation
+        moderation.cancel(conn,game,vid)
+        conn.execute("DELETE FROM mg_admin_assets WHERE kind='version' AND asset_id=?", (vid,))
+        for stage in stages:
+            conn.execute("DELETE FROM mg_admin_assets WHERE kind='stage' AND asset_id=?", (stage,))
+        for table in ("mg_version_files","mg_admin_playtests","mg_admin_preview_receipts","mg_launch_leases"):
+            conn.execute(f"DELETE FROM {table} WHERE version_id=?", (vid,))
+        conn.execute("DELETE FROM mg_version_authorship WHERE version_id=? AND source_version_id=''", (vid,))
+        # The remaining lineage snapshot belongs to the work. It survives the removal of its last edition.
+        conn.execute("""UPDATE mg_version_authorship SET author='',allow_remix=0,tags_json='[]',package_sha256=''
+                     WHERE version_id=?""", (vid,))
+        conn.execute("DELETE FROM mg_admin_jobs WHERE game_id=? AND version_id=? AND kind='validate'", (game,vid))
+        # Save-version compatibility still consults the schema of previously published versions.
+        conn.execute("""UPDATE mg_versions SET status='deleted',config_json='{}',rules_json=NULL,files_json='{}',
+                     digest=NULL WHERE id=? AND game_id=?""", (vid,game))
+        finish_job(conn,job,"succeeded","版本文件已删除",result={"gameId":game,"versionId":vid})
+        conn.commit()
+
+
 def deletion_register(job):
     """Keep a content-free, write-once operator ledger separate from package directories."""
     root = Path(
@@ -1109,6 +1433,8 @@ def deletion_register(job):
         "actor": job["actor"],
         "createdAt": job["created"],
     }
+    if dict(job).get("kind") == "delete-version":
+        expected["versionId"] = job["version_id"]
     if path.exists():
         if json.loads(path.read_text(encoding="utf-8")) != expected:
             raise RuntimeError("deletion register mismatch")
@@ -1185,7 +1511,7 @@ def worker_once():
             row = conn.execute(
                 "SELECT * FROM mg_admin_jobs WHERE "
                 + condition
-                + " ORDER BY CASE WHEN kind='delete' THEN 0 ELSE 1 END,created,id LIMIT 1",
+                + " ORDER BY CASE WHEN kind IN ('delete','delete-version') THEN 0 ELSE 1 END,created,id LIMIT 1",
                 (now, now),
             ).fetchone()
             if not row:
@@ -1195,7 +1521,7 @@ def worker_once():
             conn.execute(
                 "UPDATE mg_admin_jobs SET status='running',stage=?,token=?,expires=? WHERE id=?",
                 (
-                    "清理中" if job["kind"] == "delete" else "校验中",
+                    "清理中" if job["kind"] in ("delete","delete-version") else "校验中",
                     job["token"],
                     now + WORKER_TTL,
                     job["id"],
@@ -1204,10 +1530,13 @@ def worker_once():
             conn.commit()
         try:
             with game_lock(job["game_id"]):
-                if job["kind"] == "delete":
+                if job["kind"] in ("delete","delete-version"):
                     deletion_register(job)
                     with platform.asset_usage(job["game_id"], exclusive=True):
-                        delete_job(job)
+                        if job["kind"] == "delete-version":
+                            delete_version_job(job)
+                        else:
+                            delete_job(job)
                 elif job["status"] == "receiving":
                     record_job_failure(
                         job, "rejected", {"code": "UPLOAD_INTERRUPTED", "message": "接收中断，请重新上传。"}
@@ -1241,7 +1570,8 @@ async def _worker_loop(*, ai=False):
     while not _stop.is_set():
         try:
             if ai:
-                busy = await suggestions.process_one()
+                from . import minigame_moderation as moderation
+                busy = await moderation.process_one() or await suggestions.process_one()
             else:
                 busy = await asyncio.get_running_loop().run_in_executor(_executor, worker_once)
         except Exception as exc:
@@ -1267,6 +1597,7 @@ async def stop_package_worker():
     global _runner, _executor, _ai_runner, _stop
     if _runner:
         _stop.set()
-        await asyncio.gather(_runner, _ai_runner)
+        _ai_runner.cancel()
+        await asyncio.gather(_runner, _ai_runner, return_exceptions=True)
         _executor.shutdown(wait=True)
         _runner = _executor = _ai_runner = _stop = None

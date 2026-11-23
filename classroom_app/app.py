@@ -835,10 +835,11 @@ app.mount("/static", CacheControlStaticFiles(directory=STATIC_DIR), name="static
 # -----------------
 # 组装路由
 # -----------------
-from .routers import minigame_admin, minigame_runtime, minigames
+from .routers import minigame_admin, minigame_moderation, minigame_runtime, minigames
 app.include_router(minigames.pages)
 app.include_router(minigames.router)
 app.include_router(minigame_admin.router)
+app.include_router(minigame_moderation.router)
 app.include_router(minigame_runtime.router)
 app.include_router(manage_redirects.router)
 app.include_router(ui.router)

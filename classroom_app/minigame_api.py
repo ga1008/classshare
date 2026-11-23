@@ -7,7 +7,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.responses import JSONResponse
 
 from . import dependencies
-from .routers import minigame_admin, minigame_runtime, minigames
+from .routers import minigame_admin, minigame_moderation, minigame_runtime, minigames
 from .services import minigame_platform as platform
 
 
@@ -56,6 +56,7 @@ app.state.minigames_ready = False
 app.add_middleware(PrivateResponses)
 app.include_router(minigames.router)
 app.include_router(minigame_admin.router)
+app.include_router(minigame_moderation.router)
 app.include_router(minigame_runtime.router)
 
 

@@ -1,10 +1,11 @@
-"""Teacher-facing game catalog, ZIP ingestion and recoverable maintenance jobs."""
+"""Teacher and student game repositories, ZIP ingestion and maintenance jobs."""
 
 from __future__ import annotations
 
 import asyncio
 import json
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+import re
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from starlette.formparsers import MultiPartException, MultiPartParser
 
 from ..dependencies import require_teacher_domain
@@ -26,6 +27,11 @@ async def teacher(request: Request):
     return library(user)
 
 
+async def contributor(request: Request):
+    user = await platform.run_db(platform.require_player, request)
+    return library(user) if user["role"] == "teacher" else user
+
+
 def query(operation, *args):
     with platform.game_db() as conn:
         return operation(conn, *args)
@@ -45,7 +51,7 @@ async def command(request, user, game, action, vid=""):
     result = await platform.run_db(
         packages.mutate, user, game, action, body, request.headers.get("Idempotency-Key", ""), vid
     )
-    if action == "delete":
+    if action in {"delete","delete-version"}:
         await platform.run_db(confirm_register, user, result["jobId"])
     return result
 
@@ -70,13 +76,13 @@ def confirm_register(user, job_id):
 
 
 @router.get("/games")
-async def games(request: Request, user=Depends(teacher)):
+async def games(request: Request, user=Depends(contributor)):
     return await platform.run_db(query, packages.list_games, user, dict(request.query_params))
 
 
 @router.get("/games/{game_id}")
-async def detail(game_id: str, user=Depends(teacher)):
-    return await platform.run_db(query, packages.detail, user, game_id)
+async def detail(game_id: str, versionOffset: int = Query(0, ge=0), user=Depends(contributor)):
+    return await platform.run_db(query, packages.detail, user, game_id, versionOffset)
 
 
 @router.post("/games", status_code=201)
@@ -85,15 +91,25 @@ async def create(request: Request, user=Depends(teacher)):
 
 
 @router.patch("/games/{game_id}")
-async def update(game_id: str, request: Request, user=Depends(teacher)):
+async def update(game_id: str, request: Request, user=Depends(contributor)):
     return await command(request, user, game_id, "patch")
 
 
 @router.post("/games/{game_id}/versions", status_code=202)
 async def upload(game_id: str, request: Request, user=Depends(teacher)):
+    return await upload_form(request,user,game_id)
+
+
+@router.post("/imports", status_code=202)
+async def import_game(request: Request, user=Depends(contributor)):
+    return await upload_form(request,user)
+
+
+async def upload_form(request, user, game_id=None):
     platform.check_write(request, user)
     # Reject unauthorized callers and declared oversized bodies before multipart spooling.
-    await platform.run_db(query, platform.require_manager, user, game_id)
+    if game_id:
+        await platform.run_db(query, platform.require_manager, user, game_id)
     raw_len = request.headers.get("content-length", "")
     if len(raw_len) > 12 or not raw_len.isascii() or not raw_len.isdigit():
         raise HTTPException(411, "上传游戏包需要 Content-Length。")
@@ -111,7 +127,7 @@ async def upload(game_id: str, request: Request, user=Depends(teacher)):
 
     if not request.headers.get("Content-Type", "").lower().startswith("multipart/form-data;"):
         raise HTTPException(415, "需要 multipart/form-data 上传。")
-    parser = MultiPartParser(request.headers, limited_stream(), max_files=1, max_fields=2, max_part_size=8192)
+    parser = MultiPartParser(request.headers, limited_stream(), max_files=1, max_fields=5, max_part_size=8192)
     try:
         form = await parser.parse()
     except MultiPartException as exc:
@@ -120,7 +136,7 @@ async def upload(game_id: str, request: Request, user=Depends(teacher)):
         file, revision = form.get("file"), form.get("expectedRevision")
         if not hasattr(file, "file") or not str(file.filename).lower().endswith(".zip"):
             raise HTTPException(422, "请选择一个 ZIP 游戏包。")
-        if (
+        if (game_id or revision is not None) and (
             not isinstance(revision, str)
             or not revision.isascii()
             or not revision.isdigit()
@@ -128,16 +144,29 @@ async def upload(game_id: str, request: Request, user=Depends(teacher)):
         ):
             raise HTTPException(422, "缺少有效的游戏修订号。")
         # run_db shields the underlying job on disconnect. Wait before the form closes its spooled file.
-        task = asyncio.create_task(
-            platform.run_db(
-                packages.receive_upload,
-                user,
-                game_id,
-                int(revision),
-                request.headers.get("Idempotency-Key", ""),
-                file.file,
-            )
-        )
+        key = request.headers.get("Idempotency-Key","")
+        if game_id:
+            task = asyncio.create_task(platform.run_db(packages.receive_upload,user,game_id,int(revision),key,file.file))
+        else:
+            if not set(form.keys()) <= {"file","tags","targetGameId","sourceVersionId","expectedRevision","allowRemix"}:
+                raise HTTPException(422,"上传表单包含未知字段。")
+            allow_remix = form.get("allowRemix","true")
+            if allow_remix not in ("true","false"):
+                raise HTTPException(422,"请明确选择是否允许二次开发。")
+            options = {"allowRemix":allow_remix=="true"}
+            if "tags" in form:
+                try:
+                    options["tags"] = packages.repository.check_tags(json.loads(form["tags"]))
+                except (ValueError, TypeError) as exc:
+                    raise HTTPException(422,"标签必须为 JSON 字符串数组。") from exc
+            for key_name in ("targetGameId","sourceVersionId"):
+                if value := form.get(key_name):
+                    if not isinstance(value,str) or not re.fullmatch("[a-f0-9]{32}",value):
+                        raise HTTPException(422,"游戏或源版本编号无效。")
+                    options[key_name]=value
+            if revision is not None:
+                options["expectedRevision"]=int(revision)
+            task = asyncio.create_task(platform.run_db(packages.import_package,user,key,file.file,options))
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
@@ -148,15 +177,19 @@ async def upload(game_id: str, request: Request, user=Depends(teacher)):
 
 
 def version_reader(conn, user, game_id, version_id):
-    platform.require_manager(conn, user, game_id)
-    row = packages.one(conn, "mg_versions", version_id)
-    if row["game_id"] != game_id:
+    from ..services import minigame_moderation as moderation
+    game = platform.require_manager(conn, user, game_id)
+    row = conn.execute(packages.VERSION_WITH_AUTHOR + " WHERE v.game_id=? AND v.id=? AND v.status<>'deleted'",
+                       (game_id,version_id)).fetchone()
+    if not row:
         raise HTTPException(404, "版本不存在。")
-    return {"version": packages.version_info(row)}
+    info = packages.version_info(row)
+    info["review"] = moderation.get_summary(conn,version_id) if game["owner_teacher_id"] < 0 else None
+    return {"version": info}
 
 
 @router.get("/games/{game_id}/versions/{vid}")
-async def version(game_id: str, vid: str, user=Depends(teacher)):
+async def version(game_id: str, vid: str, user=Depends(contributor)):
     return await platform.run_db(query, version_reader, user, game_id, vid)
 
 
@@ -167,7 +200,7 @@ def job_reader(conn, user, job_id):
 
 
 @router.get("/jobs/{job_id}")
-async def job(job_id: str, user=Depends(teacher)):
+async def job(job_id: str, user=Depends(contributor)):
     return await platform.run_db(query, job_reader, user, job_id)
 
 
@@ -182,7 +215,7 @@ async def playtest(game_id: str, vid: str, request: Request, user=Depends(teache
 
 
 @router.post("/games/{game_id}/versions/{vid}/retire")
-async def retire(game_id: str, vid: str, request: Request, user=Depends(teacher)):
+async def retire(game_id: str, vid: str, request: Request, user=Depends(contributor)):
     return await command(request, user, game_id, "retire", vid)
 
 
@@ -192,12 +225,12 @@ async def publish(game_id: str, request: Request, user=Depends(teacher)):
 
 
 @router.post("/games/{game_id}/unlist")
-async def unlist(game_id: str, request: Request, user=Depends(teacher)):
+async def unlist(game_id: str, request: Request, user=Depends(contributor)):
     return await command(request, user, game_id, "unlist")
 
 
 @router.post("/games/{game_id}/deletion-plans")
-async def plan(game_id: str, request: Request, user=Depends(teacher)):
+async def plan(game_id: str, request: Request, user=Depends(contributor)):
     return await command(request, user, game_id, "plan")
 
 
@@ -207,5 +240,15 @@ async def suggestions(game_id: str, request: Request, user=Depends(teacher)):
 
 
 @router.delete("/games/{game_id}", status_code=202)
-async def delete(game_id: str, request: Request, user=Depends(teacher)):
+async def delete(game_id: str, request: Request, user=Depends(contributor)):
     return await command(request, user, game_id, "delete")
+
+
+@router.patch("/games/{game_id}/versions/{vid}/license")
+async def source_license(game_id: str,vid: str,request: Request,user=Depends(contributor)):
+    return await command(request,user,game_id,"license",vid)
+
+
+@router.delete("/games/{game_id}/versions/{vid}", status_code=202)
+async def delete_version(game_id: str,vid: str,request: Request,user=Depends(contributor)):
+    return await command(request,user,game_id,"delete-version",vid)

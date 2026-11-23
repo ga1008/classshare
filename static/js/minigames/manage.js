@@ -24,6 +24,9 @@ import {
 
 const boot = bootstrap(),
     base = '/admin/games';
+const student = boot.role === 'student';
+const workspace = boot.workspace || (student ? '/games/workshop' : '/manage/library/games');
+const reviewNames = {queued:'等候 AI 审核',running:'AI 审核中',manual:'待超管审核',approved:'内容审核通过',rejected:'内容被退回',cancelled:'审核已取消'};
 const statusText = {
     draft: '草稿',
     listed: '已上架',
@@ -31,6 +34,7 @@ const statusText = {
     deleting: '删除中',
     deleted: '已彻底删除',
     validating: '验收中',
+    reviewing: '内容审核中',
     ready: '验收就绪',
     retired: '已归档',
     rejected: '验收失败',
@@ -42,6 +46,7 @@ const statusText = {
     done: '已完成',
     succeeded: '已完成',
     completed: '已完成',
+    cancelled: '已取消',
     failed: '需处理',
 };
 const statusTones = {
@@ -51,6 +56,7 @@ const statusTones = {
     done: 'success',
     completed: 'success',
     validating: 'info',
+    reviewing: 'info',
     running: 'info',
     queued: 'info',
     waiting_probe: 'info',
@@ -99,7 +105,7 @@ async function listGames() {
         const row = el('li', null, 'lq-row game-admin-row');
         const main = el('div', null, 'game-row-main');
         const head = el('div', null, 'game-row-head');
-        head.append(libraryLink(g));
+        head.append(libraryLink(g, workspace));
         if (g.featured) {
             const star = el('span', null, 'game-featured-mark');
             star.setAttribute('aria-label', '精选');
@@ -107,6 +113,9 @@ async function listGames() {
             head.append(star);
         }
         const meta = el('div', null, 'game-row-meta');
+        if (g.versionCount != null) meta.append(el('small', g.versionCount + ' 个版本'));
+        if (g.authorName || g.author) meta.append(el('small', '作者 ' + (g.authorName || g.author)));
+        if (g.genreLabel) meta.append(el('small', g.genreLabel));
         if (g.gameKey) meta.append(el('code', g.gameKey, 'game-key-pill'));
         meta.append(el('small', scopeNames[g.scope] || g.scope));
         if (g.minTier > 0 || g.maxTier < 10)
@@ -134,23 +143,12 @@ function gotoList(cursor, historyMode = 'push') {
 }
 
 async function draft() {
-    await formPanel('上传新游戏', field('游戏名称', 'title'), '创建草稿', async (data) => {
-        const title = String(data.get('title')).trim();
-        if (!title) throw new Error('请填写游戏名称');
-        const result = await api(base, {
-            method: 'POST',
-            body: {
-                title,
-                summary: '',
-                scope: 'private',
-                targets: [],
-                tags: [],
-                minTier: 0,
-                maxTier: 10,
-                featured: false,
-            },
-        });
-        location.assign('/manage/library/games/' + encodeURIComponent(result.game.id));
+    const form = document.importNode(document.querySelector('#game-upload-form').content.firstElementChild, true);
+    form.elements.sourceVersionId.value = new URL(location.href).searchParams.get('sourceVersionId') || '';
+    bindUpload(form);
+    await formPanel('上传新游戏', form, '上传并验收', async () => {
+        const result = await upload(form);
+        location.assign(workspace + '/' + encodeURIComponent(result.gameId));
     });
 }
 
@@ -178,6 +176,7 @@ if (filters) {
     });
     addEventListener('popstate', init);
     init();
+    if (new URL(location.href).searchParams.get('sourceVersionId')) run(null, draft);
 }
 
 function snapshotCurrentTargets() {
@@ -221,19 +220,18 @@ function summary() {
     const f = attributes.elements;
     const node = document.querySelector('[data-policy-summary]');
     if (!node) return;
-    node.textContent =
-        (scopeNames[f.scope.value] || '') + ' · Lv.' + f.minTier.value + '–' + f.maxTier.value;
+    node.textContent = (scopeNames[f.scope.value] || '') +
+        (f.minTier ? ' · Lv.' + f.minTier.value + '–' + f.maxTier.value : '');
 }
 
 function replaceForm() {
     const f = attributes.elements;
-    f.title.value = game.title;
-    f.summary.value = game.summary || '';
+    if (f.summary) f.summary.value = game.summary || '';
     f.scope.value = game.scope || 'private';
-    f.tags.value = (game.tags || []).join('，');
-    f.featured.checked = !!game.featured;
-    f.minTier.value = game.minTier ?? 0;
-    f.maxTier.value = game.maxTier ?? 10;
+    if (f.tags) f.tags.value = (game.tags || []).join('，');
+    if (f.featured) f.featured.checked = !!game.featured;
+    if (f.minTier) f.minTier.value = game.minTier ?? 0;
+    if (f.maxTier) f.maxTier.value = game.maxTier ?? 10;
     delete attributes.dataset.activeScope;
     renderTargets(game.targets || []);
     summary();
@@ -322,7 +320,7 @@ function renderVersions() {
                 ariaLabel: '验收报告',
             })
         );
-        if (v.status === 'ready') {
+        if (!student && !boot.studentWork && game.ownerRole !== 'student' && v.status === 'ready') {
             actions.append(
                 button('教师预览', () => preview(v), 'soft', { icon: 'eye' }),
                 button('确认已试玩', () => verifyPlayed(v), 'soft', { icon: 'check' })
@@ -330,10 +328,53 @@ function renderVersions() {
             if (v.id !== game.currentVersionId || game.status !== 'listed')
                 actions.append(button('发布此版本', () => publish(v), 'prominent', { icon: 'rocket' }));
         }
+        if (v.review) {
+            info.append(statusChip(reviewNames[v.review.status] || v.review.status,
+                v.review.status === 'rejected' ? 'danger' : v.review.status === 'approved' ? 'success' : 'info'));
+            if (v.review.reason) info.append(el('small', v.review.reason, 'game-muted'));
+        }
+        if (v.sourceAuthor) info.append(el('small', '改编自 ' + v.sourceAuthor, 'game-muted'));
+        if (v.authorName) info.append(el('small', '作者 ' + v.authorName, 'game-muted'));
+        const genre = (boot.genreOptions || []).find((item) => item.id === v.config?.genre);
+        if (genre) info.append(el('small', genre.label, 'game-tag-pill'));
+        for (const tag of [...new Set([...(v.sourceTags || []), ...(v.tags || [])])])
+            info.append(el('small', '#' + tag, 'game-tag-pill'));
+        if (v.status !== 'deleting' && v.status !== 'deleted') {
+            if (v.id === game.currentVersionId && game.status === 'listed' && v.allowRemix) {
+                const link = el('a', '下载源码', 'lq-btn lq-btn--soft lq-btn--sm');
+                link.dataset.lqComponent = 'button';
+                link.href = apiBase + '/games/' + encodeURIComponent(game.id) + '/source';
+                actions.append(link);
+            }
+            if (v.allowRemix !== undefined && (v.releaseVersion || v.author))
+                actions.append(button(v.allowRemix ? '关闭二开许可' : '允许二次开发', () => license(v), 'ghost'));
+            if (v.status === 'ready')
+                actions.append(button('下架此版本', () => changeVersion(v, false), 'soft'));
+            actions.append(button('删除此版本', () => changeVersion(v, true), 'destructive'));
+        }
         row.append(info, actions);
         return row;
     });
     root.replaceChildren(...(rows.length ? rows : [el('li', '尚未上传游戏包', 'game-muted game-empty-row')]));
+}
+
+async function license(version) {
+    const label = version.allowRemix ? '关闭二开许可' : '允许二次开发';
+    if (!(await confirmAction(label, version.allowRemix ? '关闭后将停止提供该版本的源码下载。' :
+        '本版本公开后，可游玩的师生可下载完整原包并改编。'))) return;
+    await mutation('/versions/' + encodeURIComponent(version.id) + '/license', {allowRemix: !version.allowRemix}, 'PATCH');
+    await reloadDetail(false);
+    notice('已更新此版本的二开许可');
+}
+
+async function changeVersion(version, remove) {
+    const label = remove ? '删除此版本' : '下架此版本';
+    if (!(await confirmAction(label, (version.releaseVersion || '此候选版本') + (remove ?
+        ' 的完整游戏包将被删除，此操作不可撤销。' : ' 将停止公开，正在使用该版本的对局将结束。'), true))) return;
+    const path = '/versions/' + encodeURIComponent(version.id);
+    await mutation(remove ? path : path + '/retire', {}, remove ? 'DELETE' : 'POST');
+    await reloadDetail(false);
+    notice(remove ? '已提交版本删除' : '此版本已下架');
 }
 
 function renderJobs() {
@@ -357,7 +398,7 @@ function renderJobs() {
                 )
             );
         const actions = el('div', null, 'game-actions');
-        if (j.status === 'rejected' && j.kind === 'validate')
+        if (!student && j.status === 'rejected' && j.kind === 'validate')
             actions.append(button('生成修复建议', () => suggest('repair', j.id), 'soft', { icon: 'sparkles' }));
         if (j.result?.suggestion)
             actions.append(button('查看建议', () => showSuggestion(j.result), 'soft', { icon: 'eye' }));
@@ -425,7 +466,17 @@ async function reloadDetail(resetForm) {
     const detail = await api(detailPath());
     if (serial !== refreshCount) return;
     game = detail.game;
-    versions = detail.versions || [];
+    const displayed = Math.max(1, visiblePages);
+    const newVersions = [...(detail.versions || [])];
+    let offset = detail.nextVersionOffset;
+    for (let page = 1; page < displayed && offset != null; page++) {
+        const more = await api(detailPath() + '?versionOffset=' + encodeURIComponent(offset));
+        if (serial !== refreshCount) return;
+        newVersions.push(...more.versions);
+        offset = more.nextVersionOffset;
+    }
+    versions = newVersions;
+    showControl('more-versions', offset != null);
     jobs = detail.jobs || [];
     document.querySelector('[data-detail-heading]').textContent = game.title;
     const iconSlot = document.querySelector('[data-detail-icon]');
@@ -447,7 +498,7 @@ async function reloadDetail(resetForm) {
     }
     clearTimeout(pollTimer);
     if (!document.hidden) {
-        const active = jobs.some((j) =>
+        const active = versions.some((v) => ['queued','running'].includes(v.review?.status)) || jobs.some((j) =>
             ['running', 'pending', 'queued', 'retry', 'validating', 'processing'].includes(j.status)
         );
         const delay = active ? 3000 : jobs.some((j) => j.status === 'waiting_probe') ? 60000 : 0;
@@ -458,8 +509,8 @@ async function reloadDetail(resetForm) {
 async function saveAttributes() {
     const f = attributes.elements,
         targets = new FormData(attributes).getAll('target').map(Number);
-    const minTier = Number(f.minTier.value),
-        maxTier = Number(f.maxTier.value);
+    const minTier = f.minTier ? Number(f.minTier.value) : game.minTier,
+        maxTier = f.maxTier ? Number(f.maxTier.value) : game.maxTier;
     if (minTier > maxTier) throw new Error('修为下限不能超过上限');
     if (['class', 'classroom'].includes(f.scope.value) && !targets.length)
         throw new Error('请至少选择一个可授权对象');
@@ -478,21 +529,11 @@ async function saveAttributes() {
         const result = await api(detailPath(), {
             method: 'PATCH',
             body: {
-                title: f.title.value.trim(),
-                summary: f.summary.value.trim(),
                 scope: f.scope.value,
-                targets,
-                minTier,
-                maxTier,
-                featured: f.featured.checked,
-                tags: [
-                    ...new Set(
-                        f.tags.value
-                            .split(/[,，]/)
-                            .map((s) => s.trim())
-                            .filter(Boolean)
-                    ),
-                ],
+                ...(!student && !boot.studentWork && {
+                    summary: f.summary.value.trim(), targets, minTier, maxTier,
+                    featured: f.featured.checked, tags: parseTags(f.tags.value),
+                }),
                 expectedRevision: Number(attributes.dataset.revision),
             },
         });
@@ -534,42 +575,78 @@ async function saveAttributes() {
     }
 }
 
+function parseTags(value) {
+    return [...new Set(value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean))];
+}
+
+function bindUpload(form) {
+    const fileInput = form.elements.file;
+    const fileMeta = form.querySelector('[data-file-meta]');
+    const hint = fileMeta.textContent;
+    const license = form.elements.allowRemix;
+    const licenseHint = form.querySelector('[data-license-hint]');
+    const sharingHint = licenseHint.textContent;
+    license.addEventListener('change', () => {
+        license.closest('[data-lq-status]').dataset.lqToneLevel = license.checked ? 'info' : 'neutral';
+        licenseHint.textContent = license.checked ? sharingHint : '此版本仅供游玩，平台将关闭源码下载和改编入口。';
+    });
+    fileInput.addEventListener('change', () => {
+        const file = fileInput.files[0];
+        fileMeta.textContent = file ? file.name + ' · ' + Math.ceil(file.size / 1024) + ' KiB' : hint;
+    });
+    const dropzone = form.querySelector('[data-dropzone]');
+    for (const event of ['dragenter', 'dragover']) dropzone.addEventListener(event, () => dropzone.dataset.drag = 'true');
+    for (const event of ['dragleave', 'drop']) dropzone.addEventListener(event, () => delete dropzone.dataset.drag);
+}
+
+const uploadAttempts = new WeakMap();
+
 function upload(form) {
     const file = form.elements.file.files[0];
-    if (!file) throw new Error('请先选择 ZIP 文件');
-    const progress = document.querySelector('[data-upload-progress]');
-    const meta = document.querySelector('[data-file-meta]');
+    if (!file || file.size > 64 * 1024 * 1024) throw new Error('请选择不超过 64 MiB 的 ZIP 文件');
+    const tags = parseTags(form.elements.uploadTags.value);
+    if (tags.length > 12) throw new Error('最多可填写 12 个标签');
+    const license = form.elements.allowRemix.checked;
+    const source = form.elements.sourceVersionId.value.trim();
+    const revision = game?.revision;
+    const signature = JSON.stringify([revision, tags, license, source]);
+    const oldAttempt = uploadAttempts.get(form);
+    const key = oldAttempt?.file === file && oldAttempt.signature === signature ? oldAttempt.key : makeId();
+    uploadAttempts.set(form, { file, signature, key });
+    const body = new FormData();
+    body.set('file', file);
+    body.set('tags', JSON.stringify(tags));
+    body.set('allowRemix', String(license));
+    if (source) body.set('sourceVersionId', source);
+    if (boot.gameId) {
+        if (revision == null) throw new Error('作品正在载入，请稍后再试');
+        body.set('targetGameId', boot.gameId);
+        body.set('expectedRevision', revision);
+    }
+    const progress = form.querySelector('[data-upload-progress]');
     progress.hidden = false;
     progress.max = 100;
     progress.value = 0;
-    const body = new FormData();
-    body.set('file', file);
-    body.set('expectedRevision', game.revision);
-    const key = makeId();
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', apiBase + detailPath() + '/versions');
+        xhr.open('POST', apiBase + '/admin/imports');
         Object.entries(authHeaders(key)).forEach(([k, v]) => xhr.setRequestHeader(k, v));
         xhr.upload.onprogress = (e) => {
             if (e.lengthComputable) progress.value = (e.loaded * 100) / e.total;
             else progress.removeAttribute('value');
         };
+        xhr.onloadend = () => { progress.hidden = true; };
+        xhr.onerror = () => reject(new Error('连接中断，可重新提交同一文件'));
         xhr.onload = () => {
             let result;
-            try {
-                result = JSON.parse(xhr.responseText);
-            } catch {}
-            progress.hidden = true;
-            if (xhr.status < 200 || xhr.status >= 300) return reject(responseError(xhr.status, result));
-            form.reset();
-            if (meta) meta.textContent = '支持单根 ZIP（≤ 64 MiB）';
-            notice('已上传，正在隔离验收');
-            reloadDetail(false).then(resolve, reject);
-        };
-        xhr.onerror = () => {
-            progress.hidden = true;
-            reloadDetail(false).catch(() => {});
-            reject(new Error('传输中断，请重试'));
+            try { result = JSON.parse(xhr.responseText); } catch {}
+            if (xhr.status < 200 || xhr.status >= 300) {
+                if (xhr.status === 409 && boot.gameId) run(null, () => reloadDetail(false));
+                return reject(responseError(xhr.status, result));
+            }
+            if (!result?.gameId) return reject(new Error('未取得上传回执，可重试'));
+            uploadAttempts.delete(form);
+            resolve(result);
         };
         xhr.send(body);
     });
@@ -622,6 +699,7 @@ async function removeGame() {
     );
 }
 
+let visiblePages = 1;
 if (attributes) {
     attributes.addEventListener('input', () => {
         dirty = true;
@@ -636,31 +714,17 @@ if (attributes) {
         run(e.submitter, saveAttributes);
     });
     const form = document.querySelector('[data-version-upload]');
-    const dropzone = form?.querySelector('[data-dropzone]');
-    const fileInput = form?.elements?.file;
-    const fileMeta = form?.querySelector('[data-file-meta]');
-    fileInput?.addEventListener('change', () => {
-        const f = fileInput.files?.[0];
-        if (fileMeta) {
-            fileMeta.textContent = f
-                ? f.name + ' · ' + Math.max(1, Math.round(f.size / 1024)) + ' KiB'
-                : '支持单根 ZIP（≤ 64 MiB）';
-        }
-    });
-    if (dropzone) {
-        for (const ev of ['dragenter', 'dragover'])
-            dropzone.addEventListener(ev, (e) => {
-                e.preventDefault();
-                dropzone.dataset.drag = 'true';
-            });
-        for (const ev of ['dragleave', 'drop'])
-            dropzone.addEventListener(ev, () => {
-                delete dropzone.dataset.drag;
-            });
-    }
-    form.addEventListener('submit', (e) => {
+    if (form) bindUpload(form);
+    form?.addEventListener('submit', (e) => {
         e.preventDefault();
-        run(e.submitter, () => upload(form));
+        run(e.submitter, async () => {
+            await upload(form);
+            form.reset();
+            form.elements.file.dispatchEvent(new Event('change'));
+            form.elements.allowRemix.dispatchEvent(new Event('change'));
+            await reloadDetail(false);
+            notice('上传成功，可在验收记录中查看进度');
+        });
     });
     addEventListener('beforeunload', (e) => {
         if (dirty) {
@@ -669,6 +733,7 @@ if (attributes) {
         }
     });
     onAction({
+        'more-versions': () => { visiblePages++; return reloadDetail(false); },
         delete: removeGame,
         suggest: () => suggest('metadata'),
         unlist: async () => {

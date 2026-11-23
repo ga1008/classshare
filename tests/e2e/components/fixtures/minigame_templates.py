@@ -46,7 +46,11 @@ html = env.get_template("minigames/" + page + ".html").render(
     request=SimpleNamespace(query_params={}, url=SimpleNamespace(path="/games")), user_info=user, user=user,
     games=[data["game"]], game=data["game"], csrf_token="synthetic-only", sidebar={}, preview_version_id=None,
     active_page="games", manage_nav=build_manage_nav(user, "games"),
-    page_title="小游戏开发规范" if page == "author_guide" else "小游戏管理",
+    page_title="小游戏开发规范" if page == "author_guide" else "我的作品" if role == "student" else "小游戏管理",
+    current_teacher_is_super_admin=role == "teacher" and page == "reviews",
+    genre_options=[{"id":"adventure","label":"冒险"},{"id":"puzzle","label":"解谜"}],
+    discovery=data.get("preference", {}), active_genres=data.get("preference", {}).get("genres", []),
+    active_tags=data.get("preference", {}).get("tags", []), tag_options=["像素风","3D"],
     scope_options={"class": [{"id": 3, "name": "合成行政班"}], "classroom": [{"id": 5, "name": "合成课堂"}]},
     **guide_context,
 )

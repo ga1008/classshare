@@ -1,0 +1,20 @@
+{% extends 'manage/layout.html' %}
+{% import 'minigames/ui.html' as ui with context %}
+{% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
+{% block header_actions %}{{ ui.btn('返回小游戏管理', variant='ghost', icon='arrow-left', href='/manage/library/games') }}{% endblock %}
+{% block content %}
+<section class="game-management" data-game-reviews>
+    <form class="lq-surface game-filters game-admin-bar" data-lq-component="surface" data-review-filter>
+        {{ ui.select('审核状态','status',[('manual','待人工审核'),('approved','已通过'),('rejected','已退回'),('queued','等候 AI'),('running','AI 审核中'),('cancelled','已取消')]) }}
+        {{ ui.form_button('查询', icon='sliders') }}
+    </form>
+    {{ ui.notice() }}
+    <ul class="lq-surface game-admin-list" data-lq-component="surface" data-review-list aria-label="审核列表"></ul>
+    <nav class="game-actions" aria-label="审核分页">
+        {{ ui.action('上一页','previous',variant='ghost',hidden=true) }}
+        {{ ui.action('下一页','next',variant='ghost',hidden=true) }}
+    </nav>
+</section>
+{{ ui.boot({}) }}
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ asset_url('js/minigames/reviews.js') }}"></script>{% endblock %}

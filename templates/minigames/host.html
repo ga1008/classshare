@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "minigames/ui.html" as ui with context %}
+{% from "macros/lq/button.html" import lq_btn %}
 {% set embedded_mode=true %}
 {% set suppress_account_widgets=true %}
 {% set suppress_page_backdrop=true %}
@@ -16,6 +17,10 @@
 <span role="status" class="game-save-pill" data-save-status hidden></span>
 {{ ui.notice() }}
 <nav aria-label="游戏菜单" class="game-host-nav">
+{% if game.sourceUrl and not preview_version_id %}
+{{ lq_btn('下载源码',variant='soft',size='sm',icon='download',href=game.sourceUrl) }}
+{{ lq_btn('改编此版本',variant='ghost',size='sm',href=('/games/workshop' if user_info.role == 'student' else '/manage/library/games') ~ '?sourceVersionId=' ~ (game.sourceVersionId|default(game.version_id,true)|urlencode)) }}
+{% endif %}
 <a class="lq-btn lq-btn--soft lq-btn--sm" data-foreign-game hidden target="_blank" rel="noopener noreferrer"><span class="lq-btn__icon" aria-hidden="true">{{ ui.g_icon('bolt') }}</span><span class="lq-btn__label">返回联机局</span></a>
 {{ ui.action('创建队伍', 'create', variant='soft', icon='plus', hidden=true) }}
 {{ ui.action('加入队伍', 'join', variant='soft', icon='key', hidden=true) }}

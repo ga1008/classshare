@@ -33,7 +33,6 @@ from .offering_membership_service import student_offering_where
 from .organization_scope_service import load_teacher_org_memberships, org_scope_from_row
 from .resource_access_service import (
     is_super_admin_teacher,
-    teacher_can_manage_owned_row,
 )
 from .social_common import env_int, serialize_on
 from .social_scope_service import student_global_tier
@@ -197,6 +196,7 @@ def index_version_files(conn, version_id, files):
 def ensure_all_schema(conn):
     from .minigame_packages import ensure_package_schema
     from .minigame_runtime import ensure_runtime_schema
+    from . import minigame_discovery, minigame_moderation
 
     # SQLite otherwise auto-commits initial DDL before its first DML statement.
     # PostgreSQL's IF NOT EXISTS alone does not serialize concurrent first installs.
@@ -204,6 +204,8 @@ def ensure_all_schema(conn):
     ensure_catalog_schema(conn)
     ensure_package_schema(conn)
     ensure_runtime_schema(conn)
+    minigame_discovery.ensure_schema(conn)
+    minigame_moderation.ensure_schema(conn)
     missing = []
     if not schema_installed(conn, missing=missing):
         raise RuntimeError("小游戏迁移未完成，事务将回滚。缺少 " + "、".join(missing))
@@ -390,13 +392,18 @@ def check_write(request, user):
         raise HTTPException(403, "页面验证已失效，请刷新后重试")
 
 
+def repository_actor_id(user):
+    # Administration tables predate student publishing. Preserve all existing
+    # positive teacher keys and keep student keys in a disjoint namespace.
+    if user["role"] not in {"teacher", "student"} or int(user["id"]) <= 0:
+        raise HTTPException(403, "需要有效的师生账号")
+    return int(user["id"]) if user["role"] == "teacher" else -int(user["id"])
+
+
 def require_manager(conn, user, game_id):
-    if user["role"] != "teacher":
-        raise HTTPException(403, "仅限教师管理")
     row = conn.execute("SELECT * FROM mg_games WHERE id=?", (game_id,)).fetchone()
-    if not row or not teacher_can_manage_owned_row(
-        conn, user["id"], row, owner_key="owner_teacher_id"
-    ):
+    if not row or not (row["owner_teacher_id"] == repository_actor_id(user) or
+                       user["role"] == "teacher" and is_super_admin_teacher(conn, user["id"])):
         raise HTTPException(404, "未找到小游戏")
     return dict(row)
 
@@ -496,9 +503,7 @@ def allowed(game, user, audience):
     if scope == "public":
         return True
     if scope == "private":
-        return user["role"] == "teacher" and (
-            user["id"] == game["owner_teacher_id"] or audience["admin"]
-        )
+        return repository_actor_id(user) == game["owner_teacher_id"] or audience["admin"]
     if scope in ("class", "classroom"):
         return bool(
             set(json.loads(game["targets_json"] or "[]"))
@@ -551,21 +556,28 @@ def require_play(conn, user, game_id, version_id=None, *, definition=True):
 
         if not minigame_runtime.has_active_version(conn, user["actor"], game_id, vid):
             raise HTTPException(404, "游戏版本已更新")
-    fields = "config_json,rules_json,writeback_json" if definition else "id"
+    fields = "v.config_json,v.rules_json,v.writeback_json" if definition else "v.id"
     ver = conn.execute(
-        f"SELECT {fields} FROM mg_versions WHERE id=? AND game_id=? AND status='ready'",
+        f"""SELECT {fields},a.author AS author_name,a.allow_remix,a.source_json FROM mg_versions v
+        LEFT JOIN mg_version_authorship a ON a.version_id=v.id
+        WHERE v.id=? AND v.game_id=? AND v.status='ready'""",
         (vid, game_id),
     ).fetchone()
     if not ver:
         raise HTTPException(404, "游戏版本不可用")
     return {
         **dict(game),
+        "allow_remix": bool(ver["allow_remix"]),
+        "author_name": ver["author_name"] or "",
+        "source_json": ver["source_json"],
         "version_id": vid,
         **(version_definition(ver) if definition else {}),
     }
 
 
 def public_game(row):
+    from .minigame_discovery import genre_labels
+
     row = dict(row)
     config = (
         json.loads(row["config_json"] or "{}")
@@ -574,13 +586,24 @@ def public_game(row):
     )
     if "modes_json" in row:
         config = {"modes": json.loads(row["modes_json"] or "{}")}
+    if row.get("source_json") and (attribution := json.loads(row["source_json"])):
+        config = {**config, "attribution": attribution}
+    genre = row.get("genre_id") or config.get("genre", "other")
+    share = bool(row.get("allow_remix")) and row["status"] == "listed"
+    version_id = row.get("version_id") or row["current_version_id"]
     return {
         "id": row["id"],
-        "slug": row["slug"] or row["id"],
+        "slug": row["slug"] if row["slug"] and row["slug"] != "workshop" else row["id"],
         "title": row["title"],
         "summary": row["summary"],
         "tags": json.loads(row["tags_json"]),
-        "version_id": row["current_version_id"],
+        "genre": genre,
+        "genreLabel": genre_labels().get(genre, "其他"),
+        "authorName": row.get("author_name") or config.get("author", ""),
+        "allowRemix": share,
+        "sourceUrl": f"/api/games/v1/games/{row['id']}/source?version={version_id}" if share else None,
+        "sourceVersionId": version_id if share else None,
+        "version_id": version_id,
         "config": config,
         "status": row["status"],
         "scope": row["scope"],
@@ -625,6 +648,10 @@ def schema_installed(conn=None, *, missing=None):
     # '*' marks primary-key columns. These tables are used by the catalog, worker and
     # runtime separately, including tables first accessed after an upload or a room fills.
     required = {
+        "mg_discovery_preferences": "actor* genres_json tags_json revision",
+        "mg_content_reviews": "version_id* game_id digest status reason ai_reason categories_json evidence_json claim_token lease_until attempts decider created_at updated_at notify_due",
+        "mg_review_notices": "version_id* teacher_id* inbox_id email_queued due",
+        "mg_version_authorship": "version_id* author allow_remix source_version_id source_author source_tags_json source_json tags_json package_sha256 release_rank",
         "mg_games": "id* slug owner_teacher_id title summary tags_json scope targets_json org_json min_tier max_tier featured status current_version_id revision policy_revision created_at updated_at",
         "mg_versions": "id* game_id release_version digest config_json writeback_json rules_json files_json status created_at",
         "mg_version_files": "version_id* path* mime byte_size sha256",
@@ -691,7 +718,8 @@ def schema_installed(conn=None, *, missing=None):
             problems.append(table + " PRIMARY KEY")
     indexes = set(
         "mg_catalog_status mg_versions_game mg_versions_release mg_lease_game mg_lease_expiry "
-        "idx_mg_jobs_due idx_mg_jobs_game idx_mg_preview_receipt idx_mg_preview_age idx_mg_releases_series".split()
+        "idx_mg_jobs_due idx_mg_jobs_game idx_mg_preview_receipt idx_mg_preview_age idx_mg_releases_series "
+        "mg_content_reviews_queue mg_review_notices_due idx_mg_authorship_digest".split()
     )
     indexes.update(
         "mg_ri_" + table + "_" + columns.replace(",", "_").replace(" ", "")

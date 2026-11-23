@@ -143,7 +143,9 @@
 
 {% macro tile(g, eager=false) -%}
 <li><a class="lq-surface game-tile" data-lq-component="surface" data-game-tile href="/games/{{ g.slug|urlencode }}" target="_blank" rel="noopener noreferrer">
-<span class="game-halo" aria-hidden="true"></span>{{ game_icon(g, eager=eager) }}{% if g.featured %}<span class="game-tile-star" aria-hidden="true">{{ g_icon('sparkles', 'game-mini-icon') }}</span>{% endif %}<strong>{{ g.title }}</strong>{{ mode_badges(g) }}</a></li>
+<span class="game-halo" aria-hidden="true"></span>{{ game_icon(g, eager=eager) }}{% if g.featured %}<span class="game-tile-star" aria-hidden="true">{{ g_icon('sparkles', 'game-mini-icon') }}</span>{% endif %}<strong>{{ g.title }}</strong>
+{% if g.genreLabel or g.tags %}<small class="game-tile-meta game-muted">{{ g.genreLabel }}{% for tag in (g.tags or [])[:2] %}{% if g.genreLabel or not loop.first %} · {% endif %}#{{ tag }}{% endfor %}</small>{% endif %}
+{{ mode_badges(g) }}</a></li>
 {%- endmacro %}
 
 {% macro notice() -%}<p role="status" aria-live="polite" class="lq-status game-notice" data-game-notice hidden></p>{%- endmacro %}

@@ -93,6 +93,23 @@ class MinigameSchemaMigrationTests(unittest.TestCase):
         self.assertIn("mg_admin_serial[1]", self.migrate()[1])
         self.assertEqual(self.migrate("--apply")[0], 0)
 
+    def test_upgrade_keeps_existing_current_version_and_requires_explicit_source_license(self):
+        self.assertEqual(self.migrate("--apply")[0], 0)
+        with get_db_connection() as conn:
+            conn.execute("INSERT INTO mg_games(id,owner_teacher_id,title,status,current_version_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                         ("legacy", 5, "旧版本", "listed", "legacy-1", 100, 100))
+            conn.execute("INSERT INTO mg_versions(id,game_id,release_version,status,created_at) VALUES(?,?,?,?,?)",
+                         ("legacy-1", "legacy", "1.0.0", "ready", 100))
+            for table in ("mg_review_notices", "mg_content_reviews", "mg_version_authorship", "mg_discovery_preferences"):
+                conn.execute("DROP TABLE " + table)
+        self.assertEqual(self.migrate()[0], 1)
+        self.assertEqual(self.migrate("--apply")[0], 0)
+        with get_db_connection() as conn:
+            state = conn.execute("""SELECT g.current_version_id,g.status,v.release_version,COALESCE(a.allow_remix,0)
+                FROM mg_games g JOIN mg_versions v ON v.id=g.current_version_id
+                LEFT JOIN mg_version_authorship a ON a.version_id=v.id WHERE g.id=?""", ("legacy",)).fetchone()
+            self.assertEqual(tuple(state), ("legacy-1", "listed", "1.0.0", 0))
+
     def test_early_ddl_failure_rolls_back_the_entire_first_install(self):
         with patch(
             "classroom_app.services.minigame_packages.ensure_package_schema",
