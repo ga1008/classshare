@@ -7,21 +7,27 @@
 {% set student = user_info.role == 'student' or student_work|default(false) %}
 <section class="game-management" data-game-detail>
 <header class="lq-surface game-detail-hero" data-lq-component="surface">
+<div class="game-detail-head">
 <span data-detail-icon>{{ ui.game_icon(game, eager=true) }}</span>
 <div class="game-detail-title">
 <h1 data-detail-heading>{{ game.title }}</h1>
 <div class="game-row-head" data-detail-status></div>
 </div>
-<div class="game-actions game-section game-hero-actions">
-{{ ui.action('下架游戏', 'unlist', variant='soft', icon='pause') }}
-{{ ui.action('彻底删除游戏', 'delete', variant='destructive', icon='trash') }}
 </div>
+<div class="game-status-banner" data-status-detail hidden></div>
+<div class="game-quickbar" data-quick-actions role="toolbar" aria-label="快捷操作"></div>
 </header>
 {{ ui.notice() }}
 <div class="game-detail-grid">
-<section class="lq-surface game-section" data-lq-component="surface">
-<h2 class="game-section-title">{{ ui.g_icon('sliders', 'game-mini-icon') }}<span>编目与权限</span><small class="game-policy-pill" data-policy-summary></small></h2>
-<form class="game-form" data-game-attributes>
+<section class="lq-surface game-section" data-lq-component="surface" data-attributes-card>
+<div class="game-section-head">
+<h2 class="game-section-title">{{ ui.g_icon('sliders', 'game-mini-icon') }}<span>游戏属性</span><small class="game-policy-pill" data-policy-summary></small></h2>
+<div class="game-actions" data-attributes-head-actions>
+{{ ui.action('编辑', 'edit-attributes', variant='soft', icon='edit') }}
+</div>
+</div>
+<dl class="game-attr-list" data-attributes-view aria-label="当前属性"></dl>
+<form class="game-form" data-game-attributes hidden>
 {% if not student %}
 <div class="game-field"><label for="game-summary">简介</label><textarea class="lq-textarea" data-lq-component="textarea" id="game-summary" name="summary" rows="3" maxlength="240" placeholder="一句话说明核心玩法…">{{ game.summary|default('') }}</textarea></div>
 {% endif %}
@@ -34,29 +40,33 @@
 {% if not student %}<div class="game-form-split">
 {{ ui.field('修为下限（含）', 'minTier', 'number', game.min_tier|default(0), true, 0, 10) }}
 {{ ui.field('修为上限（含）', 'maxTier', 'number', game.max_tier|default(10), true, 0, 10) }}
-</div>{% endif %}
+</div>{% else %}<p class="game-muted game-edit-hint">简介与标签随游戏包提交内容审核，如需调整请上传新版本。</p>{% endif %}
 <div class="game-actions">
 {{ ui.form_button('保存属性', icon='check') }}
+{{ ui.action('取消', 'cancel-edit', variant='ghost', icon='x') }}
 {% if not student %}{{ ui.action('拟写简介与标签', 'suggest', variant='soft', icon='sparkles') }}{% endif %}
 </div>
 </form>
 </section>
 <div class="game-detail-stack">
-<section class="lq-surface game-section" data-lq-component="surface">
-<h2 class="game-section-title">{{ ui.g_icon('upload', 'game-mini-icon') }}<span>上传与验收</span></h2>
-{% if is_work_owner|default(true) %}{% include 'minigames/upload_form.html' %}{% endif %}
-<h3 class="game-subhead">{{ ui.g_icon('shield', 'game-mini-icon') }}<span>验收记录</span></h3>
-<ul class="lq-list game-jobs" data-jobs></ul>
-</section>
-<section class="lq-surface game-section" data-lq-component="surface">
-<h2 class="game-section-title">{{ ui.g_icon('rocket', 'game-mini-icon') }}<span>版本与发布</span></h2>
-<ul class="lq-list game-versions" data-game-versions></ul>
+<section class="lq-surface game-section" data-lq-component="surface" data-versions-card>
+<div class="game-section-head">
+<h2 class="game-section-title">{{ ui.g_icon('layers', 'game-mini-icon') }}<span>同游戏版本</span><small class="game-key-pill" data-version-count></small></h2>
+{% if is_work_owner|default(true) %}{{ ui.action('上传新版本', 'upload-version', variant='ghost', icon='upload') }}{% endif %}
+</div>
+<ul class="game-versions" data-game-versions aria-label="同游戏版本列表"></ul>
 {{ ui.action('更多版本', 'more-versions', variant='soft', hidden=true) }}
 </section>
+<section class="lq-surface game-section" data-lq-component="surface" data-related-card hidden>
+<h2 class="game-section-title">{{ ui.g_icon('compass', 'game-mini-icon') }}<span>关联作品</span></h2>
+<ul class="game-related" data-related-games aria-label="关联作品列表"></ul>
+</section>
 </div>
 </div>
 </section>
+{% if is_work_owner|default(true) %}<template id="game-upload-form">{% include 'minigames/upload_form.html' %}</template>{% endif %}
 {{ ui.boot({'gameId': game.id, 'studentWork':student, 'role':user_info.role,
+    'isWorkOwner':is_work_owner|default(true), 'isSuperAdmin':current_teacher_is_super_admin|default(false),
     'genreOptions':genre_options|default([]), 'scopeOptions':scope_options|default({})}) }}
 {% endblock %}
 {% block scripts %}<script type="module" src="{{ asset_url('js/minigames/manage.js') }}"></script>{% endblock %}

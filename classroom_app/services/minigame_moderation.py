@@ -42,6 +42,22 @@ def enqueue(conn, game_id, version_id, digest):
         VALUES(?,?,?,'queued',?,?) ON CONFLICT(version_id) DO NOTHING""", (version_id, game_id, digest, now, now))
 
 
+def resubmit(conn, game_id, version_id, digest):
+    now = platform.now_ms()
+    conn.execute("DELETE FROM mg_review_notices WHERE version_id=?", (version_id,))
+    conn.execute(
+        """INSERT INTO mg_content_reviews(
+               version_id,game_id,digest,status,reason,ai_reason,categories_json,evidence_json,
+               claim_token,lease_until,attempts,decider,notify_due,created_at,updated_at
+           ) VALUES(?,?,?,'queued','','','[]','[]','',0,0,'',0,?,?)
+           ON CONFLICT(version_id) DO UPDATE SET
+               digest=excluded.digest, status='queued', reason='', ai_reason='',
+               categories_json='[]', evidence_json='[]', claim_token='', lease_until=0,
+               attempts=0, decider='', notify_due=0, updated_at=excluded.updated_at""",
+        (version_id, game_id, digest, now, now),
+    )
+
+
 def cancel(conn, game_id, version_id=None):
     sql = """UPDATE mg_content_reviews SET status='cancelled',claim_token='',lease_until=0,updated_at=?
              WHERE game_id=? AND status IN ('queued','running','manual')"""

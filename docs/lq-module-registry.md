@@ -848,6 +848,7 @@
 - `static/js/blog_moderation_ui.js` ×7
 - `static/js/global_search.js` ×7
 - `static/js/manage_courses.js` ×7
+- `static/js/minigames/manage.js` ×7
 - `static/js/project_topic_forms.js` ×7
 - `templates/partials/classroom_material_library.html` ×7
 - `static/js/learning_progress.js` ×6
@@ -861,7 +862,6 @@
 - `static/js/assessment_appeal.js` ×5
 - `static/js/manage_signatures.js` ×5
 - `static/js/manage_wanderers.js` ×5
-- `static/js/minigames/manage.js` ×5
 - `templates/error.html` ×5
 - `templates/partials/cultivation_panel.html` ×5
 - `templates/student_auth_flow_v4.html` ×5
@@ -1165,7 +1165,6 @@
 - `templates/manage/system/academic_integrations.html` ×6
 - `templates/manage/system/ai_usage.html` ×6
 - `templates/manage/textbooks.html` ×6
-- `templates/minigames/detail.html` ×6
 - `templates/partials/materials/modals_generate.html` ×6
 - `templates/partials/materials/modals_library.html` ×6
 - `templates/partials/profile/portfolio.html` ×6
@@ -1184,6 +1183,7 @@
 - `templates/manage/offering_hub.html` ×4
 - `templates/manage/system/diagnostics.html` ×4
 - `templates/manage/system/users.html` ×4
+- `templates/minigames/detail.html` ×4
 - `templates/partials/exams/modals.html` ×4
 - `templates/partials/profile/overview.html` ×4
 - `classroom_app/services/document_render_service.py` ×3
@@ -1197,7 +1197,6 @@
 - `static/js/manage_lesson_plans.js` ×3
 - `static/js/manage_organizations.js` ×3
 - `static/js/manage_teacher_evaluations.js` ×3
-- `static/js/minigames/manage.js` ×3
 - `static/js/resume_common.js` ×3
 - `static/js/social/friends_discover.js` ×3
 - `static/js/teacher_onboarding.js` ×3
@@ -1266,6 +1265,7 @@
 - `static/js/material_hub.js` ×1
 - `static/js/material_viewer.js` ×1
 - `static/js/materials_library_cards.js` ×1
+- `static/js/minigames/manage.js` ×1
 - `static/js/minigames/reviews.js` ×1
 - `static/js/offering_bootstrap.js` ×1
 - `static/js/process_material_modal.js` ×1

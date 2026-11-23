@@ -219,6 +219,11 @@ async def retire(game_id: str, vid: str, request: Request, user=Depends(contribu
     return await command(request, user, game_id, "retire", vid)
 
 
+@router.post("/games/{game_id}/versions/{vid}/submit-review")
+async def submit_review(game_id: str, vid: str, request: Request, user=Depends(contributor)):
+    return await command(request, user, game_id, "submit-review", vid)
+
+
 @router.post("/games/{game_id}/publish")
 async def publish(game_id: str, request: Request, user=Depends(teacher)):
     return await command(request, user, game_id, "publish")

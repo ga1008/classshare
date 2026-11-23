@@ -1755,6 +1755,10 @@
       "hits": 7
      },
      {
+      "path": "static/js/minigames/manage.js",
+      "hits": 7
+     },
+     {
       "path": "static/js/project_topic_forms.js",
       "hits": 7
      },
@@ -1804,10 +1808,6 @@
      },
      {
       "path": "static/js/manage_wanderers.js",
-      "hits": 5
-     },
-     {
-      "path": "static/js/minigames/manage.js",
       "hits": 5
      },
      {
@@ -2877,10 +2877,6 @@
       "hits": 6
      },
      {
-      "path": "templates/minigames/detail.html",
-      "hits": 6
-     },
-     {
       "path": "templates/partials/materials/modals_generate.html",
       "hits": 6
      },
@@ -2953,6 +2949,10 @@
       "hits": 4
      },
      {
+      "path": "templates/minigames/detail.html",
+      "hits": 4
+     },
+     {
       "path": "templates/partials/exams/modals.html",
       "hits": 4
      },
@@ -3002,10 +3002,6 @@
      },
      {
       "path": "static/js/manage_teacher_evaluations.js",
-      "hits": 3
-     },
-     {
-      "path": "static/js/minigames/manage.js",
       "hits": 3
      },
      {
@@ -3278,6 +3274,10 @@
      },
      {
       "path": "static/js/materials_library_cards.js",
+      "hits": 1
+     },
+     {
+      "path": "static/js/minigames/manage.js",
       "hits": 1
      },
      {

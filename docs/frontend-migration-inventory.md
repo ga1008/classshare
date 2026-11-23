@@ -1,6 +1,6 @@
 # LanShare 前端迁移清单
 
-> 生成时间：2026-11-23 21:30:19（Asia/Shanghai）。
+> 生成时间：2026-11-23 23:02:48（Asia/Shanghai）。
 > 生成命令：`python tools/frontend_migration_inventory.py`。
 
 ## 用途
@@ -335,7 +335,7 @@
 | `classroom_app/routers/materials_parts/library.py` | 24 | `GET /manage/library/materials`, `GET /manage/archive/postclass-materials`, `GET /manage/archive/grading-rubrics`, `GET /manage/archive/ordinary-grade-records` 等 8 项 | `manage/materials.html` |
 | `classroom_app/routers/materials_parts/node_ops.py` | 6 | `POST /api/materials/folders`, `POST /api/materials/files`, `GET /api/materials/folder-options`, `POST /api/materials/{material_id}/move` 等 6 项 | - |
 | `classroom_app/routers/message_center.py` | 19 | `GET /message-center`, `GET /api/message-center/bootstrap`, `GET /api/message-center/summary`, `GET /api/message-center/items` 等 8 项 | - |
-| `classroom_app/routers/minigame_admin.py` | 18 | `GET /games`, `GET /games/{game_id}`, `POST /games`, `PATCH /games/{game_id}` 等 8 项 | - |
+| `classroom_app/routers/minigame_admin.py` | 19 | `GET /games`, `GET /games/{game_id}`, `POST /games`, `PATCH /games/{game_id}` 等 8 项 | - |
 | `classroom_app/routers/minigame_moderation.py` | 3 | `GET /{vid}`, `POST /{vid}/decision`, `GET /{vid}/package` | - |
 | `classroom_app/routers/minigames.py` | 0 | - | `minigames/hall.html`, `minigames/host.html`, `minigames/author_guide.html`, `minigames/reviews.html`, `minigames/detail.html` 等 6 项 |
 | `classroom_app/routers/mp/auth.py` | 5 | `POST /login`, `POST /bind/student`, `POST /bind/teacher`, `GET /me` 等 5 项 | - |

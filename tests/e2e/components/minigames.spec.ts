@@ -29,7 +29,7 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
   const html=render(view,role,discovery);
   const me={playerId:'p1',displayName:'合成玩家',seat:1}, pref={revision:1,displayAlias:'',sharePlaying:false,audioMuted:false};
   let current:any=null,attr:any={...game},roomTries=0,uploaded=false,deleted=false,suggested=false,removed=false;
-  let reviewStatus='manual', allowed=true, retired=false;
+  let reviewStatus='manual', allowed=true, retired=false, playtestedV2=false, resubmitted=false;
   page.on('pageerror',err=>errors.push(err.message));
   await page.route('**/*',async route=>{
     const req=route.request(),u=new URL(req.url()),p=u.pathname.replace('/api/games/v1','');
@@ -80,7 +80,8 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
     if(p==='/admin/jobs/del1')return json({id:'del1',status:deleted?'succeeded':'pending'});
     if(p==='/admin/imports'){uploaded=true;return json({gameId:'g1',jobId:'upload1',versionId:'v2',status:'queued'},202);}
     if(p==='/admin/games/g1/versions/v1/license'){allowed=body.allowRemix;return json({});}
-    if(p==='/admin/games/g1/versions/v1/retire'){retired=true;attr={...attr,status:'unlisted'};return json({});}
+    if(p==='/admin/games/g1/versions/v1/retire'){retired=true;attr={...attr,status:'unlisted',revision:attr.revision+1};return json({game:attr});}
+    if(p==='/admin/games/g1/versions/v1/submit-review'){resubmitted=true;retired=false;attr={...attr,revision:attr.revision+1};return json({game:attr});}
     if(p==='/admin/games/g1/versions/v1' && req.method()==='DELETE'){removed=true;return json({jobId:'delete-v1'},202);}
     if(p.startsWith('/moderation/reviews')){
       const item={versionId:'v1',gameId:'g1',title:game.title,version:'1.0.0',status:reviewStatus,digest:'a'.repeat(64),
@@ -90,17 +91,21 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
     }
     if(p==='/admin/games/g1/suggestions'){suggested=true;return json({jobId:'suggest1',status:'queued'});}
     if(p==='/admin/games/g1'){
-      const versions:any[]=removed?[]:[{id:'v1',status:retired?'retired':'ready',releaseVersion:'1.0.0',allowRemix:allowed,
-        sourceAuthor:'原作者',sourceTags:['原作标签'],review:role==='student'?{status:'approved',reason:'已通过'}:null}];
+      const v1Status=resubmitted?'reviewing':retired?'retired':'ready';
+      const v1Review=role==='student'?(resubmitted?{status:'queued',reason:''}:{status:'approved',reason:'已通过'}):null;
+      const versions:any[]=removed?[]:[{id:'v1',status:v1Status,releaseVersion:'1.0.0',allowRemix:allowed,playtested:true,
+        authorName:'合成作者',config,sourceAuthor:'原作者',sourceTags:['原作标签'],review:v1Review}];
       if(role==='student')versions.unshift({id:'candidate',status:'reviewing',releaseVersion:'1.1.0',allowRemix:false,
-        review:{status:'manual',reason:'等待人工确认'}});
-      if(uploaded)versions.unshift({id:'v2',status:waitingForProbe?'validating':'ready',releaseVersion:waitingForProbe?'':'1.1.0'});
-      const jobs:any[]=uploaded?[{id:'upload1',versionId:'v2',status:waitingForProbe?'waiting_probe':'succeeded',
+        authorName:'合成作者',config,review:{status:'manual',reason:'等待人工确认'}});
+      if(uploaded)versions.unshift({id:'v2',status:waitingForProbe?'validating':'ready',releaseVersion:waitingForProbe?'':'1.1.0',
+        allowRemix:true,playtested:playtestedV2,authorName:'合成作者',config});
+      const jobs:any[]=uploaded?[{id:'upload1',kind:'validate',versionId:'v2',status:waitingForProbe?'waiting_probe':'succeeded',
         stage:waitingForProbe?'静态检查已通过，启用验收后自动继续':'隔离验收通过'}]:[];
       if(suggested)jobs.push({id:'suggest1',kind:'suggest',status:'succeeded',stage:'建议已生成',result:{purpose:'metadata',source:'rules',suggestion:'已按游戏包整理',summary:'沿着海图点灯。',tags:['方向']}});
-      return json({game:attr,versions,jobs});
+      const relatedGames=[{id:'g-remix',slug:'beacon-remix',gameKey:'beacon-remix',title:'航标接力·夜航版',status:'listed',versionCount:2,relation:'remix'}];
+      return json({game:attr,versions,relatedGames,jobs});
     }
-    if(p.endsWith('/versions/v2/playtests'))return json({versionId:'v2',passed:body.passed});
+    if(p.endsWith('/versions/v2/playtests')){playtestedV2=true;return json({versionId:'v2',passed:body.passed});}
     if(p.endsWith('/publish')){attr={...attr,currentVersionId:body.versionId,status:'listed',revision:attr.revision+1};return json({game:attr});}
     if(p.endsWith('/unlist')){attr={...attr,status:'unlisted',revision:attr.revision+1};return json({game:attr});}
     if(p.endsWith('/versions/v1/preview'))return json({url:'/games/beacon-relay?previewVersion=v1'});
@@ -203,10 +208,13 @@ uploadTest('续版拖入完整文件夹保留嵌套路径、跨页读取并通�
     const levels = path.join(folder,'static','关卡');
     fs.mkdirSync(levels);
     for (let i = 0; i < 103; i++) fs.writeFileSync(path.join(levels,`图-${i}.json`),JSON.stringify({level:i}));
+    await expect(page.locator('[data-dropzone]:visible')).toHaveCount(0);
+    await page.getByRole('button',{name:'上传新版本'}).click();
     await dropFromDisk(page,[folder]);
-    await expect(page.locator('[data-file-meta]')).toContainText('星图');
+    const dialog = page.getByRole('dialog').filter({has:page.locator('[data-version-upload]')});
+    await expect(dialog.locator('[data-file-meta]')).toContainText('星图');
     expect(uploads.forms).toHaveLength(0);
-    await page.getByRole('button',{name:'上传并验收'}).click();
+    await dialog.getByRole('button',{name:'上传并验收'}).click();
     await expect.poll(() => uploads.forms.length).toBe(1);
     const body = uploads.forms[0];
     expect(body.get('targetGameId')).toBe('g1');
@@ -304,16 +312,35 @@ test('真实隔离 SDK 单人开局与动作，错码保留原局后转队',asyn
   await page.getByRole('button',{name:'加入',exact:true}).click();await expect(page.locator('[data-code-text]')).toHaveText('M7K3');
   expect(writes.filter(x=>x.path.endsWith('/rooms/join')).every(x=>x.body.fromSolo.runId==='r1')).toBeTruthy();
 });
-test('教师页范围表单、隔离预览、永久删除前可以取消',async({page},info)=>{
-  const {writes}=await fixture(page,'detail','teacher');
+test('教师页属性默认只读、点击编辑保存与取消、隔离预览、关联跳转及删前取消',async({page},info)=>{
+  const {writes,errors}=await fixture(page,'detail','teacher');
   await expect(page.getByLabel('展示名称')).toHaveCount(0);
-  await page.getByLabel('简介',{exact:true}).fill('航标接力新版');await page.getByRole('button',{name:'保存属性'}).click();
+  await expect(page.locator('[data-dropzone]:visible')).toHaveCount(0);
+  await expect(page.locator('[data-attributes-view]')).toContainText('点亮航标');
+  await expect(page.locator('[data-game-attributes]')).toBeHidden();
+  await expect(page.locator('[data-related-games] a')).toHaveAttribute('href','/manage/library/games/g-remix');
+  await page.setViewportSize({width:1440,height:900});
+  await page.screenshot({path:info.outputPath('教师属性-1440.png'),animations:'disabled'});
+  await page.getByRole('button',{name:'编辑',exact:true}).click();
+  await expect(page.locator('[data-game-attributes]')).toBeVisible();
+  await page.getByLabel('简介',{exact:true}).fill('航标接力新版');
+  await page.getByRole('button',{name:'保存属性'}).click();
   await expect.poll(()=>writes.filter(x=>x.path==='/admin/games/g1'&&x.body.summary==='航标接力新版').length).toBe(1);
+  await expect(page.locator('[data-game-attributes]')).toBeHidden();
+  await expect(page.locator('[data-attributes-view]')).toContainText('航标接力新版');
+  await page.getByRole('button',{name:'编辑',exact:true}).click();
+  await page.getByLabel('简介',{exact:true}).fill('放弃的草稿');
+  await page.getByRole('button',{name:'取消',exact:true}).click();
+  await page.getByRole('button',{name:'确认',exact:true}).click();
+  await expect(page.locator('[data-attributes-view]')).toContainText('航标接力新版');
   await page.getByRole('button',{name:'教师预览'}).click();await expect(page.getByRole('link',{name:'打开隔离预览'})).toHaveAttribute('target','_blank');
   await page.keyboard.press('Escape');await page.getByRole('button',{name:'彻底删除游戏',exact:true}).click();
   await expect(page.getByLabel('输入 beacon-relay 确认')).toBeVisible();await page.keyboard.press('Escape');
   expect(writes.filter(x=>x.path.endsWith('/deletion-plans'))).toHaveLength(1);
-  await page.setViewportSize({width:390,height:844});await page.screenshot({path:info.outputPath('教师属性-390.png')});
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({path:info.outputPath('教师属性-390.png'),animations:'disabled'});
+  expect(errors).toEqual([]);
 });
 test('教师管理列表筛选及直接上传游戏包',async({page})=>{
   const {writes}=await fixture(page,'manage','teacher');
@@ -378,43 +405,62 @@ test('教师可在桌面和窄屏阅读开发规范并下载开发包和 Markdow
     await page.goto(origin+'/manage/library/games');
   }
 });
-test('教师上传验收、登记试玩、发布、下架和彻底删除',async({page})=>{
-  const {writes}=await fixture(page,'detail','teacher');
-  await page.getByLabel('独立 HTML 游戏包（ZIP）').setInputFiles({name:'sample.zip',mimeType:'application/zip',buffer:Buffer.from('synthetic')});
-  await page.getByRole('button',{name:'上传并验收'}).click();await expect(page.getByText('隔离验收通过')).toBeVisible();
-  const candidate=page.locator('[data-game-versions] li').filter({hasText:'1.1.0'});
-  await candidate.getByRole('button',{name:'确认已试玩'}).click();await page.getByRole('button',{name:'确认',exact:true}).click();
+test('教师上传新版本、快捷试玩上架、版本切换、下架重上和彻底删除',async({page})=>{
+  const {writes,errors}=await fixture(page,'detail','teacher');
+  await page.getByRole('button',{name:'上传新版本'}).click();
+  const dialog=page.getByRole('dialog');
+  await dialog.getByLabel('独立 HTML 游戏包（ZIP）').setInputFiles({name:'sample.zip',mimeType:'application/zip',buffer:Buffer.from('synthetic')});
+  await dialog.getByRole('button',{name:'上传并验收'}).click();
+  await expect(page).toHaveURL(/\?version=v2$/);
+  const quickbar=page.locator('[data-quick-actions]');
+  await quickbar.getByRole('button',{name:'确认已试玩'}).click();await page.getByRole('button',{name:'确认',exact:true}).click();
   await expect.poll(()=>writes.filter(x=>x.path.endsWith('/playtests')).length).toBe(1);
-  await candidate.getByRole('button',{name:'发布此版本'}).click();await page.getByRole('button',{name:'确认',exact:true}).click();
-  await expect(candidate.getByText('当前版本')).toBeVisible();
-  await page.getByRole('button',{name:'下架游戏'}).click();await page.getByRole('button',{name:'确认执行'}).click();
+  await quickbar.getByRole('button',{name:'切换为此版本上架'}).click();await page.getByRole('button',{name:'确认',exact:true}).click();
+  const candidate=page.locator('[data-game-versions] li').filter({hasText:'1.1.0'});
+  await expect(candidate.getByText('当前线上')).toBeVisible();
+  // Quick-jump to the older version 1.0.0 and back.
+  await page.locator('[data-game-versions] a').filter({hasText:'1.0.0'}).click();
+  await expect(page).toHaveURL(/\?version=v1$/);
+  await expect(quickbar.getByRole('button',{name:'切换为此版本上架'})).toBeVisible();
+  await page.locator('[data-game-versions] a').filter({hasText:'1.1.0'}).click();
+  await quickbar.getByRole('button',{name:'下架游戏'}).click();await page.getByRole('button',{name:'确认执行'}).click();
   await expect(page.locator('[data-detail-status]')).toContainText('已下架');
-  await page.getByRole('button',{name:'彻底删除游戏',exact:true}).click();
+  await expect(quickbar.getByRole('button',{name:'重新上架'})).toBeVisible();
+  await quickbar.getByRole('button',{name:'彻底删除游戏',exact:true}).click();
   await page.getByLabel('输入 beacon-relay 确认').fill('beacon-relay');await page.getByRole('button',{name:'确认彻底删除'}).click();
   await expect(page.locator('[data-game-notice]')).toHaveText('游戏已彻底删除');
+  expect(errors).toEqual([]);
 });
 test('教师手动生成建议并核对属性草稿',async({page})=>{
-  const {writes}=await fixture(page,'detail','teacher');
-  await page.getByRole('button',{name:'拟写简介与标签'}).click();await page.getByRole('button',{name:'查看建议'}).click();
+  const {writes,errors}=await fixture(page,'detail','teacher');
+  await page.getByRole('button',{name:'编辑',exact:true}).click();
+  await page.getByRole('button',{name:'拟写简介与标签'}).click();
+  await page.getByRole('button',{name:'取消',exact:true}).click();
+  await page.getByRole('button',{name:'查看建议'}).click();
   await page.getByRole('button',{name:'采用到属性草稿'}).click();await page.keyboard.press('Escape');
+  await expect(page.locator('[data-game-attributes]')).toBeVisible();
   await expect(page.getByLabel('简介',{exact:true})).toHaveValue('沿着海图点灯。');
   expect(writes.filter(x=>x.path==='/admin/games/g1')).toHaveLength(0);
   await page.getByRole('button',{name:'保存属性'}).click();await expect.poll(()=>writes.filter(x=>x.path==='/admin/games/g1').length).toBe(1);
+  expect(errors).toEqual([]);
 });
 
 test('执行器等待状态在刷新后可见且候选版本无法提前发布',async({page})=>{
-  await fixture(page,'detail','teacher',true);
+  const {errors}=await fixture(page,'detail','teacher',true);
   await page.setViewportSize({width:390,height:844});
-  await page.getByLabel('独立 HTML 游戏包（ZIP）').setInputFiles({name:'sample.zip',mimeType:'application/zip',buffer:Buffer.from('synthetic')});
-  await page.getByRole('button',{name:'上传并验收'}).click();
-  await expect(page.getByText('待浏览器验收',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'上传新版本'}).click();
+  const dialog=page.getByRole('dialog');
+  await dialog.getByLabel('独立 HTML 游戏包（ZIP）').setInputFiles({name:'sample.zip',mimeType:'application/zip',buffer:Buffer.from('synthetic')});
+  await dialog.getByRole('button',{name:'上传并验收'}).click();
+  await expect(page.locator('[data-status-detail]')).toContainText('待浏览器验收');
   await page.reload();
-  await expect(page.getByText('静态检查已通过，启用验收后自动继续')).toBeVisible();
-  const candidate=page.locator('[data-game-versions] li').filter({hasText:'候选版'});
-  await expect(candidate.getByRole('button',{name:'验收报告'})).toBeVisible();
-  await expect(candidate.getByRole('button',{name:'发布此版本'})).toHaveCount(0);
-  await expect(candidate.getByRole('button',{name:'教师预览'})).toHaveCount(0);
+  await expect(page.locator('[data-status-detail]')).toContainText('静态检查已通过，启用验收后自动继续');
+  const quickbar=page.locator('[data-quick-actions]');
+  await expect(quickbar.getByRole('button',{name:'验收报告'})).toBeVisible();
+  await expect(quickbar.getByRole('button',{name:/上架/})).toHaveCount(0);
+  await expect(quickbar.getByRole('button',{name:'教师预览'})).toHaveCount(0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  expect(errors).toEqual([]);
 });
 
 test('大厅按偏好筛选并在新访问时还原，学生创作入口独立',async({page})=>{
@@ -457,29 +503,43 @@ test('学生从原作进入改编上传，持有原版标识并能撤选许可',
   expect(JSON.parse(request.body.tags)).toEqual(['3D','合作']);
 });
 
-test('学生工作区按版本展示署名与审核，可管理许可、下架及删除',async({page},info)=>{
-  const {writes}=await fixture(page,'detail','student');
+test('学生工作区按版本切换展示署名与审核，可管理许可、下架、提交审核及删除',async({page},info)=>{
+  const {writes,errors}=await fixture(page,'detail','student');
   await page.setViewportSize({width:320,height:844});
-  const version=page.locator('[data-game-versions] li').filter({hasText:'1.0.0'});
-  await expect(page.locator('[data-game-versions] li').first()).toContainText('待超管审核');
-  await expect(version).toContainText('内容审核通过');
-  await expect(version).toContainText('改编自 原作者');
-  await expect(version).toContainText('#原作标签');
-  await expect(version.getByRole('button',{name:'发布此版本'})).toHaveCount(0);
+  const versions=page.locator('[data-game-versions] li');
+  await expect(versions.first()).toContainText('待超管审核');
+  const v1Row=versions.filter({hasText:'1.0.0'});
+  await expect(v1Row).toContainText('内容审核通过');
+  await expect(v1Row).toContainText('改编自 原作者');
+  await expect(v1Row).toContainText('#原作标签');
+  const quickbar=page.locator('[data-quick-actions]');
+  await expect(quickbar.getByRole('button',{name:/上架/})).toHaveCount(0);
   await expect(page.getByLabel('教师精选')).toHaveCount(0);
+  // Jump to candidate 1.1.0 and verify status switches, then jump back to 1.0.0.
+  await page.locator('[data-game-versions] a').filter({hasText:'1.1.0'}).click();
+  await expect(page).toHaveURL(/\?version=candidate$/);
+  await expect(page.locator('[data-status-detail]')).toContainText('等待人工确认');
+  await page.locator('[data-game-versions] a').filter({hasText:'1.0.0'}).click();
+  await expect(page).toHaveURL(/\?version=v1$/);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
-  await version.scrollIntoViewIfNeeded();
   await page.screenshot({path:info.outputPath('学生版本管理-320.png'),animations:'disabled'});
-  await version.getByRole('button',{name:'关闭二开许可'}).click();
+  await quickbar.getByRole('button',{name:'关闭二开许可'}).click();
   await page.getByRole('button',{name:'确认',exact:true}).click();
-  await expect(version.getByRole('button',{name:'允许二次开发'})).toBeVisible();
-  await version.getByRole('button',{name:'下架此版本'}).click();
+  await expect(quickbar.getByRole('button',{name:'允许二次开发'})).toBeVisible();
+  await quickbar.getByRole('button',{name:'下架游戏'}).click();
   await page.getByRole('button',{name:'确认执行',exact:true}).click();
-  await expect(version.getByRole('button',{name:'下架此版本'})).toHaveCount(0);
-  await version.getByRole('button',{name:'删除此版本'}).click();
+  await expect(quickbar.getByRole('button',{name:'提交审核'})).toBeVisible();
+  await quickbar.getByRole('button',{name:'停用此版本'}).click();
   await page.getByRole('button',{name:'确认执行',exact:true}).click();
-  await expect(version).toHaveCount(0);
-  expect(writes.filter(x=>x.path.includes('/versions/v1'))).toHaveLength(3);
+  await expect(quickbar.getByRole('button',{name:'停用此版本'})).toHaveCount(0);
+  await quickbar.getByRole('button',{name:'提交审核'}).click();
+  await page.getByRole('button',{name:'确认',exact:true}).click();
+  await expect(page.locator('[data-status-detail]')).toContainText('等候 AI 审核');
+  await quickbar.getByRole('button',{name:'删除此版本'}).click();
+  await page.getByRole('button',{name:'确认执行',exact:true}).click();
+  await expect(versions.filter({hasText:'1.0.0'})).toHaveCount(0);
+  expect(writes.filter(x=>x.path.includes('/versions/v1'))).toHaveLength(4);
+  expect(errors).toEqual([]);
 });
 
 test('超管从审核队列查看文件并仅对当前摘要提交决定',async({page},info)=>{

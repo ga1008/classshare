@@ -132,3 +132,74 @@ class RepositoryTests(GamePlatformFixture):
         detail=self.request(901,"GET","/admin/games/"+game).json()
         self.assertEqual((detail["game"]["title"],detail["jobs"][0]["status"]),("天文","waiting_probe"))
         self.assertFalse(detail["versions"][0]["allowRemix"])
+
+    def test_detail_related_games_and_student_submit_review_lifecycle(self):
+        raw = self.game_zip("student-origin", title="星际漫步", author="小天")
+        first = self.upload(931, raw, tags='["像素风"]').json()
+        gid, vid = first["gameId"], first["versionId"]
+        self.assertTrue(packages.worker_once())
+        self.approve_fixture(gid, vid)
+
+        # Same owner creates a same-title edition and a remix; another student creates a private remix.
+        sibling_res = self.upload(931, self.game_zip("student-origin-v2", title="星际漫步", author="小天"))
+        self.assertEqual(sibling_res.status_code, 202, sibling_res.text)
+        sibling = sibling_res.json()
+        self.assertTrue(packages.worker_once())
+        own_fork_res = self.upload(931, self.game_zip("student-own-fork", title="星际漫步改", author="小天"), sourceVersionId=vid)
+        self.assertEqual(own_fork_res.status_code, 202, own_fork_res.text)
+        own_fork = own_fork_res.json()
+        self.assertTrue(packages.worker_once())
+        other_fork_res = self.upload(932, self.game_zip("student-other-fork", title="星际漫步", author="小新"), sourceVersionId=vid)
+        self.assertEqual(other_fork_res.status_code, 202, other_fork_res.text)
+        other_fork = other_fork_res.json()
+        self.assertTrue(packages.worker_once())
+
+        detail = self.request(931, "GET", "/admin/games/" + gid).json()
+        related_by_id = {item["id"]: item["relation"] for item in detail["relatedGames"]}
+        self.assertEqual(related_by_id.get(own_fork["gameId"]), "remix")
+        self.assertEqual(related_by_id.get(sibling["gameId"]), "same_title")
+        # Unauthorized student games must never leak into relatedGames.
+        self.assertNotIn(other_fork["gameId"], related_by_id)
+        fork_detail = self.request(931, "GET", "/admin/games/" + own_fork["gameId"]).json()
+        self.assertEqual(fork_detail["relatedGames"][0]["id"], gid)
+        self.assertEqual(fork_detail["relatedGames"][0]["relation"], "source")
+
+        def change(uid, game_id, method, suffix, **fields):
+            rev = self.request(uid, "GET", "/admin/games/" + game_id).json()["game"]["revision"]
+            return self.request(uid, method, "/admin/games/" + game_id + suffix, json={"expectedRevision": rev, **fields})
+
+        # Unlist a listed student game, then resubmit the ready version for review and re-approve.
+        self.assertEqual(change(931, gid, "POST", "/unlist").status_code, 200)
+        unlisted_rev = self.request(931, "GET", "/admin/games/" + gid).json()["game"]["revision"]
+        self.assertEqual(
+            self.request(932, "POST", "/admin/games/" + gid + "/versions/" + vid + "/submit-review",
+                         json={"expectedRevision": unlisted_rev}).status_code,
+            404,
+        )
+        resubmitted = change(931, gid, "POST", "/versions/" + vid + "/submit-review")
+        self.assertEqual(resubmitted.status_code, 200, resubmitted.text)
+        after_resubmit = self.request(931, "GET", "/admin/games/" + gid).json()
+        self.assertEqual(after_resubmit["versions"][0]["status"], "reviewing")
+        self.assertEqual(after_resubmit["versions"][0]["review"]["status"], "queued")
+        self.approve_fixture(gid, vid)
+        relisted = self.request(931, "GET", "/admin/games/" + gid).json()
+        self.assertEqual(relisted["game"]["status"], "listed")
+
+        # Retire the version, then resubmit it for review again.
+        self.assertEqual(change(931, gid, "POST", "/versions/" + vid + "/retire").status_code, 200)
+        self.assertEqual(change(931, gid, "POST", "/versions/" + vid + "/submit-review").status_code, 200)
+
+        # A version explicitly rejected by moderation cannot be resubmitted without a new package.
+        with platform.game_db() as conn:
+            conn.execute("UPDATE mg_versions SET status='rejected' WHERE id=?", (vid,))
+            conn.execute("UPDATE mg_content_reviews SET status='rejected',reason='违规内容' WHERE version_id=?", (vid,))
+            conn.commit()
+        blocked = change(931, gid, "POST", "/versions/" + vid + "/submit-review")
+        self.assertEqual(blocked.status_code, 409)
+        self.assertEqual(blocked.json()["detail"]["code"], "REVIEW_REJECTED")
+
+        # Teacher games reject submit-review with TEACHER_WORK.
+        teacher_game = self.upload(901, self.game_zip("teacher-review-guard", title="教师试玩")).json()
+        t_resp = change(901, teacher_game["gameId"], "POST", "/versions/" + teacher_game["versionId"] + "/submit-review")
+        self.assertEqual(t_resp.status_code, 409)
+        self.assertEqual(t_resp.json()["detail"]["code"], "TEACHER_WORK")

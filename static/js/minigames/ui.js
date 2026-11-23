@@ -165,6 +165,26 @@ const ICON_PATHS = {
         ['path', { d: 'm16 17 5-5-5-5M21 12H9' }],
     ],
     crown: [['path', { d: 'm3 18 2-11 4.5 4L12 5l2.5 6L19 7l2 11zM4 21h16' }]],
+    edit: [
+        ['path', { d: 'M12 20h9' }],
+        ['path', { d: 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z' }],
+    ],
+    download: [
+        ['path', { d: 'M12 4v11M7.5 11.5 12 16l4.5-4.5' }],
+        ['path', { d: 'M4 17.5v1A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-1' }],
+    ],
+    external: [
+        ['path', { d: 'M14 5h5v5' }],
+        ['path', { d: 'M10 14 19 5' }],
+        ['path', { d: 'M19 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1 4 18.5v-12A1.5 1.5 0 0 1 5.5 5H10' }],
+    ],
+    layers: [
+        ['polygon', { points: '12 3 3 8 12 13 21 8 12 3' }],
+        ['path', { d: 'm3 12.5 9 5 9-5' }],
+        ['path', { d: 'm3 17 9 5 9-5' }],
+    ],
+    x: [['path', { d: 'M18 6 6 18M6 6l12 12' }]],
+    'chevron-right': [['path', { d: 'm9 18 6-6-6-6' }]],
 };
 
 export function svgIcon(name, cls = 'lq-icon') {

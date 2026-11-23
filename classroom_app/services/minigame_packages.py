@@ -197,6 +197,63 @@ def recheck_contributor(conn, user):
     platform.repository_actor_id(platform.load_actor(conn, user["actor"]))
 
 
+def related_games(conn, user, game):
+    actor_id = platform.repository_actor_id(user)
+    is_owner = game["owner_teacher_id"] == actor_id
+    owner_clause = " AND g.owner_teacher_id=?" if is_owner else ""
+    owner_args = (actor_id,) if is_owner else ()
+    base_sql = """SELECT g.id,g.slug,g.title,g.status,g.owner_teacher_id,g.updated_at,
+        (SELECT COUNT(*) FROM mg_versions vc WHERE vc.game_id=g.id AND vc.status<>'deleted') AS version_count
+        FROM mg_games g WHERE g.status<>'deleted' AND g.id<>?""" + owner_clause
+    found = {}
+
+    def collect(rows, relation):
+        for r in rows:
+            gid = r["id"]
+            if gid in found or len(found) >= 12:
+                continue
+            found[gid] = {
+                "id": gid,
+                "slug": r["slug"] or "",
+                "gameKey": r["slug"] or "",
+                "title": r["title"],
+                "status": r["status"],
+                "versionCount": int(r["version_count"] or 0),
+                "ownerRole": "student" if r["owner_teacher_id"] < 0 else "teacher",
+                "relation": relation,
+            }
+
+    source_rows = conn.execute(
+        base_sql + """ AND EXISTS (
+            SELECT 1 FROM mg_versions sv JOIN mg_version_authorship a ON a.source_version_id=sv.id
+            JOIN mg_versions cv ON cv.id=a.version_id
+            WHERE sv.game_id=g.id AND cv.game_id=? AND a.source_version_id<>''
+        ) ORDER BY g.updated_at DESC,g.id DESC LIMIT 6""",
+        (game["id"], *owner_args, game["id"]),
+    ).fetchall()
+    collect(source_rows, "source")
+
+    remix_rows = conn.execute(
+        base_sql + """ AND EXISTS (
+            SELECT 1 FROM mg_versions rv JOIN mg_version_authorship a ON a.version_id=rv.id
+            JOIN mg_versions pv ON pv.id=a.source_version_id
+            WHERE rv.game_id=g.id AND pv.game_id=? AND a.source_version_id<>''
+        ) ORDER BY g.updated_at DESC,g.id DESC LIMIT 8""",
+        (game["id"], *owner_args, game["id"]),
+    ).fetchall()
+    collect(remix_rows, "remix")
+
+    title = (game.get("title") or "").strip()
+    if title:
+        same_title_rows = conn.execute(
+            base_sql + " AND LOWER(TRIM(g.title))=LOWER(TRIM(?)) ORDER BY g.updated_at DESC,g.id DESC LIMIT 8",
+            (game["id"], *owner_args, title),
+        ).fetchall()
+        collect(same_title_rows, "same_title")
+
+    return list(found.values())
+
+
 def detail(conn, user, game_id, version_offset=0):
     from . import minigame_moderation as moderation
     game = platform.require_manager(conn, user, game_id)
@@ -206,13 +263,38 @@ def detail(conn, user, game_id, version_offset=0):
         (game_id,version_offset),
     ).fetchall()
     versions = [version_info(v) for v in version_rows[:100]]
-    reviews = moderation.get_summaries(conn, [v["id"] for v in versions]) if game["owner_teacher_id"] < 0 else {}
+    version_ids = [v["id"] for v in versions]
+    reviews = moderation.get_summaries(conn, version_ids) if game["owner_teacher_id"] < 0 else {}
+    playtested = {}
+    previewed = set()
+    if version_ids:
+        placeholders = ",".join("?" for _ in version_ids)
+        for pt in conn.execute(
+            f"""SELECT version_id,digest,passed FROM mg_admin_playtests
+                WHERE game_id=? AND version_id IN ({placeholders})
+                ORDER BY created DESC,id DESC""",
+            (game_id, *version_ids),
+        ).fetchall():
+            playtested.setdefault((pt["version_id"], pt["digest"]), bool(pt["passed"]))
+        if user["role"] == "teacher":
+            previewed = {
+                (pr["version_id"], pr["digest"])
+                for pr in conn.execute(
+                    f"""SELECT version_id,digest FROM mg_admin_preview_receipts
+                        WHERE actor=? AND game_id=? AND version_id IN ({placeholders}) AND loaded_at>?""",
+                    (user["id"], game_id, *version_ids, platform.now_ms() - 3600000),
+                ).fetchall()
+            }
     for version in versions:
         version["review"] = reviews.get(version["id"])
+        key = (version["id"], version["digest"])
+        version["playtested"] = bool(version["digest"] and playtested.get(key, False))
+        version["previewed"] = bool(version["digest"] and key in previewed)
     info = object_game(conn.execute(FOLDER_SELECT + " WHERE g.id=?", (game_id,)).fetchone())
     return {
         "game": info,
         "versions": versions,
+        "relatedGames": related_games(conn, user, game) if version_offset == 0 else [],
         "nextVersionOffset": version_offset + 100 if len(version_rows) > 100 else None,
         "jobs": [
             job_info(j)
@@ -589,6 +671,40 @@ def mutate(user, game, action, body, key, vid=""):
             conn.execute("UPDATE mg_version_authorship SET allow_remix=? WHERE version_id=?",
                          (int(body["allowRemix"]),vid))
             conn.execute("UPDATE mg_games SET revision=revision+1,updated_at=? WHERE id=?", (now,game))
+        elif action == "submit-review":
+            from . import minigame_moderation as moderation
+            if row["owner_teacher_id"] >= 0:
+                error(409, "TEACHER_WORK", "教师作品无需内容审核，验收试玩后可直接上架。")
+            version = one(conn, "mg_versions", vid)
+            if version["game_id"] != game or version["status"] in {"deleted", "deleting"}:
+                error(404, "NOT_FOUND", "版本不存在或正在删除。")
+            if version["status"] == "validating":
+                error(409, "VERSION_NOT_READY", "版本仍在校验中，通过后将自动进入内容审核。")
+            if version["status"] == "reviewing":
+                error(409, "ALREADY_REVIEWING", "此版本已在审核队列中。")
+            if version["status"] == "ready" and row["status"] == "listed" and row["current_version_id"] == vid:
+                error(409, "ALREADY_LISTED", "此版本当前已上架。")
+            prior = moderation.get_summary(conn, vid)
+            if version["status"] == "rejected":
+                if not prior:
+                    error(409, "VERSION_NOT_READY", "该版本未通过技术校验，请修复并提升版本号后重新上传。")
+                if prior["status"] == "rejected":
+                    error(409, "REVIEW_REJECTED", "该版本内容审核未通过，请修改并提升版本号后重新上传。")
+                if prior["status"] != "cancelled":
+                    error(409, "VERSION_NOT_READY", "当前版本状态无法重新提交审核。")
+            elif version["status"] not in {"ready", "retired"}:
+                error(409, "VERSION_NOT_READY", "当前版本状态无法提交审核。")
+            if version["status"] == "ready" and version_in_use(conn, vid):
+                error(409, "VERSION_IN_USE", "此版本仍有进行中的对局，结束后再提交审核。")
+            if not version["digest"] or not version["files_json"] or version["files_json"] == "{}":
+                error(409, "VERSION_NOT_READY", "版本文件不完整，请重新上传。")
+            folder = asset_path("version", game, vid)
+            if not folder.is_dir() or not checked_dir(folder, folder / "validated.json").is_file():
+                error(409, "VERSION_NOT_READY", "版本文件不可用，请重新上传。")
+            marker(folder, game, vid)
+            conn.execute("UPDATE mg_versions SET status='reviewing' WHERE id=? AND game_id=?", (vid, game))
+            moderation.resubmit(conn, game, vid, version["digest"])
+            conn.execute("UPDATE mg_games SET revision=revision+1,updated_at=? WHERE id=?", (now, game))
         elif action == "delete-version":
             from . import minigame_moderation as moderation
             version = one(conn,"mg_versions",vid)
