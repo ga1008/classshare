@@ -1151,6 +1151,10 @@ def _receive_locked(user, game, rev, key, stream, *, imported=None):
                 conn.commit()
 
 
+def probe_configured():
+    return bool(os.getenv("MINIGAMES_PROBE_COMMAND", "").strip())
+
+
 def probe_package(runtime, digest):
     """Call a trusted operator-provided sandbox launcher, never execute the uploaded code in FastAPI."""
     raw = os.getenv("MINIGAMES_PROBE_COMMAND", "").strip()
@@ -1374,7 +1378,9 @@ def validate_job(job, probe_blocked_until=0):
                          (validation.canonical(cfg),cfg["version"],vid))
             conn.commit()
         if owner["owner_teacher_id"] < 0:
-            meta["probe"] = {"staticValidation":"passed","review":"queued"}
+            meta["probe"] = {"staticValidation": "passed", "review": "queued"}
+        elif not probe_configured():
+            meta["probe"] = {"staticValidation": "passed", "browserProbe": "skipped_unconfigured"}
         else:
             if probe_blocked_until > platform.now_ms():
                 error(503, "PROBE_UNAVAILABLE", PROBE_OFFLINE_STAGE)
@@ -1447,7 +1453,6 @@ def validate_job(job, probe_blocked_until=0):
                 summary=CASE WHEN current_version_id IS NULL THEN ? ELSE summary END,revision=revision+1,updated_at=? WHERE id=?""",
                 (config["gameKey"], config["title"], config["summary"], platform.now_ms(), game),
             )
-            review_stage = "隔离验收通过"
             if student:
                 from . import minigame_moderation as moderation
                 enqueued_status = moderation.enqueue(conn, game, vid, meta["digest"])
@@ -1456,6 +1461,10 @@ def validate_job(job, probe_blocked_until=0):
                     if enqueued_status == "queued"
                     else "基础校验通过，等待超管审核"
                 )
+            elif isinstance(meta.get("probe"), dict) and meta["probe"].get("browserProbe") == "skipped_unconfigured":
+                review_stage = "静态验收通过，可试玩并上架"
+            else:
+                review_stage = "隔离验收通过"
             finish_job(
                 conn, job, "succeeded", review_stage,
                 result={"versionId": vid, "probe": meta["probe"]}
@@ -1602,16 +1611,20 @@ def worker_once():
     with disk_lock("validation-worker"):
         now = platform.now_ms()
         with platform.game_db() as conn:
-            probe_enabled = bool(os.getenv("MINIGAMES_PROBE_COMMAND", "").strip())
+            probe_enabled = probe_configured()
             blocked_until = 0
             if probe_enabled:
                 blocked_until = conn.execute(
                     "SELECT COALESCE(MAX(due),0) FROM mg_admin_jobs WHERE status='waiting_probe' AND due>?",
                     (now,),
                 ).fetchone()[0]
-            pending = "'queued','retry','waiting_probe'" if probe_enabled and not blocked_until else "'queued','retry'"
-            condition = f"""kind<>'suggest' AND ((status IN ({pending}) AND due<=?) OR
-                (status IN ('running','receiving') AND expires<=?))"""
+                pending = "'queued','retry','waiting_probe'" if not blocked_until else "'queued','retry'"
+                condition = f"""kind<>'suggest' AND ((status IN ({pending}) AND due<=?) OR
+                    (status IN ('running','receiving') AND expires<=?))"""
+            else:
+                condition = """kind<>'suggest' AND ((status IN ('queued','retry') AND due<=?) OR
+                    status='waiting_probe' OR
+                    (status IN ('running','receiving') AND expires<=?))"""
             if not conn.execute(
                 "SELECT 1 FROM mg_admin_jobs WHERE " + condition + " LIMIT 1", (now, now)
             ).fetchone():

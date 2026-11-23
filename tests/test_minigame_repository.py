@@ -130,7 +130,10 @@ class RepositoryTests(GamePlatformFixture):
         with patch.dict("os.environ",{"MINIGAMES_PROBE_COMMAND":""}):
             packages.worker_once()
         detail=self.request(901,"GET","/admin/games/"+game).json()
-        self.assertEqual((detail["game"]["title"],detail["jobs"][0]["status"]),("天文","waiting_probe"))
+        self.assertEqual(
+            (detail["game"]["title"], detail["jobs"][0]["status"], detail["versions"][0]["status"]),
+            ("天文", "succeeded", "ready"),
+        )
         self.assertFalse(detail["versions"][0]["allowRemix"])
 
     def test_detail_related_games_and_student_submit_review_lifecycle(self):
