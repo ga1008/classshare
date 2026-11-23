@@ -1,0 +1,220 @@
+{
+  "seconds": 1800,
+  "baselineSeconds": 120,
+  "packageWindowSeconds": 9.196,
+  "players": 200,
+  "rooms": 20,
+  "workers": 2,
+  "scope": "Windows loopback HTTP, owned PostgreSQL, actual game/QR handlers, independent classroom measurement process; no production/Nginx",
+  "samples": {
+    "classroom_baseline": {
+      "n": 599,
+      "p50_ms": 3.44,
+      "p95_ms": 5.55,
+      "p99_ms": 7.13,
+      "max_ms": 26.4
+    },
+    "classroom_baseline_service": {
+      "n": 599,
+      "p50_ms": 2.42,
+      "p95_ms": 3.92,
+      "p99_ms": 5.5,
+      "max_ms": 7.27
+    },
+    "countdown_received": {
+      "n": 200,
+      "p50_ms": 217.68,
+      "p95_ms": 433.47,
+      "p99_ms": 529.45,
+      "max_ms": 532.99
+    },
+    "countdown_all_ten_received": {
+      "n": 20,
+      "p50_ms": 289.38,
+      "p95_ms": 509.83,
+      "p99_ms": 509.83,
+      "max_ms": 532.99
+    },
+    "game_sync": {
+      "n": 198242,
+      "p50_ms": 7.0,
+      "p95_ms": 41.49,
+      "p99_ms": 64.02,
+      "max_ms": 197.82
+    },
+    "start_offset": {
+      "n": 20,
+      "p50_ms": 8,
+      "p95_ms": 30,
+      "p99_ms": 30,
+      "max_ms": 37
+    },
+    "game_intent": {
+      "n": 71026,
+      "p50_ms": 38.94,
+      "p95_ms": 80.35,
+      "p99_ms": 94.49,
+      "max_ms": 232.51
+    },
+    "cross_worker_peer_e2e": {
+      "n": 317375,
+      "p50_ms": 930.32,
+      "p95_ms": 1738.89,
+      "p99_ms": 1849.11,
+      "max_ms": 2024.09
+    },
+    "all_nine_peers_e2e": {
+      "n": 70966,
+      "p50_ms": 1652.44,
+      "p95_ms": 1878.18,
+      "p99_ms": 1934.78,
+      "max_ms": 2058.96
+    },
+    "admin_upload": {
+      "n": 1,
+      "p50_ms": 74.72,
+      "p95_ms": 74.72,
+      "p99_ms": 74.72,
+      "max_ms": 74.72
+    },
+    "admin_unlist": {
+      "n": 1,
+      "p50_ms": 22.44,
+      "p95_ms": 22.44,
+      "p99_ms": 22.44,
+      "max_ms": 22.44
+    },
+    "classroom_mixed": {
+      "n": 8984,
+      "p50_ms": 3.06,
+      "p95_ms": 4.35,
+      "p99_ms": 5.63,
+      "max_ms": 30.7
+    },
+    "classroom_mixed_service": {
+      "n": 8984,
+      "p50_ms": 2.19,
+      "p95_ms": 3.19,
+      "p99_ms": 4.09,
+      "max_ms": 28.87
+    },
+    "classroom_steady": {
+      "n": 8938,
+      "p50_ms": 3.06,
+      "p95_ms": 4.35,
+      "p99_ms": 5.61,
+      "max_ms": 28.06
+    },
+    "classroom_steady_service": {
+      "n": 8938,
+      "p50_ms": 2.19,
+      "p95_ms": 3.19,
+      "p99_ms": 4.08,
+      "max_ms": 27.07
+    },
+    "classroom_during_package": {
+      "n": 46,
+      "p50_ms": 3.21,
+      "p95_ms": 4.86,
+      "p99_ms": 11.32,
+      "max_ms": 30.7
+    },
+    "classroom_during_package_service": {
+      "n": 46,
+      "p50_ms": 2.3,
+      "p95_ms": 3.59,
+      "p99_ms": 4.54,
+      "max_ms": 28.87
+    }
+  },
+  "errors": {},
+  "workersObserved": [
+    {
+      "ok": true,
+      "gameConnections": {
+        "active": 0,
+        "peak": 1
+      },
+      "workerBudget": 1,
+      "runtimeSQL": {
+        "checkouts": 138061,
+        "statements": 1973465,
+        "mutatingStatements": 179460,
+        "writeCommits": 35749
+      },
+      "processCPUSeconds": 352.703125
+    },
+    {
+      "ok": true,
+      "gameConnections": {
+        "active": 0,
+        "peak": 1
+      },
+      "workerBudget": 1,
+      "runtimeSQL": {
+        "checkouts": 137973,
+        "statements": 1972014,
+        "mutatingStatements": 179380,
+        "writeCommits": 35745
+      },
+      "processCPUSeconds": 357.40625
+    }
+  ],
+  "gameWorkerCPUCoreAverage": 0.39,
+  "gameSQLPerSecond": {
+    "checkouts": 152.26,
+    "statements": 2181.59,
+    "mutatingStatements": 198.69,
+    "writeCommits": 39.6
+  },
+  "pendingPeerObservationsAtCutoff": 333,
+  "serverLimits": {
+    "mode": "Windows job",
+    "logicalProcessors": [
+      2,
+      4
+    ],
+    "jobMemoryLimit": 4294967296,
+    "peakCommittedBytes": 2526232576
+  },
+  "classroomProcess": "dedicated",
+  "sourceSha256": {
+    "classroom_app/services/minigame_catalog.py": "a9d2d6eb447deda28c19d709737b4a9a519be8b9d2213e08a929ca95177a619d",
+    "classroom_app/services/minigame_file_lock.py": "0bb30594ca1cbf7afc1513544bd6c83ba44ac758c38068987fde7eb5d21d9ebd",
+    "classroom_app/services/minigame_launch.py": "0525ae58a390f7862002152dce0472e07bc03f239ebd0d5c9479dfe612be299e",
+    "classroom_app/services/minigame_package_recovery.py": "570b5dad378e145571ef82c2b33e6a0d2d2f62f3282cc795116eb386413ee168",
+    "classroom_app/services/minigame_package_suggestions.py": "dbc8c988c5383a5620a0b3bc5cc9483941345275aa6130a16efcdc6bdd1ea537",
+    "classroom_app/services/minigame_package_validation.py": "4a015b444aff64873ea005f20ffc1ea04acd9cce611cea0f0f9f3216cb69c4ba",
+    "classroom_app/services/minigame_packages.py": "7a332ffa6ec556e2fc7d6454dac93cb8ad8b4b1e128d804c10c732efa083e13e",
+    "classroom_app/services/minigame_platform.py": "6f5c8fe6f36e9f458c679acc1ebd8794e6748e975a458662787e44a21e00291c",
+    "classroom_app/services/minigame_runtime.py": "7cbf4566fab3f80a4e5e8653c1c7e166aaf91dca8f2099985bc0de8cf78797a4",
+    "classroom_app/services/minigame_runtime_rooms.py": "2e8a86efcc4318051a4f1137b7cf164bceecf08f6b3289036ca12bd7fb3a0397",
+    "classroom_app/services/minigame_runtime_rules.py": "7cfbb6d2deecd4866a4b5ff1bfb8c4b90e0f5245d4fc3351000323c5850ad1fe",
+    "classroom_app/services/minigame_runtime_store.py": "c757a20cefd13af1cc2ee6688091027626564e4bed1a348a5c37ec5389fa5f99",
+    "classroom_app/services/minigame_runtime_views.py": "d350e1a7104754508a903f63b2a74823a3ac61391d8f07228b5a60618c07e224",
+    "classroom_app/routers/minigame_runtime.py": "e547f97f8e0c6d0b4ac67d94474fdccc070805d3f0152c0c651a3883b72770d0",
+    "classroom_app/db/postgres.py": "203f986282c91f9ad56597aa626b444991f7e5969e38b9a7fda8f21b733306dc",
+    "tools/minigame_runtime_capacity_probe.py": "10cfb39f9a47de88518f7a38b028b999ee3f17ed90914ea4cc67b20b409660bb",
+    "classroom_app/minigame_api.py": "45dc4a5b493ba8771692eae1952fb87f520b70c04f2903bd6e7df199c930b2b9"
+  },
+  "apiEntrypoint": "classroom_app.minigame_api:app",
+  "connectionsPerGameWorker": 1,
+  "sampleBrowserPlacement": {
+    "mode": "Windows job",
+    "logicalProcessors": [
+      18,
+      19
+    ],
+    "jobMemoryLimit": 4294967296,
+    "peakCommittedBytes": 505020416
+  },
+  "gameProcessScheduling": "below-normal",
+  "software": {
+    "python": "3.14.3",
+    "psycopg": "3.3.4",
+    "fastapi": "0.119.0",
+    "uvicorn": "0.37.0",
+    "httpx": "0.28.1",
+    "playwright": "1.59.0"
+  }
+}
