@@ -19,7 +19,7 @@
 | 课堂端导航、游戏大厅、游戏宿主与教师管理 | `routers/minigames.py`、`templates/minigames/`、`static/js/minigames/` | 窄屏可切换列表与管理操作。失去席位控制的标签可查看自己能访问的数据，接管时提升控制代数。 |
 | 身份、受众与目录 | `services/minigame_platform.py`、`services/minigame_catalog.py` | 主站从持久登录会话确认真人身份。班级、含合班的课堂、组织及修为过滤在分页之前完成。 |
 | 房间、随机队列、规则、进度 | `routers/minigame_runtime.py`、`services/minigame_runtime*.py` | 满员后按服务端时间进入 5 秒倒计时。重连回原席位。共同进度只前移，私人字段按个人修订号保存。 |
-| 游戏包、教师试玩、发布和删除 | `routers/minigame_admin.py`、`services/minigame_packages.py` | 上传先进入私有暂存。浏览器执行器离线时保留作业并重试。发布前必须取得该版本预览记录并提交人工试玩结果。 |
+| 游戏包、教师试玩、发布和删除 | `routers/minigame_admin.py`、`services/minigame_packages.py` | 上传先进入私有暂存。静态检查合格的包可持久等待浏览器验收。执行器恢复后自动接续，教师在隔离预览中完成试玩并登记结果后可发布。 |
 | 资源签发与独立内容站 | `services/minigame_launch.py`、`classroom_app/minigame_content.py` | 资源路径在 90 秒授权周期及续期之间保持稳定。每次读取核验当前会话、版本和受众。下架后拒绝后续读取，正在传输的文件由共享读锁保护。 |
 
 游戏表使用 `mg_` 前缀。素材位于 `DATA_ROOT/games/versions/<gameId>/<versionId>/`，包括原 ZIP、验收清单、重编码图标与运行树。`staging/` 持有验收中的输入，`locks/` 用于跨进程文件占用协调。发布在事务中切换当前版本；运行中且仍有权限的成员可继续访问已锁定的旧版。删除先撤销准入，再由持久作业清理该游戏的各版本与业务数据。删除登记、失败重试与恢复封存的操作见[执行器和恢复说明](../../deployment/docker/MINIGAME_PROBE.md)。
@@ -43,10 +43,12 @@
 | `MINIGAMES_DATABASE_URL` | 内容容器可访问的权威库连接串，在 Compose 网络内使用 PostgreSQL 服务名。 |
 | `MINIGAMES_VHOST_CONF`、`MINIGAMES_TLS_DIR` | 主机上的完整绝对路径。前者指向已替换域名的文件，后者存放匹配证书及密钥。 |
 | `MINIGAMES_REGISTER_DIR` | 独立、持久的删除登记卷在主机上的绝对路径。由专用 API 写入，纳入独立封存及恢复演练。 |
+| `MINIGAMES_PROBE_COMMAND` | 分步上线时留空。静态合格的版本在教师端显示「待浏览器验收」。执行器就绪后将受保护配置改为验收队列命令的 JSON 数组，按当前 Compose 参数重建 `game-api`，同一作业自动接续。 |
+| `MINIGAMES_STORAGE_BUDGET_MIB` | 全站小游戏资产额度，单位为 MiB，默认 768。上传暂存与所有保留版本共同计费。每笔新上传先预留 336 MiB，静态检查结束后按实际文件大小及发布所需短时副本归还余量。超额时拒绝新上传，原请求仍可按幂等键查回。 |
 
-可在隔离演练主机上执行 `docker compose --env-file minigames.env -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.minigames.yml config --quiet` 验证配置。如果平台已有 Compose 插值文件 `.env`，在 `--env-file minigames.env` 前加上 `--env-file .env`。保留 `--quiet` 以免打印配置中的连接串与密钥。浏览器验收队列还需在部署插值文件 `minigames.env` 内设置 `MINIGAMES_PROBE_COMMAND`，由专用 API 提交验收任务；执行器与独立签封登记的卷设置见[浏览器执行器说明](../../deployment/docker/MINIGAME_PROBE.md)。
+可在隔离演练主机上执行 `docker compose --env-file minigames.env -f docker-compose.yml -f docker-compose.postgres.yml -f docker-compose.minigames.yml config --quiet` 验证配置。如果平台已有 Compose 插值文件 `.env`，在 `--env-file minigames.env` 前加上 `--env-file .env`。保留 `--quiet` 以免打印配置中的连接串与密钥。启用浏览器验收队列时，在部署插值文件 `minigames.env` 内设置 `MINIGAMES_PROBE_COMMAND`，由专用 API 提交验收任务；执行器与独立签封登记的卷设置见[浏览器执行器说明](../../deployment/docker/MINIGAME_PROBE.md)。
 
-本地可运行 `python tools/minigame_compose_probe.py`，或用 `--compose` 指向独立 Compose 可执行文件。该检查只对临时合成配置运行 Compose 的模型合并，校验可信 API 进程数、总连接预算、CPU 权重、只读素材卷、外部删除登记卷及课堂代理可独立启动。2026 年 11 月 23 日使用 Compose v5.6.0 通过这九项检查。生产容器启动、Linux 沙盒、DNS、证书与实际资源余量需在目标环境核验。[配置探针](../../tools/minigame_compose_probe.py) · [Docker Compose 配置命令](https://docs.docker.com/reference/cli/docker/compose/config/)
+本地可运行 `python tools/minigame_compose_probe.py`，或用 `--compose` 指向独立 Compose 可执行文件。该检查只对临时合成配置运行 Compose 的模型合并，校验可信 API 进程数、总连接预算、CPU 权重、只读素材卷、外部删除登记卷及课堂代理可独立启动。2026 年 11 月 23 日使用 Compose v5.6.0 通过当时的 Compose 模型检查。生产容器启动、Linux 沙盒、DNS、证书与实际资源余量需在目标环境核验。[配置探针](../../tools/minigame_compose_probe.py) · [Docker Compose 配置命令](https://docs.docker.com/reference/cli/docker/compose/config/)
 
 ### 首次启用、回退与上线回读
 

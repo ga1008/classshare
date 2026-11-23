@@ -68,6 +68,7 @@ def inspect(compose):
         )
         report = {
             "trustedApiWorkers": api["command"][-2:] == ["--workers", "2"],
+            "sharedStorageBudget": str(api["environment"]["MINIGAMES_STORAGE_BUDGET_MIB"]) == "768",
             "gameReadiness": all(
                 service["healthcheck"]["test"] == ["CMD", "python", "/app/deployment/docker/minigame_health.py", kind]
                 for service, kind in ((api, "api"), (content, "content"))

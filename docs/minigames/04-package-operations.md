@@ -24,6 +24,7 @@
 | **游戏 `games`** | `draft / listed / unlisted` → `deleting` → `deleted` | 经影响快照与二次确认后封禁访问及迟到写入。已绑定游戏手输 `gameKey`，空草稿或首包仍在验收时手输界面显示的固定草稿标识 `draft-<gameId>`。清理作业逐项核销独占文件与业务行后提交终态并保留脱敏登记。 |
 | **版本 `game_versions`** | 上传接收完 → `validating` → `ready / rejected` | 唯独全部通过五步流式解包、Schema/规则图校验与隔离浏览器试跑的版本可置 `ready`。同一游戏下已 `ready` 的 `release_version` 永久绑定唯一内容指纹；仅 `rejected` 的版本号允许修正后以新幂等键重传。 |
 | **版本 `game_versions`** | `ready` → `retired` | 停用非当前发布且无任何活跃对局/租约引用的旧版本（若仍有在途对局返回 `409` 及引用计数）。 |
+| **校验作业 `mg_admin_jobs`** | `queued` → `running` → `waiting_probe` → `running` → `succeeded / rejected` | 阶段一持久保存原 ZIP、静态检查结果及资源清单。执行器未配置时释放工作器；已配置但离线时所有包共用两分钟退避。浏览器校验成功前，版本保持 `validating`，只有教师可看作业，不能预览或发布。删除草稿会同时清理等待中的包。 |
 
 ### 1.3 管理 API 一览（前缀 `/api/games/v1/admin`）
 

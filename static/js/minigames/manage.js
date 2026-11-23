@@ -36,6 +36,7 @@ const statusText = {
     rejected: '验收失败',
     pending: '待处理',
     queued: '排队中',
+    waiting_probe: '待浏览器验收',
     retry: '待重试',
     running: '处理中',
     done: '已完成',
@@ -52,6 +53,7 @@ const statusTones = {
     validating: 'info',
     running: 'info',
     queued: 'info',
+    waiting_probe: 'info',
     pending: 'info',
     unlisted: 'warning',
     retry: 'warning',
@@ -444,13 +446,13 @@ async function reloadDetail(resetForm) {
         }
     }
     clearTimeout(pollTimer);
-    if (
-        !document.hidden &&
-        jobs.some((j) =>
+    if (!document.hidden) {
+        const active = jobs.some((j) =>
             ['running', 'pending', 'queued', 'retry', 'validating', 'processing'].includes(j.status)
-        )
-    )
-        pollTimer = setTimeout(() => run(null, () => reloadDetail(false)), 3000);
+        );
+        const delay = active ? 3000 : jobs.some((j) => j.status === 'waiting_probe') ? 60000 : 0;
+        if (delay) pollTimer = setTimeout(() => run(null, () => reloadDetail(false)), delay);
+    }
 }
 
 async function saveAttributes() {

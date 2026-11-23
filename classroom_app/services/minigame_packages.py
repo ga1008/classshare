@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
+from functools import lru_cache
 import hashlib
 import json
 import logging
@@ -25,6 +26,8 @@ from .resource_access_service import is_super_admin_teacher
 
 log = logging.getLogger(__name__)
 WORKER_TTL = 5 * 60_000
+PROBE_BACKOFF_MS = 120_000
+PROBE_OFFLINE_STAGE = "静态检查已通过，执行器恢复后自动继续"
 KEY = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 GAME_SCOPES = {"private", "classroom", "class", "department", "college", "school", "public"}
 _executor = _runner = _ai_runner = None
@@ -700,16 +703,19 @@ def _receive_locked(user, game, rev, key, stream):
             error(409, "GAME_REMOVED", "游戏已删除或正在清理。")
         if not old:
             check_revision(row, {"expectedRevision": rev})
-            owned = conn.execute(
-                """SELECT COALESCE(SUM(a.bytes_used),0) FROM mg_admin_assets a
-                JOIN mg_games g ON g.id=a.game_id WHERE g.owner_teacher_id=?""",
+            owned, total = conn.execute(
+                """SELECT COALESCE(SUM(CASE WHEN g.owner_teacher_id=? THEN a.bytes_used ELSE 0 END),0),
+                COALESCE(SUM(a.bytes_used),0) FROM mg_admin_assets a JOIN mg_games g ON g.id=a.game_id""",
                 (row["owner_teacher_id"],),
-            ).fetchone()[0]
+            ).fetchone()
             # The original and the immutable copy overlap until directory promotion completes.
             reserve = 2 * validation.MAX_ZIP + validation.MAX_TOTAL + 16 * validation.MIB
             quota = int(os.environ.get("MINIGAMES_TEACHER_QUOTA_MIB", "2048")) * validation.MIB
             if int(owned) + reserve > quota:
                 error(413, "STORAGE_QUOTA", "该教师的游戏包存储额度不足。")
+            budget = int(os.environ.get("MINIGAMES_STORAGE_BUDGET_MIB", "768")) * validation.MIB
+            if int(total) + reserve > budget:
+                error(507, "PLATFORM_STORAGE_QUOTA", "小游戏平台的存储额度暂时不足，请稍后重试或清理旧游戏。")
             conn.execute("INSERT INTO mg_admin_assets VALUES(?,?,?,?)", (game, "stage", stage, reserve))
             job_new(conn, stage, game, vid, user, "validate", "receiving", "接收文件")
             conn.execute(
@@ -767,9 +773,9 @@ def _receive_locked(user, game, rev, key, stream):
 
 def probe_package(runtime, digest):
     """Call a trusted operator-provided sandbox launcher, never execute the uploaded code in FastAPI."""
-    raw = os.getenv("MINIGAMES_PROBE_COMMAND", "")
+    raw = os.getenv("MINIGAMES_PROBE_COMMAND", "").strip()
     if not raw:
-        error(503, "PROBE_UNAVAILABLE", "等待独立浏览器验收执行器。")
+        error(503, "PROBE_NOT_CONFIGURED", "静态检查已通过，启用浏览器验收后自动继续。")
     try:
         argv = json.loads(raw)
         if (
@@ -916,7 +922,53 @@ def clear_stage(conn, job):
     conn.execute("DELETE FROM mg_admin_assets WHERE kind='stage' AND asset_id=?", (job["id"],))
 
 
-def validate_job(job):
+@lru_cache(maxsize=1)
+def static_validation_recipe():
+    """Only reuse staging output produced by this validator, contracts and SDK."""
+    recipe = hashlib.sha256()
+    for source in (Path(validation.__file__), Path(__file__).with_name("minigame_runtime_rules.py"),
+                   validation.SDK, *sorted(validation.SCHEMAS.glob("*.schema.json"))):
+        recipe.update(hashlib.sha256(source.read_bytes()).digest())
+    return recipe.hexdigest()
+
+
+def account_prepared_stage(job, stage, path, meta, checkpoint_size):
+    # The retained archive and its immutable copy overlap briefly during promotion.
+    reserve = (
+        2 * (stage / "upload.zip").stat().st_size + sum(f["size"] for f in meta["files"].values())
+        + (path / "thumbnail.png").stat().st_size + 2 * checkpoint_size + 128 * 1024
+    )
+    with platform.game_db() as conn:
+        conn.execute("UPDATE mg_admin_assets SET bytes_used=? WHERE kind='stage' AND asset_id=?",
+                     (reserve, job["id"]))
+        conn.commit()
+
+
+def prepare_static(job, stage, path):
+    checkpoint = path / "static-check.json"
+    if path.exists():
+        marker(path, job["game_id"], job["version_id"])
+        if checked_dir(path, checkpoint).is_file():
+            try:
+                saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+                if saved["recipe"] == static_validation_recipe() and isinstance(saved["meta"], dict):
+                    account_prepared_stage(job, stage, path, saved["meta"], checkpoint.stat().st_size)
+                    return saved["meta"]
+            except (KeyError, TypeError, ValueError):
+                pass
+        # An interrupted or superseded static check is rebuilt from the retained ZIP.
+        shutil.rmtree(path)
+    marker(path, job["game_id"], job["version_id"], create=True)
+    meta = validation.validate_package(stage / "upload.zip", path)
+    serialized = validation.canonical({"recipe": static_validation_recipe(), "meta": meta}).encode()
+    partial = path / "static-check.partial"
+    partial.write_bytes(serialized)
+    partial.replace(checkpoint)
+    account_prepared_stage(job, stage, path, meta, len(serialized))
+    return meta
+
+
+def validate_job(job, probe_blocked_until=0):
     game, vid = job["game_id"], job["version_id"]
     stage, target = asset_path("stage", game, job["id"]), asset_path("version", game, vid)
     marker(stage, game, job["id"])
@@ -925,15 +977,13 @@ def validate_job(job):
         marker(target, game, vid)
         meta = json.loads((target / "validated.json").read_text(encoding="utf-8"))
     else:
-        if path.exists():
-            marker(path, game, vid)
-            # Only the previous preparation attempt for this job; the original ZIP is retained.
-            shutil.rmtree(path)
-        marker(path, game, vid, create=True)
-        meta = validation.validate_package(stage / "upload.zip", path)
+        meta = prepare_static(job, stage, path)
+        if probe_blocked_until > platform.now_ms():
+            error(503, "PROBE_UNAVAILABLE", PROBE_OFFLINE_STAGE)
         meta["probe"] = probe_package(path / "runtime", meta["digest"])
         shutil.copyfile(stage / "upload.zip", path / "upload.zip")
         (path / "validated.json").write_text(validation.canonical(meta), encoding="utf-8")
+        (path / "static-check.json").unlink()
     config = meta["config"]
     with platform.game_db() as conn:
         platform.db_start(conn, game)
@@ -1106,9 +1156,17 @@ def record_job_failure(job, status, issue, delay=0):
 def worker_once():
     with disk_lock("validation-worker"):
         now = platform.now_ms()
-        condition = """kind<>'suggest' AND ((status IN ('queued','retry') AND due<=?) OR
-            (status IN ('running','receiving') AND expires<=?))"""
         with platform.game_db() as conn:
+            probe_enabled = bool(os.getenv("MINIGAMES_PROBE_COMMAND", "").strip())
+            blocked_until = 0
+            if probe_enabled:
+                blocked_until = conn.execute(
+                    "SELECT COALESCE(MAX(due),0) FROM mg_admin_jobs WHERE status='waiting_probe' AND due>?",
+                    (now,),
+                ).fetchone()[0]
+            pending = "'queued','retry','waiting_probe'" if probe_enabled and not blocked_until else "'queued','retry'"
+            condition = f"""kind<>'suggest' AND ((status IN ({pending}) AND due<=?) OR
+                (status IN ('running','receiving') AND expires<=?))"""
             if not conn.execute(
                 "SELECT 1 FROM mg_admin_jobs WHERE " + condition + " LIMIT 1", (now, now)
             ).fetchone():
@@ -1155,14 +1213,22 @@ def worker_once():
                         job, "rejected", {"code": "UPLOAD_INTERRUPTED", "message": "接收中断，请重新上传。"}
                     )
                 else:
-                    validate_job(job)
+                    validate_job(job, probe_blocked_until=blocked_until)
         except validation.InvalidPackage as exc:
             record_job_failure(job, "rejected", exc.issue)
         except HTTPException as exc:
             issue = (
                 exc.detail if isinstance(exc.detail, dict) else {"code": "RETRY", "message": str(exc.detail)}
             )
-            record_job_failure(job, "retry", issue, 30_000)
+            if job["kind"] == "validate" and issue.get("code") in {"PROBE_NOT_CONFIGURED", "PROBE_UNAVAILABLE"}:
+                disabled = issue["code"] == "PROBE_NOT_CONFIGURED"
+                due = 0 if disabled else blocked_until or platform.now_ms() + PROBE_BACKOFF_MS
+                stage = "静态检查已通过，启用验收后自动继续" if disabled else PROBE_OFFLINE_STAGE
+                with platform.game_db() as conn:
+                    finish_job(conn, job, "waiting_probe", stage, due=due)
+                    conn.commit()
+            else:
+                record_job_failure(job, "retry", issue, 30_000)
         except Exception:
             log.exception("Game package job %s requires a retry", job["id"])
             record_job_failure(

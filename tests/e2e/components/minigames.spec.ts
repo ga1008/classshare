@@ -18,7 +18,7 @@ function render(view:string, role:string){
     env:{...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONUTF8:'1'}
   });
 }
-async function fixture(page:Page,view:string,role='student'){
+async function fixture(page:Page,view:string,role='student',waitingForProbe=false){
   const html=render(view,role), writes:{path:string,body:any}[]=[], errors:string[]=[];
   const me={playerId:'p1',displayName:'合成玩家',seat:1}, pref={revision:1,displayAlias:'',sharePlaying:false,audioMuted:false};
   let current:any=null,attr:any={...game},roomTries=0,uploaded=false,deleted=false,suggested=false;
@@ -66,8 +66,9 @@ async function fixture(page:Page,view:string,role='student'){
     if(p==='/admin/games/g1/suggestions'){suggested=true;return json({jobId:'suggest1',status:'queued'});}
     if(p==='/admin/games/g1'){
       const versions=[{id:'v1',status:'ready',releaseVersion:'1.0.0'}];
-      if(uploaded)versions.unshift({id:'v2',status:'ready',releaseVersion:'1.1.0'});
-      const jobs:any[]=uploaded?[{id:'upload1',versionId:'v2',status:'succeeded',stage:'隔离验收通过'}]:[];
+      if(uploaded)versions.unshift({id:'v2',status:waitingForProbe?'validating':'ready',releaseVersion:waitingForProbe?'':'1.1.0'});
+      const jobs:any[]=uploaded?[{id:'upload1',versionId:'v2',status:waitingForProbe?'waiting_probe':'succeeded',
+        stage:waitingForProbe?'静态检查已通过，启用验收后自动继续':'隔离验收通过'}]:[];
       if(suggested)jobs.push({id:'suggest1',kind:'suggest',status:'succeeded',stage:'建议已生成',result:{purpose:'metadata',source:'rules',suggestion:'已按游戏包整理',summary:'沿着海图点灯。',tags:['方向']}});
       return json({game:attr,versions,jobs});
     }
@@ -160,4 +161,19 @@ test('教师手动生成建议并核对属性草稿',async({page})=>{
   await expect(page.getByLabel('简介',{exact:true})).toHaveValue('沿着海图点灯。');
   expect(writes.filter(x=>x.path==='/admin/games/g1')).toHaveLength(0);
   await page.getByRole('button',{name:'保存属性'}).click();await expect.poll(()=>writes.filter(x=>x.path==='/admin/games/g1').length).toBe(1);
+});
+
+test('执行器等待状态在刷新后可见且候选版本无法提前发布',async({page})=>{
+  await fixture(page,'detail','teacher',true);
+  await page.setViewportSize({width:390,height:844});
+  await page.getByLabel('独立 HTML 游戏包（ZIP）').setInputFiles({name:'sample.zip',mimeType:'application/zip',buffer:Buffer.from('synthetic')});
+  await page.getByRole('button',{name:'上传并验收'}).click();
+  await expect(page.getByText('待浏览器验收',{exact:true})).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('静态检查已通过，启用验收后自动继续')).toBeVisible();
+  const candidate=page.locator('[data-game-versions] li').filter({hasText:'候选版'});
+  await expect(candidate.getByRole('button',{name:'验收报告'})).toBeVisible();
+  await expect(candidate.getByRole('button',{name:'发布此版本'})).toHaveCount(0);
+  await expect(candidate.getByRole('button',{name:'教师预览'})).toHaveCount(0);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });

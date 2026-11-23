@@ -200,13 +200,110 @@ class GamePackageTests(unittest.TestCase):
                 )
         self.assertEqual(deleted, packages.mutate(self.user, game, "delete", body, "delete"))
 
-    def test_unavailable_browser_retries_without_publishing(self):
-        self.ingest()
-        packages.worker_once()
+    def test_disabled_executor_parks_once_and_configured_worker_resumes(self):
+        upload = self.ingest()
+        game, vid = self.game["id"], upload["versionId"]
+        stage = packages.asset_path("stage", game, upload["jobId"])
+        version = packages.asset_path("version", game, vid)
+        with patch.object(validation, "validate_package", wraps=validation.validate_package) as checked:
+            with patch.object(packages.subprocess, "run") as executor:
+                self.assertTrue(packages.worker_once())
+                with patch.object(platform, "now_ms", return_value=platform.now_ms() + 86_400_000):
+                    self.assertFalse(packages.worker_once())
+                executor.assert_not_called()
+            data = self.game_detail()
+            self.assertEqual(data["versions"][0]["status"], "validating")
+            self.assertEqual(data["jobs"][0]["status"], "waiting_probe")
+            self.assertIn("静态检查已通过", data["jobs"][0]["stage"])
+            self.assertTrue((stage / "upload.zip").is_file())
+            self.assertTrue((stage / "prepared/runtime/main.html").is_file())
+            self.assertFalse(version.exists())
+            with self.db() as conn:
+                usage = conn.execute("SELECT bytes_used FROM mg_admin_assets WHERE asset_id=?",
+                                     (upload["jobId"],)).fetchone()[0]
+                self.assertLess(usage, 1024 * 1024)
+            with self.assertRaises(HTTPException) as denied:
+                packages.mutate(self.user, game, "publish", {"expectedRevision": data["game"]["revision"],
+                                "versionId": vid}, "early-publish")
+            self.assertEqual(denied.exception.detail["code"], "VERSION_NOT_READY")
+            with patch.dict(os.environ, {"MINIGAMES_PROBE_COMMAND": '["executor"]'}), self.fake_probe() as probe:
+                self.assertTrue(packages.worker_once())
+                probe.assert_called_once()
+            self.assertEqual(checked.call_count, 1)
         data = self.game_detail()
-        self.assertEqual(data["versions"][0]["status"], "validating")
-        self.assertEqual(data["jobs"][0]["error"]["code"], "PROBE_UNAVAILABLE")
-        self.assertEqual(data["jobs"][0]["status"], "retry")
+        self.assertEqual((data["versions"][0]["status"], data["game"]["status"]), ("ready", "draft"))
+        self.assertFalse(stage.exists())
+        self.assertFalse((version / "static-check.json").exists())
+        with self.assertRaises(HTTPException) as denied:
+            packages.mutate(self.user, game, "publish", {"expectedRevision": data["game"]["revision"],
+                            "versionId": vid}, "after-probe")
+        self.assertEqual(denied.exception.detail["code"], "PLAYTEST_REQUIRED")
+
+    def test_broker_outage_shares_backoff_across_uploads_then_resumes_both(self):
+        self.ingest()
+        packages.receive_upload(self.user, self.game["id"], self.game["revision"], "second", archive(self.files))
+        now = platform.now_ms()
+        unavailable = HTTPException(503, {"code": "PROBE_UNAVAILABLE", "message": "等待执行器"})
+        with (
+            patch.dict(os.environ, {"MINIGAMES_PROBE_COMMAND": '["executor"]'}),
+            patch.object(validation, "validate_package", wraps=validation.validate_package) as checked,
+        ):
+            with patch.object(platform, "now_ms", return_value=now), patch.object(
+                packages, "probe_package", side_effect=unavailable
+            ) as probe:
+                self.assertTrue(packages.worker_once())
+                self.assertTrue(packages.worker_once())
+                self.assertFalse(packages.worker_once())
+                probe.assert_called_once()
+                self.assertEqual([j["status"] for j in self.game_detail()["jobs"]], ["waiting_probe"] * 2)
+            with patch.object(platform, "now_ms", return_value=now + packages.PROBE_BACKOFF_MS + 1), self.fake_probe():
+                self.assertTrue(packages.worker_once())
+                self.assertTrue(packages.worker_once())
+                self.assertFalse(packages.worker_once())
+            self.assertEqual(checked.call_count, 2)
+        self.assertEqual([j["status"] for j in self.game_detail()["jobs"]], ["succeeded"] * 2)
+
+    def test_restart_after_static_checkpoint_restores_quota_without_unpacking_again(self):
+        upload = self.ingest()
+        now = platform.now_ms()
+        with patch.object(validation, "validate_package", wraps=validation.validate_package) as checked:
+            with patch.object(packages, "account_prepared_stage", side_effect=sqlite3.OperationalError("restart")):
+                self.assertTrue(packages.worker_once())
+            self.assertEqual(self.game_detail()["jobs"][0]["status"], "retry")
+            with patch.object(platform, "now_ms", return_value=now + 60_000):
+                self.assertTrue(packages.worker_once())
+            self.assertEqual(checked.call_count, 1)
+        self.assertEqual(self.game_detail()["jobs"][0]["status"], "waiting_probe")
+        with self.db() as conn:
+            usage = conn.execute("SELECT bytes_used FROM mg_admin_assets WHERE asset_id=?",
+                                 (upload["jobId"],)).fetchone()[0]
+            self.assertLess(usage, 1024 * 1024)
+
+    def test_site_quota_covers_two_teachers_and_releases_parked_stage(self):
+        other = {"id": 10, "role": "teacher", "actor": "teacher:10", "session_id": "fixture-2"}
+        with self.db() as conn:
+            conn.execute("INSERT INTO teachers(id) VALUES (10)")
+            conn.commit()
+        second = packages.mutate(other, "", "create", {"title": "第二位教师"}, "new")["game"]
+        with patch.dict(os.environ, {"MINIGAMES_STORAGE_BUDGET_MIB": "337"}):
+            upload = self.ingest()
+            with self.assertRaises(HTTPException) as full:
+                packages.receive_upload(other, second["id"], second["revision"], "upload", archive(self.files))
+            self.assertEqual(full.exception.detail["code"], "PLATFORM_STORAGE_QUOTA")
+            self.assertEqual(upload, self.ingest())
+            self.assertTrue(packages.worker_once())
+            accepted = packages.receive_upload(other, second["id"], second["revision"], "upload", archive(self.files))
+            self.assertNotEqual(upload["jobId"], accepted["jobId"])
+            self.assertTrue(packages.worker_once())
+            stage = packages.asset_path("stage", self.game["id"], upload["jobId"])
+            plan = packages.mutate(self.user, self.game["id"], "plan", {"expectedRevision": self.game["revision"]}, "p")
+            packages.mutate(self.user, self.game["id"], "delete", {"expectedRevision": self.game["revision"],
+                            "planToken": plan["planToken"], "confirmationText": plan["confirmationText"]}, "d")
+            self.assertTrue(packages.worker_once())
+            self.assertFalse(stage.exists())
+            with self.db() as conn:
+                assets = conn.execute("SELECT game_id FROM mg_admin_assets").fetchall()
+                self.assertEqual([r["game_id"] for r in assets], [second["id"]])
 
     def test_asset_probe_time_budget_keeps_candidate_for_retry(self):
         import subprocess
