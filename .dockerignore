@@ -44,4 +44,8 @@ tools/guardianangel.net.cn_nginx*/
 *.crt
 *.csr
 *.zip
+**/*.[zZ][iI][pP]
 settings.zip
+!docs/minigames/downloads/beacon-relay.zip
+!docs/minigames/downloads/star-map.zip
+!docs/minigames/downloads/three-in-line.zip
