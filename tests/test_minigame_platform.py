@@ -106,6 +106,16 @@ class GamePlatformFixture(TestCase):
         self.addCleanup(self.content.close)
 
 
+    def add_reviewer(self):
+        if 902 in self.tokens:
+            return
+        with p.game_db() as conn:
+            conn.execute("INSERT INTO teachers(id,name,email,hashed_password,is_super_admin) VALUES(902,'审核员','902@example.invalid','fixture',1)")
+            self.tokens[902] = dependencies.create_access_token(
+                {"id": "902", "role": "teacher", "name": "审核员"}, "127.0.0.1", conn=conn)
+            conn.commit()
+
+
 class GamePlatformTests(GamePlatformFixture):
     def test_student_and_teacher_can_read_and_download_the_same_author_spec(self):
         from io import BytesIO
@@ -281,6 +291,7 @@ class GamePlatformTests(GamePlatformFixture):
         return response.json()
 
     def publish(self, check_browser=False):
+        self.add_reviewer()
         z = ROOT / "docs/minigames/downloads/beacon-relay.zip"
         g = self.api(901, "POST", "/admin/games", json={"scope": "public"})["game"]
         path = "/admin/games/" + g["id"]
@@ -330,7 +341,7 @@ class GamePlatformTests(GamePlatformFixture):
                 run_validation()
         d = self.api(901, "GET", path)
         v = d["versions"][0]
-        self.assertEqual(v["status"], "ready", d["jobs"][0])
+        self.assertEqual(v["status"], "reviewing", d["jobs"][0])
         preview = self.api(
             901,
             "POST",
@@ -348,12 +359,9 @@ class GamePlatformTests(GamePlatformFixture):
             path + "/versions/" + v["id"] + "/playtests",
             json={"expectedRevision": d["game"]["revision"], "passed": True},
         )
-        return self.api(
-            901,
-            "POST",
-            path + "/publish",
-            json={"expectedRevision": d["game"]["revision"], "versionId": v["id"]},
-        )["game"]
+        self.api(902, "POST", "/moderation/reviews/" + v["id"] + "/decision",
+                 json={"expectedDigest": v["digest"], "decision": "approve", "reason": "合成版本审核通过"})
+        return self.api(901, "GET", path)["game"]
 
     def browser_bin(self):
         bins = [
@@ -368,6 +376,25 @@ class GamePlatformTests(GamePlatformFixture):
             shutil.which("google-chrome"),
         ]
         return str(next(b for b in bins if b and Path(b).is_file()))
+
+    def test_admin_plays_other_owners_restricted_games(self):
+        game = self.publish()
+        with p.game_db() as conn:
+            conn.execute("UPDATE mg_games SET scope='class',targets_json='[888888]' WHERE id=?", (game["id"],))
+        visible = self.api(902, "GET", "/catalog")["items"]
+        self.assertIn(game["id"], [item["id"] for item in visible])
+        self.assertEqual(self.api(931, "GET", "/catalog")["items"], [])
+        grant = self.api(902, "POST", "/games/" + game["id"] + "/launches",
+                         json={"purpose": "play", "hostInstance": "admin-playing"})
+        self.assertEqual(self.content.get(grant["contentEntryUrl"]).status_code, 200)
+
+        vid = game["currentVersionId"]
+        with p.game_db() as conn:
+            conn.execute("UPDATE mg_versions SET status='retired' WHERE id=?", (vid,))
+        endpoint = "/games/" + game["id"] + "/launches"
+        preview = self.api(902, "POST", endpoint,
+                           json={"purpose": "preview", "hostInstance": "review-archive", "versionId": vid})
+        self.assertEqual(self.content.get(preview["contentEntryUrl"]).status_code, 200)
 
     def test_catalog_leases_and_revocation(self):
         self.assertTrue(p.schema_installed())
@@ -447,6 +474,7 @@ class GamePlatformTests(GamePlatformFixture):
         headers = {"Idempotency-Key": uuid.uuid4().hex}
         grant = self.api(931, "POST", endpoint, json=params, headers=headers)
         repeat = self.api(931, "POST", endpoint, json=params, headers=headers)
+        self.assertGreaterEqual(repeat.pop("serverNow"), grant.pop("serverNow"))
         self.assertEqual(repeat, grant)
         path = urlsplit(grant["contentEntryUrl"]).path
         with p.asset_usage(g["id"], exclusive=True):

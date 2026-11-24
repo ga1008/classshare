@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="{{ asset_url('css/ordinary_grade_kind_controls.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/classroom_group_qr.css') }}">
 {% if user_info.role == 'teacher' %}
+<link rel="stylesheet" href="{{ asset_url('css/minigame_classroom_access.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/classroom_closeout.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/classroom_members.css') }}">
 <link rel="stylesheet" href="{{ asset_url('css/attendance_reports.css') }}">
@@ -117,6 +118,7 @@
         <div class="cw-classroom-identity lq-surface lq-scene-heading" id="cw-course-identity">
             <div class="cw-identity-class lq-scene-heading__meta">{{ classroom.class_name }}{% if user_info.role == 'student' %}<span class="my-group-badge" data-my-group-badge hidden></span>{% endif %}</div>
             <div class="cw-identity-actions">
+                {% if user_info.role == 'teacher' %}{{ lq_btn('小游戏设置', variant='soft', size='sm', attrs={'data-game-settings':'','data-game-offering':classroom.id|string,'data-game-offering-name':classroom.course_name ~ ' · ' ~ classroom.class_name,'aria-haspopup':'dialog'}) }}{% endif %}
                 <button data-lq-component="button" class="lq-btn lq-btn--sm lq-btn--glass cw-text-button" id="hero-course-detail-btn" type="button" data-course-popover-target="details" data-popover-title="课程详情" data-popover-kicker="课程资料" aria-haspopup="dialog" aria-controls="course-info-popover" aria-expanded="false">课程资料</button>
                 {% set classroom_workspace_compact = true %}
                 {% include "partials/classroom_group_qr.html" %}
@@ -1728,6 +1730,8 @@
 {% endblock %}
 
 {% block scripts %}
+{% if user_info.role == 'teacher' %}{% include 'minigames/classroom_access.html' %}{% endif %}
+{% if user_info.role == 'teacher' %}<script type="module" src="{{ asset_url('js/minigames/classroom-access-entry.js') }}"></script>{% endif %}
 <script type="module">
     import { tabs } from {{ asset_url('js/lq/navigation.js') | tojson }};
     const root = document.getElementById('classroom-primary-tabs');

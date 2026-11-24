@@ -93,6 +93,7 @@ class CultivationEarnedMaterialTests(unittest.TestCase):
         facts = {1: {"completed": 1, "mastered": 1, "updated_at": "2026-11-08"},
                  3: {"completed": 1, "mastered": 1, "updated_at": "2026-11-09"},
                  4: {"completed": 1, "mastered": 1, "updated_at": "2026-11-07"}}
+        self.enterContext(patch.object(learning, "minigame_course_points", return_value=0))
         scope = self.enterContext(patch.object(learning, "_load_required_materials", return_value=docs[:2]))
         self.enterContext(patch.object(learning, "_load_progress_rows", return_value=facts))
         self.enterContext(patch.object(learning, "_load_assignment_metrics", return_value={"task_ratio": 0.0}))

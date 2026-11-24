@@ -18,10 +18,13 @@ class CatalogQuery:
     def __init__(self, user, audience):
         self.pg = p.get_configured_db_engine() == "postgres"
         self.args = []
+        self.filters = ["g.status='listed'", "v.status='ready'"]
+        if audience["admin"]:
+            return
         scope = ["g.scope='public'"]
-        scope.append("(g.scope='private' AND (g.owner_teacher_id=? OR ?=1))")
+        scope.append("(g.scope='private' AND g.owner_teacher_id=?)")
         owner = p.repository_actor_id(user)
-        self.args.extend([owner, int(audience["admin"])])
+        self.args.append(owner)
         for name, ids in (
             ("class", audience["classes"]),
             ("classroom", audience["offers"]),
@@ -52,11 +55,7 @@ class CatalogQuery:
                     self.args.extend(org[k] for k in fields)
             if matches:
                 scope.append(f"(g.scope='{name}' AND (" + " OR ".join(matches) + "))")
-        self.filters = [
-            "g.status='listed'",
-            "v.status='ready'",
-            "(" + " OR ".join(scope) + ")",
-        ]
+        self.filters.append("(" + " OR ".join(scope) + ")")
         if audience["tier"] is not None:
             self.filters.append("? BETWEEN g.min_tier AND g.max_tier")
             self.args.append(audience["tier"])

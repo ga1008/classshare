@@ -294,7 +294,7 @@ function versionStatusBadge(v) {
 }
 
 function canSubmitReview(v) {
-    if (!v || !isStudentGame() || game?.status === 'deleting' || game?.status === 'deleted') return false;
+    if (!v || game?.status === 'deleting' || game?.status === 'deleted') return false;
     const isLive = game.status === 'listed' && v.id === game.currentVersionId;
     if (v.status === 'retired') return true;
     if (v.status === 'ready' && !isLive) return true;
@@ -441,7 +441,7 @@ function renderAttributesView() {
         rows.push(attrRow('标签', el('span', '未设置标签', 'game-muted')));
     }
     rows.push(attrRow('可见范围', scopeDisplayText()));
-    if (!isStudentGame()) {
+    {
         const minT = game.minTier ?? 0,
             maxT = game.maxTier ?? 10;
         rows.push(
@@ -501,7 +501,7 @@ async function preview(v) {
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
     body.append(a);
-    await panel('教师预览', body);
+    await panel('隔离预览', body);
 }
 
 async function inspectVersion(v) {
@@ -684,30 +684,12 @@ function renderStatusBanner() {
             items.push(makeAlert('danger', '验收失败', 'danger', detail || vJob?.stage || '游戏包未通过校验', extra));
         }
     } else if (v.status === 'ready' && !isLive) {
-        if (!isStudentGame()) {
-            const nextLabel = game.status === 'unlisted' ? '重新上架' : '上架此版本';
-            const msg = v.playtested
-                ? '版本 ' + v.releaseVersion + ' 已登记试玩，点击“' + nextLabel + '”即可对外开放。'
-                : v.previewed
-                  ? '已完成隔离预览，确认无误后点击“确认已试玩”，即可上架发布。'
-                  : '版本 ' + v.releaseVersion + ' 已通过验收，请先“教师预览”并“确认已试玩”，再上架发布。';
-            items.push(makeAlert(v.playtested ? 'success' : 'info', v.playtested ? '已试玩' : '待试玩上架', v.playtested ? 'success' : 'info', msg));
-        } else {
-            items.push(
-                makeAlert('warning', '未上架', 'warning', '此版本当前未对外开放，点击“提交审核”可重新送审并上架。')
-            );
-        }
+        const reviewed = v.review?.status === 'approved' && boot.canPublish;
+        items.push(makeAlert('info', '未上架', 'info', reviewed
+            ? '此版本已有审核通过记录。核对试玩结果后可重新上架。'
+            : '可隔离预览此版本，提交超级管理员审核后上架。'));
     } else if (v.status === 'retired') {
-        items.push(
-            makeAlert(
-                'neutral',
-                '已归档',
-                'neutral',
-                isStudentGame()
-                    ? '此版本已归档停用，可点击“提交审核”重新送审。'
-                    : '此版本已归档停用。'
-            )
-        );
+        items.push(makeAlert('neutral', '已归档', 'neutral', '此版本已归档停用，可提交审核重新上架。'));
     }
 
     const suggestJob = jobs.find((j) => j.kind === 'suggest' && j.status === 'succeeded' && j.result?.suggestion);
@@ -743,29 +725,23 @@ function renderQuickActions() {
         main.append(linkButton('进入游玩', '/games/' + encodeURIComponent(game.slug), 'glass', { icon: 'external', blank: true }));
     }
 
-    if (!isStudentGame() && v && v.status === 'ready') {
-        main.append(button('教师预览', () => preview(v), 'soft', { icon: 'eye' }));
-        if (!v.playtested) {
-            main.append(button('确认已试玩', () => verifyPlayed(v), 'soft', { icon: 'check' }));
-        }
-        if (!isLive) {
-            const publishLabel =
-                game.status === 'unlisted' ? '重新上架' : game.status === 'listed' ? '切换为此版本上架' : '上架此版本';
-            main.append(button(publishLabel, () => publish(v), 'prominent', { icon: 'rocket' }));
-        }
+    const testable = v && ['ready', 'reviewing'].includes(v.status);
+    const archivedPreview = boot.isSuperAdmin && v?.digest && ['retired', 'rejected'].includes(v.status);
+    if (testable || archivedPreview) {
+        main.append(button('隔离预览', () => preview(v), 'soft', { icon: 'eye' }));
     }
-
-    if (isStudentGame() && v) {
-        if (boot.isSuperAdmin && v.status === 'reviewing' && v.review?.status === 'manual') {
-            main.append(
-                linkButton('前往内容复核', '/manage/library/games/reviews?version=' + encodeURIComponent(v.id), 'prominent', {
-                    icon: 'shield',
-                })
-            );
-        }
-        if (canSubmitReview(v)) {
-            main.append(button('提交审核', () => submitReview(v), 'prominent', { icon: 'shield' }));
-        }
+    if (testable) {
+        if (v.playtested) main.append(statusChip('已登记试玩', 'success'));
+        else if (v.previewed) main.append(button('确认已试玩', () => verifyPlayed(v), 'soft', { icon: 'check' }));
+    }
+    if (v && !isLive && boot.canPublish && v.status === 'ready' && v.review?.status === 'approved') {
+        main.append(button('重新上架', () => publish(v), 'prominent', { icon: 'rocket' }));
+    } else if (canSubmitReview(v)) {
+        main.append(button('提交审核', () => submitReview(v), 'prominent', { icon: 'shield' }));
+    }
+    if (boot.isSuperAdmin && v?.status === 'reviewing') {
+        main.append(linkButton('前往内容复核', '/manage/library/games/reviews?version=' + encodeURIComponent(v.id),
+            'prominent', {icon:'shield'}));
     }
 
     if (game.status === 'listed') {
@@ -789,12 +765,9 @@ function renderQuickActions() {
         );
     }
 
-    if (v && isLive && v.allowRemix) {
-        main.append(
-            linkButton('下载源码', apiBase + '/games/' + encodeURIComponent(game.id) + '/source', 'ghost', {
-                icon: 'download',
-            })
-        );
+    if (v?.digest && ['ready', 'reviewing', 'retired', 'rejected'].includes(v.status)) {
+        const path = detailPath() + '/versions/' + encodeURIComponent(v.id) + '/package';
+        main.append(linkButton('下载原包', apiBase + path, 'ghost', {icon:'download'}));
     }
 
     if (!vDeleting) {
@@ -966,7 +939,7 @@ async function showSuggestion(result) {
             for (const t of tags) tagRow.append(el('small', '#' + t, 'game-tag-pill'));
             body.append(tagRow);
         }
-        if (result.summary || tags.length)
+        if (boot.isSuperAdmin && (result.summary || tags.length))
             body.append(
                 button(
                     '采用到属性草稿',
@@ -1073,12 +1046,9 @@ async function saveAttributes() {
             method: 'PATCH',
             body: {
                 scope: f.scope.value,
-                ...(!student &&
-                    !boot.studentWork && {
+                targets, minTier, maxTier,
+                ...(boot.isSuperAdmin && {
                         summary: f.summary.value.trim(),
-                        targets,
-                        minTier,
-                        maxTier,
                         featured: f.featured.checked,
                         tags: parseTags(f.tags.value),
                     }),

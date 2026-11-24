@@ -12,7 +12,18 @@ import {
     svgIcon,
 } from './ui.js';
 
+import { wellbeingSummary } from './play-time.js';
+
 const boot = bootstrap();
+const wellbeing = document.querySelector('[data-wellbeing-summary]');
+if (wellbeing) wellbeing.textContent = wellbeingSummary(boot.playWellbeing);
+function restriction(access) {
+    if (!access || (access.allowed && access.source !== 'classroom_allow')) return null;
+    const badge = el('small', access.allowed ? '临时开放' : '课堂限制', 'lq-status');
+    badge.title = access.reason;
+    return badge;
+}
+const sidebarDelay = () => 55000 + Math.floor(Math.random() * 10000);
 const grid = document.querySelector('[data-games-grid]'),
     filters = document.querySelector('[data-game-search]');
 const next = document.querySelector('[data-game-next]'),
@@ -88,6 +99,7 @@ function tile(g, index) {
         a = gameLink(g);
     a.className = 'lq-surface game-tile';
     a.dataset.gameTile = '';
+    if (g.access?.nextChangeAt) a.dataset.accessChange = g.access.nextChangeAt;
     a.dataset.lqComponent = 'surface';
     const halo = el('span', null, 'game-halo');
     halo.setAttribute('aria-hidden', 'true');
@@ -102,8 +114,25 @@ function tile(g, index) {
     const info = [g.genreLabel, ...(g.tags || []).slice(0,2).map((tag) => '#' + tag)].filter(Boolean).join(' · ');
     if (info) a.append(el('small',info,'game-tile-meta game-muted'));
     a.append(modeBadges(g));
+    const badge = restriction(g.access);
+    if (badge) a.append(badge);
     li.append(a);
     return li;
+}
+
+let accessTimer, lastCheckedBoundary = 0;
+function scheduleAccessRefresh() {
+    clearTimeout(accessTimer);
+    if (document.hidden) return;
+    const changes = [...grid.querySelectorAll('[data-access-change]')]
+        .map(node => Number(node.dataset.accessChange)).filter(at => at > lastCheckedBoundary);
+    if (!changes.length) return;
+    const boundary = Math.min(...changes);
+    accessTimer = setTimeout(() => {
+        if (composing) return;
+        lastCheckedBoundary = boundary;
+        search(urlFor(new URL(location.href).searchParams.get('cursor')));
+    }, Math.min(2147480000, Math.max(0, boundary - Date.now())) + Math.random() * 1500);
 }
 
 function syncModeChips(value) {
@@ -139,6 +168,7 @@ async function search(url, historyMode) {
         }
         resetHalo();
         grid.replaceChildren(...(data.items || []).map((g, i) => tile(g, i)));
+        scheduleAccessRefresh();
         const empty = document.querySelector('[data-grid-empty]');
         empty.hidden = !!data.items?.length;
         const text = empty.querySelector('span') || empty;
@@ -285,6 +315,8 @@ function section(name, rows) {
         } else {
             info.append(el('span', g.title));
         }
+        const restricted = restriction(row.access || g.access);
+        if (restricted) info.append(restricted);
         a.append(info);
         const note = shortNote(name, row);
         if (note) {
@@ -306,16 +338,18 @@ async function updateSidebar() {
     try {
         const data = await api('/sidebar');
         if (serial !== sidebarSerial || document.hidden) return;
+        if (wellbeing && data.playWellbeing) wellbeing.textContent = wellbeingSummary(data.playWellbeing);
         for (const k of ['recent', 'popular', 'friends', 'recommended']) section(k, data[k] || []);
         expiresAt = Date.now() + 60000;
     } catch {
         if (Date.now() >= expiresAt) section('friends', []);
     } finally {
-        if (serial === sidebarSerial && !document.hidden) sidebarTimer = setTimeout(updateSidebar, 60000);
+        if (serial === sidebarSerial && !document.hidden) sidebarTimer = setTimeout(updateSidebar, sidebarDelay());
     }
 }
 
 document.addEventListener('visibilitychange', () => {
+    scheduleAccessRefresh();
     if (document.hidden) {
         resetHalo();
         clearTimeout(sidebarTimer);
@@ -330,7 +364,7 @@ document.addEventListener('visibilitychange', () => {
 
 onAction({
     discovery: chooseDiscovery,
-    refresh: updateSidebar,
+    refresh: () => Promise.all([updateSidebar(), search(new URL(location.href))]),
     preferences: async () => {
         const preferences = await api('/me/preferences');
         const form = document.importNode(
@@ -364,12 +398,13 @@ onAction({
 });
 
 bindIconTooltips(document);
+scheduleAccessRefresh();
 if (boot.hydrated) {
     if (boot.nextCursor) {
         next.hidden = false;
         next.href = urlFor(boot.nextCursor);
     }
-    sidebarTimer = setTimeout(updateSidebar, 60000);
+    sidebarTimer = setTimeout(updateSidebar, sidebarDelay());
 } else {
     updateSidebar();
 }

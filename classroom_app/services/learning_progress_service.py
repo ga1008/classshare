@@ -73,6 +73,7 @@ from .cultivation_material_service import (
     MATERIAL_SCORING_POLICY, legacy_scored_material_ids, load_material_scope, material_credit, material_scope_key,
 )
 from .cultivation_material_history import legacy_material_credit
+from .minigame_wellbeing import course_points as minigame_course_points
 from .resource_access_service import student_can_read_assignment
 
 
@@ -1264,7 +1265,8 @@ def _build_learning_metrics(
     # Components stay linear (they sum to raw_score); the displayed 修为 follows
     # the concave growth curve so early effort converts faster than late effort.
     exponent = growth_curve_exponent()
-    total_score = apply_growth_curve(raw_score, exponent=exponent)
+    play_points = minigame_course_points(conn, class_offering_id, student_id)
+    total_score = clamp(apply_growth_curve(raw_score, exponent=exponent) + play_points, 0, 100)
 
     def _mean(values: list[float]) -> float:
         return sum(values) / len(values) if values else 0.0
@@ -1273,6 +1275,7 @@ def _build_learning_metrics(
         "score": round(total_score, 1),
         "raw_score": round(raw_score, 1),
         "growth_exponent": round(exponent, 2),
+        "minigame": {"points": play_points},
         "scoring_policy_version": MATERIAL_SCORING_POLICY,
         "material_scope_key": material_scope_key(materials),
         "weights": weights,
@@ -1622,7 +1625,9 @@ def _build_learning_state_from_metrics(
     raw_score = safe_float(metrics.get("raw_score"), score)
     exponent = safe_float(metrics.get("growth_exponent"), growth_curve_exponent()) or growth_curve_exponent()
     state["breakdown"] = build_component_breakdown(metrics)
-    state["growth"] = build_growth_summary(raw_score, score, next_stage=next_stage, exponent=exponent)
+    state["minigame"] = {"points": safe_int((metrics.get("minigame") or {}).get("points"))}
+    state["growth"] = build_growth_summary(raw_score, score, next_stage=next_stage, exponent=exponent,
+                                           adjustment=state["minigame"]["points"])
     state["stage_effort"] = build_stage_effort_table(LEARNING_LEVELS, exponent=exponent)
     state["score_opportunities"] = build_score_opportunities(
         metrics,
@@ -3068,6 +3073,7 @@ def list_cultivation_score_events(
     ).fetchall()
     labels = {
         "material": "材料研读",
+        "minigame": "小游戏作息",
         "task": "作业考试",
         "interaction": "互动求助",
         "consistency": "稳定投入",

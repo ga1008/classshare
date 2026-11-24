@@ -3867,9 +3867,33 @@
   {
     "path": "/api/games/v1/admin/games/{game_id}/versions/{vid}",
     "methods": [
+      "DELETE"
+    ],
+    "name": "delete_version",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}/versions/{vid}",
+    "methods": [
       "GET"
     ],
     "name": "version",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}/versions/{vid}/license",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "source_license",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/games/{game_id}/versions/{vid}/package",
+    "methods": [
+      "GET"
+    ],
+    "name": "managed_package",
     "include_in_schema": true
   },
   {
@@ -3897,6 +3921,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/games/v1/admin/games/{game_id}/versions/{vid}/submit-review",
+    "methods": [
+      "POST"
+    ],
+    "name": "submit_review",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/admin/imports",
+    "methods": [
+      "POST"
+    ],
+    "name": "import_game",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/games/v1/admin/jobs/{job_id}",
     "methods": [
       "GET"
@@ -3910,6 +3950,46 @@
       "GET"
     ],
     "name": "list_games",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/classroom-access",
+    "methods": [
+      "GET"
+    ],
+    "name": "classroom_options",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/classroom-access/{offering_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "classroom_settings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/classroom-access/{offering_id}",
+    "methods": [
+      "PUT"
+    ],
+    "name": "update_classroom_settings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/discovery-preferences",
+    "methods": [
+      "GET"
+    ],
+    "name": "discovery_preferences",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/discovery-preferences",
+    "methods": [
+      "PUT"
+    ],
+    "name": "save_discovery_preferences",
     "include_in_schema": true
   },
   {
@@ -3974,6 +4054,14 @@
       "POST"
     ],
     "name": "new_launch",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/games/{game_id}/source",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_game_source",
     "include_in_schema": true
   },
   {
@@ -4062,6 +4150,102 @@
       "DELETE"
     ],
     "name": "game_delete_template_delete_template",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/moderation/reviews",
+    "methods": [
+      "GET"
+    ],
+    "name": "reviews",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/moderation/reviews/settings",
+    "methods": [
+      "GET"
+    ],
+    "name": "review_settings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/moderation/reviews/settings",
+    "methods": [
+      "PATCH"
+    ],
+    "name": "update_review_settings",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/moderation/reviews/{vid}",
+    "methods": [
+      "GET"
+    ],
+    "name": "review",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/moderation/reviews/{vid}/ai-review",
+    "methods": [
+      "POST"
+    ],
+    "name": "submit_ai_review",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/moderation/reviews/{vid}/decision",
+    "methods": [
+      "POST"
+    ],
+    "name": "decision",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/moderation/reviews/{vid}/file",
+    "methods": [
+      "GET"
+    ],
+    "name": "review_member_file",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/moderation/reviews/{vid}/file-content",
+    "methods": [
+      "GET"
+    ],
+    "name": "review_file_content",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/moderation/reviews/{vid}/icon",
+    "methods": [
+      "GET"
+    ],
+    "name": "review_icon",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/moderation/reviews/{vid}/package",
+    "methods": [
+      "GET"
+    ],
+    "name": "package",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/moderation/reviews/{vid}/preview",
+    "methods": [
+      "POST"
+    ],
+    "name": "preview_review",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/games/v1/moderation/reviews/{vid}/tree",
+    "methods": [
+      "GET"
+    ],
+    "name": "review_tree",
     "include_in_schema": true
   },
   {
@@ -9129,6 +9313,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/games/workshop",
+    "methods": [
+      "GET"
+    ],
+    "name": "workshop",
+    "include_in_schema": true
+  },
+  {
+    "path": "/games/workshop/{game_id}",
+    "methods": [
+      "GET"
+    ],
+    "name": "workshop",
+    "include_in_schema": true
+  },
+  {
     "path": "/games/{slug}",
     "methods": [
       "GET"
@@ -9438,6 +9638,38 @@
       "GET"
     ],
     "name": "manage",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/library/games/author-guide",
+    "methods": [
+      "GET"
+    ],
+    "name": "author_guide",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/library/games/author-guide/download",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_author_kit",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/library/games/author-guide/markdown",
+    "methods": [
+      "GET"
+    ],
+    "name": "download_author_spec",
+    "include_in_schema": true
+  },
+  {
+    "path": "/manage/library/games/reviews",
+    "methods": [
+      "GET"
+    ],
+    "name": "moderation_queue",
     "include_in_schema": true
   },
   {

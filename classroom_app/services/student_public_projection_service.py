@@ -49,7 +49,7 @@ TREND = {**fields("weeks has_enough_data total_delta total_delta_label weekly_de
 STATE = {**fields("score progress_percent snapshot_status calculated_at class_position_status"),
          "current_level": CERTIFICATE, "next_stage": STAGE, "eligible_stage": STAGE,
          "stages": [STAGE], "certificates": [CERTIFICATE], "latest_certificate": CERTIFICATE,
-         "latest_unrevealed_certificate": CERTIFICATE, "metrics": METRICS,
+         "latest_unrevealed_certificate": CERTIFICATE, "metrics": METRICS, "minigame": fields("points"),
          "rules": {**fields("weight_version weight_source pass_score fairness_note"), "score_weights": [fields("key label weight")]},
          "breakdown": [BREAKDOWN], "growth": GROWTH, "stage_effort": [fields("key tier unlock_score raw_required raw_gap")],
          "score_opportunities": [fields("type component title summary estimated_delta action_label action_url")],

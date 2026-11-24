@@ -23,7 +23,9 @@ def seed(conn):
         "teachers(id integer primary key,name text,is_active integer,is_super_admin integer,school_code text,school_name text,college text,department text)",
         "students(id integer primary key,name text,class_id integer,school_code text,school_name text,college text,department text,enrollment_status text,control_mode text)",
         "classes(id integer primary key,name text,created_by_teacher_id integer)",
-        "class_offerings(id integer primary key,class_id integer,course_id integer,teacher_id integer)",
+        "class_offerings(id integer primary key,class_id integer,course_id integer,teacher_id integer,combined_class_names text,semester_id integer,semester text)",
+        "academic_semesters(id integer primary key,teacher_id integer,name text,start_date text,end_date text)",
+        "class_offering_sessions(id integer primary key,class_offering_id integer,session_date text,academic_section_text text,academic_time_text text,schedule_metadata_json text,schedule_status text)",
         "class_offering_class_links(offering_id integer,class_id integer)",
         "courses(id integer primary key,name text)",
         "learning_certificates(id integer,student_id integer,class_offering_id integer,tier integer)",
@@ -33,7 +35,8 @@ def seed(conn):
         "social_friendships(id integer,identity_a text,identity_b text,status text)",
     ):
         conn.execute("CREATE TABLE " + table)
-    conn.execute("INSERT INTO teachers VALUES(9,'Teacher',1,0,'S','School','C','D')")
+    conn.execute("ALTER TABLE teachers ADD COLUMN email text DEFAULT ''")
+    conn.execute("INSERT INTO teachers(id,name,is_active,is_super_admin,school_code,school_name,college,department) VALUES(9,'Teacher',1,0,'S','School','C','D'),(10,'Reviewer',1,1,'S','School','C','D')")
     conn.execute("INSERT INTO students VALUES(2,'Student',20,'S','School','C','D','active','human')")
     conn.execute("INSERT INTO students VALUES(3,'Visitor',99,'X','Other','Y','Z','active','human')")
     conn.execute("INSERT INTO classes VALUES(19,'Primary class',9),(20,'Linked class',9)")
@@ -42,7 +45,7 @@ def seed(conn):
     conn.execute("INSERT INTO class_offering_class_links VALUES(8,20)")
     conn.execute("INSERT INTO learning_certificates VALUES(1,2,8,3)")
     users = []
-    for role, uid in (("teacher", 9), ("student", 2), ("student", 3)):
+    for role, uid in (("teacher", 9), ("student", 2), ("student", 3), ("teacher", 10)):
         actor = f"{role}:{uid}"
         sid = uuid.uuid4().hex
         conn.execute(
@@ -259,12 +262,13 @@ def exercise(owned):
     from classroom_app.services.minigame_package_validation import canonical
 
     assert not p.schema_installed()
+    with p.game_db() as conn:
+        teacher, player, outsider, admin = seed(conn)
     with patch.object(sys, "argv", ["migrate_minigames", "--apply"]):
         assert migrate_minigames.main() == 0 and migrate_minigames.main() == 0
     with p.game_db() as conn:
         version = conn.execute("SHOW server_version").fetchone()[0]
         assert version.startswith("16.")
-        teacher, player, outsider = seed(conn)
     new_key = lambda: uuid.uuid4().hex
 
     def action(op, game, body, vid=""):
@@ -286,7 +290,7 @@ def exercise(owned):
                 assert pk.worker_once()
             with p.game_db() as conn:
                 detail = pk.detail(conn, teacher, game_id)
-            assert detail["versions"][0]["status"] == "ready", detail["jobs"][0]
+            assert detail["versions"][0]["status"] == "reviewing", detail["jobs"][0]
             rev = detail["game"]["revision"]
             vid = upload["versionId"]
             preview = launch.launch(
@@ -297,7 +301,11 @@ def exercise(owned):
             )
             assert assets.get(preview["contentEntryUrl"]).status_code == 200
             action("playtest", game_id, {"expectedRevision": rev, "passed": True}, vid)
-            return action("publish", game_id, {"versionId": vid, "expectedRevision": rev})["game"]
+            from classroom_app.services import minigame_moderation as moderation
+            with p.game_db() as conn:
+                moderation.decide(conn, admin, vid, {"decision": "approve", "expectedDigest": detail["versions"][0]["digest"],
+                                                     "reason": "合成包复核"})
+                return pk.detail(conn, teacher, game_id)["game"]
 
         with source.open("rb") as source_file:
             game = publish(gid, source_file, game["revision"])
@@ -325,6 +333,13 @@ def exercise(owned):
         grant = launch.launch(
             player, gid, {"purpose": "play", "versionId": first, "hostInstance": "kept-solo"}, new_key()
         )
+        assert assets.get(grant["contentEntryUrl"]).status_code == 200
+        from classroom_app.services import minigame_classroom_access as classroom_access
+        restricted = classroom_access.save(teacher, 8, {
+            "mode": "deny", "durationMinutes": 2, "gameIds": [gid], "expectedRevision": 0,
+        })
+        assert restricted["mode"] == "deny" and assets.get(grant["contentEntryUrl"]).status_code == 404
+        classroom_access.save(teacher, 8, {"mode": "auto", "expectedRevision": restricted["revision"]})
         assert assets.get(grant["contentEntryUrl"]).status_code == 200
         with ZipFile(source) as z:
             files = {n: z.read(n) for n in z.namelist() if not n.endswith("/")}
@@ -422,6 +437,7 @@ def exercise(owned):
         "postgres": version,
         "schema": "explicit migration twice",
         "scopeChecks": 21,
+        "classroomLeaseDeniedAndRestored": True,
         "filterChecks": 3,
         "cursorChecks": 2,
         "versionsPublished": 2,

@@ -1,5 +1,7 @@
 import {
     api,
+    apiBase,
+    authHeaders,
     bindIconTooltips,
     bootstrap,
     button,
@@ -21,8 +23,9 @@ import {
     svgIcon,
 } from './ui.js';
 import { gameBridge } from './bridge.js';
+import { createPlayClock, wellbeingSummary } from './play-time.js';
 
-const { game, previewVersion } = bootstrap(),
+const { game, previewVersion, role } = bootstrap(),
     gamePath = '/games/' + encodeURIComponent(game.id);
 const hostKey = 'minigame:instance:' + game.id;
 let hostInstance = sessionStorage.getItem(hostKey) || makeId(),
@@ -75,6 +78,30 @@ const title = document.querySelector('[data-stage-title]'),
     countRing = document.querySelector('[data-countdown-ring]'),
     count = document.querySelector('[data-countdown]');
 const flags = { preview: !!previewVersion };
+const playClock = role === 'student' && !flags.preview ? createPlayClock() : null;
+const checkingAccess = document.querySelector('[data-access-check]');
+let frameReady = false, latestWellbeing, expiryTimer, accessTimer;
+function pendingAccess(pending) {
+    checkingAccess.hidden = !pending;
+    holder.hidden = pending;
+    holder.inert = pending;
+    updatePlayClock();
+}
+function updatePlayClock() {
+    playClock?.active(frameReady && !holder.hidden && !document.hidden && !suspended && !stopped && snap?.phase === 'running' && !snap.readOnly);
+}
+function releaseLease() {
+    if (!lease) return;
+    const bound = lease;
+    lease = null;
+    playClock?.active(false);
+    const headers = {...authHeaders(makeId()), 'Content-Type':'application/json'};
+    fetch(apiBase + idpath('launches', bound.leaseId) + '/revoke', {
+        method:'POST', credentials:'same-origin', keepalive:true, headers,
+        body:JSON.stringify({hostInstance, ...playClock?.sample()}),
+    }).catch(() => {});
+}
+
 let lease = null,
     bridge = null,
     snap = null,
@@ -390,11 +417,15 @@ function mount() {
         context,
         call: sdkCall,
         onReady() {
+            frameReady = true;
+            updatePlayClock();
             stage.hidden = flags.preview || (snap?.phase === 'running' && !snap?.readOnly);
             showControl('retry', false);
             focusStage();
         },
         onFault(text) {
+            frameReady = false;
+            updatePlayClock();
             bridge = null;
             stage.hidden = false;
             setEmblem('shield', 'danger', false);
@@ -406,6 +437,8 @@ function mount() {
 }
 
 function disposeFrame() {
+    frameReady = false;
+    updatePlayClock();
     const old = bridge;
     bridge = null;
     old?.destroy();
@@ -415,6 +448,10 @@ function disposeFrame() {
 function stop(text) {
     stopped = true;
     suspended = true;
+    clearTimeout(expiryTimer);
+    clearTimeout(accessTimer);
+    pendingAccess(false);
+    releaseLease();
     syncRequest?.abort();
     clearTimeout(pollTimer);
     clearTimeout(leaseTimer);
@@ -425,6 +462,7 @@ function stop(text) {
     stage.hidden = false;
     setEmblem('pause', 'warning', false);
     title.textContent = '已停止';
+    message.hidden = false;
     message.textContent = text;
     if (countWrap) countWrap.hidden = true;
     count.hidden = true;
@@ -488,6 +526,7 @@ function apply(snapshot) {
     const previous = snap;
     const wasHidden = stage.hidden;
     snap = snapshot;
+    updatePlayClock();
     lastClock = snapshot.serverNow || Date.now();
     nowAt = performance.now();
     if (previous?.roomId !== snapshot.roomId) {
@@ -656,7 +695,7 @@ async function sync() {
         renderChat();
     } catch (e) {
         if (e.name === 'AbortError') return;
-        if ([401, 403, 404, 410].includes(e.status)) return stop('访问已结束或游戏已下架');
+        if ([401, 403, 404, 410].includes(e.status)) return stop(e.code === 'CLASSROOM_GAME_RESTRICTED' ? e.message : '访问已结束或游戏已下架');
         if (e.status === 409 && previous === snap) {
             const result = await api(
                 '/sync?' + new URLSearchParams({ ...subject(), hostInstance, after: 0 }),
@@ -681,7 +720,11 @@ async function freshLease(current = false) {
         body.versionId = snap.versionId;
         if (!current && snap.runId && snap.versionId !== game.version_id) body.runId = snap.runId;
     }
+    releaseLease();
     lease = await api(gamePath + '/launches', { method: 'POST', body });
+    setLeaseClock(lease);
+    playClock?.reset(lease.expiresAt);
+    updatePlayClock();
     if (lease?.csrfToken) setCsrfToken(lease.csrfToken);
     versionDef = lease.definition;
     fitStage();
@@ -704,25 +747,47 @@ async function enterResult(result) {
     apply(result);
 }
 
+function setLeaseClock(grant) {
+    const serverNow = Number(grant.serverNow) || Date.now();
+    const received = performance.now();
+    lease.deadline = received + grant.expiresAt - serverNow;
+    lease.accessDeadline = grant.accessUntil ? received + grant.accessUntil - serverNow : Infinity;
+    clearTimeout(accessTimer);
+    pendingAccess(false);
+    if (Number.isFinite(lease.accessDeadline)) {
+        accessTimer = setTimeout(() => pendingAccess(true), Math.max(0, lease.accessDeadline - performance.now()));
+    }
+}
+
 function renewLater(delay) {
     clearTimeout(leaseTimer);
     const bound = lease;
     if (!bound || stopped) return;
-    const ms = Math.max(1500, (Number(bound.expiresAt) || Date.now() + 90000) - Date.now() - 30000);
+    const ttl = Math.max(0, bound.deadline - performance.now());
+    clearTimeout(expiryTimer);
+    expiryTimer = setTimeout(() => {
+        if (lease === bound && !stopped) stop('游玩授权已到期。请重新连接以检查当前的课堂规则。');
+    }, ttl);
+    const boundary = Math.max(0, bound.accessDeadline - performance.now()) + 50 + Math.random() * 1500;
+    const ms = Math.min(Math.max(250, ttl - 25000 - Math.random() * 20000), boundary);
     leaseTimer = setTimeout(async () => {
         try {
             const r = await api(idpath('launches', bound.leaseId) + '/renew', {
                 method: 'POST',
-                body: { hostInstance },
+                body: { hostInstance, ...playClock?.sample() },
             });
             if (bound === lease && !stopped) {
                 bound.expiresAt = r.expiresAt;
+                setLeaseClock(r);
+                playClock?.reset(r.expiresAt);
+                updatePlayClock();
+                latestWellbeing = r.playWellbeing || latestWellbeing;
                 renewLater();
             }
         } catch (e) {
             if (bound !== lease || stopped) return;
-            if ((!e.status || e.status >= 500) && Date.now() < bound.expiresAt) {
-                renewLater(Math.max(100, Math.min(3500, bound.expiresAt - Date.now())));
+            if ((!e.status || e.status >= 500) && performance.now() < Math.min(bound.deadline, bound.accessDeadline)) {
+                renewLater(Math.max(100, Math.min(3500, bound.deadline - performance.now())));
                 return;
             }
             stop('授权未能续期：' + e.message);
@@ -824,6 +889,7 @@ async function selectMode(kind, value, extras = {}) {
             } else fromSolo = { runId: snap.runId, controlEpoch: snap.controlEpoch };
         }
         suspended = true;
+        updatePlayClock();
         const route = kind === 'random' ? '/queue' : kind === 'join' ? '/rooms/join' : '/rooms';
         const body = { ...extras, ...(kind === 'join' ? { code: value } : { targetSize: Number(value) }) };
         if (fromSolo) body.fromSolo = fromSolo;
@@ -846,6 +912,7 @@ async function selectMode(kind, value, extras = {}) {
     } finally {
         mutating = false;
         suspended = false;
+        updatePlayClock();
         schedule(0);
     }
 }
@@ -1190,6 +1257,8 @@ onAction({
     rules: () => {
         const box = el('div', null, 'game-form');
         box.append(el('p', game.summary || '在游戏画面内直接操作即可。'));
+        if (latestWellbeing) box.append(el('p', wellbeingSummary(latestWellbeing), 'lq-status'));
+        if (playClock) box.append(el('p', '建议在课间或课后短时放松。白天累计的首小时增加修为，第二小时持平，之后及夜间游玩扣减修为。'));
         if (game.authorName) box.append(el('p', '作者 ' + game.authorName));
         const metadata = [game.genreLabel, ...(game.tags || []).map(tag => '#' + tag)].filter(Boolean);
         if (metadata.length) box.append(el('p', metadata.join(' · '), 'game-muted'));
@@ -1260,6 +1329,9 @@ document.querySelector('[data-exit-game]').addEventListener('click', (e) => {
 });
 
 document.addEventListener('visibilitychange', () => {
+    updatePlayClock();
+    if (!document.hidden && lease && performance.now() >= lease.deadline)
+        return stop('游玩授权已到期。请重新连接以检查当前的课堂规则。');
     if (document.hidden) return;
     schedule(0);
     if (foreign && !flags.preview && !stopped)
@@ -1274,6 +1346,10 @@ document.addEventListener('visibilitychange', () => {
 
 addEventListener('pagehide', () => {
     stopped = true;
+    clearTimeout(expiryTimer);
+    clearTimeout(accessTimer);
+    pendingAccess(false);
+    releaseLease();
     releaseInstance?.();
     syncRequest?.abort();
     clearTimeout(pollTimer);

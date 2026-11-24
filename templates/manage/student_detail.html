@@ -339,8 +339,8 @@
                 <div data-lq-component="surface" class="lq-surface student-activity-card"><span>活跃天数</span><strong>{{ activity.active_days }}</strong></div>
                 <div data-lq-component="surface" class="lq-surface student-activity-card"><span>聊天发言</span><strong>{{ activity.chat_message_count }}</strong></div>
                 <div data-lq-component="surface" class="lq-surface student-activity-card"><span>课堂 AI 学生消息</span><strong>{{ '待整理' if activity.ai_question_count is none else activity.ai_question_count }}</strong></div>
-                <div data-lq-component="surface" class="lq-surface student-activity-card"><span>在线分钟</span><strong>{{ activity.online_minutes }}</strong></div>
-                <div data-lq-component="surface" class="lq-surface student-activity-card"><span>专注分钟</span><strong>{{ activity.focus_minutes }}</strong></div>
+                <div data-lq-component="surface" class="lq-surface student-activity-card"><span>课堂在线分钟</span><strong>{{ activity.online_minutes }}</strong></div>
+                <div data-lq-component="surface" class="lq-surface student-activity-card"><span>课堂专注分钟</span><strong>{{ activity.focus_minutes }}</strong></div>
             </div>
         </aside>
     </section>

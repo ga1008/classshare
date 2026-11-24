@@ -3,7 +3,7 @@
 {% set suppress_account_widgets=true %}
 {% import "minigames/ui.html" as ui with context %}
 {% block title %}小游戏{% endblock %}
-{% block css %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
+{% block css %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% if user_info.role == 'teacher' %}<link rel="stylesheet" href="{{ asset_url('css/minigame_classroom_access.css') }}">{% endif %}{% endblock %}
 {% block body %}
 {% set params = request.query_params %}
 {% set cur_mode = params.get('mode', '') %}
@@ -46,6 +46,14 @@
 {{ ui.notice() }}
 </section>
 <aside class="lq-surface game-aside" data-lq-component="surface" aria-label="游玩动态">
+<section class="game-side-section game-wellbeing" data-lq-surface="embedded" {% if user_info.role != 'student' %}hidden{% endif %}>
+<h2 class="game-side-head">{{ ui.g_icon('clock', 'game-mini-icon') }}<span>今日游玩</span></h2>
+<p data-wellbeing-summary class="game-wellbeing-total"></p>
+<p>课间或课后可用小游戏放松，建议每天控制在 1–2 小时内。</p>
+<details><summary>游玩时长如何计入修为</summary>
+<p>按北京时间计算。07:00–22:00 游玩时，每日累计的首小时增加修为，第二小时持平，超过两小时扣减。22:00 至次日 07:00 的游玩全程计入扣减时长。奖励和扣减时长分别累计，每满一小时结算 1 点，不足一小时的部分保留到次日。</p>
+</details>
+</section>
 {% for key, label, icon_name, empty in [
   ('recent', '最近游玩', 'clock', '暂无记录'),
   ('popular', '热门排行', 'trophy', '暂无上榜'),
@@ -60,6 +68,7 @@
 {%- if key == 'popular' %}<b class="game-rank"{% if loop.index <= 3 %} data-top="{{ loop.index }}"{% endif %}>{{ loop.index }}</b>{% endif -%}
 {{ ui.game_icon(g) }}
 <span class="game-side-main">
+{% if g.access and (not g.access.allowed or g.access.source == 'classroom_allow') %}<small title="{{ g.access.reason }}">{{ '临时开放' if g.access.allowed else '课堂限制' }}</small>{% endif %}
 {%- if key == 'friends' and g.displayName -%}
 <span class="game-friend-line"><i class="game-live-dot" aria-hidden="true"></i><strong>{{ g.displayName }}</strong></span><small>{{ g.title }}</small>
 {%- else -%}
@@ -80,7 +89,7 @@
 {% endfor %}
 </aside>
 </main>
-<template id="preferences-form"><form class="game-form">{{ ui.field('游戏昵称', 'displayAlias', maxlength=32, placeholder='留空使用默认姓名') }}{{ ui.check('向好友公开在玩状态', 'sharePlaying') }}{{ ui.form_button('保存设置', icon='check') }}</form></template>
+<template id="preferences-form"><form class="game-form">{% if user_info.role == 'teacher' %}{{ ui.btn('课堂小游戏设置', variant='soft', icon='sliders', attrs={'data-game-settings':'','aria-haspopup':'dialog'}) }}{% endif %}{{ ui.field('游戏昵称', 'displayAlias', maxlength=32, placeholder='留空使用默认姓名') }}{{ ui.check('向好友公开在玩状态', 'sharePlaying') }}{{ ui.form_button('保存设置', icon='check') }}</form></template>
 <template id="discovery-form"><form class="game-form">
     <fieldset class="game-targets-set"><legend>游戏类型</legend><div class="game-choice-grid">
     {% for genre in genre_options|default([]) %}<label class="game-check"><input class="lq-control" data-lq-component="checkbox" type="checkbox" name="genre" value="{{ genre.id }}"><span>{{ genre.label }}</span></label>{% endfor %}
@@ -92,7 +101,8 @@
     {{ ui.check('记住此次选择，下次进入大厅自动筛选', 'remember', true) }}
     <div class="game-actions">{{ ui.form_button('确认筛选', icon='check') }}{{ ui.btn('清除选择', variant='ghost', attrs={'data-clear-filters':''}) }}</div>
 </form></template>
+{% if user_info.role == 'teacher' %}{% include 'minigames/classroom_access.html' %}{% endif %}
 {{ ui.boot({'hydrated':sidebar_hydrated|default(false),'nextCursor':next_cursor|default(none),
-    'discovery':discovery|default({}),'genreOptions':genre_options|default([])}) }}
+    'playWellbeing':(sidebar or {}).get('playWellbeing'),'discovery':discovery|default({}),'genreOptions':genre_options|default([])}) }}
 {% endblock %}
-{% block scripts %}<script type="module" src="{{ asset_url('js/minigames/hall.js') }}"></script>{% endblock %}
+{% block scripts %}{% if user_info.role == 'teacher' %}<script type="module" src="{{ asset_url('js/minigames/classroom-access-entry.js') }}"></script>{% endif %}<script type="module" src="{{ asset_url('js/minigames/hall.js') }}"></script>{% endblock %}

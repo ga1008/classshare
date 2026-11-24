@@ -4,7 +4,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from ..services import minigame_author_kit as author_kit
 from ..services import minigame_platform as p
+from ..services import minigame_wellbeing as wellbeing
+from ..services.trusted_network_service import client_network
 from ..services import minigame_catalog as directory
+from ..services import minigame_classroom_access as access
 from ..services import minigame_discovery as discovery
 from ..services.minigame_launch import change_grant, launch, version_for
 from .minigame_admin import teacher
@@ -21,13 +24,16 @@ NO_STORE = {"Cache-Control": "private, no-store", "Referrer-Policy": "no-referre
 def sidebar_data(conn, user, audience=None):
     from ..services.minigame_runtime import runtime_sidebar
 
-    query = directory.CatalogQuery(
-        user, audience if audience is not None else p._audience(conn, user)
-    )
+    audience = audience if audience is not None else p._audience(conn, user)
+    query = directory.CatalogQuery(user, audience)
     result = runtime_sidebar(conn, user, query, limit=5)
+    if user["role"] == "student":
+        result["playWellbeing"] = wellbeing.summary(conn, user["id"], p.now_ms())
     result["recommended"] = directory.recommended(
         conn, query, result["recent"], result["popular"], limit=5
     )
+    access.annotate(conn, user, [card for key in ("recent", "popular", "friends", "recommended")
+                                 for card in result[key]], audience)
     return result
 
 
@@ -55,6 +61,7 @@ def hall(
         saved = discovery.read(conn, user["actor"])
         selected_genres, selected_tags = discovery.active_filters(saved, genres, tags)
         page = directory.page(conn, user, q, mode, tag, cursor, 24, audience, genres=selected_genres, tags=selected_tags)
+        access.annotate(conn, user, page["items"], audience)
         resolve_user_ui_preferences(request, user, conn=conn)
         content = context(
             user,
@@ -85,18 +92,20 @@ def host(request: Request, slug: str, user: Player, previewVersion: str = ""):
 
     with p.game_db() as conn:
         row = conn.execute(
-            "SELECT id FROM mg_games WHERE slug=? OR id=? ORDER BY id LIMIT 1",
+            "SELECT id,title FROM mg_games WHERE slug=? OR id=? ORDER BY id LIMIT 1",
             (slug, slug),
         ).fetchone()
         if not row:
             raise HTTPException(404, "未找到小游戏")
-        game = version_for(
-            conn,
-            user,
-            row["id"],
-            previewVersion or None,
-            "preview" if previewVersion else "play",
-        )
+        try:
+            game = version_for(conn, user, row["id"], previewVersion or None,
+                               "preview" if previewVersion else "play")
+        except access.Restricted as exc:
+            resolve_user_ui_preferences(request, user, conn=conn)
+            data = context(user, title=row["title"], reason=exc.detail["message"],
+                           next_change_at=exc.detail["nextChangeAt"])
+            return templates.TemplateResponse(request, "minigames/restricted.html", data,
+                                              status_code=403, headers=NO_STORE)
         card = p.public_game(game)
         card["version_id"] = game["version_id"]
         resolve_user_ui_preferences(request, user, conn=conn)
@@ -185,8 +194,8 @@ def render_workspace(request, user, game_id):
             request, user, conn, "小游戏管理" if teacher_workspace else "我的作品",
             game=p.public_game(row) if row else None, games=[], student_work=student_work,
             is_work_owner=bool(row and row["owner_teacher_id"] == p.repository_actor_id(user)),
-            can_publish=teacher_workspace and not student_work,
-            scope_options=p.scope_options(conn, user) if teacher_workspace and not student_work else {},
+            can_publish=teacher_workspace and p.is_super_admin_teacher(conn, user["id"]),
+            scope_options=p.scope_options(conn, user) if teacher_workspace else {},
         )
     return templates.TemplateResponse(
         request,
@@ -209,7 +218,31 @@ def list_games(
 ):
     with p.game_db() as conn:
         selected_genres, selected_tags = discovery.active_filters(discovery.read(conn, user["actor"]), genres, tags)
-        return directory.page(conn, user, q, mode, tag, cursor, limit, genres=selected_genres, tags=selected_tags)
+        audience = p._audience(conn, user)
+        page = directory.page(conn, user, q, mode, tag, cursor, limit, audience, genres=selected_genres, tags=selected_tags)
+        access.annotate(conn, user, page["items"], audience)
+        return page
+
+
+@router.get(API + "/classroom-access")
+def classroom_options(user: Player, response: Response):
+    response.headers.update(NO_STORE)
+    with p.game_db() as conn:
+        return access.classrooms(conn, user)
+
+
+@router.get(API + "/classroom-access/{offering_id}")
+def classroom_settings(offering_id: int, user: Player, response: Response):
+    response.headers.update(NO_STORE)
+    with p.game_db() as conn:
+        return access.settings(conn, user, offering_id)
+
+
+@router.put(API + "/classroom-access/{offering_id}")
+async def update_classroom_settings(offering_id: int, request: Request, user: Player, response: Response):
+    response.headers.update(NO_STORE)
+    p.check_write(request, user)
+    return await p.run_db(access.save, user, offering_id, await input_body(request))
 
 
 @router.get(API + "/discovery-preferences")
@@ -248,7 +281,7 @@ def game_icon(game_id: str, user: Player):
     from ..minigame_content import GameFileResponse
 
     with p.game_db() as conn:
-        game = p.require_play(conn, user, game_id, definition=False)
+        game = p.listed_version(conn, user, game_id, definition=False)
         icon = (
             p.game_root() / "versions" / game_id / game["version_id"] / "thumbnail.png"
         )
@@ -277,4 +310,6 @@ async def update_launch(request: Request, lease_id: str, user: Player):
         lease_id,
         body.get("hostInstance"),
         request.url.path.endswith("/revoke"),
+        body,
+        client_network(request),
     )

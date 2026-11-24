@@ -144,7 +144,7 @@ def main_worker(owned_path, web_port, classroom_only=False, connections=2, produ
         POSTGRES_POOL_MIN="1",
         POSTGRES_POOL_MAX="6",
         GAMES_DB_WORKERS=str(connections),
-        LOGIN_ATTENDANCE_ENABLED="0",
+        LOGIN_ATTENDANCE_ENABLED="1" if production_api and not classroom_only else "0",
         LANSHARE_DATA_ROOT=str(data),
     )
     from unittest.mock import patch
@@ -286,13 +286,14 @@ def seed(dsn, secret, app_data):
         from classroom_app.services import minigame_platform as p
         from jose import jwt
     with p.game_db() as c:
-        p.ensure_all_schema(c)
         for sql in (
             "CREATE TABLE students(id integer primary key,name text,class_id integer,school_code text,college text,department text,enrollment_status text,control_mode text)",
-            "CREATE TABLE teachers(id integer primary key,name text,is_active integer,is_super_admin integer)",
+            "CREATE TABLE teachers(id integer primary key,name text,is_active integer,is_super_admin integer,email text)",
+            "CREATE TABLE system_settings(key text primary key,value text,updated_at timestamp)",
             "INSERT INTO teachers VALUES(1,'Synthetic owner',1,0)",
             "CREATE TABLE class_offerings(id integer primary key,class_id integer,teacher_id integer,group_qr_revision integer,group_qr_description text,group_qr_file_hash text,group_qr_mime_type text)",
             "CREATE TABLE class_offering_class_links(offering_id integer,class_id integer)",
+            "CREATE TABLE class_offering_sessions(id integer primary key,class_offering_id integer,session_date text,academic_section_text text,academic_time_text text,schedule_metadata_json text,schedule_status text)",
             "CREATE TABLE learning_certificates(id integer,student_id integer,class_offering_id integer,tier integer)",
             "CREATE TABLE user_sessions(session_user_key text primary key,session_id text,user_id text,role text,name text,ip text,last_login text,expires_at text,updated_at text)",
             "CREATE TABLE private_message_blocks(owner_identity text,blocked_identity text)",
@@ -302,6 +303,18 @@ def seed(dsn, secret, app_data):
             "INSERT INTO class_offerings VALUES(1,1,1,1,'fixture',NULL,NULL)",
         ):
             c.execute(sql)
+        p.ensure_all_schema(c)
+        from classroom_app.db.schema_login_attendance import ensure_login_attendance_schema
+        from classroom_app.services.login_attendance_rules import SHANGHAI
+        from datetime import datetime
+        ensure_login_attendance_schema(c, engine="postgres")
+        today = datetime.now(SHANGHAI).date().isoformat()
+        c.execute("""INSERT INTO class_offering_sessions VALUES
+            (1,1,?,'','00:00-23:59','{}','scheduled')""", (today,))
+        c.execute("""INSERT INTO mg_classroom_access
+            (offering_id,teacher_id,updated_by,mode,games_json,duration_minutes,expires_at,revision)
+            VALUES(1,1,1,'allow','["probe","retire-probe"]',90,?,1)""",
+            (p.now_ms() + 90 * 60_000,))
         c.execute(
             "INSERT INTO mg_games(id,slug,owner_teacher_id,title,scope,status,current_version_id,created_at,updated_at) VALUES('probe','probe',1,'Synthetic','public','listed','v1',1,1)"
         )
@@ -491,7 +504,7 @@ async def verify_two_workers(req):
 
 
 async def probe(
-    target, ports, accounts, seconds, baseline, classroom_pool, classroom_port, verify_http=False
+    target, ports, accounts, seconds, baseline, classroom_pool, classroom_port, verify_http=False, measure_play=False
 ):
     import httpx
 
@@ -770,6 +783,23 @@ async def probe(
                 n += 1
                 await asyncio.sleep(max(0, 0.5 - (time.monotonic() - t)))
 
+        async def foreground_usage(i):
+            # Reproduce per-host jitter deterministically across the same 200 real
+            # sessions. Only existing lease renewals carry foreground measurements.
+            await asyncio.sleep((i - 1) % 200 / 25)
+            instance = f"capacity-player-{i}"
+            grant = await req(i, "POST", "/api/games/v1/games/probe/launches",
+                              {"hostInstance": instance}, "play_launch")
+            delay = 45 + 20 * ((i * 37) % 200) / 200
+            while time.monotonic() + delay < until:
+                await asyncio.sleep(delay)
+                grant = await req(i, "POST", f"/api/games/v1/launches/{grant['leaseId']}/renew", {
+                    "hostInstance": instance, "usageAnchor": grant["expiresAt"],
+                    "playIntervals": [[0, int(delay * 1000)]],
+                }, "play_usage_renew")
+                if "playWellbeing" not in grant:
+                    raise AssertionError("Foreground interval was not recorded")
+
         async def observe():
             while time.monotonic() < until:
                 data = {
@@ -782,6 +812,7 @@ async def probe(
 
         tasks = await asyncio.gather(
             *(keep(i) for i in range(1, 201)),
+            *(foreground_usage(i) for i in range(1, 201) if measure_play),
             *(command(*r) for r in rooms),
             administer(),
             classroom(seconds, "classroom_mixed"),
@@ -1089,8 +1120,20 @@ def main():
                     classroom_pool,
                     ports[-1],
                     args.verify_http,
+                    args.production_api,
                 )
             )
+            if args.production_api and not args.verify_http:
+                from classroom_app.services import minigame_platform
+
+                with minigame_platform.game_db() as conn:
+                    daily = conn.execute("SELECT COUNT(DISTINCT student_id),"
+                                         "SUM(early_seconds+day_seconds+late_seconds) FROM mg_play_days").fetchone()
+                    visits = conn.execute("SELECT COUNT(DISTINCT student_id), COUNT(*) FROM login_attendance_access").fetchone()
+                report["foregroundPlay"] = {"students": daily[0], "seconds": daily[1] or 0,
+                                            "studentsWithVisits": visits[0], "visitRows": visits[1]}
+                if args.seconds >= 90 and (daily[0] != 200 or visits[0] != 200):
+                    raise AssertionError(f"Expected usage and platform visits for all 200 players: {report['foregroundPlay']}")
             report["serverLimits"] = budget.metrics() if budget else {"mode": "unconstrained host"}
             report["classroomProcess"] = (
                 "dedicated" if args.separate_classroom else "shared with second games worker"

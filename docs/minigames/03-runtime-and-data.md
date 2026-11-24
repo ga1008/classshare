@@ -16,7 +16,7 @@
 | [`social_scope_service.py`](../../classroom_app/services/social_scope_service.py) 的 `student_global_tier`、[`learning_progress_service.py`](../../classroom_app/services/learning_progress_service.py) 的 `STARTER_LEVEL / LEARNING_LEVELS` | 学生全站修为取当前所属有效课堂已获证书的最高 `tier`（无证书计 `0`，范围 `0–10`）。仅读取持久证书事实，修为隐藏展示开关或未结课平时分不参与权限判定。 |
 | [`social_relations.py`](../../classroom_app/services/social_relations.py)、[`social_common.py`](../../classroom_app/services/social_common.py)、[`presence_service.py`](../../classroom_app/services/presence_service.py) | 双向好友取 `STATUS_ACCEPTED`；屏蔽检查必须同时覆盖 `private_message_blocks` 与 `social_blocks` 双表（复用 `blocked_either / blocked_by / blockers_of`）。“好友在玩”基于独立的小游戏运行态租约判定，不与全站聊天在线态混同。 |
 
-高频同步、预载、网关验权和后台冲刷均计入游戏连接预算。现有 `_observe_active_student → observe_authenticated_request` 可另借 PG 连接；`classify_attendance_action` 会将未匹配的 POST 归为 `platform_active/submit`。自动 sync、预载、续租、协调器不得据此成为学生主动课堂提交或考勤证据。实施时按可信路由/操作用途在访问采集入口区分，自动流量在借连接前返回。保持登录中间件有时先于路由借库，须纳入测量，对自动流量可返回需要重新鉴权，由可信宿主在受限并发下单次恢复，不能冒名触发真实登录。真实人工登录、既有签到及课堂提交沿用原规则。[访问采集与动作分类](../../classroom_app/services/login_attendance_access_service.py)
+高频同步、预载、网关验权和后台冲刷均计入游戏连接预算。现有 `_observe_active_student → observe_authenticated_request` 可另借 PG 连接；`classify_attendance_action` 会将未匹配的 POST 归为 `platform_active/submit`。自动 sync、预载、空续租和协调器均不产生访问记录。经当前租约和服务器时钟验证的前台游玩区间进入平台访问记录，遵循原有点名窗口、名单和网络规则；游戏时长独立于课堂在线及专注时长。实施时按可信路由/操作用途在访问采集入口区分，自动流量在借连接前返回。保持登录中间件有时先于路由借库，须纳入测量，对自动流量可返回需要重新鉴权，由可信宿主在受限并发下单次恢复，不能冒名触发真实登录。真实人工登录、既有签到及课堂提交沿用原规则。[访问采集与动作分类](../../classroom_app/services/login_attendance_access_service.py)
 
 ### 1.1 内部身份与局内匿名投影
 
@@ -41,7 +41,7 @@
      - `class`：命中任一指定行政班（学生 `class_id` 命中，教师任教或创建该班）；
      - `department / college / school`：玩家真实组织隶属（`school_code` 先行对齐，防止跨校同名学院串权）与游戏组织范围一致；
      - `public`：全体有效登录真人师生；
-   - **修为门槛**：若玩家为学生，须满足 `game.min_tier <= student_global_tier <= game.max_tier`（默认 `0..10` 闭区间）；教师无学生证书，正式游玩仅校验组织范围，不受学生修为上下限拦截。
+   - **修为门槛**：若玩家为学生，须满足 `game.min_tier <= student_global_tier <= game.max_tier`（默认 `0..10` 闭区间）；教师按其作品受众范围游玩，超管可访问任意受众范围内的已上架游戏并在管理台核查待审版本。
 
 目录、四个旁栏、图标读取、启动租约、建房/加房、排队、动作、存档与增量同步全部走服务端复核；任何变更 `status`、受众范围或修为区间的管理提交都会原子递增 `games.policy_revision`，使失权者的在途租约与会话立即失效。对无权获知的私有游戏或房间统一返回 `404`。
 

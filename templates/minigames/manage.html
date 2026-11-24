@@ -2,8 +2,8 @@
 {% import 'minigames/ui.html' as ui with context %}
 {% from 'macros/lq/button.html' import lq_btn %}
 {% block title %}{{ page_title }}{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
-{% block header_actions %}{{ ui.btn('游玩大厅', variant='ghost', size='sm', icon='gamepad', href='/games') }} {{ ui.action('上传新游戏', 'draft', 'prominent', 'upload') }}{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% if user_info.role == 'teacher' %}<link rel="stylesheet" href="{{ asset_url('css/minigame_classroom_access.css') }}">{% endif %}{% endblock %}
+{% block header_actions %}{% if user_info.role == 'teacher' %}{{ ui.btn('课堂小游戏设置', variant='soft', size='sm', icon='sliders', attrs={'data-game-settings':'','aria-haspopup':'dialog'}) }} {% endif %}{{ ui.btn('游玩大厅', variant='ghost', size='sm', icon='gamepad', href='/games') }} {{ ui.action('上传新游戏', 'draft', 'prominent', 'upload') }}{% endblock %}
 {% block content %}
 <section class="game-management" data-game-library>
 {% set workspace = '/games/workshop' if user_info.role == 'student' else '/manage/library/games' %}
@@ -38,6 +38,7 @@
 {{ ui.notice() }}
 </section>
 <template id="game-upload-form">{% include 'minigames/upload_form.html' %}</template>
+{% if user_info.role == 'teacher' %}{% include 'minigames/classroom_access.html' %}{% endif %}
 {{ ui.boot({'workspace':workspace,'role':user_info.role}) }}
 {% endblock %}
-{% block scripts %}<script type="module" src="{{ asset_url('js/minigames/manage.js') }}"></script>{% endblock %}
+{% block scripts %}{% if user_info.role == 'teacher' %}<script type="module" src="{{ asset_url('js/minigames/classroom-access-entry.js') }}"></script>{% endif %}<script type="module" src="{{ asset_url('js/minigames/manage.js') }}"></script>{% endblock %}

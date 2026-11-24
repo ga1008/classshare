@@ -20,23 +20,23 @@
 | [Declarative 显式声明与领域壳](#declarative) | foundation | `lq-disclosure-popover`, `lq-disclosure-trigger`, `lq-domain-choice`, `lq-domain-raised`, `lq-domain-region`, `lq-domain-toolbar` … | JS | 162 |
 | [Domain controls 领域控件就地接入](#domain-controls) | foundation | `lq-chip-group`, `lq-domain-graph-choice`, `lq-pagination` | JS | 56 |
 | [Material boundaries 用户偏好终裁](#material-boundaries) | foundation | — | 仅 CSS | 0 |
-| [Materials 材质层（四层材质模型）](#materials) | foundation | `lq-glass`, `lq-material-accent`, `lq-material-control`, `lq-material-muted`, `lq-profile`, `lq-surface` | 仅 CSS | 196 |
+| [Materials 材质层（四层材质模型）](#materials) | foundation | `lq-glass`, `lq-material-accent`, `lq-material-control`, `lq-material-muted`, `lq-profile`, `lq-surface` | 仅 CSS | 197 |
 | [Motion 动效参数](#motion) | foundation | `lq-domain-popover` | 仅 CSS | 1 |
 | [Page backdrop 页面背景层](#page-backdrop) | foundation | `lq-page-backdrop` | 仅 CSS | 1 |
 | [Prose copy 正文排版](#prose-copy) | foundation | — | 仅 CSS | 0 |
 | [React bridges](#react-bridges) | foundation | `lq-avatar-link` | 仅 CSS | 1 |
 | [Ability radar 六边形能力雷达](#ability-radar) | component | `lq-radar` | 仅 CSS | 3 |
 | [Business 业务呈现（DeadlineClock / JobStatus / QuestionNavigator）](#business) | component | `lq-clock`, `lq-job`, `lq-nav-grid` | 宏 / JS / Py | 1 |
-| [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 294 |
+| [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 295 |
 | [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 47 |
 | [ChipRow 芯片行](#chip-row) | component | `lq-chip-row` | 宏 / JS / Py | 10 |
 | [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 18 |
 | [Composer 输入区](#composer) | component | `lq-composer` | 宏 / JS / Py | 6 |
-| [Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）](#content) | component | `lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list` … | 宏 / JS / Py / React | 191 |
+| [Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）](#content) | component | `lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list` … | 宏 / JS / Py / React | 192 |
 | [Cultivation emblem 境界标志与道印图案身份](#cultivation-emblem) | component | `lq-cultivation-emblem`, `lq-cultivation-emblem-img`, `lq-cultivation-host`, `cultivation-card__emblem` | 仅 CSS | 8 |
 | [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 45 |
 | [EmojiPicker 表情选择器](#emoji-picker) | component | `.emoji-picker`, `.emoji-picker-item`, `.emoji-picker-grid`, `createEmojiPicker` | JS | 5 |
-| [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 196 |
+| [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 198 |
 | [Indicators 徽标 / 头像 / 进度 / 加载](#indicators) | component | `lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner` | 宏 / JS / Py / React | 26 |
 | [Insights 统计（AvatarStack / Ring / Bars / Meter）](#insights) | component | `lq-avatar-stack`, `lq-bars`, `lq-insight`, `lq-meter`, `lq-ring` | 宏 / JS / Py | 4 |
 | [Layer 层栈](#layers) | component | — | JS | 39 |
@@ -48,7 +48,7 @@
 | [Search 搜索包装](#search) | component | `lq-search` | 仅 CSS | 15 |
 | [Selection / Dropdown 选择列表](#selection) | component | `lq-dropdown`, `lq-selection` | 宏 / JS / Py | 10 |
 | [Skeleton 骨架屏](#skeleton) | component | `lq-skeleton` | 宏 / JS / Py | 32 |
-| [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 30 |
+| [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 33 |
 | [Table / Pager / BulkBar / ResultCount](#tables) | component | `lq-bulk-bar`, `lq-pager`, `lq-result-count`, `lq-table`, `lq-table-shell` | 宏 / JS / Py / React | 13 |
 | [Toast 通知](#toast) | component | `lq-toast`, `lq-toast-fallback`, `lq-toasts` | JS | 5 |
 | [Tooltip 提示](#tooltips) | component | `lq-tooltip` | 宏 / JS / Py | 6 |
@@ -340,7 +340,7 @@
 - **状态**：透明关闭 / 高对比 / Tier B·C / forced-colors 退回不透明主题配对；嵌套材质自动不再成为模糊宿主。
 - **规则**：玻璃上的文字只读 `--lq-material-ink/muted/accent`，禁用随主题翻转的灰阶；普通内容面板与重复行不得各自开 backdrop-filter；真源 docs/lq-scene-ink-2026-09-26.md。
 - **根类**：`lq-glass`, `lq-material-accent`, `lq-material-control`, `lq-material-muted`, `lq-profile`, `lq-surface`
-- **消费者**：196 个文件
+- **消费者**：197 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -525,6 +525,7 @@
 - `templates/manage/offering_merge.html` ×1
 - `templates/manage/signature_workflows.html` ×1
 - `templates/material_viewer.html` ×1
+- `templates/minigames/restricted.html` ×1
 - `templates/minigames/student_workspace.html` ×1
 - `templates/minigames/ui.html` ×1
 - `templates/partials/classroom_group_qr.html` ×1
@@ -643,11 +644,11 @@
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
 - **React 适配器**：`LqButton`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：294 个文件
+- **消费者**：295 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
-- `templates/classroom_main_v4.html` ×354
+- `templates/classroom_main_v4.html` ×355
 - `templates/assignment_detail_teacher.html` ×312
 - `static/js/blog.js` ×228
 - `templates/exam_editor.html` ×157
@@ -892,6 +893,7 @@
 - `templates/manage/system/super_admin.html` ×4
 - `templates/manage/teacher_schedule_query.html` ×4
 - `templates/material_reader_unavailable.html` ×4
+- `templates/minigames/classroom_access.html` ×4
 - `templates/partials/feedback_button.html` ×4
 - `templates/partials/profile/hero_lq.html` ×4
 - `templates/partials/profile_button.html` ×4
@@ -1110,7 +1112,7 @@
 - **JS 入口** `static/js/lq/content.js`：`contentKinds`, `contentMarkup`, `contentProps`, `createContent`, `enhanceRow`, `html`
 - **Python props** `classroom_app/lq_content.py`
 - **React 适配器**：`LqCardFrame`, `LqEmpty`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：191 个文件
+- **消费者**：192 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1288,6 +1290,7 @@
 - `templates/manage/offering_merge.html` ×1
 - `templates/material_viewer.html` ×1
 - `templates/minigames/host.html` ×1
+- `templates/minigames/restricted.html` ×1
 - `templates/minigames/ui.html` ×1
 - `templates/partials/classroom_group_qr.html` ×1
 - `templates/partials/classroom_material_library.html` ×1
@@ -1428,7 +1431,7 @@
 - **JS 入口** `static/js/lq/forms.js`：`checkbox`, `createForm`, `enhanceForms`, `errorSummary`, `field`, `focusFirstError`, `formActions`, `formKinds`, `formMarkup`, `formProps`, `formSection`, `html`, `input`, `nativeSelect` …
 - **Python props** `classroom_app/lq_forms.py`
 - **React 适配器**：`LqField`, `LqNativeInput`, `LqNativeTextarea`, `LqNativeSelect`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：196 个文件
+- **消费者**：198 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1492,6 +1495,7 @@
 - `templates/macros/user_ui_preferences.html` ×12
 - `templates/manage/system/users.html` ×12
 - `templates/manage/teacher_schedule_query.html` ×12
+- `templates/minigames/classroom_access.html` ×12
 - `templates/teacher_register_v4.html` ×12
 - `frontend/src/islands/dashboard-workspace.tsx` ×11
 - `templates/manage/semesters.html` ×11
@@ -1599,6 +1603,7 @@
 - `static/js/materials_library_cards.js` ×2
 - `static/js/message_center.js` ×2
 - `static/js/message_center_blog.js` ×2
+- `static/js/minigames/classroom-access.js` ×2
 - `static/js/minigames/ui.js` ×2
 - `static/js/prompt_pool.js` ×2
 - `static/js/resume_common.js` ×2
@@ -1985,7 +1990,7 @@
 - **JS 入口** `static/js/lq/status.js`：`STATUS_KINDS`, `alert`, `conflict`, `createStatus`, `html`, `saveStatus`, `save_status`, `status`, `statusMarkup`, `statusProps`
 - **Python props** `classroom_app/lq_status.py`
 - **React 适配器**：`LqStatus`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：30 个文件
+- **消费者**：33 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -2001,10 +2006,13 @@
 - `static/js/social/group_settings.js` ×3
 - `frontend/src/islands/classroom-workspace.tsx` ×2
 - `frontend/src/islands/dashboard-workspace.tsx` ×2
+- `static/js/minigames/host.js` ×2
 - `static/js/minigames/reviews.js` ×2
 - `templates/assignment_detail_student.html` ×2
 - `templates/classroom_main_v4.html` ×2
 - `templates/manage/teacher_schedule_query.html` ×2
+- `templates/minigames/classroom_access.html` ×2
+- `templates/minigames/ui.html` ×2
 - `templates/minigames/upload_form.html` ×2
 - `static/js/assessment_appeal.js` ×1
 - `static/js/assessment_editor.js` ×1
@@ -2013,10 +2021,10 @@
 - `static/js/lessondoc_editor/ui.js` ×1
 - `static/js/manage_users.js` ×1
 - `static/js/materials_explorer.js` ×1
-- `static/js/minigames/host.js` ×1
+- `static/js/minigames/hall.js` ×1
 - `static/js/minigames/manage.js` ×1
 - `static/js/minigames/ui.js` ×1
-- `templates/minigames/ui.html` ×1
+- `templates/minigames/host.html` ×1
 - `templates/partials/learning_certificate_reveal.html` ×1
 - `templates/partials/profile/hero_lq.html` ×1
 
@@ -2178,7 +2186,7 @@
 | `static/css/lq/pages/login.css` | `templates/base_centered.html` | 否 |
 | `static/css/lq/pages/manage-archive.css` | （仅 index.css 或未直接链接） | 是 |
 | `static/css/lq/pages/message-center.css` | `templates/partials/profile/head.html`, `templates/partials/profile/messages.html` | 否 |
-| `static/css/lq/pages/minigames.css` | `templates/minigames/author_guide.html`, `templates/minigames/detail.html`, `templates/minigames/hall.html`, `templates/minigames/host.html`, `templates/minigames/manage.html`, `templates/minigames/reviews.html` | 否 |
+| `static/css/lq/pages/minigames.css` | `templates/minigames/author_guide.html`, `templates/minigames/detail.html`, `templates/minigames/hall.html`, `templates/minigames/host.html`, `templates/minigames/manage.html`, `templates/minigames/restricted.html`, `templates/minigames/reviews.html` | 否 |
 | `static/css/lq/pages/navbar.css` | `templates/base_navbar.html` | 否 |
 | `static/css/lq/pages/page-material.css` | （仅 index.css 或未直接链接） | 是 |
 | `static/css/lq/pages/profile-signatures.css` | `templates/partials/profile/head.html` | 否 |

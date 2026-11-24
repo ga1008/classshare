@@ -11,8 +11,11 @@ from fastapi import HTTPException
 from ..config import SECRET_KEY
 from ..db.sessions import get_user_session
 from . import minigame_platform as p
+from . import minigame_wellbeing as wellbeing
+from . import minigame_classroom_access as classroom_access
+from .minigame_classroom_access import require_access
 
-LIFETIME = 90_000
+LIFETIME = wellbeing.LEASE_MS
 INSTANCE = re.compile(r"[a-zA-Z0-9_-]{8,128}\Z")
 SIGN_FIELDS = (
     "handle_hash",
@@ -51,16 +54,17 @@ def version_for(conn, user, game_id, vid, purpose, *, definition=True):
         raise HTTPException(422, "未知启动用途")
     game = p.require_manager(conn, user, game_id)
     fields = "config_json,rules_json,writeback_json" if definition else "id"
-    allow_reviewing = user["role"] == "teacher" and p.is_super_admin_teacher(conn, user["id"])
-    status_clause = "status IN ('ready','reviewing')" if allow_reviewing else "status='ready'"
     ver = conn.execute(
-        f"SELECT {fields} FROM mg_versions WHERE game_id=? AND id=? AND {status_clause}",
+        f"SELECT status, digest, {fields} FROM mg_versions WHERE game_id=? AND id=?",
         (game_id, vid),
     ).fetchone()
-    if not ver or game["status"] in ("deleting", "deleted"):
+    archive_admin = (ver and ver["status"] in ("retired", "rejected") and user["role"] == "teacher"
+                     and p.is_super_admin_teacher(conn, user["id"]))
+    if not ver or game["status"] in ("deleting", "deleted") or not p.can_preview_version(ver["status"], ver["digest"], archive_admin):
         raise HTTPException(404, "当前版本无法预览")
     return {
         **game,
+        "accessUntil": require_access(conn, user, game_id),
         "version_id": vid,
         **(p.version_definition(ver) if definition else {}),
     }
@@ -79,6 +83,8 @@ def launch_response(row, game, user, asset):
         "versionId": row["version_id"],
         "csrfToken": p.csrf_token(user),
         "expiresAt": row["expires_at"],
+        "accessUntil": game.get("accessUntil"),
+        "serverNow": p.now_ms(),
         "contentEntryUrl": f"{asset}/l/{handle_for(row['lease_id'])}/main.html",
         "definition": {k: game[k] for k in ("config", "writeback", "rules")},
     }
@@ -236,7 +242,7 @@ def check_grant(conn, record, *, retried=False):
     return record
 
 
-def change_grant(user, lease_id, instance, revoke):
+def change_grant(user, lease_id, instance, revoke, sample=None, network=None):
     with p.game_db() as conn:
         p.db_start(conn)
         lock = " FOR UPDATE" if p.get_configured_db_engine() == "postgres" else ""
@@ -247,13 +253,52 @@ def change_grant(user, lease_id, instance, revoke):
         ).fetchone()
         if not row or row["sid_hash"] != digest(user["session_id"]):
             raise HTTPException(404, "窗口已失效")
-        if revoke:
+        has_sample = (user["role"] == "student" and row["purpose"] == "play"
+                      and sample and sample.get("playIntervals") and sample.get("usageAnchor") == row["expires_at"])
+        now = p.now_ms()
+        measured = None
+        denied = None
+        allowed_until = None
+        grant = None
+        if not revoke or has_sample:
+            try:
+                grant = dict(check_grant(conn, row))
+            except classroom_access.Restricted as exc:
+                if not has_sample and not revoke:
+                    raise
+                if has_sample:
+                    check_run(conn, user["actor"], row["game_id"], row["version_id"], row["run_id"])
+                    allowed_until = classroom_access.grant_end_on_restriction(
+                        conn, user, row["game_id"], row["expires_at"] - LIFETIME, now)
+                denied = exc
+            except HTTPException as exc:
+                if not revoke or exc.status_code not in (401, 403, 404, 410):
+                    raise
+                has_sample = False
+        if has_sample:
+            measured = wellbeing.record(conn, user["id"], row["expires_at"], sample, now, allowed_until=allowed_until)
+            if measured and network:
+                from ..db.savepoint import best_effort
+                from .login_attendance_access_service import enabled, record_access
+
+                if enabled():
+                    with best_effort(conn, "minigame_platform_visit"):
+                        record_access(conn, student_id=user["id"], ip_address=network["ip"],
+                                      source="authenticated_request", network_source=network["source"],
+                                      session_hash=row["sid_hash"][:24], observed_at_ms=now)
+        if revoke or denied:
             conn.execute(
                 "UPDATE mg_launch_leases SET revoked=1 WHERE lease_id=?", (lease_id,)
             )
+            if denied and not revoke:
+                # A denied renewal closes the lease. Preserve its authorized prefix even
+                # if the tab is already gone when the denial reaches the client.
+                conn.commit()
+                raise denied
             return {"revoked": True}
-        grant = dict(check_grant(conn, row))
-        grant["expires_at"] = p.now_ms() + LIFETIME
+        # On a lost renewal response, reissue the current anchor without advancing it.
+        replay = sample and sample.get("usageAnchor") is not None and sample["usageAnchor"] != row["expires_at"]
+        grant["expires_at"] = row["expires_at"] if replay else now + LIFETIME
         changed = conn.execute(
             "UPDATE mg_launch_leases SET expires_at=?, signature=? WHERE lease_id=? AND revoked=0 AND expires_at>=? AND policy_revision=?",
             (
@@ -270,6 +315,9 @@ def change_grant(user, lease_id, instance, revoke):
             "leaseId": lease_id,
             "versionId": row["version_id"],
             "expiresAt": grant["expires_at"],
+            "accessUntil": require_access(conn, user, row["game_id"]),
+            "serverNow": p.now_ms(),
+            **({"playWellbeing": measured} if measured is not None else {}),
         }
 
 

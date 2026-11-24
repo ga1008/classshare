@@ -8,7 +8,7 @@
 | [星图拼接](downloads/star-map.zip) | 单人 | 依次完成辨形、推演、合图。刷新后从已解锁的章节继续。 |
 | [双人连线棋](downloads/three-in-line.zip) | 双人随机、双人私房、离线同屏 | 双方轮流落子，横、竖、斜线连成三子获胜。棋盘填满可平局。 |
 
-解压任一 ZIP 后双击根目录的 `main.html` 可离线游玩。上传时选择原 ZIP。教师可在「教学资源 → 小游戏」上传，验收完成后打开真实预览，登记试玩结果，设置受众并发布。学生在「观点与交流」右侧进入大厅。大厅只列入已发布且当前账户有权游玩的游戏。
+解压任一 ZIP 后双击根目录的 `main.html` 可离线游玩。上传时选择原 ZIP。教师从「教学资源 → 小游戏」上传，学生从大厅「我的作品」上传。作者可隔离试玩，超管终审通过后上架。学生在大厅可看到作品受众范围内的游戏；上课受限时卡片提示原因。
 
 随包 SDK 位于 `js/lan-game-sdk.v1.js`。发行源在 [static/minigames](../../static/minigames/lan-game-sdk.v1.js)，三个示例共用的界面与操作逻辑在 [examples/minigames](../../examples/minigames)。运行 `python tools/build_minigame_examples.py` 可从源文件重新生成上述三个包。作者接入其他独立游戏时按[作者手册](05-game-author-guide.md)设置清单、回写契约和规则，保持 SDK 字节一致。局内的玩家标识为随机席位别名，昵称由可信宿主提供。SDK 通过独立消息端口接收只读契约并提交操作。[HTML Channel messaging](https://html.spec.whatwg.org/multipage/web-messaging.html#channel-messaging)
 
@@ -19,7 +19,7 @@
 | 课堂端导航、游戏大厅、游戏宿主与教师管理 | `routers/minigames.py`、`templates/minigames/`、`static/js/minigames/` | 窄屏可切换列表与管理操作。失去席位控制的标签可查看自己能访问的数据，接管时提升控制代数。 |
 | 身份、受众与目录 | `services/minigame_platform.py`、`services/minigame_catalog.py` | 主站从持久登录会话确认真人身份。班级、含合班的课堂、组织及修为过滤在分页之前完成。 |
 | 房间、随机队列、规则、进度 | `routers/minigame_runtime.py`、`services/minigame_runtime*.py` | 满员后按服务端时间进入 5 秒倒计时。重连回原席位。共同进度只前移，私人字段按个人修订号保存。 |
-| 游戏包、教师试玩、发布和删除 | `routers/minigame_admin.py`、`services/minigame_packages.py` | 上传先进入私有暂存。静态检查合格的包可持久等待浏览器验收。执行器恢复后自动接续，教师在隔离预览中完成试玩并登记结果后可发布。 |
+| 游戏包、作者试玩、终审和删除 | `routers/minigame_admin.py`、`services/minigame_packages.py` | 上传先进入私有暂存。静态检查合格的包可持久等待浏览器验收。执行器恢复后自动接续，作者在隔离预览中完成试玩并登记结果后可提交，由超管终审上架。 |
 | 资源签发与独立内容站 | `services/minigame_launch.py`、`classroom_app/minigame_content.py` | 资源路径在 90 秒授权周期及续期之间保持稳定。每次读取核验当前会话、版本和受众。下架后拒绝后续读取，正在传输的文件由共享读锁保护。 |
 
 游戏表使用 `mg_` 前缀。素材位于 `DATA_ROOT/games/versions/<gameId>/<versionId>/`，包括原 ZIP、验收清单、重编码图标与运行树。`staging/` 持有验收中的输入，`locks/` 用于跨进程文件占用协调。发布在事务中切换当前版本；运行中且仍有权限的成员可继续访问已锁定的旧版。删除先撤销准入，再由持久作业清理该游戏的各版本与业务数据。删除登记、失败重试与恢复封存的操作见[执行器和恢复说明](../../deployment/docker/MINIGAME_PROBE.md)。

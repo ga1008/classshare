@@ -1,0 +1,20 @@
+.classroom-game-settings { white-space: normal; }
+.classroom-game-settings,
+.classroom-game-settings .policy-fields,
+.classroom-game-settings .policy-field {
+    display: grid;
+    gap: .75rem;
+    min-inline-size: 0;
+}
+.classroom-game-settings .policy-field { gap: .35rem; }
+.classroom-game-settings fieldset { display: block; min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.classroom-game-settings .policy-choices { margin-block-end: .65rem; }
+.classroom-game-settings legend { margin-block-end: .5rem; }
+.classroom-game-settings p { margin: 0; overflow-wrap: anywhere; }
+.classroom-game-settings .policy-choices,
+.classroom-game-settings .policy-actions { display: flex; flex-wrap: wrap; gap: .5rem .9rem; }
+.classroom-game-settings .policy-actions { justify-content: flex-end; }
+.classroom-game-settings .policy-results { max-block-size: min(27dvh, 14rem); overflow-y: auto; display: grid; gap: .25rem; }
+.classroom-game-settings .lq-choice { min-block-size: 2.5rem; overflow-wrap: anywhere; }
+.classroom-game-settings [hidden] { display: none; }
+@media (pointer: coarse) { .classroom-game-settings .lq-choice { min-block-size: 44px; } }

@@ -253,7 +253,7 @@ def _active_friends(conn, actors):
             continue
         marks = ",".join("?" for _ in ids)
         if role == "teacher":
-            sql = f"SELECT id FROM teachers WHERE id IN ({marks}) AND COALESCE(is_active,1)=1"
+            sql = f"SELECT id,is_super_admin FROM teachers WHERE id IN ({marks}) AND COALESCE(is_active,1)=1"
         else:
             sql = (
                 f"SELECT id,class_id FROM students WHERE id IN ({marks}) AND COALESCE(NULLIF(enrollment_status,''),'active')='active' "
@@ -268,6 +268,8 @@ def _active_friends(conn, actors):
 
 
 def _friends_playing(conn, user, query, now, limit):
+    from .minigame_classroom_access import class_timetable
+
     actor = user["actor"]
     accepted = """SELECT identity_b AS friend FROM social_friendships WHERE identity_a=? AND status='accepted'
         UNION ALL SELECT identity_a AS friend FROM social_friendships WHERE identity_b=? AND status='accepted'"""
@@ -283,6 +285,7 @@ def _friends_playing(conn, user, query, now, limit):
         WHERE c.expires>? AND c.interacted>0 AND a.run IS NOT NULL AND a.started IS NOT NULL
         AND {VISIBLE_SEAT} AND {query.visible}"""
     selected = {}
+    schedules = {}
     anchor = None
     batch_size = 24
     while len(selected) < limit:
@@ -311,21 +314,29 @@ def _friends_playing(conn, user, query, now, limit):
                 row["min_tier"],
                 row["max_tier"],
             ) != (0, 10)
-            if (
+            if friend.get("is_super_admin"):
+                audience = {"admin": True, "tier": None}
+            elif (
                 row["scope"] == "class"
                 and friend["role"] == "student"
                 and not needs_tier
             ):
                 # A student's class was read with the live account facts for this batch.
-                audience = {"tier": None, "classes": {friend["class_id"]}}
+                audience = {"admin": False, "tier": None, "classes": {friend["class_id"]}}
             elif row["scope"] == "public" and not needs_tier:
-                audience = {"tier": None}
+                audience = {"admin": False, "tier": None}
             else:
                 if identity not in audiences:
                     audiences[identity] = platform._audience(conn, friend)
                 audience = audiences[identity]
             if not platform.allowed(row, friend, audience):
                 continue
+            if friend["role"] == "student":
+                class_id = friend["class_id"]
+                if class_id not in schedules:
+                    schedules[class_id] = class_timetable(conn, class_id, now)
+                if not schedules[class_id].decision(row["id"], now)["allowed"]:
+                    continue
             selected[identity] = {
                 **platform.public_game(row),
                 "displayName": row["name"],

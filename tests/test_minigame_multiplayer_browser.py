@@ -147,6 +147,7 @@ class MultiplayerBrowserTests(TestCase):
 
     def publish_sample(self, key="three-in-line"):
         f = self.fixture
+        f.add_reviewer()
         z = platform_fixture.ROOT / "docs/minigames/downloads" / (key + ".zip")
         checked = f.root / ("checked-" + key)
         checked.mkdir()
@@ -164,13 +165,16 @@ class MultiplayerBrowserTests(TestCase):
             platform_fixture.pk.worker_once()
         detail = f.api(901, "GET", path)
         version = detail["versions"][0]
-        self.assertEqual(version["status"], "ready", detail["jobs"][0])
+        self.assertEqual(version["status"], "reviewing", detail["jobs"][0])
         preview = f.api(901, "POST", "/games/" + game["id"] + "/launches",
               json={"purpose": "preview", "versionId": version["id"], "hostInstance": "teacher-board"})
         self.assertEqual(f.content.get(preview["contentEntryUrl"]).status_code, 200)
         revision = detail["game"]["revision"]
         f.api(901, "POST", path + "/versions/" + version["id"] + "/playtests", json={"expectedRevision": revision, "passed": True})
-        return f.api(901, "POST", path + "/publish", json={"expectedRevision": revision, "versionId": version["id"]})["game"]
+        f.api(902, "POST", "/moderation/reviews/" + version["id"] + "/decision", json={
+            "expectedDigest": version["digest"], "decision": "approve", "reason": "合成版本复核",
+        })
+        return f.api(901, "GET", path)["game"]
 
     def test_random_board_cancel_rematch_winner_and_offline_games(self):
         from playwright.sync_api import expect, sync_playwright

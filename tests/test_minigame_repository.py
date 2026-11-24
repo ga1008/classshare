@@ -72,6 +72,12 @@ class RepositoryTests(GamePlatformFixture):
         self.assertEqual(detail["versions"][0]["review"]["status"],"manual")
         source="/games/"+gid+"/source"
         self.assertEqual(self.request(932,"GET",source).status_code,404)
+        managed_package = "/admin/games/" + gid + "/versions/" + vid + "/package"
+        self.assertEqual(self.request(931, "GET", managed_package).content, raw)
+        self.assertEqual(self.request(901, "GET", managed_package).status_code, 404)
+        self.assertEqual(self.request(932, "GET", managed_package).status_code, 404)
+        self.add_reviewer()
+        self.assertEqual(self.request(902, "GET", managed_package).content, raw)
         self.approve_fixture(gid,vid)
         package=self.request(932,"GET",source)
         self.assertEqual(package.content,raw)
@@ -132,8 +138,16 @@ class RepositoryTests(GamePlatformFixture):
         detail=self.request(901,"GET","/admin/games/"+game).json()
         self.assertEqual(
             (detail["game"]["title"], detail["jobs"][0]["status"], detail["versions"][0]["status"]),
-            ("天文", "succeeded", "ready"),
+            ("天文", "succeeded", "reviewing"),
         )
+        self.assertEqual(detail["versions"][0]["review"]["status"], "manual")
+        self.assertEqual(self.request(932, "GET", "/admin/games/"+game).status_code, 404)
+        self.add_reviewer()
+        self.assertIn(game, [item["id"] for item in self.request(902, "GET", "/admin/games").json()["items"]])
+        denied = self.request(901, "POST", "/admin/games/"+game+"/publish", json={
+            "versionId": accepted.json()["versionId"], "expectedRevision": detail["game"]["revision"],
+        })
+        self.assertEqual(denied.status_code, 403)
         self.assertFalse(detail["versions"][0]["allowRemix"])
 
     def test_detail_related_games_and_student_submit_review_lifecycle(self):
@@ -201,8 +215,8 @@ class RepositoryTests(GamePlatformFixture):
         self.assertEqual(blocked.status_code, 409)
         self.assertEqual(blocked.json()["detail"]["code"], "REVIEW_REJECTED")
 
-        # Teacher games reject submit-review with TEACHER_WORK.
+        # Technical validation must finish before either role can request another review.
         teacher_game = self.upload(901, self.game_zip("teacher-review-guard", title="教师试玩")).json()
         t_resp = change(901, teacher_game["gameId"], "POST", "/versions/" + teacher_game["versionId"] + "/submit-review")
         self.assertEqual(t_resp.status_code, 409)
-        self.assertEqual(t_resp.json()["detail"]["code"], "TEACHER_WORK")
+        self.assertEqual(t_resp.json()["detail"]["code"], "VERSION_NOT_READY")

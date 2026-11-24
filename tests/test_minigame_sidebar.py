@@ -10,6 +10,7 @@ from classroom_app.routers.minigames import sidebar_data
 from classroom_app.services import minigame_platform as platform
 from classroom_app.services.minigame_packages import ensure_package_schema
 from classroom_app.services.minigame_runtime_store import ensure_runtime_schema
+from classroom_app.services import minigame_wellbeing
 
 
 class SidebarTests(TestCase):
@@ -24,9 +25,10 @@ class SidebarTests(TestCase):
         ensure_runtime_schema(conn)
         for sql in (
             "CREATE TABLE students(id INTEGER PRIMARY KEY,class_id INTEGER, school_code TEXT, college TEXT,department TEXT,enrollment_status TEXT,control_mode TEXT)",
-            "CREATE TABLE teachers(id INTEGER PRIMARY KEY,is_active INTEGER)",
-            "CREATE TABLE class_offerings(id INTEGER PRIMARY KEY,class_id INTEGER)",
+            "CREATE TABLE teachers(id INTEGER PRIMARY KEY,is_active INTEGER,is_super_admin INTEGER)",
+            "CREATE TABLE class_offerings(id INTEGER PRIMARY KEY,class_id INTEGER,teacher_id INTEGER)",
             "CREATE TABLE class_offering_class_links(offering_id INTEGER,class_id INTEGER)",
+            "CREATE TABLE class_offering_sessions(id INTEGER PRIMARY KEY,class_offering_id INTEGER,session_date TEXT,academic_section_text TEXT,academic_time_text TEXT,schedule_metadata_json TEXT,schedule_status TEXT)",
             "CREATE TABLE learning_certificates(id INTEGER PRIMARY KEY,student_id INTEGER,class_offering_id INTEGER,tier INTEGER)",
             "CREATE TABLE social_friendships(identity_a TEXT,identity_b TEXT,status TEXT)",
             "CREATE TABLE social_blocks(owner_identity TEXT,blocked_identity TEXT)",
@@ -34,6 +36,7 @@ class SidebarTests(TestCase):
             "CREATE TABLE wanderer_agents(student_id INTEGER PRIMARY KEY)",
         ):
             conn.execute(sql)
+        minigame_wellbeing.ensure_schema(conn)
         viewer = {"id": 1, "role": "student", "actor": "student:1"}
         conn.execute("INSERT INTO students(id,class_id) VALUES(1,921)")
         now = platform.now_ms()

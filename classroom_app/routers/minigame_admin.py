@@ -86,7 +86,7 @@ async def detail(game_id: str, versionOffset: int = Query(0, ge=0), user=Depends
 
 
 @router.post("/games", status_code=201)
-async def create(request: Request, user=Depends(teacher)):
+async def create(request: Request, user=Depends(contributor)):
     return await command(request, user, "", "create")
 
 
@@ -96,7 +96,7 @@ async def update(game_id: str, request: Request, user=Depends(contributor)):
 
 
 @router.post("/games/{game_id}/versions", status_code=202)
-async def upload(game_id: str, request: Request, user=Depends(teacher)):
+async def upload(game_id: str, request: Request, user=Depends(contributor)):
     return await upload_form(request,user,game_id)
 
 
@@ -178,13 +178,13 @@ async def upload_form(request, user, game_id=None):
 
 def version_reader(conn, user, game_id, version_id):
     from ..services import minigame_moderation as moderation
-    game = platform.require_manager(conn, user, game_id)
+    platform.require_manager(conn, user, game_id)
     row = conn.execute(packages.VERSION_WITH_AUTHOR + " WHERE v.game_id=? AND v.id=? AND v.status<>'deleted'",
                        (game_id,version_id)).fetchone()
     if not row:
         raise HTTPException(404, "版本不存在。")
     info = packages.version_info(row)
-    info["review"] = moderation.get_summary(conn,version_id) if game["owner_teacher_id"] < 0 else None
+    info["review"] = moderation.get_summary(conn,version_id)
     return {"version": info}
 
 
@@ -204,13 +204,18 @@ async def job(job_id: str, user=Depends(contributor)):
     return await platform.run_db(query, job_reader, user, job_id)
 
 
+@router.get("/games/{game_id}/versions/{vid}/package")
+async def managed_package(game_id: str, vid: str, user=Depends(contributor)):
+    return await platform.run_db(packages.download_managed_version, user, game_id, vid)
+
+
 @router.post("/games/{game_id}/versions/{vid}/preview", status_code=201)
-async def preview(game_id: str, vid: str, request: Request, user=Depends(teacher)):
+async def preview(game_id: str, vid: str, request: Request, user=Depends(contributor)):
     return await command(request, user, game_id, "preview", vid)
 
 
 @router.post("/games/{game_id}/versions/{vid}/playtests", status_code=201)
-async def playtest(game_id: str, vid: str, request: Request, user=Depends(teacher)):
+async def playtest(game_id: str, vid: str, request: Request, user=Depends(contributor)):
     return await command(request, user, game_id, "playtest", vid)
 
 
@@ -225,7 +230,7 @@ async def submit_review(game_id: str, vid: str, request: Request, user=Depends(c
 
 
 @router.post("/games/{game_id}/publish")
-async def publish(game_id: str, request: Request, user=Depends(teacher)):
+async def publish(game_id: str, request: Request, user=Depends(contributor)):
     return await command(request, user, game_id, "publish")
 
 
@@ -240,7 +245,7 @@ async def plan(game_id: str, request: Request, user=Depends(contributor)):
 
 
 @router.post("/games/{game_id}/suggestions", status_code=202)
-async def suggestions(game_id: str, request: Request, user=Depends(teacher)):
+async def suggestions(game_id: str, request: Request, user=Depends(contributor)):
     return await command(request, user, game_id, "suggest")
 
 

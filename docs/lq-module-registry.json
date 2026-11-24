@@ -28,7 +28,7 @@
     "rules": "玻璃上的文字只读 `--lq-material-ink/muted/accent`，禁用随主题翻转的灰阶；普通内容面板与重复行不得各自开 backdrop-filter；真源 docs/lq-scene-ink-2026-09-26.md。"
    },
    "consumers": {
-    "count": 196,
+    "count": 197,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -755,6 +755,10 @@
       "hits": 1
      },
      {
+      "path": "templates/minigames/restricted.html",
+      "hits": 1
+     },
+     {
       "path": "templates/minigames/student_workspace.html",
       "hits": 1
      },
@@ -948,11 +952,11 @@
     "rules": "禁止 div 模拟按钮；颜色只来自变体及显式语义槽位，不传任意色；固定宽度长标签用 overflow-label。课次详情的操作共用 LQ Button 规格，知识树等状态另行显示，窄屏允许操作组换行。课堂文档库根据已加载的目录和浏览历史同步更新返回与上一级按钮的 native disabled、aria-disabled 和 data-lq-disabled，保持原生键鼠操作与共享禁用守卫一致。2026-11-12 对齐课次使用 soft 的 warning/success 槽位，动作保持原生 Button，不借用 filter Chip 的 toggle 语义；共享禁用/忙碌/强制颜色配方继续生效。 课堂分组与派题共用 Lucide 图标和 Button。发布、抽组保留短标签，刷新、返回、下载等图标按钮提供可访问名称；触屏仍有独立命中区。"
    },
    "consumers": {
-    "count": 294,
+    "count": 295,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
-      "hits": 354
+      "hits": 355
      },
      {
       "path": "templates/assignment_detail_teacher.html",
@@ -1931,6 +1935,10 @@
       "hits": 4
      },
      {
+      "path": "templates/minigames/classroom_access.html",
+      "hits": 4
+     },
+     {
       "path": "templates/partials/feedback_button.html",
       "hits": 4
      },
@@ -2670,7 +2678,7 @@
     "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。"
    },
    "consumers": {
-    "count": 191,
+    "count": 192,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -3366,6 +3374,10 @@
      },
      {
       "path": "templates/minigames/host.html",
+      "hits": 1
+     },
+     {
+      "path": "templates/minigames/restricted.html",
       "hits": 1
      },
      {
@@ -4852,7 +4864,7 @@
     "rules": "搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。课堂 AI 使用原生复选框，由学生为本次提问明确选择课堂归属。"
    },
    "consumers": {
-    "count": 196,
+    "count": 198,
     "files": [
      {
       "path": "templates/classroom_main_v4.html",
@@ -5092,6 +5104,10 @@
      },
      {
       "path": "templates/manage/teacher_schedule_query.html",
+      "hits": 12
+     },
+     {
+      "path": "templates/minigames/classroom_access.html",
       "hits": 12
      },
      {
@@ -5520,6 +5536,10 @@
      },
      {
       "path": "static/js/message_center_blog.js",
+      "hits": 2
+     },
+     {
+      "path": "static/js/minigames/classroom-access.js",
       "hits": 2
      },
      {
@@ -7032,7 +7052,7 @@
     "rules": "警告/错误/保存语义优先复用这里的填充与前景配对，不把有色前景放到任意透明背景。 classroom-page、assignment_detail_student、exam_take 共用 behavior_tracker.js。202 表示持久接收，200 可为已应用回执。b1 批次按账号和课堂固定编号重试 7 天，服务端回执保留至少 10 天，beacon 与 keepalive 发送均不视为确认。断网、限流和未知提交保留原批并退避；401 冻结新计时并等待同账号原批回执恢复，认证缺口不补算。结构化 409/413/422 明确终止时隔离原批并允许后续合法队列继续；未知 409 保留探测，不改编号；切换账号锁定旧页面并隔离旧队列。独立 diagnostics 幂等保存采集失败及恢复证据，不增加操作或学习时长。心跳用单调时钟记录有界区间，在可见性、焦点或 AI 面板状态切换时结算。页面离开时可独立发送仍在缓冲区的时长证据，服务器按时间区间去重。交卷、投票、聊天等业务提交保持各自的接口和重试策略。 2026-11-08容量改进：材料viewer/render-shell也复用同一采集器，material namespace隔离本地队列，onReceipt仅在durable ACK持久化后触发。递归错峰心跳/恢复、单fetch、普通buffer及诊断/档案均有硬边界，满时暂停采样并显式记录gap；未确认原文不能静默裁剪。材料v2以有界区间合并进度与课堂入box同事务，不阻塞async事件循环或同步重建全班修为。"
    },
    "consumers": {
-    "count": 30,
+    "count": 33,
     "files": [
      {
       "path": "templates/dev/lq_status.html",
@@ -7083,6 +7103,10 @@
       "hits": 2
      },
      {
+      "path": "static/js/minigames/host.js",
+      "hits": 2
+     },
+     {
       "path": "static/js/minigames/reviews.js",
       "hits": 2
      },
@@ -7096,6 +7120,14 @@
      },
      {
       "path": "templates/manage/teacher_schedule_query.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/minigames/classroom_access.html",
+      "hits": 2
+     },
+     {
+      "path": "templates/minigames/ui.html",
       "hits": 2
      },
      {
@@ -7131,7 +7163,7 @@
       "hits": 1
      },
      {
-      "path": "static/js/minigames/host.js",
+      "path": "static/js/minigames/hall.js",
       "hits": 1
      },
      {
@@ -7143,7 +7175,7 @@
       "hits": 1
      },
      {
-      "path": "templates/minigames/ui.html",
+      "path": "templates/minigames/host.html",
       "hits": 1
      },
      {
@@ -7541,6 +7573,7 @@
     "templates/minigames/hall.html",
     "templates/minigames/host.html",
     "templates/minigames/manage.html",
+    "templates/minigames/restricted.html",
     "templates/minigames/reviews.html"
    ],
    "bundledInIndex": false
@@ -8427,8 +8460,12 @@
    "insights",
    "skeleton"
   ],
+  "static/js/minigames/classroom-access.js": [
+   "forms"
+  ],
   "static/js/minigames/hall.js": [
-   "materials"
+   "materials",
+   "status"
   ],
   "static/js/minigames/host.js": [
    "composer",
@@ -9401,6 +9438,11 @@
    "declarative",
    "materials"
   ],
+  "templates/minigames/classroom_access.html": [
+   "button",
+   "forms",
+   "status"
+  ],
   "templates/minigames/detail.html": [
    "content",
    "forms",
@@ -9419,7 +9461,8 @@
    "chip",
    "content",
    "materials",
-   "shells"
+   "shells",
+   "status"
   ],
   "templates/minigames/manage.html": [
    "button",
@@ -9427,6 +9470,10 @@
    "forms",
    "materials",
    "search"
+  ],
+  "templates/minigames/restricted.html": [
+   "content",
+   "materials"
   ],
   "templates/minigames/reviews.html": [
    "chip",

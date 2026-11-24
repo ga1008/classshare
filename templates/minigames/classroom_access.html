@@ -1,0 +1,39 @@
+{% import 'minigames/ui.html' as gui with context %}
+<template id="classroom-game-settings">
+<form class="classroom-game-settings" data-policy-form>
+    <label class="policy-field" data-course-picker>
+        <span>授课课堂</span>
+        <select class="lq-select" data-lq-component="select" data-lq-dropdown data-lq-searchable name="offering" aria-label="授课课堂"></select>
+    </label>
+    <p class="lq-status" role="status" data-policy-status>正在读取课堂规则…</p>
+    <fieldset data-policy-fields disabled>
+        <legend>本课堂学生的小游戏访问</legend>
+        <div class="policy-choices">
+        {% for value, label in [('auto','跟随课表'),('allow','临时放行'),('deny','临时禁止')] %}
+            <label class="lq-choice"><input type="radio" class="lq-control" data-lq-component="radio" name="mode" value="{{ value }}"><span>{{ label }}</span></label>
+        {% endfor %}
+        </div>
+        <p data-policy-auto-help>学生上课时暂停游玩，课间和课后自动开放。</p>
+        <div class="policy-fields" data-policy-temporary hidden>
+            <label class="policy-field"><span>持续时间（分钟）</span>
+                <input class="lq-input" data-lq-component="input" type="number" inputmode="numeric" min="1" max="240" step="1" name="minutes" value="15" required>
+            </label>
+            <label class="lq-choice"><input class="lq-switch" data-lq-component="switch" type="checkbox" role="switch" name="allGames" checked><span>应用到全部游戏</span></label>
+            <div class="policy-fields" data-policy-picker hidden>
+                <label class="policy-field"><span>搜索指定游戏</span>
+                    <input class="lq-input" data-lq-component="input" type="search" name="gameSearch" placeholder="输入游戏名称或标签" autocomplete="off">
+                </label>
+                <p data-policy-selected></p>
+                <div class="policy-results" data-policy-results aria-label="可选游戏"></div>
+                <button class="lq-btn lq-btn--ghost lq-btn--sm" data-lq-component="button" type="button" data-policy-more hidden>更多游戏</button>
+            </div>
+            <p>到期后自动恢复课表规则。指定部分游戏时，其余游戏继续跟随课表。</p>
+        </div>
+    </fieldset>
+    <p class="lq-status" role="status" data-policy-feedback hidden></p>
+    <div class="policy-actions">
+        {{ gui.btn('重新读取', variant='ghost', attrs={'data-policy-reload':''}) }}
+        {{ gui.btn('应用规则', variant='prominent', type='submit') }}
+    </div>
+</form>
+</template>

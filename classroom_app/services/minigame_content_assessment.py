@@ -250,7 +250,7 @@ async def assess(job, packet):
     task = AI_TASK_DEEP_MULTIMODAL if vision else AI_TASK_DEEP_TEXT
     response = await ai_gateway_post(
         ai_client, "/api/ai/chat", task_type="minigame_content_review", priority="P2", timeout=125,
-        student_id=job["student_id"], logical_call_id=f"game-review:{job['version_id']}:{job['attempts']}",
+        student_id=job.get("student_id"), teacher_id=job.get("teacher_id"), logical_call_id=f"game-review:{job['version_id']}:{job['attempts']}",
         source_ref="game-version:" + job["version_id"],
         json_payload={"system_prompt": SYSTEM_PROMPT, "messages": [], "tools": [], "response_format": "json",
                       "new_message": "请逐项排查所附游戏包资料是否存在重大内容风险（允许正常游戏的少量成人元素），返回完整独立判断与查验报告。材料编号：" + ", ".join(packet["index"]),

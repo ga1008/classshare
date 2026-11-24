@@ -173,8 +173,7 @@ def valid_member(conn, actor, game_id, version=None):
 
 
 def roster_is_eligible(conn, game, actors):
-    # On an unrestricted public game, eligibility reduces to current human-account
-    # facts; load these once for the whole room instead of ten separate manifests.
+    # Public rooms batch account checks and reuse one timetable per distinct class.
     if game.get("scope") != "public" or game.get("min_tier") != 0 or game.get("max_tier") != 10:
         return all(valid_member(conn, a, game["id"], game["version_id"]) for a in actors)
     from .account_control_service import table_exists
@@ -186,7 +185,7 @@ def roster_is_eligible(conn, game, actors):
     if student_ids:
         marks = ",".join("?" for _ in student_ids)
         students = rows(
-            conn, f"SELECT id,enrollment_status,control_mode FROM students WHERE id IN ({marks})", student_ids
+            conn, f"SELECT id,class_id,enrollment_status,control_mode FROM students WHERE id IN ({marks})", student_ids
         )
         if len(students) != len(student_ids) or any(
             (s.get("enrollment_status") or "active") != "active"
@@ -197,6 +196,11 @@ def roster_is_eligible(conn, game, actors):
         if table_exists(conn, "wanderer_agents") and get(
             conn, f"SELECT student_id FROM wanderer_agents WHERE student_id IN ({marks}) LIMIT 1", student_ids
         ):
+            return False
+        from .minigame_classroom_access import class_timetable
+        now = platform.now_ms()
+        if any(not class_timetable(conn, cid, now).decision(game["id"], now)["allowed"]
+               for cid in {s["class_id"] for s in students}):
             return False
     if teacher_ids:
         marks = ",".join("?" for _ in teacher_ids)

@@ -264,7 +264,7 @@ def detail(conn, user, game_id, version_offset=0):
     ).fetchall()
     versions = [version_info(v) for v in version_rows[:100]]
     version_ids = [v["id"] for v in versions]
-    reviews = moderation.get_summaries(conn, version_ids) if game["owner_teacher_id"] < 0 else {}
+    reviews = moderation.get_summaries(conn, version_ids)
     playtested = {}
     previewed = set()
     if version_ids:
@@ -276,15 +276,14 @@ def detail(conn, user, game_id, version_offset=0):
             (game_id, *version_ids),
         ).fetchall():
             playtested.setdefault((pt["version_id"], pt["digest"]), bool(pt["passed"]))
-        if user["role"] == "teacher":
-            previewed = {
-                (pr["version_id"], pr["digest"])
-                for pr in conn.execute(
-                    f"""SELECT version_id,digest FROM mg_admin_preview_receipts
-                        WHERE actor=? AND game_id=? AND version_id IN ({placeholders}) AND loaded_at>?""",
-                    (user["id"], game_id, *version_ids, platform.now_ms() - 3600000),
-                ).fetchall()
-            }
+        previewed = {
+            (pr["version_id"], pr["digest"])
+            for pr in conn.execute(
+                f"""SELECT version_id,digest FROM mg_admin_preview_receipts
+                    WHERE actor=? AND game_id=? AND version_id IN ({placeholders}) AND loaded_at>?""",
+                (platform.repository_actor_id(user), game_id, *version_ids, platform.now_ms() - 3600000),
+            ).fetchall()
+        }
     for version in versions:
         version["review"] = reviews.get(version["id"])
         key = (version["id"], version["digest"])
@@ -307,7 +306,10 @@ def detail(conn, user, game_id, version_offset=0):
 
 
 def list_games(conn, user, params):
-    clauses, args = ["g.status<>'deleted'", "g.owner_teacher_id=?"], [platform.repository_actor_id(user)]
+    clauses, args = ["g.status<>'deleted'"], []
+    if user["role"] != "teacher" or not is_super_admin_teacher(conn, user["id"]):
+        clauses.append("g.owner_teacher_id=?")
+        args.append(platform.repository_actor_id(user))
     for field in ("status", "scope"):
         if value := params.get(field):
             clauses.append(f"g.{field}=?")
@@ -404,11 +406,14 @@ def set_attributes(conn, user, row, body):
     old = object_game(row)
     if row["slug"] and "title" in body and body["title"] != old["title"]:
         error(422, "PACKAGE_TITLE", "名称由游戏包 config.json 的 title 决定。")
-    if row["owner_teacher_id"] < 0:
-        if (set(body) - {"expectedRevision","scope","minTier","maxTier","tags"} or
-                body.get("scope", old["scope"]) not in {"public", "private"} or
-                ("tags" in body and body["tags"] != old["tags"])):
-            error(403, "REVIEWED_METADATA", "学生作品的公开文案与标签随新版本提交审核。")
+    administrator = user["role"] == "teacher" and is_super_admin_teacher(conn, user["id"])
+    if not administrator:
+        if row["slug"] and any(k in body and body[k] != old[k] for k in ("title", "summary", "tags")):
+            error(403, "REVIEWED_METADATA", "公开文案与标签随新版本提交审核。")
+        if "featured" in body and body["featured"] != old["featured"]:
+            error(403, "ADMIN_REQUIRED", "精选标记由超管管理。")
+        if user["role"] == "student" and body.get("scope", old["scope"]) not in {"public", "private"}:
+            error(403, "SCOPE_FORBIDDEN", "请选择公开或私有范围。")
     new = {**old, **body}
     if (
         not isinstance(new["title"], str)
@@ -443,13 +448,13 @@ def set_attributes(conn, user, row, body):
     org = json.loads(row["org_json"])
     if "scope" in body and (old["scope"] != new["scope"] or not org):
         org = (
-            platform.scope_snapshot(conn, row["owner_teacher_id"], new["scope"])
+            platform.scope_snapshot(conn, row["owner_teacher_id"] if row["owner_teacher_id"] > 0 else user["id"], new["scope"])
             if new["scope"] in {"school", "college", "department"}
             else {}
         )
     new["targets"] = sorted(set(target))
     policy = any(new[k] != old[k] for k in ("scope", "targets", "minTier", "maxTier"))
-    if "tags" in body and row["owner_teacher_id"] > 0:
+    if "tags" in body and new["tags"] != old["tags"]:
         target_version = conn.execute(
             """SELECT a.version_id,a.source_tags_json FROM mg_version_authorship a
                JOIN mg_versions v ON v.id=a.version_id WHERE v.game_id=? AND v.status NOT IN ('deleting','deleted')
@@ -583,8 +588,8 @@ def job_new(conn, job, game, version, user, kind, status, stage):
 
 def mark_preview_loaded(conn, game_id, version_id, actor, lease_id):
     """Called by the gateway only for a successful full preview main.html resource."""
-    teacher_id = str(actor).removeprefix("teacher:")
-    if not teacher_id.isascii() or not teacher_id.isdigit():
+    role, _, identity = str(actor).partition(":")
+    if role not in ("student", "teacher") or not identity.isascii() or not identity.isdigit():
         return
     now = platform.now_ms()
     conn.execute("DELETE FROM mg_admin_preview_receipts WHERE loaded_at<=?", (now - 3600000,))
@@ -593,9 +598,9 @@ def mark_preview_loaded(conn, game_id, version_id, actor, lease_id):
         SELECT l.lease_id,l.game_id,l.version_id,?,v.digest,? FROM mg_launch_leases l
         JOIN mg_versions v ON v.id=l.version_id JOIN mg_games g ON g.id=l.game_id
         WHERE l.game_id=? AND l.version_id=? AND l.lease_id=? AND l.actor=? AND l.purpose='preview'
-          AND l.revoked=0 AND l.expires_at>? AND v.status='ready' AND g.status NOT IN ('deleting','deleted')
+          AND l.revoked=0 AND l.expires_at>? AND v.status IN ('ready','reviewing') AND g.status NOT IN ('deleting','deleted')
         ON CONFLICT(lease_id) DO NOTHING""",
-        (int(teacher_id), now, game_id, version_id, lease_id, "teacher:" + teacher_id, now),
+        (platform.repository_actor_id({"role": role, "id": identity}), now, game_id, version_id, lease_id, actor, now),
     )
 
 
@@ -617,10 +622,7 @@ def impact(conn, game):
 
 
 def mutate(user, game, action, body, key, vid=""):
-    if action in {"create","publish","preview","playtest","suggest"}:
-        require_teacher(user)
-    else:
-        platform.repository_actor_id(user)
+    platform.repository_actor_id(user)
     if not isinstance(body, dict):
         error(422, "INVALID_BODY", "需要 JSON 对象。")
     op = "/".join((action, game, vid))
@@ -630,6 +632,8 @@ def mutate(user, game, action, body, key, vid=""):
         serial(conn)
         recheck_contributor(conn, user)
         row = platform.require_manager(conn, user, game) if game else None
+        if action == "publish" and (user["role"] != "teacher" or not is_super_admin_teacher(conn, user["id"])):
+            error(403, "MODERATION_REQUIRED", "请将版本提交给超管审核。")
         prev = receipt(conn, user, op, key, digest)
         if prev is not None:
             return prev
@@ -670,8 +674,6 @@ def mutate(user, game, action, body, key, vid=""):
             conn.execute("UPDATE mg_games SET revision=revision+1,updated_at=? WHERE id=?", (now,game))
         elif action == "submit-review":
             from . import minigame_moderation as moderation
-            if row["owner_teacher_id"] >= 0:
-                error(409, "TEACHER_WORK", "教师作品无需内容审核，验收试玩后可直接上架。")
             version = one(conn, "mg_versions", vid)
             if version["game_id"] != game or version["status"] in {"deleted", "deleting"}:
                 error(404, "NOT_FOUND", "版本不存在或正在删除。")
@@ -719,7 +721,13 @@ def mutate(user, game, action, body, key, vid=""):
             version = one(conn, "mg_versions", vid or body.get("versionId", ""))
             if version["game_id"] != game:
                 error(404, "NOT_FOUND", "版本不存在。")
-            if version["status"] != "ready":
+            if action == "preview":
+                archive_admin = (version["status"] in ("retired", "rejected") and user["role"] == "teacher"
+                                 and is_super_admin_teacher(conn, user["id"]))
+                available = platform.can_preview_version(version["status"], version["digest"], archive_admin)
+            else:
+                available = version["status"] == "ready" or (action == "playtest" and version["status"] == "reviewing")
+            if not available:
                 error(409, "VERSION_NOT_READY", "版本尚未完成隔离验收。")
             vid = version["id"]
             if action == "preview":
@@ -730,7 +738,7 @@ def mutate(user, game, action, body, key, vid=""):
                 if not conn.execute(
                     """SELECT 1 FROM mg_admin_preview_receipts WHERE actor=? AND game_id=? AND
                     version_id=? AND digest=? AND loaded_at>? LIMIT 1""",
-                    (user["id"], game, vid, version["digest"], now - 3600000),
+                    (platform.repository_actor_id(user), game, vid, version["digest"], now - 3600000),
                 ).fetchone():
                     error(409, "PREVIEW_REQUIRED", "请先在预览页实际打开本版本，再登记试玩结果。")
                 conn.execute(
@@ -739,16 +747,13 @@ def mutate(user, game, action, body, key, vid=""):
                 )
                 result = {"versionId": vid, "passed": body["passed"]}
             elif action == "publish":
-                if row["owner_teacher_id"] < 0:
-                    error(403,"MODERATION_REQUIRED","学生作品由内容审查流程决定发布。")
-                platform.content_origins()
-                last = conn.execute(
-                    """SELECT passed FROM mg_admin_playtests WHERE version_id=? AND digest=?
-                    ORDER BY created DESC,id DESC LIMIT 1""",
-                    (vid, version["digest"]),
+                approved = conn.execute(
+                    """SELECT 1 FROM mg_content_reviews WHERE version_id=? AND digest=? AND status='approved'
+                       AND decider LIKE 'teacher:%'""", (vid, version["digest"]),
                 ).fetchone()
-                if not last or not last[0]:
-                    error(409, "PLAYTEST_REQUIRED", "请先预览并记录本版的试玩结果。")
+                if not approved:
+                    error(409, "MODERATION_REQUIRED", "请先在审核中心确认此版本。")
+                platform.content_origins()
                 publish_version(conn, row, version)
             else:
                 withdraw_version(conn,row,vid,now)
@@ -771,12 +776,11 @@ def mutate(user, game, action, body, key, vid=""):
                 conn.execute("DELETE FROM mg_admin_plans WHERE game_id=?", (game,))
             on_unlist(conn, game)
             moderation.cancel(conn,game)
-            if row["owner_teacher_id"] < 0:
-                conn.execute("""UPDATE mg_versions SET status='rejected' WHERE game_id=?
-                             AND status IN ('reviewing','validating')""", (game,))
-                conn.execute("""UPDATE mg_admin_jobs SET status='rejected',token='',expires=0,stage='已撤回'
-                             WHERE game_id=? AND kind='validate' AND status IN
-                             ('receiving','queued','running','retry','waiting_probe')""",(game,))
+            conn.execute("""UPDATE mg_versions SET status='rejected' WHERE game_id=?
+                         AND status IN ('reviewing','validating')""", (game,))
+            conn.execute("""UPDATE mg_admin_jobs SET status='rejected',token='',expires=0,stage='已撤回'
+                         WHERE game_id=? AND kind='validate' AND status IN
+                         ('receiving','queued','running','retry','waiting_probe')""",(game,))
             conn.execute("UPDATE mg_launch_leases SET revoked=1 WHERE game_id=? AND revoked=0", (game,))
             status = "deleting" if action == "delete" else "unlisted"
             conn.execute(
@@ -844,7 +848,7 @@ def publish_version(conn, game, version):
 def publish_reviewed(conn, game_id, version_id):
     game = one(conn,"mg_games",game_id)
     version = one(conn,"mg_versions",version_id)
-    if (game["owner_teacher_id"] >= 0 or game["status"] in {"deleted","deleting"} or
+    if (game["status"] in {"deleted","deleting"} or
             version["game_id"] != game_id or version["status"] != "reviewing"):
         error(409,"REVIEW_STALE","此版本的审查已被取消。")
     if game["current_version_id"] and game["status"] == "listed":
@@ -868,12 +872,27 @@ def version_in_use(conn, vid):
 
 
 def download_source(user, game_id, version_id=None):
-    from ..minigame_content import GameFileResponse
-
     with platform.game_db() as conn:
         platform.assert_session(conn, user)
         item = repository.source_info(conn, user, game_id, version_id)
         vid = item["version_id"]
+    return package_download(game_id, vid, item["slug"], item["release_version"])
+
+
+def download_managed_version(user, game_id, vid):
+    with platform.game_db() as conn:
+        platform.assert_session(conn, user)
+        game = platform.require_manager(conn, user, game_id)
+        version = conn.execute("""SELECT release_version FROM mg_versions WHERE game_id=? AND id=?
+            AND status IN ('ready','reviewing','retired','rejected') AND digest<>''""", (game_id, vid)).fetchone()
+        if not version or game["status"] in ("deleted", "deleting"):
+            error(404, "SOURCE_UNAVAILABLE", "当前版本的原包不可用。")
+        return package_download(game_id, vid, game["slug"], version["release_version"])
+
+
+def package_download(game_id, vid, slug, release_version):
+    from ..minigame_content import GameFileResponse
+
     directory = asset_path("version",game_id,vid)
     if not directory.is_dir():
         error(404, "SOURCE_UNAVAILABLE", "此版本的游戏包不可用。")
@@ -882,7 +901,7 @@ def download_source(user, game_id, version_id=None):
     if not path.is_file():
         error(404,"SOURCE_UNAVAILABLE","此版本的游戏包不可用。")
     return GameFileResponse(game_id,path,media_type="application/zip",
-                            filename=f"{item['slug']}-{item['release_version']}.zip",
+                            filename=f"{slug}-{release_version}.zip",
                             headers={"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff",
                                      "Referrer-Policy":"no-referrer"})
 
@@ -971,7 +990,7 @@ def game_lock(game):
 
 
 def receive_upload(user, game, rev, key, stream):
-    require_teacher(user)
+    platform.repository_actor_id(user)
     if not KEY.fullmatch(key or ""):
         error(422, "REQUEST_KEY", "缺少有效的上传请求键。")
     with game_lock(game):
@@ -987,12 +1006,11 @@ def import_package(user, key, stream, options):
     with disk_lock(lock_key):
         with platform.game_db() as conn:
             row = conn.execute("SELECT id,owner_teacher_id,revision FROM mg_games WHERE slug=?", (slug,)).fetchone()
-            if row and row["owner_teacher_id"] != platform.repository_actor_id(user):
+            if row and row["owner_teacher_id"] != platform.repository_actor_id(user) and not options.get("targetGameId"):
                 error(409, "GAME_KEY_TAKEN", "此 gameKey 已登记；改编作品请使用新的 gameKey。")
             if target := options.get("targetGameId"):
                 folder = platform.require_manager(conn, user, target)
-                if (row and row["id"] != target or folder["slug"] not in (None, slug)
-                        or folder["owner_teacher_id"] != platform.repository_actor_id(user)):
+                if row and row["id"] != target or folder["slug"] not in (None, slug):
                     error(409, "GAME_KEY", "文件夹与 config.json 的 gameKey 不一致。")
                 row = folder
             game = row["id"] if row else uid()
@@ -1433,12 +1451,16 @@ def validate_job(job, probe_blocked_until=0):
                 (game, "version", vid, physical),
             )
             platform.index_version_files(conn, vid, meta["files"])
-            student = current["owner_teacher_id"] < 0
+            if not conn.execute("SELECT 1 FROM mg_version_authorship WHERE version_id=?", (vid,)).fetchone():
+                role = "teacher" if current["owner_teacher_id"] > 0 else "student"
+                owner = platform.load_actor(conn, f"{role}:{abs(current['owner_teacher_id'])}")
+                repository.store_authorship(conn, vid, config, owner.get("display_name") or owner.get("name") or "作者",
+                                            {"allowRemix": False}, ("", {}), json.loads(current["tags_json"]), "")
             conn.execute(
                 """UPDATE mg_versions SET status=?,release_version=?,digest=?,config_json=?,
                 writeback_json=?,rules_json=?,files_json=? WHERE id=? AND status='validating'""",
                 (
-                    "reviewing" if student else "ready",
+                    "reviewing",
                     config["version"],
                     meta["digest"],
                     validation.canonical(config),
@@ -1453,18 +1475,9 @@ def validate_job(job, probe_blocked_until=0):
                 summary=CASE WHEN current_version_id IS NULL THEN ? ELSE summary END,revision=revision+1,updated_at=? WHERE id=?""",
                 (config["gameKey"], config["title"], config["summary"], platform.now_ms(), game),
             )
-            if student:
-                from . import minigame_moderation as moderation
-                enqueued_status = moderation.enqueue(conn, game, vid, meta["digest"])
-                review_stage = (
-                    "基础校验通过，已提交 AI 风险查验"
-                    if enqueued_status == "queued"
-                    else "基础校验通过，等待超管审核"
-                )
-            elif isinstance(meta.get("probe"), dict) and meta["probe"].get("browserProbe") == "skipped_unconfigured":
-                review_stage = "静态验收通过，可试玩并上架"
-            else:
-                review_stage = "隔离验收通过"
+            from . import minigame_moderation as moderation
+            enqueued_status = moderation.enqueue(conn, game, vid, meta["digest"])
+            review_stage = "基础校验通过，已提交 AI 风险查验" if enqueued_status == "queued" else "基础校验通过，等待超管审核"
             finish_job(
                 conn, job, "succeeded", review_stage,
                 result={"versionId": vid, "probe": meta["probe"]}

@@ -120,7 +120,7 @@ class GameModerationTests(GamePlatformFixture):
             conn.execute("UPDATE teachers SET is_super_admin=1 WHERE id=901")
             conn.commit()
 
-    def test_manual_queue_package_explorer_and_on_demand_ai_publish(self):
+    def test_manual_queue_package_explorer_and_advisory_ai(self):
         receipt = self.submit("star-map", expected_status="manual")
         vid = receipt["versionId"]
         url = self.base + "/" + vid
@@ -136,9 +136,9 @@ class GameModerationTests(GamePlatformFixture):
         self.grant_super()
         headers = self.switch(901)
 
-        # Super admin's own "小游戏管理" list stays scoped to own games (does not include student 931's game).
+        # Super admins manage the whole catalog, including student submissions.
         own_list = self.client.get(API + "/admin/games").json()["items"]
-        self.assertEqual([g["id"] for g in own_list], [])
+        self.assertEqual([g["id"] for g in own_list], [receipt["gameId"]])
 
         # Round-1 passed student game immediately appears in "小游戏审核" pending manual review queue.
         queue = self.client.get(self.base).json()
@@ -186,7 +186,7 @@ class GameModerationTests(GamePlatformFixture):
         )
         self.assertEqual(self.content.get(launched["contentEntryUrl"]).status_code, 200)
 
-        # Trigger on-demand AI review from super admin workbench -> AI approves & formally publishes!
+        # A favorable AI report still requires an explicit super-admin decision.
         review_detail = self.client.get(url).json()
         ai_trigger = self.client.post(
             url + "/ai-review", json={"expectedDigest": review_detail["digest"]}, headers=headers
@@ -216,6 +216,13 @@ class GameModerationTests(GamePlatformFixture):
             )
         )
         self.assertEqual(payload["tools"], [])
+        with platform.game_db() as conn:
+            row = moderation.review_row(conn, vid)
+            self.assertEqual((row["status"], row["version_status"], row["game_status"]), ("manual", "reviewing", "draft"))
+        decision = self.client.post(url + "/decision", headers=headers, json={
+            "expectedDigest": review_detail["digest"], "decision": "approve", "reason": "已核对原包",
+        })
+        self.assertEqual(decision.status_code, 200, decision.text)
         with platform.game_db() as conn:
             row = moderation.review_row(conn, vid)
             self.assertEqual((row["status"], row["version_status"], row["game_status"]), ("approved", "ready", "listed"))

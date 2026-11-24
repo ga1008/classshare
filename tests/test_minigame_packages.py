@@ -12,6 +12,7 @@ import zipfile
 
 from fastapi import HTTPException
 from PIL import Image
+from classroom_app.services import minigame_moderation as moderation
 from classroom_app.services import minigame_packages as packages
 from classroom_app.services import minigame_package_validation as validation
 from classroom_app.services import minigame_platform as platform
@@ -86,8 +87,9 @@ class GamePackageTests(unittest.TestCase):
         )
         self.user = {"id": 9, "role": "teacher", "actor": "teacher:9", "session_id": "fixture-1"}
         with self.db() as conn:
-            conn.execute("CREATE TABLE teachers(id INTEGER PRIMARY KEY,is_super_admin INTEGER DEFAULT 0)")
+            conn.execute("CREATE TABLE teachers(id INTEGER PRIMARY KEY,is_super_admin INTEGER DEFAULT 0,is_active INTEGER DEFAULT 1,name TEXT,email TEXT)")
             conn.execute("INSERT INTO teachers(id) VALUES (9)")
+            conn.execute("INSERT INTO teachers(id,is_super_admin) VALUES (19,1)")
             platform.ensure_all_schema(conn)
             conn.commit()
         self.game = packages.mutate(self.user, "", "create", {"title": "合成游戏"}, "new")["game"]
@@ -126,14 +128,14 @@ class GamePackageTests(unittest.TestCase):
             self.assertTrue(packages.worker_once())
         info = self.game_detail()
         vid = res["versionId"]
-        self.assertEqual(info["versions"][0]["status"], "ready")
+        self.assertEqual(info["versions"][0]["status"], "reviewing")
         game = self.game["id"]
         rev = info["game"]["revision"]
         with self.assertRaises(HTTPException) as blocked:
             packages.mutate(
                 self.user, game, "publish", {"expectedRevision": rev, "versionId": vid}, "publish"
             )
-        self.assertEqual(blocked.exception.detail["code"], "PLAYTEST_REQUIRED")
+        self.assertEqual(blocked.exception.detail["code"], "MODERATION_REQUIRED")
         with self.db() as conn:
             conn.execute(
                 """INSERT INTO mg_launch_leases(handle_hash,lease_id,actor,sid_hash,game_id,version_id,
@@ -152,9 +154,11 @@ class GamePackageTests(unittest.TestCase):
             conn.execute("DELETE FROM mg_launch_leases")
             conn.commit()
         packages.mutate(self.user, game, "playtest", {"expectedRevision": rev, "passed": True}, "tested", vid)
-        published = packages.mutate(
-            self.user, game, "publish", {"expectedRevision": rev, "versionId": vid}, "publish"
-        )
+        with self.db() as conn:
+            admin = {"id": 19, "role": "teacher", "actor": "teacher:19", "session_id": "fixture-2"}
+            moderation.decide(conn, admin, vid, {"expectedDigest": info["versions"][0]["digest"],
+                                                 "decision": "approve", "reason": "已人工核对"})
+        published = self.game_detail()
         self.assertEqual(published["game"]["currentVersionId"], vid)
         with self.assertRaises(HTTPException):
             packages.mutate(self.user, game, "patch", {"expectedRevision": rev, "minTier": 1}, "stale")
@@ -200,7 +204,7 @@ class GamePackageTests(unittest.TestCase):
                 )
         self.assertEqual(deleted, packages.mutate(self.user, game, "delete", body, "delete"))
 
-    def test_unconfigured_probe_completes_static_validation_to_ready(self):
+    def test_unconfigured_probe_completes_static_validation_to_review(self):
         upload = self.ingest()
         game, vid = self.game["id"], upload["versionId"]
         stage = packages.asset_path("stage", game, upload["jobId"])
@@ -212,10 +216,10 @@ class GamePackageTests(unittest.TestCase):
                 executor.assert_not_called()
             self.assertEqual(checked.call_count, 1)
         data = self.game_detail()
-        self.assertEqual((data["versions"][0]["status"], data["game"]["status"]), ("ready", "draft"), data["jobs"])
+        self.assertEqual((data["versions"][0]["status"], data["game"]["status"]), ("reviewing", "draft"), data["jobs"])
         self.assertEqual(data["jobs"][0]["status"], "succeeded")
         self.assertEqual(data["jobs"][0]["result"]["probe"].get("browserProbe"), "skipped_unconfigured")
-        self.assertIn("静态验收通过", data["jobs"][0]["stage"])
+        self.assertIn("基础校验通过", data["jobs"][0]["stage"])
         self.assertFalse(stage.exists())
         self.assertTrue((version / "runtime/main.html").is_file())
         self.assertFalse((version / "static-check.json").exists())
@@ -227,7 +231,7 @@ class GamePackageTests(unittest.TestCase):
                 {"expectedRevision": data["game"]["revision"], "versionId": vid},
                 "after-static",
             )
-        self.assertEqual(denied.exception.detail["code"], "PLAYTEST_REQUIRED")
+        self.assertEqual(denied.exception.detail["code"], "MODERATION_REQUIRED")
 
     def test_unconfigured_probe_resumes_existing_waiting_probe_job(self):
         upload = self.ingest()
@@ -255,7 +259,7 @@ class GamePackageTests(unittest.TestCase):
                     {"expectedRevision": data["game"]["revision"], "versionId": vid},
                     "early-publish",
                 )
-            self.assertEqual(denied.exception.detail["code"], "VERSION_NOT_READY")
+            self.assertEqual(denied.exception.detail["code"], "MODERATION_REQUIRED")
             # With MINIGAMES_PROBE_COMMAND empty, worker automatically picks up the parked job
             # without re-running static extraction and promotes it to ready.
             with patch.object(packages.subprocess, "run") as executor:
@@ -263,7 +267,7 @@ class GamePackageTests(unittest.TestCase):
                 executor.assert_not_called()
             self.assertEqual(checked.call_count, 1)
         data = self.game_detail()
-        self.assertEqual((data["versions"][0]["status"], data["game"]["status"]), ("ready", "draft"), data["jobs"])
+        self.assertEqual((data["versions"][0]["status"], data["game"]["status"]), ("reviewing", "draft"), data["jobs"])
         self.assertEqual(data["jobs"][0]["status"], "succeeded")
         self.assertFalse(stage.exists())
         self.assertTrue((version / "runtime/main.html").is_file())
@@ -527,7 +531,7 @@ class GamePackageTests(unittest.TestCase):
         packages.receive_upload(self.user, self.game["id"], self.game["revision"], "fixed", archive(original))
         with self.fake_probe():
             packages.worker_once()
-        self.assertEqual([v["status"] for v in self.game_detail()["versions"]].count("ready"), 1)
+        self.assertEqual([v["status"] for v in self.game_detail()["versions"]].count("reviewing"), 1)
 
     def test_duplicate_path_and_invalid_rules(self):
         bad = dict(self.files)
@@ -598,7 +602,7 @@ class GamePackageTests(unittest.TestCase):
                     packages.worker_once()
                 data = self.game_detail()
                 self.assertEqual(data["jobs"][0]["id"], job["id"])
-        self.assertEqual(data["versions"][0]["status"], "ready", str(data["jobs"][0]))
+        self.assertEqual(data["versions"][0]["status"], "reviewing", str(data["jobs"][0]))
         self.assertTrue(data["jobs"][0]["result"]["probe"]["offline"])
         self.assertEqual(
             data["jobs"][0]["result"]["probe"]["resourceCounts"], {"total": 5, "platform": 5, "offline": 5}

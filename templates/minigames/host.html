@@ -35,6 +35,7 @@
 </header>
 <section class="game-stage" aria-label="游戏舞台">
 <div data-stage-frame class="game-frame-box"></div>
+<p class="lq-status game-access-check" role="status" data-access-check hidden>正在检查课堂访问规则…</p>
 <section class="lq-surface game-stage-panel" data-lq-component="surface" data-stage-panel aria-label="游玩状态">
 <div class="game-stage-emblem" data-stage-emblem data-tone="primary" aria-hidden="true">{{ ui.g_icon('gamepad', 'game-emblem-svg') }}</div>
 <h2 data-stage-title>{{ game.title }}</h2>
@@ -63,6 +64,6 @@
 </section>
 </section>
 </main>
-{{ ui.boot({'game': game, 'previewVersion': preview_version_id|default('', true)}) }}
+{{ ui.boot({'game': game, 'role':user_info.role, 'previewVersion': preview_version_id|default('', true)}) }}
 {% endblock %}
 {% block scripts %}<script type="module" src="{{ asset_url('js/minigames/host.js') }}"></script>{% endblock %}

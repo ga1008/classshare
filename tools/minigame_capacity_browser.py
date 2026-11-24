@@ -77,7 +77,9 @@ def serve(directory, browser):
                 check=False,
             )
             if result.returncode or len(result.stdout) > 16384:
-                print("Reviewed browser probe failed", result.returncode, file=sys.stderr, flush=True)
+                # Only this byte-pinned synthetic package reaches the executor.
+                diagnostic = result.stderr[-4096:].decode("utf-8", errors="replace")
+                print("Reviewed browser probe failed", result.returncode, diagnostic, file=sys.stderr, flush=True)
                 answer = {"status": "failed", "digest": PINNED_MANIFEST}
             else:
                 answer = json.loads(result.stdout)

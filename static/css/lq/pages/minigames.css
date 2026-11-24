@@ -1794,3 +1794,12 @@
         justify-content: center;
     }
 }
+
+.game-access-page { max-inline-size: 40rem; margin: clamp(2rem, 12vh, 8rem) auto; padding: 1rem; }
+.game-wellbeing { display: grid; gap: .45rem; }
+.game-wellbeing p { margin: 0; }
+.game-wellbeing-total { font-weight: 650; font-variant-numeric: tabular-nums; }
+.game-wellbeing-total:empty { display: none; }
+.game-wellbeing details > p { margin-block-start: .4rem; }
+.game-wellbeing summary { cursor: pointer; }
+.game-access-check { place-self: center; position: absolute; z-index: 1; }

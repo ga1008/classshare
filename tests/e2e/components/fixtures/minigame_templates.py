@@ -33,7 +33,7 @@ env.globals.update(
     ai_workspace_policy=lambda *a: {"allowed": False},
 )
 data = json.load(sys.stdin)
-role = data["role"]
+role = "teacher" if data["role"] == "super" else data["role"]
 user = {"id": 97, "name": "合成教师" if role == "teacher" else "合成学生", "role": role}
 page = data["page"]
 guide_context = {}
@@ -43,20 +43,30 @@ if page == "author_guide":
     html, toc = guide_page()
     guide_context = {"guide_html": html, "guide_toc": toc}
 active_page = "game_reviews" if page == "reviews" else "games"
-is_super = role == "teacher" and page == "reviews"
+is_super = data["role"] == "super" or (role == "teacher" and page == "reviews")
 page_title = (
     "小游戏审核" if page == "reviews"
     else "小游戏开发规范" if page == "author_guide"
     else "我的作品" if role == "student"
     else "小游戏管理"
 )
-html = env.get_template("minigames/" + page + ".html").render(
+template_name = "minigames/" + page + ".html"
+if page == "classroom":
+    template_name = "classroom_main_v4.html"
+    guide_context.update(
+        classroom={"id": 123, "course_id": 55, "course_name": "网络工程", "class_name": "合成班"},
+        classroom_page={"teaching_plan": {}, "hero": {}, "group_qr": {},
+                        "assignment_workspace_items": [], "assignment_workspace_preview": {},
+                        "activity_sidebar": {"initial_counts": {}}, "academic_course_exams": {},
+                        "sections": {"assignment": {}, "discussion": {}, "resources": {}}},
+    )
+html = env.get_template(template_name).render(
     request=SimpleNamespace(query_params={}, url=SimpleNamespace(path="/manage/library/games/reviews" if page == "reviews" else "/games")),
     user_info=user, user=user,
     games=[data["game"]], game=data["game"], csrf_token="synthetic-only", sidebar={}, preview_version_id=None,
     active_page=active_page, manage_nav=build_manage_nav(user, active_page, is_super_admin=is_super),
     page_title=page_title,
-    current_teacher_is_super_admin=is_super,
+    current_teacher_is_super_admin=is_super, can_publish=is_super,
     genre_options=[{"id":"adventure","label":"冒险"},{"id":"puzzle","label":"解谜"}],
     discovery=data.get("preference", {}), active_genres=data.get("preference", {}).get("genres", []),
     active_tags=data.get("preference", {}).get("tags", []), tag_options=["像素风","3D"],

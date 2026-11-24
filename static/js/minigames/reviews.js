@@ -89,6 +89,11 @@ if (filterForm?.elements?.q) {
     filterForm.elements.q.value = searchQuery;
 }
 
+function authorLabel(item) {
+    const role = {teacher: '教师', student: '学生'}[item.ownerRole];
+    return (role ? role + '作者 ' : '作者 ') + item.authorName;
+}
+
 function formatTimestamp(ms) {
     if (!ms) return '';
     try {
@@ -168,7 +173,7 @@ function renderQueue() {
             el(
                 'p',
                 activeStatus === 'manual'
-                    ? '学生提交的作品通过第一轮基础校验后会自动进入此处；你也可切换上方状态查看历史审核或开启自动 AI 审核。'
+                    ? '教师和学生的作品通过基础校验后，在此等候超级管理员审核。'
                     : '可以切换审核状态或清空搜索词查看其他版本。',
                 'game-muted'
             )
@@ -202,7 +207,7 @@ function renderQueue() {
         titleRow.append(el('strong', item.title || '未命名作品'));
         if (item.version) titleRow.append(el('code', 'v' + item.version, 'game-key-pill'));
         const metaRow = el('div', null, 'game-row-meta');
-        if (item.authorName) metaRow.append(el('small', '作者 ' + item.authorName));
+        if (item.authorName) metaRow.append(el('small', authorLabel(item)));
         if (item.fileCount != null) metaRow.append(el('small', item.fileCount + ' 个文件'));
         const ts = formatTimestamp(item.updatedAt || item.createdAt);
         if (ts) metaRow.append(el('small', ts));
@@ -235,15 +240,15 @@ function renderEmptyStage(message, detailText) {
         el(
             'p',
             detailText ||
-                '两轮审核流程：学生上传的作品先经后端第一轮逻辑与格式校验，通过后进入本页等待超管审核；超管可在线浏览已解压的完整文件包、下载原包、触发 AI 风险查验，审核通过后即正式发布。',
+                '教师和学生提交的版本都需要超级管理员审核。可以浏览完整游戏包、隔离试玩，也可以参考 AI 的风险报告。',
             'game-muted'
         )
     );
     const steps = el('ol', null, 'game-review-flow');
     for (const [title, desc] of [
-        ['1. 后端第一轮逻辑校验', '自动检查 config.json、main.html、协议声明、素材格式与安全限制，不合规范直接提示学生修复。'],
-        ['2. 超管审查或 AI 风险查验', '树形浏览已解压源码与图片/音视频，或提交 AI 仅核查重大内容风险（允许正常游戏的少量成人元素）。'],
-        ['3. 正式发布或退回修改', 'AI 判定正常则自动回写发布；若发现重大风险或不确定，提醒超管手动核查并附完整查验报告。'],
+        ['1. 后端第一轮逻辑校验', '自动检查 config.json、main.html、协议声明、素材格式与安全限制，不合规范时提示作者修复。'],
+        ['2. 核对内容与试玩体验', '树形浏览已解压源码与图片/音视频，或提交 AI 仅核查重大内容风险（允许正常游戏的少量成人元素）。'],
+        ['3. 正式发布或退回修改', '超级管理员核对材料后决定发布或退回，并将修改理由反馈给作者。'],
     ]) {
         const li = el('li', null, 'lq-surface game-review-flow__item');
         li.dataset.lqComponent = 'surface';
@@ -283,7 +288,7 @@ function renderReportCard(item) {
         const row = el('div', null, 'game-row-head');
         row.append(
             statusChip(statusLabels[item.status] || item.status, 'info'),
-            el('span', item.reason || 'AI 正在查验代码、文案与图像是否存在重大内容风险，正常将自动发布，存疑将转人工并生成报告…')
+            el('span', item.reason || 'AI 正在检查代码、文案与图像，完成后将生成报告，供超级管理员审核。')
         );
         alert.append(row);
         card.append(alert);
@@ -421,7 +426,7 @@ async function openIsolatedPreview(item) {
 async function triggerAiReview(item) {
     const label = item.aiReport ? '重新提交 AI 审核' : '提交 AI 审核';
     const msg =
-        'AI 将仅核查代码、文案与图片是否存在重大内容风险（正常游戏允许少量成人元素）。核查正常后将自动回写后端正式发布；若发现重大风险或存在不确定/未覆盖素材，将转交超管手动审核并给出理由与 AI 查验报告。';
+        'AI 将检查代码、文案和图片，标出风险与未覆盖的素材。完成后请核对报告并决定是否发布。';
     if (!(await confirmAction(label, msg))) return;
     const updated = await api(base + '/' + encodeURIComponent(item.versionId) + '/ai-review', {
         method: 'POST',
@@ -442,7 +447,7 @@ async function submitDecision(item, decision) {
             'p',
             approve
                 ? '审核通过后，版本 ' + (item.version || '') + ' 将立即正式发布到小游戏大厅。'
-                : '退回后学生需按审核意见修改并提升版本号重新上传，不会公开此版本。',
+                : '退回后，作者可按意见修改并上传新版本。',
             'game-muted'
         )
     );
@@ -548,7 +553,7 @@ function renderDetail(item) {
     }
 
     const meta = el('div', null, 'game-row-meta game-review-meta');
-    if (item.authorName) meta.append(el('small', '作者：' + item.authorName));
+    if (item.authorName) meta.append(el('small', authorLabel(item)));
     if (item.sourceAuthor) meta.append(el('small', '改编自：' + item.sourceAuthor));
     const genre = (boot.genreOptions || []).find((g) => g.id === item.config?.genre);
     if (genre) meta.append(el('span', genre.label, 'game-tag-pill'));
@@ -569,7 +574,7 @@ function renderDetail(item) {
     const mainActions = el('div', null, 'game-quickbar-main');
     const dangerActions = el('div', null, 'game-quickbar-danger');
 
-    const canDecide = (item.status === 'manual' || item.status === 'queued') && item.versionStatus !== 'deleted';
+    const canDecide = ['manual', 'queued', 'running'].includes(item.status) && item.versionStatus !== 'deleted';
     if (canDecide) {
         mainActions.append(button('审核通过并发布', () => submitDecision(item, 'approve'), 'prominent', { icon: 'check' }));
     }
@@ -686,7 +691,7 @@ async function loadDetail(vid, { forceExplorer = false } = {}) {
     }
     renderDetail(data);
     if (prevVid === data.versionId && prevStatus && prevStatus !== data.status) {
-        if (data.status === 'approved') notice('AI 查验通过，该版本已自动发布');
+        if (data.status === 'approved') notice('该版本已审核通过并发布');
         else if (data.status === 'manual') notice('AI 查验完成，请人工查看查验报告');
     }
     schedulePoll();

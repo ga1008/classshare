@@ -71,6 +71,12 @@ def student_offering_where(*, offering_alias: str = "o") -> str:
     )
 
 
+def student_offering_ids_for_class_sql() -> str:
+    """Indexed primary/linked offering ids for a class. Bind its class id twice."""
+    return ("SELECT id FROM class_offerings WHERE class_id=? UNION "
+            "SELECT offering_id FROM class_offering_class_links WHERE class_id=?")
+
+
 def student_offering_where_by_student_id(
     *, offering_alias: str = "o", require_active: bool = False
 ) -> str:

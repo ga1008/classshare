@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% import 'minigames/ui.html' as ui with context %}
+{% set embedded_mode=true %}
+{% set suppress_account_widgets=true %}
+{% block title %}{{ title }} · 课堂访问规则{% endblock %}
+{% block css %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% endblock %}
+{% block body %}
+<main class="game-access-page">
+    <section class="lq-surface game-section" data-lq-component="surface" data-lq-padding="lg">
+        <h1 class="game-section-title">暂时无法游玩{{ '《' ~ title ~ '》' if title else '' }}</h1>
+        <p>{{ reason }}</p>
+        <div class="game-actions">
+            {{ ui.btn('返回小游戏大厅', variant='prominent', href='/games', icon='arrow-left') }}
+            {{ ui.btn('重新检查', variant='soft', href=request.url.path ~ ('?previewVersion=' ~ (request.query_params.get('previewVersion')|urlencode) if request.query_params.get('previewVersion') else ''), icon='refresh') }}
+        </div>
+    </section>
+</main>
+{% endblock %}

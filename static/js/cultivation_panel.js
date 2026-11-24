@@ -612,11 +612,13 @@ function renderPath(progress, ctx) {
 function renderBreakdown(progress) {
     const rows = Array.isArray(progress.breakdown) ? progress.breakdown : [];
     const growth = progress.growth || {};
+    const adjustment = Number(progress.minigame?.points) || 0;
+    const signed = value => (value > 0 ? '+' : '') + fmt(value);
     const section = el('section', { class: 'lq-cultivation__composition', 'aria-labelledby': 'cultivation-composition-title' });
     section.append(el('div', { class: 'lq-cultivation__section-head' }, [
         el('h3', { id: 'cultivation-composition-title', text: '修为构成' }),
         el('p', { text: growth.raw_score !== undefined
-            ? `四项基础积累合计 ${fmt(growth.raw_score)} 分，经成长曲线换算为 ${fmt(growth.score ?? progress.score)} 修为。`
+            ? `四项基础积累共 ${fmt(growth.raw_score)} 分，按成长曲线换算，再计入小游戏作息 ${signed(adjustment)} 点，当前修为 ${fmt(growth.score ?? progress.score)}。`
             : (progress.rules?.fairness_note || '') }),
     ]));
     const grid = el('div', { class: 'lq-cultivation__components' });

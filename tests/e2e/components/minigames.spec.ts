@@ -28,6 +28,7 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
   let discovery={genres:[],tags:[],revision:0};
   const html=render(view,role,discovery);
   const me={playerId:'p1',displayName:'合成玩家',seat:1}, pref={revision:1,displayAlias:'',sharePlaying:false,audioMuted:false};
+  let submittedV2 = false;
   let current:any=null,attr:any={...game},roomTries=0,uploaded=false,deleted=false,suggested=false,removed=false;
   let reviewStatus='manual', reviewReason='AI 审核存在不确定项，请超管人工复核：需结合上下文确认', allowed=true, retired=false, playtestedV2=false, resubmitted=false, autoAiReview=false;
   page.on('pageerror',err=>errors.push(err.message));
@@ -81,6 +82,7 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
     if(p==='/admin/imports'){uploaded=true;return json({gameId:'g1',jobId:'upload1',versionId:'v2',status:'queued'},202);}
     if(p==='/admin/games/g1/versions/v1/license'){allowed=body.allowRemix;return json({});}
     if(p==='/admin/games/g1/versions/v1/retire'){retired=true;attr={...attr,status:'unlisted',revision:attr.revision+1};return json({game:attr});}
+    if(p==='/admin/games/g1/versions/v2/submit-review'){submittedV2=true;return json({game:attr});}
     if(p==='/admin/games/g1/versions/v1/submit-review'){resubmitted=true;retired=false;attr={...attr,revision:attr.revision+1};return json({game:attr});}
     if(p==='/admin/games/g1/versions/v1' && req.method()==='DELETE'){removed=true;return json({jobId:'delete-v1'},202);}
     if(p.startsWith('/moderation/reviews')){
@@ -172,11 +174,12 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
     if(p==='/admin/games/g1'){
       const v1Status=resubmitted?'reviewing':retired?'retired':'ready';
       const v1Review=role==='student'?(resubmitted?{status:'manual',reason:''}:{status:'approved',reason:'已通过'}):null;
-      const versions:any[]=removed?[]:[{id:'v1',status:v1Status,releaseVersion:'1.0.0',allowRemix:allowed,playtested:true,
+      const versions:any[]=removed?[]:[{id:'v1',status:v1Status,releaseVersion:'1.0.0',digest:'a'.repeat(64),allowRemix:allowed,playtested:true,
         authorName:'合成作者',config,sourceAuthor:'原作者',sourceTags:['原作标签'],review:v1Review}];
+      if(role==='super')versions.push({id:'archive',status:'retired',releaseVersion:'0.9.0',digest:'b'.repeat(64),config});
       if(role==='student')versions.unshift({id:'candidate',status:'reviewing',releaseVersion:'1.1.0',allowRemix:false,
         authorName:'合成作者',config,review:{status:'manual',reason:'等待人工确认'}});
-      if(uploaded)versions.unshift({id:'v2',status:waitingForProbe?'validating':'ready',releaseVersion:waitingForProbe?'':'1.1.0',
+      if(uploaded)versions.unshift({id:'v2',status:waitingForProbe?'validating':submittedV2?'reviewing':'ready',review:submittedV2?{status:'manual'}:null,previewed:true,releaseVersion:waitingForProbe?'':'1.1.0',
         allowRemix:true,playtested:playtestedV2,authorName:'合成作者',config});
       const jobs:any[]=uploaded?[{id:'upload1',kind:'validate',versionId:'v2',status:waitingForProbe?'waiting_probe':'succeeded',
         stage:waitingForProbe?'静态检查已通过，启用验收后自动继续':'隔离验收通过'}]:[];
@@ -192,7 +195,7 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
     return json({});
   });
   const workspace=role==='student'?'/games/workshop':'/manage/library/games';
-  const paths: Record<string,string>={hall:'/games',host:'/games/beacon-relay',manage:workspace,detail:workspace+'/g1',reviews:'/manage/library/games/reviews'};
+  const paths: Record<string,string>={classroom:'/classrooms/123',hall:'/games',host:'/games/beacon-relay',manage:workspace,detail:workspace+'/g1',reviews:'/manage/library/games/reviews'};
   await page.goto(siteOrigin+paths[view]);
   if(view==='hall'||view==='host'){
     await expect(page.locator('script[src$="/auth.js"]')).toHaveCount(1);
@@ -391,8 +394,8 @@ test('真实隔离 SDK 单人开局与动作，错码保留原局后转队',asyn
   await page.getByRole('button',{name:'加入',exact:true}).click();await expect(page.locator('[data-code-text]')).toHaveText('M7K3');
   expect(writes.filter(x=>x.path.endsWith('/rooms/join')).every(x=>x.body.fromSolo.runId==='r1')).toBeTruthy();
 });
-test('教师页属性默认只读、点击编辑保存与取消、隔离预览、关联跳转及删前取消',async({page},info)=>{
-  const {writes,errors}=await fixture(page,'detail','teacher');
+test('超管属性默认只读、点击编辑保存与取消、隔离预览、关联跳转及删前取消',async({page},info)=>{
+  const {writes,errors}=await fixture(page,'detail','super');
   await expect(page.getByLabel('展示名称')).toHaveCount(0);
   await expect(page.locator('[data-dropzone]:visible')).toHaveCount(0);
   await expect(page.locator('[data-attributes-view]')).toContainText('点亮航标');
@@ -412,13 +415,18 @@ test('教师页属性默认只读、点击编辑保存与取消、隔离预览�
   await page.getByRole('button',{name:'取消',exact:true}).click();
   await page.getByRole('button',{name:'确认',exact:true}).click();
   await expect(page.locator('[data-attributes-view]')).toContainText('航标接力新版');
-  await page.getByRole('button',{name:'教师预览'}).click();await expect(page.getByRole('link',{name:'打开隔离预览'})).toHaveAttribute('target','_blank');
+  await page.getByRole('button',{name:'隔离预览'}).click();await expect(page.getByRole('link',{name:'打开隔离预览'})).toHaveAttribute('target','_blank');
   await page.keyboard.press('Escape');await page.getByRole('button',{name:'彻底删除游戏',exact:true}).click();
   await expect(page.getByLabel('输入 beacon-relay 确认')).toBeVisible();await page.keyboard.press('Escape');
   expect(writes.filter(x=>x.path.endsWith('/deletion-plans'))).toHaveLength(1);
   await page.setViewportSize({width:390,height:844});
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({path:info.outputPath('教师属性-390.png'),animations:'disabled'});
+  await page.locator('[data-game-versions] a').filter({hasText:'0.9.0'}).click();
+  const archived=page.locator('[data-quick-actions]');
+  await expect(archived.getByRole('button',{name:'隔离预览'})).toBeVisible();
+  await expect(archived.getByRole('button',{name:'确认已试玩'})).toHaveCount(0);
+  await expect(archived.getByRole('link',{name:'下载原包'})).toHaveAttribute('href','/api/games/v1/admin/games/g1/versions/archive/package');
   expect(errors).toEqual([]);
 });
 test('教师管理列表筛选及直接上传游戏包',async({page})=>{
@@ -484,7 +492,7 @@ test('教师可在桌面和窄屏阅读开发规范并下载开发包和 Markdow
     await page.goto(origin+'/manage/library/games');
   }
 });
-test('教师上传新版本、快捷试玩上架、版本切换、下架重上和彻底删除',async({page})=>{
+test('教师上传新版本、登记试玩、送审、管理已发布版本和删除',async({page})=>{
   const {writes,errors}=await fixture(page,'detail','teacher');
   await page.getByRole('button',{name:'上传新版本'}).click();
   const dialog=page.getByRole('dialog');
@@ -494,24 +502,23 @@ test('教师上传新版本、快捷试玩上架、版本切换、下架重上�
   const quickbar=page.locator('[data-quick-actions]');
   await quickbar.getByRole('button',{name:'确认已试玩'}).click();await page.getByRole('button',{name:'确认',exact:true}).click();
   await expect.poll(()=>writes.filter(x=>x.path.endsWith('/playtests')).length).toBe(1);
-  await quickbar.getByRole('button',{name:'切换为此版本上架'}).click();await page.getByRole('button',{name:'确认',exact:true}).click();
-  const candidate=page.locator('[data-game-versions] li').filter({hasText:'1.1.0'});
-  await expect(candidate.getByText('当前线上')).toBeVisible();
-  // Quick-jump to the older version 1.0.0 and back.
+  await expect(quickbar.getByRole('button',{name:/上架/})).toHaveCount(0);
+  await quickbar.getByRole('button',{name:'提交审核'}).click();
+  await page.getByRole('button',{name:'确认',exact:true}).click();
+  await expect(page.locator('[data-status-detail]')).toContainText('待超管审核');
+  expect(writes.filter(x=>x.path.endsWith('/publish'))).toHaveLength(0);
   await page.locator('[data-game-versions] a').filter({hasText:'1.0.0'}).click();
   await expect(page).toHaveURL(/\?version=v1$/);
-  await expect(quickbar.getByRole('button',{name:'切换为此版本上架'})).toBeVisible();
-  await page.locator('[data-game-versions] a').filter({hasText:'1.1.0'}).click();
   await quickbar.getByRole('button',{name:'下架游戏'}).click();await page.getByRole('button',{name:'确认执行'}).click();
   await expect(page.locator('[data-detail-status]')).toContainText('已下架');
-  await expect(quickbar.getByRole('button',{name:'重新上架'})).toBeVisible();
+  await expect(quickbar.getByRole('button',{name:'提交审核'})).toBeVisible();
   await quickbar.getByRole('button',{name:'彻底删除游戏',exact:true}).click();
   await page.getByLabel('输入 beacon-relay 确认').fill('beacon-relay');await page.getByRole('button',{name:'确认彻底删除'}).click();
   await expect(page.locator('[data-game-notice]')).toHaveText('游戏已彻底删除');
   expect(errors).toEqual([]);
 });
-test('教师手动生成建议并核对属性草稿',async({page})=>{
-  const {writes,errors}=await fixture(page,'detail','teacher');
+test('超管手动生成建议并核对属性草稿',async({page})=>{
+  const {writes,errors}=await fixture(page,'detail','super');
   await page.getByRole('button',{name:'编辑',exact:true}).click();
   await page.getByRole('button',{name:'拟写简介与标签'}).click();
   await page.getByRole('button',{name:'取消',exact:true}).click();
@@ -537,7 +544,7 @@ test('执行器等待状态在刷新后可见且候选版本无法提前发布',
   const quickbar=page.locator('[data-quick-actions]');
   await expect(quickbar.getByRole('button',{name:'验收报告'})).toBeVisible();
   await expect(quickbar.getByRole('button',{name:/上架/})).toHaveCount(0);
-  await expect(quickbar.getByRole('button',{name:'教师预览'})).toHaveCount(0);
+  await expect(quickbar.getByRole('button',{name:'隔离预览'})).toHaveCount(0);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   expect(errors).toEqual([]);
 });
@@ -605,6 +612,7 @@ test('学生工作区按版本切换展示署名与审核，可管理许可、�
   await quickbar.getByRole('button',{name:'关闭二开许可'}).click();
   await page.getByRole('button',{name:'确认',exact:true}).click();
   await expect(quickbar.getByRole('button',{name:'允许二次开发'})).toBeVisible();
+  await expect(quickbar.getByRole('link',{name:'下载原包'})).toHaveAttribute('href','/api/games/v1/admin/games/g1/versions/v1/package');
   await quickbar.getByRole('button',{name:'下架游戏'}).click();
   await page.getByRole('button',{name:'确认执行',exact:true}).click();
   await expect(quickbar.getByRole('button',{name:'提交审核'})).toBeVisible();
@@ -658,5 +666,147 @@ test('超管在小游戏审核台树形浏览解压包、查看AI报告、触发
   await expect(page.locator('[data-game-notice]')).toContainText('已退回作者');
   await expect(page.locator('[data-review-report]')).toContainText('请替换此段文本');
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+
+test('教师从大厅设置逐游戏放行，冲突保留选择，倒计时在本地结束', async ({page},info) => {
+  const {errors} = await fixture(page,'hall','teacher');
+  const games = [{id:'a', title:'星图'}, {id:'b', title:'课间拼图'}];
+  let stored = {mode:'auto', gameIds:[] as string[], durationMinutes:0, revision:3, expiresAt:0};
+  let writes:any[] = [];
+  const pack = () => ({...stored, offeringId:8, scheduledNow:true, serverNow:Date.now(),
+    games:games.filter(g=>stored.gameIds.includes(g.id)), csrfToken:'synthetic-only'});
+  await page.route('**/classroom-access', r=>r.fulfill({json:{classrooms:[{id:8,name:'网络工程 · 合成班'}]}}));
+  await page.route('**/classroom-access/8', r=>{
+    if(r.request().method()==='PUT'){
+      const body = r.request().postDataJSON();
+      writes.push(body);
+      if(writes.length===1) {
+        stored.revision++;
+        return r.fulfill({status:409,json:{detail:'版本冲突'}});
+      }
+      stored={...body,revision:stored.revision+1,expiresAt:Date.now()+3400};
+    }
+    return r.fulfill({json:pack()});
+  });
+  await page.route('**/catalog?**', r=>{
+    const u=new URL(r.request().url());
+    expect(u.searchParams.get('genres')).toBe('');
+    expect(u.searchParams.get('tags')).toBe('');
+    return r.fulfill({json:{items:games.filter(g=>g.title.includes(u.searchParams.get('q')||''))}});
+  });
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole('button',{name:'游玩设置'}).click();
+  await page.getByRole('button',{name:'课堂小游戏设置'}).click();
+  const editor=page.locator('[data-policy-form]');
+  await expect(editor.getByLabel('跟随课表')).toBeChecked();
+  const spacing = await editor.evaluate(form=>{
+    const legend=form.querySelector('legend')!.getBoundingClientRect();
+    const controls=form.querySelector('.policy-choices')!.getBoundingClientRect();
+    return controls.top-legend.bottom;
+  });
+  expect(spacing).toBeLessThanOrEqual(20);
+
+  await editor.getByLabel('临时放行').check();
+  await expect(editor.getByLabel('应用到全部游戏')).toBeChecked();
+  await editor.getByLabel('应用到全部游戏').uncheck();
+  await editor.getByLabel('持续时间（分钟）').fill('13');
+  await editor.getByLabel('搜索指定游戏').fill('星');
+  await editor.getByLabel('星图',{exact:true}).check();
+  await editor.getByLabel('搜索指定游戏').fill('拼');
+  await editor.getByLabel('课间拼图',{exact:true}).check();
+  await expect(editor.locator('[data-policy-selected]')).toContainText('已选 2 款');
+  await editor.getByRole('button',{name:'应用规则'}).click();
+  await expect(editor.locator('[data-policy-feedback]')).toContainText('你的选择已保留');
+  await editor.getByRole('button',{name:'应用规则'}).click();
+  expect(writes.map(w=>w.expectedRevision)).toEqual([3,4]);
+  expect(writes[1]).toMatchObject({mode:'allow',durationMinutes:13,gameIds:['a','b']});
+  await expect(editor.locator('[data-policy-status]')).toContainText('已临时放行');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({path:info.outputPath('课堂小游戏放行-390.png'), animations:'disabled'});
+  await expect(editor.locator('[data-policy-status]')).toContainText('当前跟随课表',{timeout:6500});
+  expect(writes).toHaveLength(2);
+  await editor.getByLabel('临时禁止').check();
+  await editor.getByLabel('应用到全部游戏').check();
+  await editor.getByRole('button',{name:'应用规则'}).click();
+  await expect(editor.locator('[data-policy-status]')).toContainText('已临时禁止');
+  expect(writes[2]).toMatchObject({mode:'deny',gameIds:[]});
+  await page.setViewportSize({width:1440,height:940});
+  await page.screenshot({path:info.outputPath('课堂小游戏设置-桌面.png'), animations:'disabled'});
+  await page.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});
+  await page.setViewportSize({width:320,height:760});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await page.screenshot({path:info.outputPath('课堂小游戏设置-320-深色.png'), animations:'disabled'});
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button',{name:'课堂小游戏设置'})).toBeFocused();
+  expect(errors).toEqual([]);
+});
+
+
+test('课堂边界复核关闭已载入的游戏，续租仅上报可见游戏画面', async ({page}) => {
+  await page.clock.install();
+  const originTime = Date.now();
+  const samples:any[] = [];
+  const {errors} = await fixture(page,'host');
+  await page.route('**/games/g1/launches', r=>r.fulfill({json:{
+    leaseId:'sample-lease',serverNow:originTime,expiresAt:originTime+90000,accessUntil:originTime+14000,
+    contentEntryUrl:content+'/main.html',definition,versionId:'v1',
+  }}));
+  await page.route('**/launches/sample-lease/renew', r=>{
+    samples.push(r.request().postDataJSON());
+    return r.fulfill({status:403,json:{detail:{code:'CLASSROOM_GAME_RESTRICTED',message:'课表显示现在是上课时间，课间可再来。'}}});
+  });
+  await page.reload();
+  await expect(page.frameLocator('.game-frame-box iframe').locator('#result')).toHaveText('合成玩家');
+  const visible = async (value:boolean) => page.evaluate(value=>{
+    Object.defineProperty(document,'hidden',{value:!value,configurable:true});
+    document.dispatchEvent(new Event('visibilitychange'));
+  },value);
+  await page.clock.fastForward(1500);
+  await visible(false);
+  await page.clock.fastForward(3500);
+  await visible(true);
+  await page.clock.fastForward(12000);
+  await expect(page.locator('[data-game-notice]')).toContainText('课间可再来');
+  await expect(page.locator('.game-frame-box iframe')).toHaveCount(0);
+  expect(samples).toHaveLength(1);
+  expect(samples[0].usageAnchor).toBe(originTime+90000);
+  const intervals=samples[0].playIntervals;
+  expect(intervals).toHaveLength(2);
+  expect(intervals[1][0]-intervals[0][1]).toBeGreaterThanOrEqual(3000);
+  expect(errors).toEqual([]);
+});
+
+
+test('课堂页直达本课堂的规则，读取签名后保存并归还焦点', async ({page}) => {
+  const {errors} = await fixture(page,'classroom','teacher');
+  let token = '', saved = false;
+  await page.route('**/classroom-access/123', r => {
+    const put = r.request().method() === 'PUT';
+    if (put) {
+      const request=r.request();
+      token=request.headers()['x-langame-csrf'];
+      expect(request.postDataJSON()).toMatchObject({expectedRevision:0,mode:'deny',gameIds:[]});
+      saved=true;
+    }
+    return r.fulfill({json:{offeringId:123,revision:put?1:0, mode:put?'deny':'auto',
+      games:[],gameIds:[],durationMinutes:put?15:0,scheduledNow:false,expiresAt:put?Date.now()+900000:null,
+      serverNow:Date.now(),csrfToken:'classroom-only-token'}});
+  });
+  const entry=page.getByRole('button',{name:'小游戏设置',exact:true});
+  await expect(entry).toHaveAttribute('data-game-offering','123');
+  await entry.click();
+  const editor=page.locator('[data-policy-form]');
+  await expect(editor).toContainText('网络工程 · 合成班');
+  await expect(editor.getByRole('combobox')).toHaveCount(0);
+  await editor.getByLabel('临时禁止').check();
+  await editor.getByRole('button',{name:'应用规则'}).click();
+  await expect(editor.locator('[data-policy-status]')).toContainText('已临时禁止');
+  expect(saved).toBe(true);
+  expect(token).toBe('classroom-only-token');
+  await page.keyboard.press('Escape');
+  await expect(entry).toBeFocused();
   expect(errors).toEqual([]);
 });

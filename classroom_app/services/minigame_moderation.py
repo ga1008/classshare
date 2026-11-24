@@ -1,4 +1,4 @@
-"""Version-bound student publication, super-admin review workspace, and optional AI risk check."""
+"""Version-bound publication, super-admin decisions, and optional AI risk assessments."""
 
 import asyncio
 import json
@@ -69,24 +69,15 @@ def dump_evidence_blob(findings, report=None):
 
 
 def get_settings(conn):
-    auto_ai = False
+    conn.execute("SAVEPOINT mg_review_settings_read")
     try:
-        conn.execute("SAVEPOINT mg_review_settings_read")
-        try:
-            row = conn.execute(
-                "SELECT value FROM system_settings WHERE key=?",
-                (SETTING_AUTO_AI_REVIEW,),
-            ).fetchone()
-            auto_ai = bool(row and str(row["value"]).strip().lower() in ("1", "true", "yes", "on"))
-        finally:
-            conn.execute("RELEASE SAVEPOINT mg_review_settings_read")
+        row = conn.execute("SELECT value FROM system_settings WHERE key=?", (SETTING_AUTO_AI_REVIEW,)).fetchone()
     except Exception:
-        try:
-            conn.execute("ROLLBACK TO SAVEPOINT mg_review_settings_read")
-            conn.execute("RELEASE SAVEPOINT mg_review_settings_read")
-        except Exception:
-            pass
-    return {"autoAiReview": auto_ai}
+        conn.execute("ROLLBACK TO SAVEPOINT mg_review_settings_read")
+        row = None
+    finally:
+        conn.execute("RELEASE SAVEPOINT mg_review_settings_read")
+    return {"autoAiReview": bool(row and str(row["value"]).strip().lower() in ("1", "true", "yes", "on"))}
 
 
 def read_settings(conn, user):
@@ -193,7 +184,7 @@ def claim():
         FROM mg_content_reviews r JOIN mg_games g ON g.id=r.game_id JOIN mg_versions v ON v.id=r.version_id
         JOIN mg_version_authorship a ON a.version_id=v.id
         WHERE (r.status='queued' OR (r.status='running' AND r.lease_until<=?))
-        AND v.status='reviewing' AND r.digest=v.digest AND g.owner_teacher_id<0
+        AND v.status='reviewing' AND r.digest=v.digest
         AND g.status NOT IN ('deleting','deleted') AND NOT EXISTS(
         SELECT 1 FROM mg_content_reviews busy WHERE busy.status='running' AND busy.lease_until>?)
         ORDER BY r.created_at,r.version_id LIMIT 1"""
@@ -206,7 +197,8 @@ def claim():
         if not row:
             return None
         job = dict(row)
-        job.update(claim_token=packages.uid(), attempts=row["attempts"] + 1, student_id=-row["owner_teacher_id"])
+        job.update(claim_token=packages.uid(), attempts=row["attempts"] + 1, student_id=-row["owner_teacher_id"] if row["owner_teacher_id"] < 0 else None,
+                   teacher_id=row["owner_teacher_id"] if row["owner_teacher_id"] > 0 else None)
         job["metadata"] = {
             "author": row["author"],
             "sourceAuthor": row["source_author"],
@@ -364,7 +356,7 @@ def detail(conn, user, vid):
         ],
         "treeUrl": f"/api/games/v1/moderation/reviews/{vid}/tree",
         "packageUrl": f"/api/games/v1/moderation/reviews/{vid}/package",
-        "canPreview": bool(active and row["version_status"] in ("ready", "reviewing")),
+        "canPreview": bool(active and platform.can_preview_version(row["version_status"], row["version_digest"], True)),
         "manageUrl": f"/manage/library/games/{row['game_id']}?version={vid}",
     }
 
@@ -583,7 +575,7 @@ def read_review_file_content(conn, user, vid, rel_path):
 def preview_launch_url(conn, user, vid):
     require_admin(conn, user)
     row = review_row(conn, vid)
-    if row["game_status"] in ("deleted", "deleting") or row["version_status"] not in ("ready", "reviewing"):
+    if row["game_status"] in ("deleted", "deleting") or not platform.can_preview_version(row["version_status"], row["version_digest"], True):
         raise HTTPException(409, "当前版本状态不支持隔离试玩。")
     platform.content_origins()
     return {
@@ -594,7 +586,7 @@ def preview_launch_url(conn, user, vid):
 
 def store_result(conn, row, result, decider):
     """Caller holds the game transaction lock; publication and review settle together."""
-    status = result["status"]
+    status = "manual" if decider == "ai" else result["status"]
     if row["digest"] != row["version_digest"] or row["version_status"] != "reviewing" or row["game_status"] in ("deleted", "deleting"):
         cancel(conn, row["game_id"], row["version_id"])
         return
@@ -632,23 +624,7 @@ def finish(job, result):
         row = conn.execute(_REVIEW_SELECT + " WHERE r.version_id=?", (job["version_id"],)).fetchone()
         if not row or row["status"] != "running" or row["claim_token"] != job["claim_token"] or row["digest"] != job["digest"]:
             return
-        conn.execute("SAVEPOINT minigame_publication")
-        try:
-            store_result(conn, row, result, "ai")
-        except HTTPException as exc:
-            conn.execute("ROLLBACK TO SAVEPOINT minigame_publication")
-            if exc.status_code not in (403, 409, 422):
-                raise
-            store_result(
-                conn,
-                row,
-                assessment.manual(
-                    "发布条件发生变化，请复核游戏归属及存档兼容性。",
-                    verdict="uncertain",
-                ),
-                "ai",
-            )
-        conn.execute("RELEASE SAVEPOINT minigame_publication")
+        store_result(conn, row, result, "ai")
         conn.commit()
 
 
@@ -700,7 +676,7 @@ def decide(conn, user, vid, body):
     status = "approved" if body["decision"] == "approve" else "rejected"
     if row["game_status"] in ("deleted", "deleting"):
         raise HTTPException(409, "游戏已移除，请刷新。")
-    if row["status"] in ("manual", "queued") and row["version_status"] == "reviewing":
+    if row["status"] in ("manual", "queued", "running") and row["version_status"] == "reviewing":
         findings, report = parse_evidence_blob(row["evidence_json"])
         store_result(
             conn,
@@ -760,7 +736,7 @@ def dispatch_notice():
             _, report = parse_evidence_blob(notice["evidence_json"])
             verdict = (report or {}).get("verdict", "")
             if not pending:
-                title = "学生小游戏审核已处理"
+                title = "小游戏审核已处理"
                 body = f"《{notice['title']}》的审核状态已更新，请查看审核记录。"
             elif verdict == "major_risk":
                 title = "小游戏 AI 查验发现重大风险，请人工审核"
@@ -769,7 +745,7 @@ def dispatch_notice():
                 title = "小游戏 AI 审核未能确认，请人工复核"
                 body = f"《{notice['title']}》需要超管人工查看原包与查验报告：{notice['reason']}"[:240]
             else:
-                title = "学生小游戏待超管审核"
+                title = "小游戏待超管审核"
                 body = f"《{notice['title']}》已通过第一轮基础校验，等待超管审核后发布。"
             payload = _build_notification_payload(
                 recipient_role="teacher",
@@ -812,7 +788,7 @@ async def process_one():
                 packet = await asyncio.to_thread(assessment.evidence_for, job)
                 result = await asyncio.wait_for(assessment.assess(job, packet), timeout=140)
         except Exception:
-            logger.warning("Student game review deferred to administrators, version=%s", job["version_id"])
+            logger.warning("Game review deferred to administrators, version=%s", job["version_id"])
             result = assessment.manual(
                 "AI 审核服务暂不可用、素材异常或返回结果不完整，请超管人工核查原包。",
                 packet["unread"][:48] if packet else None,

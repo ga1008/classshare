@@ -39,7 +39,7 @@ def prepare(conn, game, actor, body):
     count = conn.execute(
         """SELECT COUNT(*) FROM mg_admin_jobs WHERE kind='suggest' AND actor=?
         AND created>?""",
-        (actor["id"], now - 3600000),
+        (platform.repository_actor_id(actor), now - 3600000),
     ).fetchone()[0]
     if count >= 12:
         packages.error(429, "SUGGESTION_QUOTA", "本小时辅助次数已用完。")
@@ -142,7 +142,8 @@ async def model_suggestion(job, packet):
         timeout=15,
         task_type="minigame_suggestion",
         priority="P2",
-        teacher_id=job["actor"],
+        teacher_id=job["actor"] if job["actor"] > 0 else None,
+        student_id=-job["actor"] if job["actor"] < 0 else None,
         logical_call_id=job["id"],
         source_ref="game-suggestion:" + job["id"],
     )

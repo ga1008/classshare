@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from typing import Any
+from datetime import datetime
 
 from .ability_radar_service import build_ability_radar
+from .account_control_service import table_exists
+from .minigame_wellbeing import LOCAL as GAME_TIMEZONE
 from .offering_membership_service import student_offering_where
 from .learning_progress_service import (
     build_student_public_cultivation_badge,
@@ -27,6 +30,7 @@ ALERT_SEVERITY_LABELS = {"L1": "提示", "L2": "关注", "L3": "干预"}
 ALERT_SEVERITY_RANK = {"L1": 1, "L2": 2, "L3": 3}
 ALERT_TONES = {"L1": "notice", "L2": "warning", "L3": "danger"}
 COMPONENT_LABELS = {
+    "minigame": "小游戏作息",
     "material": "材料研读",
     "task": "任务试炼",
     "interaction": "互动求助",
@@ -230,6 +234,7 @@ def _load_activity_summary(
     *,
     offering_ids: list[int],
     student_id: int,
+    include_games: bool = False,
 ) -> dict[str, Any]:
     if not offering_ids:
         return {
@@ -255,16 +260,18 @@ def _load_activity_summary(
         """,
         [*offering_ids, int(student_id)],
     ).fetchone()
+    game_days = "UNION ALL SELECT local_day,0 FROM mg_play_days WHERE student_id=?" if include_games else ""
     event_row = conn.execute(
         f"""
-        SELECT COUNT(*) AS event_count,
-               COUNT(DISTINCT substr(created_at, 1, 10)) AS active_days
-        FROM classroom_behavior_events
-        WHERE class_offering_id IN ({placeholders})
-          AND user_pk = ?
-          AND user_role = 'student'
+        SELECT COALESCE(SUM(n),0) AS event_count, COUNT(DISTINCT day) AS active_days FROM (
+            SELECT substr(created_at,1,10) AS day,COUNT(*) AS n
+            FROM classroom_behavior_events
+            WHERE class_offering_id IN ({placeholders}) AND user_pk=? AND user_role='student'
+            GROUP BY substr(created_at,1,10)
+            {game_days}
+        ) visits
         """,
-        [*offering_ids, int(student_id)],
+        [*offering_ids, int(student_id)] + ([int(student_id)] if include_games else []),
     ).fetchone()
     chat_row = conn.execute(
         f"""
@@ -539,8 +546,20 @@ def _build_student_cultivation_timeline(
     student_id: int,
     teacher_note: dict[str, Any],
     limit: int = 20,
+    include_games: bool = False,
 ) -> list[dict[str, Any]]:
+    game_visits = []
+    if include_games and offering_ids:
+        for row in conn.execute("""SELECT local_day,early_seconds+day_seconds+late_seconds AS seconds,
+            coverage_base,coverage_bits FROM mg_play_days WHERE student_id=?
+            ORDER BY local_day DESC LIMIT ?""", (student_id, limit)).fetchall():
+            last_second = row["coverage_base"] + int(row["coverage_bits"], 16).bit_length() - 1
+            duration = f'{row["seconds"] // 60} 分钟' if row["seconds"] >= 60 else '不足 1 分钟'
+            game_visits.append({"type": "minigame_visit", "tone": "note", "sort_id": 0,
+                "occurred_at": datetime.fromtimestamp(last_second, GAME_TIMEZONE).replace(tzinfo=None).isoformat(),
+                "title": "访问小游戏", "body": f"当日游玩合计{duration}", "meta": "平台访问"})
     return _merge_timeline_items(
+        game_visits,
         _load_alert_timeline_items(conn, offering_ids=offering_ids, student_id=student_id),
         _load_stage_exam_timeline_items(conn, offering_ids=offering_ids, student_id=student_id),
         _load_score_event_timeline_items(conn, offering_ids=offering_ids, student_id=student_id),
@@ -680,10 +699,12 @@ def build_teacher_student_insight(conn, teacher_id: int, student_id: int) -> dic
         student_id=int(student_id),
     )
     task_summary = _build_task_summary(task_rows)
+    game_activity = bool(offering_ids) and table_exists(conn, "mg_play_days")
     activity_summary = _load_activity_summary(
         conn,
         offering_ids=offering_ids,
         student_id=int(student_id),
+        include_games=game_activity,
     )
     # Same six-axis definition as the student's own profile radar; the peer
     # outline is each classroom's class mean, averaged over these classrooms.
@@ -726,6 +747,7 @@ def build_teacher_student_insight(conn, teacher_id: int, student_id: int) -> dic
         offering_ids=offering_ids,
         student_id=int(student_id),
         teacher_note=teacher_note,
+        include_games=game_activity,
     )
     related_teacher_names = load_student_teacher_names(conn, int(student_id))
     best_course = courses[0] if courses else None

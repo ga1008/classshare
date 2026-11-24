@@ -145,6 +145,9 @@ def db_start(conn, game_id="", *, shared=False):
 
 
 def ensure_catalog_schema(conn):
+    from . import minigame_classroom_access
+
+    minigame_classroom_access.ensure_schema(conn)
     for sql in (
         """CREATE TABLE IF NOT EXISTS mg_games (
           id TEXT PRIMARY KEY, slug TEXT UNIQUE, owner_teacher_id INTEGER NOT NULL,
@@ -196,7 +199,7 @@ def index_version_files(conn, version_id, files):
 def ensure_all_schema(conn):
     from .minigame_packages import ensure_package_schema
     from .minigame_runtime import ensure_runtime_schema
-    from . import minigame_discovery, minigame_moderation
+    from . import minigame_discovery, minigame_moderation, minigame_wellbeing
 
     # SQLite otherwise auto-commits initial DDL before its first DML statement.
     # PostgreSQL's IF NOT EXISTS alone does not serialize concurrent first installs.
@@ -206,6 +209,7 @@ def ensure_all_schema(conn):
     ensure_runtime_schema(conn)
     minigame_discovery.ensure_schema(conn)
     minigame_moderation.ensure_schema(conn)
+    minigame_wellbeing.ensure_schema(conn)
     missing = []
     if not schema_installed(conn, missing=missing):
         raise RuntimeError("小游戏迁移未完成，事务将回滚。缺少 " + "、".join(missing))
@@ -224,7 +228,7 @@ def load_actor(conn, actor):
     ):
         raise HTTPException(403, "需要有效的师生账号")
     select = (
-        "SELECT id,name,enrollment_status,control_mode FROM students"
+        "SELECT id,name,class_id,enrollment_status,control_mode FROM students"
         if role == "student"
         else "SELECT id,name,is_active FROM teachers"
     )
@@ -247,6 +251,8 @@ def load_actor(conn, actor):
         "display_name": row["name"] or "玩家",
         "name": row["name"] or "玩家",
     }
+    if role == "student":
+        user["class_id"] = row["class_id"]
     if cache and cache[0] is conn:
         cache[1][actor] = dict(user)
     return user
@@ -309,6 +315,10 @@ def require_player(request: Request):
         user = load_actor(conn, claims["actor"])
         user["session_id"] = claims["session_id"]
         assert_session(conn, user)
+    if request.url.path == "/games" or request.url.path.startswith("/games/"):
+        from .login_attendance_access_service import observe_authenticated_request
+
+        observe_authenticated_request(request, user)
     return user
 
 
@@ -408,6 +418,12 @@ def require_manager(conn, user, game_id):
     return dict(row)
 
 
+def can_preview_version(status, digest, administrator):
+    return status in ("ready", "reviewing") or (
+        administrator and bool(digest) and status in ("retired", "rejected")
+    )
+
+
 def scope_snapshot(conn, owner_teacher_id, scope):
     if scope not in ("school", "college", "department"):
         return {}
@@ -417,6 +433,8 @@ def scope_snapshot(conn, owner_teacher_id, scope):
         memberships[0] if memberships else {},
     )
     required = {
+        "mg_play_days": "student_id* local_day* early_seconds day_seconds late_seconds points coverage_base coverage_bits",
+        "mg_play_totals": "student_id* reward_seconds penalty_seconds",
         "school": ("school_code",),
         "college": ("school_code", "college"),
         "department": ("school_code", "college", "department"),
@@ -474,7 +492,8 @@ def _audience(conn, user):
             "tier": student_global_tier(conn, uid),
             "admin": False,
         }
-    # Playing outside the private scope uses actual assignments, including for administrators.
+    if is_super_admin_teacher(conn, uid):
+        return {"offers": set(), "classes": set(), "orgs": [], "tier": None, "admin": True}
     offers = conn.execute(
         "SELECT id,class_id FROM class_offerings WHERE teacher_id=?", (uid,)
     ).fetchall()
@@ -491,11 +510,13 @@ def _audience(conn, user):
         | {r["id"] for r in classes},
         "orgs": load_teacher_org_memberships(conn, uid),
         "tier": None,
-        "admin": is_super_admin_teacher(conn, uid),
+        "admin": False,
     }
 
 
 def allowed(game, user, audience):
+    if audience.get("admin", False):
+        return True
     tier = audience["tier"]
     if tier is not None and not game["min_tier"] <= tier <= game["max_tier"]:
         return False
@@ -503,7 +524,7 @@ def allowed(game, user, audience):
     if scope == "public":
         return True
     if scope == "private":
-        return repository_actor_id(user) == game["owner_teacher_id"] or audience["admin"]
+        return repository_actor_id(user) == game["owner_teacher_id"]
     if scope in ("class", "classroom"):
         return bool(
             set(json.loads(game["targets_json"] or "[]"))
@@ -531,6 +552,14 @@ def version_definition(version):
 
 
 def require_play(conn, user, game_id, version_id=None, *, definition=True):
+    from .minigame_classroom_access import require_access
+
+    game = listed_version(conn, user, game_id, version_id, definition=definition)
+    game["accessUntil"] = require_access(conn, user, game_id)
+    return game
+
+
+def listed_version(conn, user, game_id, version_id=None, *, definition=True):
     # An explicitly pinned old version is allowed only for an already-running participant.
     load_actor(conn, user["actor"])
     game = conn.execute(
@@ -648,6 +677,7 @@ def schema_installed(conn=None, *, missing=None):
     # '*' marks primary-key columns. These tables are used by the catalog, worker and
     # runtime separately, including tables first accessed after an upload or a room fills.
     required = {
+        "mg_classroom_access": "offering_id* teacher_id updated_by mode games_json duration_minutes expires_at revision",
         "mg_discovery_preferences": "actor* genres_json tags_json revision",
         "mg_content_reviews": "version_id* game_id digest status reason ai_reason categories_json evidence_json claim_token lease_until attempts decider created_at updated_at notify_due",
         "mg_review_notices": "version_id* teacher_id* inbox_id email_queued due",

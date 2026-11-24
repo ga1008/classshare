@@ -268,6 +268,7 @@ def build_growth_summary(
     *,
     next_stage: dict[str, Any] | None,
     exponent: float | None = None,
+    adjustment: int = 0,
 ) -> dict[str, Any]:
     k = exponent if exponent is not None else growth_curve_exponent()
     raw = round(_clamp(_num(raw_score) / 100) * 100, 1)
@@ -287,7 +288,7 @@ def build_growth_summary(
         "exponent": round(k, 2),
         "raw_score": raw,
         "score": shown,
-        "bonus": round(max(0.0, shown - raw), 1),
+        "bonus": round(max(0.0, (apply_growth_curve(raw, exponent=k) if adjustment else shown) - raw), 1),
         "marginal_value": marginal,
         "phase": phase_key,
         "phase_label": phase_label,
@@ -295,7 +296,7 @@ def build_growth_summary(
     }
     if next_stage:
         unlock = _num(next_stage.get("unlock_score"))
-        raw_required = raw_score_for(unlock, exponent=k)
+        raw_required = raw_score_for(unlock - adjustment, exponent=k)
         summary["next_stage"] = {
             "key": str(next_stage.get("key") or ""),
             "unlock_score": unlock,
