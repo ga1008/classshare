@@ -9,11 +9,8 @@ from classroom_app.services import wanderer_inbox_worker as worker
 from classroom_app.services.social_common import SocialError
 from classroom_app.services.wanderer_relationship_service import set_affinity
 from classroom_app.services.wanderer_social_budget_service import message_cost, quote_message, DISPLAY_UNIT
-from classroom_app.services.wanderer_actions_social import _gate, load_window, watch_group
-from classroom_app.services.wanderer_social_outreach import outreach_candidates
-from classroom_app.services.wanderer_actions_social import social_context
 from tests import test_wanderer_social as support
-from tests.wanderer_behavior_support import WandererWorldTestCase, StubCaller, ZeroSleep, turn
+from tests.wanderer_behavior_support import WandererWorldTestCase, StubCaller, ZeroSleep
 
 
 class OrdinaryMessageBudgetTest(unittest.TestCase):
@@ -68,25 +65,57 @@ class SocialV2Test(WandererWorldTestCase):
         self.assertEqual(message_cost(100),DISPLAY_UNIT//2)
 
     def test_ai_dm_multi_round_and_later_outreach(self):
-        key=self.befriend(self.ident(self.atai),self.lele)
-        self.send(self.ident(self.atai),key,"从今天的见闻聊起")
-        caller=StubCaller(turn("reply",["我想继续讨论这个问题"]))
-        for _ in range(3):
-            with self.connect() as conn:
-                conn.execute("UPDATE wanderer_social_inbox SET run_at='2000-01-01' WHERE state IN ('pending','retry')")
-                conn.commit()
-            result=asyncio.run(worker.process_once(factory=self.connect,ai_caller=caller,sleep=ZeroSleep()))
-            with self.connect() as conn:
-                errors=[dict(r) for r in conn.execute('SELECT state,last_error FROM wanderer_social_inbox').fetchall()]
-            self.assertIn("done",result,errors)
-        self.assertEqual(len(caller.calls),3)
+        from fastapi import FastAPI
+        from classroom_app.routers.social import router
+        from classroom_app.services import wanderer_platform_service as platform
+        from classroom_app.services.wanderer_runtime_service import wake_wanderer
+        from classroom_app.services.wanderer_settings_service import wanderer_runtime_setting_set
+        from tests.test_wanderer_runtime_v2 import Caller, command, decision
+
+        key = self.befriend(self.ident(self.atai), self.lele)
         with self.connect() as conn:
-            rows=conn.execute("SELECT * FROM social_messages WHERE conversation_key=? AND message_type='text'",(key,)).fetchall()
-            self.assertEqual(len(rows),4)
-            window=load_window(conn,self.ident(self.atai),key)
-            self.assertNotEqual(_gate(conn,self.ident(self.atai),window,require_new=False)[0],"wanderer_loop")
-            ctx,_=social_context(self.atai["id"],conn_factory=self.connect)
-            self.assertIn(self.ident(self.lele),outreach_candidates(conn,ctx))
+            wanderer_runtime_setting_set(conn, "autonomous_v2_enabled", "1")
+            conn.execute("UPDATE wanderer_agents SET tier=2,daily_wake_limit=8 WHERE id IN (?,?)",
+                         (self.atai["id"], self.lele["id"]))
+            conn.commit()
+        texts = ["从今天的见闻聊起", "我在山下看见了几株新苗。", "那些新苗如今有多高？",
+                 "已经快到我的膝盖了。", "今日又见到了不一样的花。"]
+        caller = Caller(*(decision([command("social.send_message", {
+            "path_params": {"key": key}, "body": {"body": text}})]) for text in texts))
+        app = FastAPI()
+        app.include_router(router)
+
+        def outreach(event_key):
+            result = asyncio.run(wake_wanderer(self.connect, self.atai["id"], source="timer",
+                                               event_key=event_key, ai_caller=caller))
+            self.assertEqual(result["ai_calls"], 1, result)
+            self.assertEqual(result["receipts"][0]["status"], "succeeded", result)
+
+        with patch.object(platform, "_app", return_value=app):
+            outreach("first-outreach")
+            for expected_calls in (2, 3, 4, 4):
+                with self.connect() as conn:
+                    conn.execute("UPDATE wanderer_social_inbox SET run_at='2000-01-01' "
+                                 "WHERE state IN ('pending','retry')")
+                    conn.commit()
+                result = asyncio.run(worker.process_once(factory=self.connect, ai_caller=caller,
+                                                         sleep=ZeroSleep(), limit=1))
+                self.assertEqual(result, ["done"])
+                self.assertEqual(len(caller.calls), expected_calls)
+            self.assertEqual(asyncio.run(worker.process_once(factory=self.connect, ai_caller=caller)), [])
+            outreach("later-outreach")
+
+        with self.connect() as conn:
+            deliveries = conn.execute(
+                "SELECT m.body,m.sender_identity,t.depth FROM social_messages m "
+                "JOIN wanderer_message_deliveries d ON d.message_id=m.id AND d.conversation_key=m.conversation_key "
+                "JOIN wanderer_turns t ON t.turn_id=d.turn_id "
+                "WHERE m.conversation_key=? AND d.channel='social' AND d.delivery_kind='sent' ORDER BY m.id",
+                (key,)).fetchall()
+        self.assertEqual([r["body"] for r in deliveries], texts)
+        self.assertEqual([r["depth"] for r in deliveries], [0, 1, 2, 3, 0])
+        self.assertEqual([r["sender_identity"] for r in deliveries],
+                         [self.ident(w) for w in (self.atai, self.lele, self.atai, self.lele, self.atai)])
 
     def test_group_created_and_joined_events_have_no_fake_messages(self):
         from classroom_app.services.wanderer_settings_service import wanderer_runtime_setting_set
@@ -193,7 +222,7 @@ class SocialV2Test(WandererWorldTestCase):
             self.assertEqual(snapshot(conn,self.atai["id"],"social_message")["remaining"],0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM social_messages WHERE conversation_key=? AND message_type='text'",(key,)).fetchone()[0],1)
 
-    def test_real_group_protocol_sends_six_rounds_and_preserves_scope(self):
+    def test_group_members_answer_human_and_stop_automated_replies_at_depth_four(self):
         import json
         from fastapi import FastAPI
         from classroom_app.routers.social import router
@@ -208,7 +237,7 @@ class SocialV2Test(WandererWorldTestCase):
             conn.commit()
         gid,key=self.make_group(self.atai,self.lele)
         with self.connect() as conn:
-            conn.execute("UPDATE wanderer_agents SET born_at=?,lifespan_weeks=10,life_penalty_weeks=0,daily_wake_limit=100",(local_iso(),))
+            conn.execute("UPDATE wanderer_agents SET tier=2,born_at=?,lifespan_weeks=10,life_penalty_weeks=0,daily_wake_limit=100",(local_iso(),))
             conn.commit()
         app=FastAPI()
         app.include_router(router)
@@ -228,14 +257,20 @@ class SocialV2Test(WandererWorldTestCase):
             initial=asyncio.run(run_group_runtime(gid,conn_factory=self.connect,ai_caller=caller))
             self.assertEqual(initial["ai_calls"],2,initial)
             self.send(self.real,key,"开始我们的讨论")
-            results=[asyncio.run(run_group_runtime(gid,conn_factory=self.connect,ai_caller=caller)) for _ in range(3)]
-        self.assertEqual(sum(r["ai_calls"] for r in results),6,results)
+            results=[asyncio.run(run_group_runtime(gid,conn_factory=self.connect,ai_caller=caller)) for _ in range(4)]
+        # Both members can see the original human question. Their subsequent
+        # purely automated exchanges inherit depth 1, 2 and 3.
+        self.assertEqual(sum(r["ai_calls"] for r in results),5,results)
+        self.assertEqual(results[-1]['ai_calls'], 0)
         receipts=[receipt for result in results for out in result["scheduled"] for receipt in out.get("receipts",[])]
-        self.assertEqual(len(receipts),6,receipts)
+        self.assertEqual(len(receipts),5,receipts)
         self.assertTrue(all(r["status"]=="succeeded" and r.get("result",{}).get("verified_business") is True for r in receipts),receipts)
         with self.connect() as conn:
             texts=conn.execute("SELECT * FROM social_messages WHERE conversation_key=? AND message_type='text' AND sender_identity<>?",(key,self.real)).fetchall()
-            self.assertEqual(len(texts),6)
+            self.assertEqual(len(texts),5)
+            depths = [r[0] for r in conn.execute("SELECT depth FROM wanderer_turns t JOIN wanderer_wake_events e "
+                "USING(event_id,depth) WHERE e.source='group_message' ORDER BY depth")]
+            self.assertEqual(depths, [0,0,1,2,3])
             self.assertEqual(len({r["sender_identity"] for r in texts}),2)
             states=conn.execute("SELECT handled_message_id FROM wanderer_group_observations WHERE group_id=?",(gid,)).fetchall()
             self.assertTrue(all(r["handled_message_id"]>0 for r in states))
@@ -346,6 +381,9 @@ class SocialV2Test(WandererWorldTestCase):
         from classroom_app.services.wanderer_actions_social import GROUP_CONVERSATION_LIMIT
         from classroom_app.services.wanderer_group_runtime_service import run_member_group
         gid, key = self.make_group(self.atai, self.lele)
+        with self.connect() as conn:
+            conn.execute("UPDATE wanderer_agents SET tier=2 WHERE id=?", (self.atai['id'],))
+            conn.commit()
         for index in range(GROUP_CONVERSATION_LIMIT):
             self.send(self.ident(self.atai), key, f"散修轮次{index}")
         caller = StubCaller()

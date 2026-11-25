@@ -205,7 +205,7 @@ def _tomorrow_date(now: Any) -> str:
 def _apply_payload(conn: Any, wanderer: dict[str, Any], payload: dict[str, Any], now: Any) -> dict[str, Any]:
     from .wanderer_emotion_service import save_mood
     from .wanderer_episodic_memory_service import record_memory
-    from .wanderer_life_service import promotion_requirements
+    from .wanderer_life_service import submit_promotion
     from .wanderer_relationship_service import adjust_relationship
 
     applied: dict[str, Any] = {}
@@ -275,16 +275,7 @@ def _apply_payload(conn: Any, wanderer: dict[str, Any], payload: dict[str, Any],
 
     promotion_requested = False
     if bool(payload.get("promotion_intent")):
-        try:
-            ready = bool(promotion_requirements(conn, wanderer).get("ready"))
-        except Exception:  # noqa: BLE001
-            ready = False
-        if ready:
-            note = "夜里想过之后，决定向天道申请升阶。"
-            conn.execute("UPDATE wanderer_agents SET promotion_requested = 1, promotion_requested_at = ?, "
-                         "promotion_note = ?, updated_at = ? WHERE id = ?",
-                         (local_iso(), note, local_iso(), int(wanderer["id"])))
-            promotion_requested = True
+        promotion_requested = submit_promotion(conn, wanderer, "夜里想过之后，决定向天道申请升阶。", now=now)
     applied["promotion_requested"] = promotion_requested
     applied["compress"] = bool(memory.get("compress"))
     applied["summary"] = summary

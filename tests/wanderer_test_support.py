@@ -41,6 +41,10 @@ class WandererDbTestCase(unittest.TestCase):
         # explicitly enables the new runtime; production defaults to v2.
         from classroom_app.services.wanderer_settings_service import wanderer_runtime_setting_set
         with self.connect() as conn:
+            # Class fixtures reuse storage. Give each test a new model/activity
+            # budget so outcomes are independent of unittest discovery order.
+            for ledger in ("wanderer_resource_usage", "wanderer_resource_reservations"):
+                conn.execute(f"DELETE FROM {ledger} WHERE resource IN ('ai_wake','active_interactions','web_search')")
             wanderer_runtime_setting_set(conn, "autonomous_v2_enabled", "0")
             conn.commit()
 

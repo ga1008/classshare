@@ -67,6 +67,8 @@ TABLES = {
         UNIQUE(wanderer_id,target_kind,target_id,revision)""",
 }
 INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_turn_chain_dispatch ON wanderer_turns(wanderer_id,chain_id) WHERE dispatched_at IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_wanderer_wake_chain_state ON wanderer_wake_events(wanderer_id,chain_id,state)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_wake_ready ON wanderer_wake_events(state,run_at,wanderer_id)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_turn_history ON wanderer_turns(wanderer_id,created_at,turn_id)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_command_turn ON wanderer_commands(turn_id,state)",

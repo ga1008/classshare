@@ -9,6 +9,9 @@ from typing import Any
 from .connection import get_configured_db_engine
 
 VERSION = "6"
+ACTOR_DAY_INDEX = ("CREATE INDEX IF NOT EXISTS idx_wanderer_reservation_actor_day "
+                   "ON wanderer_resource_reservations(actor_id,budget_date,resource) "
+                   "WHERE state IN ('consumed','reserved')")
 AGENT_COLUMNS = {
     "life_epoch": "INTEGER NOT NULL DEFAULT 1",
     "authority_version": "INTEGER NOT NULL DEFAULT 1",
@@ -105,6 +108,7 @@ TABLES = (
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_wanderer_pending_bond_pair ON wanderer_bond_requests(pair_key,kind) WHERE state IN ('awaiting_consent','ready','reviewing')",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_penalty_owner ON wanderer_penalty_allocations(beneficiary_id,component)",
     "CREATE INDEX IF NOT EXISTS idx_wanderer_cultivation_day ON wanderer_cultivation_awards(wanderer_id,kind,budget_date)",
+    ACTOR_DAY_INDEX,
 )
 
 
@@ -118,6 +122,8 @@ def ensure_wanderer_world_schema(conn: Any, *, allow_schema_changes: bool = Fals
     if exists:
         row = conn.execute("SELECT value FROM wanderer_world_schema WHERE key='version'").fetchone()
         if row and str(row["value"]) == VERSION:
+            if allow_schema_changes:
+                conn.execute(ACTOR_DAY_INDEX)
             return
     if engine == "postgres" and not allow_schema_changes:
         raise RuntimeError("wanderer world schema requires a startup migration")

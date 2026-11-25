@@ -17,5 +17,7 @@ def ensure_wanderer_delivery_schema(conn: Any, *, engine: str | None = None,
         conversation_key TEXT NOT NULL, payload_hash TEXT NOT NULL, peer_watermark BIGINT NOT NULL,
         message_id BIGINT NOT NULL, origin_operation_id TEXT NOT NULL,
         delivery_kind TEXT NOT NULL CHECK(delivery_kind IN ('sent','reused')), created_at TEXT NOT NULL)""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_wanderer_delivery_message ON wanderer_message_deliveries "
+                 "(channel,conversation_key,message_id) WHERE delivery_kind='sent'")
     conn.execute('CREATE INDEX IF NOT EXISTS idx_wanderer_delivery_repeat ON wanderer_message_deliveries '
                  '(wanderer_id,life_epoch,channel,conversation_key,payload_hash,created_at)')

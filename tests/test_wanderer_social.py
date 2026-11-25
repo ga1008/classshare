@@ -762,13 +762,15 @@ class WandererSocialTest(WandererWorldTestCase):
         from classroom_app.services.heavenly_dao_evidence import collect_evidence
         from classroom_app.services.wanderer_admin_service import build_wanderer_detail
 
-        key = self.befriend(self.real, self.atai)
-        for index in range(7):
-            self.send(self.ident(self.atai), key, f"刷屏{index}",
-                      client_nonce=f"wanderer-outreach:1:0:2026-11-04:{index}")
         with self.connect() as conn:
-            detail = build_wanderer_detail(conn, self.atai["id"])
-            evidence = collect_evidence(conn, self.wanderer(conn, "atai"), datetime.now())
+            speaker = self.wanderer(conn, "linwanzhou")  # Tier 2 has eight daily activities.
+        key = self.befriend(self.real, speaker)
+        for index in range(7):
+            self.send(self.ident(speaker), key, f"刷屏{index}",
+                      client_nonce=f"wanderer-outreach:{speaker['id']}:0:2026-11-04:{index}")
+        with self.connect() as conn:
+            detail = build_wanderer_detail(conn, speaker["id"])
+            evidence = collect_evidence(conn, speaker, datetime.now())
         self.assertEqual(detail["stats"]["social"]["friends"], 1)
         self.assertEqual(detail["stats"]["social"]["messages_today"], 7)
         self.assertEqual(evidence["social_24h"]["messages_24h"], 7)
@@ -780,12 +782,15 @@ class WandererSocialTest(WandererWorldTestCase):
     def test_answers_to_a_real_user_are_not_counted_as_flooding(self):
         from classroom_app.services.heavenly_dao_evidence import collect_evidence
 
-        key = self.befriend(self.real, self.atai)
-        for index in range(7):
-            self.send(self.ident(self.atai), key, f"回答{index}",
-                      client_nonce=f"wanderer:1:99:{index}")
         with self.connect() as conn:
-            evidence = collect_evidence(conn, self.wanderer(conn, "atai"), datetime.now())
+            speaker = self.wanderer(conn, "linwanzhou")  # Tier 2 has eight daily activities.
+        key = self.befriend(self.real, speaker)
+        for index in range(7):
+            question = self.send(self.real, key, f"问题{index}")
+            self.send(self.ident(speaker), key, f"回答{index}", reply_to_id=question["id"],
+                      client_nonce=f"wanderer:{speaker['id']}:{question['id']}:0")
+        with self.connect() as conn:
+            evidence = collect_evidence(conn, speaker, datetime.now())
         self.assertEqual(evidence["social_24h"]["messages_24h"], 7)
         self.assertEqual(evidence["social_24h"]["reply_messages_24h"], 7)
         self.assertEqual(evidence["social_24h"]["proactive_messages_24h"], 0)

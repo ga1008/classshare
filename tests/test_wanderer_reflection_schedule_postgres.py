@@ -34,7 +34,7 @@ class ReflectionSchedulePostgresTests(unittest.TestCase):
             ensure_social_schema(conn, engine='postgres')
             schema_scheduler.ensure_scheduler_schema(conn)
             for key, value in {'enabled': '1', 'autonomous_v2_enabled': '1', 'reflection_enabled': '1',
-                               'reflection_batch_size': '1', 'daily_ai_call_cap': '0',
+                               'reflection_batch_size': '1', 'daily_ai_call_cap': '100',
                                daily_ai_calls_key(): '0'}.items():
                 wanderer_runtime_setting_set(conn, key, value)
             conn.execute('UPDATE wanderer_agents SET daily_wake_limit=0')

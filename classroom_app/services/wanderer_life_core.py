@@ -17,10 +17,10 @@ from ..time_utils import to_local_datetime
 MAX_TIER = 10
 TIER_COUNT = MAX_TIER + 1
 
-# Week 2 at tier 0 rising to 100 weeks at tier 10 (design §2.1).
-BASE_LIFESPAN_WEEKS: tuple[float, ...] = (2.0, 4.0, 6.0, 9.0, 13.0, 18.0, 25.0, 35.0, 48.0, 70.0, 100.0)
+# Each value is a total lifespan since birth, including all earlier tiers.
+BASE_LIFESPAN_WEEKS: tuple[float, ...] = (6, 10, 15, 21, 28, 37, 49, 65, 85, 110, 140)
 LIFESPAN_MIN_WEEKS = 1.0
-LIFESPAN_MAX_WEEKS = 150.0
+LIFESPAN_MAX_WEEKS = 196.0
 # Life cannot be extended past this many extra weeks (two one-week extensions).
 MAX_LIFE_EXTENSIONS = 2
 LIFE_EXTENSION_WEEKS = 1.0
@@ -37,17 +37,17 @@ ACTIVE_SPEECH_BASE_CHARS = 100
 # Knowledge ratio needed to apply for the next tier (design §4.2). The ratio
 # rises with tier so the absolute target keeps growing even after the knowledge
 # capacity cap, and the ladder never goes backwards.
-PROMOTION_KNOWLEDGE_RATIO: tuple[float, ...] = (0.35, 0.38, 0.40, 0.42, 0.44, 0.46, 0.48, 0.50, 0.52, 0.55)
-# Absolute cultivation for each tier → next tier (2026-11-03 rebalance).
+PROMOTION_KNOWLEDGE_RATIO: tuple[float, ...] = (0.15, 0.18, 0.20, 0.22, 0.24, 0.26, 0.28, 0.30, 0.32, 0.35)
+# Absolute cultivation for each tier → next tier (2026-11-25 rebalance).
 # Higher tiers need more, but their per-action gains scale as well, so a
 # diligent life can climb from 0 to 10 within its lifespan.
-TIER_CULTIVATION_TARGETS: tuple[int, ...] = (24, 48, 90, 160, 280, 460, 720, 1080, 1560, 2200)
+TIER_CULTIVATION_TARGETS: tuple[int, ...] = (10, 24, 45, 80, 135, 220, 350, 520, 780, 1100)
 # Income grows with the tier: reading and interacting at a higher realm is
 # worth more per action (the user-facing "获得修为的能力越强").
 TIER_KNOWLEDGE_GAIN_BONUS = 0.10
 TIER_INTERACTION_GAIN_BONUS = 0.08
-PROMOTION_COOLDOWN_DAYS = 7
-PROMOTION_MIN_INTERACTIONS = 5
+PROMOTION_COOLDOWN_DAYS = 3
+PROMOTION_MIN_INTERACTIONS = 3
 SCORE_CHARS_PER_POINT = 100.0
 KNOWLEDGE_CAPACITY_MAX = 360_000
 
@@ -70,14 +70,11 @@ REAL_USER_INTERACTION_MULTIPLIER = 2.0
 REAL_USER_INTERACTION_MAX = 5.0
 REAL_USER_TIER_BONUS = 0.20
 REAL_USER_LENGTH_CHARS = 200.0
-# Base daily active-interaction allowance and per-tier growth (2026-11-01).
-ACTIVE_INTERACTION_BASE = 20
-ACTIVE_INTERACTION_TIER_BONUS = 0.20
 # Base daily web-search allowance and per-tier growth.
 WANDERER_SEARCH_BASE = 12
 WANDERER_SEARCH_TIER_BONUS = 0.20
-# Daily independent-wake quota: 20 at tier 0, +90% of that base per tier, so
-# tier 10 gets exactly 200 (20 / 38 / 56 / 74 / 92 / 110 / 128 / 146 / 164 / 182 / 200).
+# Keep the stored tier-0 configuration compatible; all lives also have a hard ceiling.
+DAILY_ACTIVITY_LIMITS = (3, 5, 8, 10, 12, 16, 22, 32, 46, 68, 100)
 AI_WAKE_BASE = 20
 AI_WAKE_TIER_BONUS = 0.90
 # Each successful web search adds cultivation; higher tiers learn more from it.
@@ -216,9 +213,7 @@ def life_state(
     ``expires_at = born_at + (lifespan_weeks + extensions − penalty_weeks) weeks``.
     ``lifespan_weeks`` of 0/None falls back to the tier/vitality formula.
     """
-    moment = now or datetime.now()
-    if moment.tzinfo is not None:
-        moment = moment.astimezone().replace(tzinfo=None)
+    moment = to_local_datetime(now) or datetime.now()
     born = to_local_datetime(born_at) or moment
     try:
         weeks = float(lifespan_weeks or 0)
@@ -376,7 +371,7 @@ def promotion_feasibility(tier: Any, *, studies_per_day: float = 3.0,
     cultivation_needed = cultivation_target(level)
     studies = max(knowledge_needed / knowledge_per_study, cultivation_needed / max(0.01, cultivation_per_study))
     days_needed = int(math.ceil(studies / max(0.1, studies_per_day)))
-    days_available = int(round((BASE_LIFESPAN_WEEKS[level + 1] - BASE_LIFESPAN_WEEKS[level]) * 7))
+    days_available = int(round((BASE_LIFESPAN_WEEKS[level] - (BASE_LIFESPAN_WEEKS[level - 1] if level else 0)) * 7))
     return {
         "tier": level,
         "knowledge_needed": knowledge_needed,
@@ -393,7 +388,7 @@ def interaction_requirement(tier: Any, eloquence: Any = 1.0) -> int:
         factor = max(0.2, float(eloquence or 1.0))
     except (TypeError, ValueError):
         factor = 1.0
-    return max(3, int(round(PROMOTION_MIN_INTERACTIONS / factor)))
+    return max(2, int(round(PROMOTION_MIN_INTERACTIONS / factor)))
 
 
 def promotion_plan(tier: Any = 0, *, insight: float = 1.0, eloquence: float = 1.0,
@@ -401,8 +396,9 @@ def promotion_plan(tier: Any = 0, *, insight: float = 1.0, eloquence: float = 1.
                    wake_base: Any = AI_WAKE_BASE) -> dict[str, Any]:
     """Whether this tier's daily wake quota covers promotion before the lifespan ends.
 
-    Pessimistic reading of a turn: one wake yields at most one productive act
-    (a study note, one interaction, or one web search). Cultivation first comes
+    Each study needs a read and a write. Reserve one call to apply, plus a day
+    for the adjudicator. No inherited knowledge or cultivation is assumed here.
+    Cultivation first comes
     from the knowledge and interactions promotion already requires; any
     shortfall is covered by extra searches, the cheapest repeatable act.
     """
@@ -423,14 +419,15 @@ def promotion_plan(tier: Any = 0, *, insight: float = 1.0, eloquence: float = 1.
     interaction_cultivation = round(interactions_needed * quality_social, 2)
     shortfall = max(0.0, cultivation_needed - knowledge_cultivation - interaction_cultivation)
     extra_searches = int(math.ceil(shortfall / max(0.01, search_cultivation_gain(level))))
-    acts_needed = studies_needed + interactions_needed + extra_searches
+    acts_needed = 2 * studies_needed + interactions_needed + extra_searches + 1
     quota = ai_wake_limit(level, wake_base)
-    days_available = round(lifespan_weeks_for(level, vitality) * 7, 1)
+    previous = lifespan_weeks_for(level - 1, vitality) if level else 0
+    days_available = round((lifespan_weeks_for(level, vitality) - previous) * 7, 1)
     wakes_available = int(quota * days_available)
     # Extra searches also spend the daily search allowance, so they can need
     # more days than the wake count alone suggests.
     search_days = int(math.ceil(extra_searches / max(1, wanderer_search_limit(level))))
-    days_needed = max(acts_needed / max(1, quota), search_days)
+    days_needed = 1 + max(math.ceil(acts_needed / max(1, quota)), search_days, PROMOTION_COOLDOWN_DAYS if level else 0)
     return {
         "tier": level, "max_tier": False,
         "knowledge_needed": knowledge_needed, "studies_needed": studies_needed,
@@ -441,7 +438,7 @@ def promotion_plan(tier: Any = 0, *, insight: float = 1.0, eloquence: float = 1.
         "acts_needed": acts_needed, "quota": quota,
         "days_available": days_available, "wakes_available": wakes_available,
         "days_needed": round(days_needed, 2),
-        "fits": acts_needed <= wakes_available,
+        "fits": quota > 0 and days_needed <= days_available,
         "margin": wakes_available - acts_needed,
     }
 
@@ -513,41 +510,35 @@ def active_speech_limit(tier: Any) -> int:
     return ACTIVE_SPEECH_BASE_CHARS * (clamp_tier(tier) + 1)
 
 
+def daily_activity_limit(tier: Any) -> int:
+    return DAILY_ACTIVITY_LIMITS[clamp_tier(tier)]
+
+
 def active_interaction_limit(tier: Any, configured: Any = 0) -> int:
-    """Base 20 active interactions per day, +20% per tier; never below the configured floor."""
-    level = clamp_tier(tier)
-    base = int(round(ACTIVE_INTERACTION_BASE * (1.0 + ACTIVE_INTERACTION_TIER_BONUS * level)))
-    try:
-        configured_value = max(0, int(configured or 0))
-    except (TypeError, ValueError):
-        configured_value = 0
-    return max(base, configured_value)
+    """The former configured floor cannot raise a realm's fixed action allowance."""
+    return daily_activity_limit(tier)
 
 
 def ai_wake_limit(tier: Any, configured: Any = AI_WAKE_BASE) -> int:
-    """Daily independent wake credits: the configured tier-0 base, +90% per tier.
-
-    ``daily_wake_limit`` is the tier-0 quota (default 20), so tier 10 reaches
-    200; 0 still disables waking. A higher 境界 therefore gets more thoughts
-    per day instead of the same flat cap.
-    """
+    """Apply the tier ceiling to existing configured credits, including zero."""
     try:
         base = max(0, int(configured or 0))
     except (TypeError, ValueError):
         base = 0
     if base <= 0:
         return 0
-    return int(round(base * (1.0 + AI_WAKE_TIER_BONUS * clamp_tier(tier))))
+    return min(daily_activity_limit(tier), int(round(base * (1.0 + AI_WAKE_TIER_BONUS * clamp_tier(tier)))))
 
 
 def wake_quota_table(base: Any = AI_WAKE_BASE) -> tuple[int, ...]:
-    """The daily wake allowance for tiers 0–10 (20 … 200 at the default base)."""
+    """Ordinary wake credits at every tier, before partner contributions."""
     return tuple(ai_wake_limit(tier, base) for tier in range(TIER_COUNT))
 
 
 def wanderer_search_limit(tier: Any) -> int:
-    """Base 12 web searches per day, +20% per tier."""
-    return int(round(WANDERER_SEARCH_BASE * (1.0 + WANDERER_SEARCH_TIER_BONUS * clamp_tier(tier))))
+    """The separate search budget also respects the actor's daily activity ceiling."""
+    base = round(WANDERER_SEARCH_BASE * (1.0 + WANDERER_SEARCH_TIER_BONUS * clamp_tier(tier)))
+    return min(daily_activity_limit(tier), base)
 
 
 def search_cultivation_gain(tier: Any) -> float:
@@ -557,14 +548,10 @@ def search_cultivation_gain(tier: Any) -> float:
 
 def tier_perks(tier: Any, daily_action_budget: Any = 10, daily_wake_limit: Any = AI_WAKE_BASE) -> dict[str, Any]:
     level = clamp_tier(tier)
-    try:
-        budget = max(0, int(daily_action_budget or 0))
-    except (TypeError, ValueError):
-        budget = 10
-    effective_budget = active_interaction_limit(level, budget)
+    effective_budget = active_interaction_limit(level)
     return {
         "tier": level,
-        "budget_factor": round(1.0 + ACTIVE_INTERACTION_TIER_BONUS * level, 2),
+        "budget_factor": round(effective_budget / daily_activity_limit(0), 2),
         "daily_budget": effective_budget,
         "active_interaction_limit": effective_budget,
         "web_search_limit": wanderer_search_limit(level),

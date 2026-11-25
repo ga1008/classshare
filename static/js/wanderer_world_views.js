@@ -46,6 +46,9 @@ const RESOURCE_NAMES = { ai_wake: '今日思考', social_message: '散修交流'
 export function resourceCards(resources = {}) {
     const primary = ['ai_wake', 'social_message', 'web_search'];
     const format = number => Number(number).toLocaleString('zh-CN', { maximumFractionDigits: 2 });
+    const usageText = (value, unit) => value.actor_used == null
+        ? `已用 ${format(Number(value.used || 0) / unit)} · 在途 ${format(Number(value.reserved || 0) / unit)}`
+        : `本人今日已占用 ${format(value.actor_used)} / ${format(value.actor_limit)} 次`;
     const owners = (value, unit) => node('ul', { class: 'ww-owner-list', 'aria-label': '额度来源' }, (value.owners || []).map((owner, index) => node('li', {}, [
         node('span', { text: owner.name || owner.owner_name || (index === 0 ? '本人资源' : '直接道侣共享') }),
         node('strong', { text: `${format(Number(owner.remaining || 0) / unit)} / ${format(Number(owner.limit || 0) / unit)}` }),
@@ -57,7 +60,7 @@ export function resourceCards(resources = {}) {
             body: [node('div', { class: 'ww-resource__hero' }, [
                 createComponent('progress', { label: `${RESOURCE_NAMES[key]}剩余比例`, variant: 'ring', max: Math.max(1, total), value: Math.min(total, left) }),
                 node('div', {}, [node('strong', { class: 'ww-number', text: format(left) }), node('p', { text: `剩余 / ${format(total)}${key === 'social_message' ? ' 当量' : ' 次'}` })]),
-            ]), node('p', { class: 'ww-muted', text: `已用 ${format(Number(value.used || 0) / unit)} · 在途 ${format(Number(value.reserved || 0) / unit)}` }), owners(value, unit)],
+            ]), node('p', { class: 'ww-muted', text: usageText(value, unit) }), owners(value, unit)],
         });
     });
     const result = node('div', { class: 'ww-summary' }, [node('div', { class: 'ww-resources' }, cards)]);
@@ -66,7 +69,7 @@ export function resourceCards(resources = {}) {
         if (!rows.length) continue;
         const body = node('div', { class: 'ww-resources' }, rows.map(([key, value]) => createContent('card', {
             title: RESOURCE_NAMES[key] || key, variant: 'flat', meta: value.definition?.unit || '',
-        }, { body: [node('p', { text: period === 'ability' ? `每次可用 ${format(value.limit || 0)}` : `可用 ${format(value.remaining || 0)} / ${format(value.limit || 0)} · 已占用 ${format(Number(value.used || 0) + Number(value.reserved || 0))}` }), owners(value, 1)] })));
+        }, { body: [node('p', { text: period === 'ability' ? `每次可用 ${format(value.limit || 0)}` : `可用 ${format(value.remaining || 0)} / ${format(value.limit || 0)} · ${usageText(value, 1)}` }), owners(value, 1)] })));
         result.append(createCollapsible({ id: `ww-resources-${++serial}`, title, mode: 'always', open: false }, [body]));
     }
     return result;
@@ -109,8 +112,8 @@ export function reflectionView(value = {}) {
     const statuses = { not_started: '尚未开始', pending: '待自省', running: '自省中', completed: '已完成', applied: '已完成评分', partial: '部分好友待评分', failed: '待重试', exhausted: '今日次数已用完' };
     const limit = Number(value.free_limit ?? 3), used = Number(value.ai_calls ?? 0), remaining = Number(value.free_remaining ?? Math.max(0, limit - used));
     return createContent('card', { title: '今日自省', variant: 'flat', meta: value.reflection_date || '' }, {
-        body: [node('div', { class: 'ww-meta' }, [badge(statuses[value.status] || value.status || '尚未开始', 'info'), badge(`免费请求剩余 ${remaining} / ${limit}`, 'success')]),
+        body: [node('div', { class: 'ww-meta' }, [badge(statuses[value.status] || value.status || '尚未开始', 'info'), badge(`本场剩余次数 ${remaining} / ${limit}`, 'success')]),
             node('p', { text: `已评分 ${value.rated_count ?? 0} / ${value.friend_count ?? 0} 位好友${Number(value.missing_count) ? ` · 还有 ${value.missing_count} 位待评分` : ''}` }),
-            node('p', { class: 'ww-muted', text: '首次自省与两次可选回调均不占日常思考额度。五档感受由系统换算好感，一般不增不减。' })],
+            node('p', { class: 'ww-muted', text: '自省最多三次，每次都计入个人和平台的请求上限。好友评分按五档换算，评为“一般”时好感度不变。' })],
     });
 }

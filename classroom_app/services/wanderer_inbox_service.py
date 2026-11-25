@@ -45,7 +45,7 @@ def enqueue(conn: Any, wanderer_id: int, source: str, key: str, peer: str, messa
             AND excluded.latest_message_id>wanderer_social_inbox.latest_message_id THEN 'pending'
             ELSE wanderer_social_inbox.state END,
           attempts=CASE WHEN excluded.latest_message_id>wanderer_social_inbox.latest_message_id
-            AND wanderer_social_inbox.state IN ('idle','failed','blocked') THEN 0 ELSE wanderer_social_inbox.attempts END,
+            THEN 0 ELSE wanderer_social_inbox.attempts END,
           run_at=CASE WHEN wanderer_social_inbox.state<>'running'
             AND excluded.latest_message_id>wanderer_social_inbox.latest_message_id
             AND (excluded.support_urgent=1 OR wanderer_social_inbox.state IN ('idle','failed','blocked')) THEN excluded.run_at
@@ -165,7 +165,8 @@ def renew(task: dict, *, factory=None) -> bool:
         return True
 
 
-def release(task: dict, error: str, *, factory=None, delay: float | None = None, blocked=False, clear_support=False) -> None:
+def release(task: dict, error: str, *, factory=None, delay: float | None = None, blocked=False, clear_support=False,
+            through_message_id: int | None = None) -> None:
     with connection(factory) as conn:
         row = owned(conn, task)
         if not row:
@@ -173,6 +174,8 @@ def release(task: dict, error: str, *, factory=None, delay: float | None = None,
         attempts = int(row["attempts"]) + (0 if delay is not None or blocked else 1)
         state = "blocked" if blocked else "retry"
         wait = delay if delay is not None else (900 if attempts >= MAX_ATTEMPTS else 5 * 2 ** max(0, attempts - 1))
+        if through_message_id is not None and int(row['latest_message_id']) > through_message_id:
+            state, attempts, wait = 'pending', 0, 0
         conn.execute("UPDATE wanderer_social_inbox SET state=?,attempts=?,last_error=?,run_at=?,lease_token='',"
                      "lease_until='',support_urgent=CASE WHEN ? THEN 0 ELSE support_urgent END,updated_at=? WHERE id=?",
                      (state, attempts, error[:400], stamp_after(wait), bool(clear_support), now_iso(), task["id"]))

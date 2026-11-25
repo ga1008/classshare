@@ -39,7 +39,7 @@ class DailyAffinityBondTests(WandererDbTestCase):
                          "VALUES(?,?,'accepted',?,?)",(a,b,a,local_iso()))
             wanderer_runtime_setting_set(conn,'autonomous_v2_enabled','1')
             wanderer_runtime_setting_set(conn,'enabled','1')
-            wanderer_runtime_setting_set(conn,'daily_ai_call_cap','0')
+            wanderer_runtime_setting_set(conn,'daily_ai_call_cap','100')
             conn.commit()
 
     def reflect(self,owner,commands,*,force=False):

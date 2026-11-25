@@ -28,6 +28,7 @@ from .wanderer_life_core import (
     INTERACTION_DAILY_CULTIVATION_CAP,
     LIFE_EXTENSION_WEEKS,
     MAX_LIFE_EXTENSIONS,
+    PROMOTION_COOLDOWN_DAYS,
     RESURRECT_COST_WEEKS,
     RESURRECT_MIN_TIER,
     TALENTS,
@@ -54,7 +55,6 @@ _CULT_DAY_KEY = "cult_day"
 _CULT_TODAY_KEY = "cult_today"
 _CULT_TOTAL_KEY = "cult_total"
 _PROMOTION_WINDOW_DAYS = 7
-_PROMOTION_COOLDOWN_DAYS = 7
 
 
 def _row_value(row: Any, key: str, index: int = 0) -> Any:
@@ -99,6 +99,8 @@ def _reload(conn: Any, wanderer_id: int) -> Optional[dict[str, Any]]:
 
 def ensure_life_columns(conn: Any, wanderer: dict[str, Any]) -> dict[str, Any]:
     """Persist born_at / lifespan_weeks / talents_json when a row predates them. Caller commits."""
+    if wanderer.get("status") == "dead":
+        return wanderer
     wanderer_id = int(wanderer["id"])
     row = conn.execute(
         "SELECT born_at, lifespan_weeks, talents_json FROM wanderer_agents WHERE id = ?", (wanderer_id,)
@@ -125,7 +127,8 @@ def ensure_life_columns(conn: Any, wanderer: dict[str, Any]) -> dict[str, Any]:
 def backfill_all(conn: Any) -> int:
     """Backfill every row once (tick start / admin overview). Caller commits."""
     rows = conn.execute(
-        "SELECT id, slug, tier, created_at, born_at, lifespan_weeks, talents_json FROM wanderer_agents"
+        "SELECT id, slug, tier, created_at, born_at, lifespan_weeks, talents_json FROM wanderer_agents "
+        "WHERE status <> 'dead'"
     ).fetchall()
     touched = 0
     for row in rows:
@@ -377,13 +380,14 @@ def set_life_penalty(conn: Any, wanderer: dict[str, Any], weeks_delta: Any, *, r
 # Requirements + payloads
 # ---------------------------------------------------------------------------
 
-def recent_interactions(conn: Any, wanderer_id: int, *, days: int = _PROMOTION_WINDOW_DAYS) -> int:
-    since = (local_now() - timedelta(days=int(days))).isoformat(timespec="seconds")
+def recent_interactions(conn: Any, wanderer_id: int, *, days: int = _PROMOTION_WINDOW_DAYS, now=None) -> int:
+    moment = now or local_now()
+    since = (moment - timedelta(days=int(days))).isoformat(timespec="seconds")
     marks = ",".join("?" for _ in INTERACTION_KINDS)
     row = conn.execute(
         f"SELECT COUNT(*) AS n FROM wanderer_action_log WHERE wanderer_id = ? AND outcome = 'ok' "
-        f"AND action_kind IN ({marks}) AND created_at >= ?",
-        (int(wanderer_id), *INTERACTION_KINDS, since),
+        f"AND action_kind IN ({marks}) AND created_at >= ? AND created_at <= ?",
+        (int(wanderer_id), *INTERACTION_KINDS, since, moment.isoformat(timespec="seconds")),
     ).fetchone()
     return int(_row_value(row, "n") or 0) if row is not None else 0
 
@@ -401,13 +405,13 @@ def promotion_requirements(conn: Any, wanderer: dict[str, Any], *, now: Any = No
     cultivation_needed = cultivation_target(tier)
     eloquence = talent_value(wanderer.get("talents"), "eloquence")
     interactions_needed = interaction_requirement(tier, eloquence)
-    interactions = recent_interactions(conn, int(wanderer["id"]))
     moment = now or local_now()
+    interactions = recent_interactions(conn, int(wanderer["id"]), now=moment)
     last = parse_datetime(wanderer.get("promotion_requested_at"))
     cooldown_left = 0
     if last is not None:
         last_naive = last.replace(tzinfo=None) if last.tzinfo else last
-        delta = (last_naive + timedelta(days=_PROMOTION_COOLDOWN_DAYS)) - moment
+        delta = (last_naive + timedelta(days=PROMOTION_COOLDOWN_DAYS)) - moment
         seconds = delta.total_seconds()
         cooldown_left = max(0, int(seconds // 86400) + (1 if seconds % 86400 else 0)) if seconds > 0 else 0
     return {
@@ -428,6 +432,31 @@ def promotion_requirements(conn: Any, wanderer: dict[str, Any], *, now: Any = No
             and score >= cultivation_needed and interactions >= interactions_needed and cooldown_left == 0
         ),
     }
+
+
+def submit_promotion(conn, wanderer, note, *, ai_calls=0, mood="", now=None):
+    """Record the application and its eligibility evidence in the same transaction."""
+    from .wanderer_bond_service import lock_lifecycle
+    from .wanderer_identity_service import current_life, log_wanderer_action
+    wid = int(wanderer["id"])
+    lock_lifecycle(conn, [wid])
+    fresh = _reload(conn, wid)
+    moment = now or local_now()
+    if not fresh or fresh["status"] != "active" or fresh["promotion_requested"] or current_life(fresh, moment)["expired"]:
+        return False
+    requirements = promotion_requirements(conn, fresh, now=moment)
+    if not requirements["ready"]:
+        return False
+    stamp = moment.isoformat(timespec="seconds")
+    conn.execute("UPDATE wanderer_agents SET promotion_requested=1,promotion_requested_at=?,promotion_note=?,"
+                 "updated_at=? WHERE id=?", (stamp, note, stamp, wid))
+    facts = {k: requirements[k] for k in ("knowledge", "knowledge_target", "cultivation", "cultivation_target",
+                                          "interactions", "interactions_needed", "ready")}
+    log_wanderer_action(conn, wid, "request_promotion", target_type="dao", target_id=stamp, content_preview=note,
+                        ai_calls=ai_calls, mood=mood, detail={"tier": fresh["tier"], "life_epoch": fresh["life_epoch"],
+                                                             "qualification": facts})
+    _invalidate(fresh)
+    return True
 
 
 def life_payload(wanderer: dict[str, Any], *, now: Any = None) -> dict[str, Any]:
@@ -613,5 +642,5 @@ def finish_revival(conn, wanderer_id):
     from .wanderer_penalty_service import replay_debts
     ensure_wanderer_world_schema(conn)
     conn.execute("UPDATE wanderer_penalty_debts SET balance_units=0,updated_at=? WHERE wanderer_id=? AND component='life_seconds'", (local_iso(), int(wanderer_id)))
-    conn.execute("UPDATE wanderer_agents SET life_epoch=life_epoch+1,authority_version=authority_version+1,life_bonus_seconds=0,life_gift_in_weeks=0,life_gift_out_weeks=0,updated_at=? WHERE id=?", (local_iso(), int(wanderer_id)))
+    conn.execute("UPDATE wanderer_agents SET lifespan_policy_version=2,life_epoch=life_epoch+1,authority_version=authority_version+1,life_bonus_seconds=0,life_gift_in_weeks=0,life_gift_out_weeks=0,updated_at=? WHERE id=?", (local_iso(), int(wanderer_id)))
     replay_debts(conn, int(wanderer_id))

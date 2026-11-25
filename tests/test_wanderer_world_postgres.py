@@ -1,5 +1,6 @@
 """Independent-connection races on an explicitly owned empty PostgreSQL cluster."""
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 import asyncio
 import json
 import os
@@ -20,7 +21,7 @@ from classroom_app.db.schema_agent_platform_requests import ensure_agent_platfor
 from classroom_app.services import wanderer_resource_service as resources
 from classroom_app.services import wanderer_bond_service as bonds
 from classroom_app.services import wanderer_runtime_service as runtime
-from classroom_app.time_utils import local_iso
+from classroom_app.time_utils import local_iso, local_now
 from tools.assessment_postgres_rehearsal import connect_offline
 
 
@@ -149,6 +150,27 @@ class WandererWorldPostgresTest(unittest.TestCase):
             self.assertEqual(conn.execute('SELECT ai_calls FROM wanderer_reflection_sessions').fetchone()[0],3)
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_reflection_dispatches').fetchone()[0],3)
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_resource_reservations').fetchone()[0],0)
+
+    def test_reflection_judgement_and_background_jobs_compete_for_one_platform_slot(self):
+        from classroom_app.services.wanderer_ai_service import _reserve_call, generate_decision, reserve_attributed_call
+        from classroom_app.services.wanderer_settings_service import daily_ai_calls, wanderer_runtime_setting_set
+        event = self._daily_run()
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, 'daily_ai_call_cap', 1)
+            run = runtime._claim(conn, event['event_id'])
+            conn.commit()
+        async def fake(*args, **kwargs):
+            return {'status': 'success', 'response_text': '{}'}
+        def compete(index):
+            if index == 0:
+                return asyncio.run(generate_decision(self.connect, run, ai_caller=fake))['ai_calls']
+            if index % 2:
+                return int(_reserve_call(self.connect, adjudication=True)[0])
+            return int(reserve_attributed_call(self.connect, 2, f'job:{index}'))
+        with patch.object(runtime, 'build_runtime_prompt', return_value='synthetic prompt'):
+            self.assertEqual(sum(self.race(8, compete)), 1)
+        with self.connect() as conn:
+            self.assertEqual(daily_ai_calls(conn), 1)
 
     def test_daily_rating_conflicts_preserve_one_baseline_and_revision(self):
         from classroom_app.services import wanderer_daily_reflection_service as daily
@@ -312,7 +334,12 @@ class WandererWorldPostgresTest(unittest.TestCase):
         from classroom_app.services.wanderer_penalty_service import apply_penalty
         self.bond(2, 3); self.bond(1, 2)
         with self.connect() as conn:
-            conn.execute("UPDATE wanderer_agents SET life_penalty_weeks=? WHERE id=2", ((52*604800-100)/604800,))
+            birth = local_now().replace(microsecond=0)
+            # PG REAL rounds the stored weeks to a value leaving 99.2065 seconds.
+            # At this timestamp the last payable 98 seconds used to leave a live fraction.
+            settlement_time = birth + timedelta(seconds=2)
+            conn.execute("UPDATE wanderer_agents SET born_at=?,life_penalty_weeks=? WHERE id=2",
+                         (birth.isoformat(), (52 * 604800 - 100) / 604800))
             conn.commit()
         def compete(index):
             if index:
@@ -321,7 +348,8 @@ class WandererWorldPostgresTest(unittest.TestCase):
                 result = apply_penalty(conn, 3, {"life_seconds": 1000}, reason="Synthetic", operation_id="partner-death")
                 conn.commit()
                 return result
-        with patch("classroom_app.services.heavenly_dao_service.notify_wanderer"):
+        with patch("classroom_app.services.heavenly_dao_service.notify_wanderer"), \
+             patch("classroom_app.services.wanderer_identity_service.local_now", return_value=settlement_time):
             results = self.race(2, compete)
         self.assertTrue(results[1]["ok"])
         with self.connect() as conn:

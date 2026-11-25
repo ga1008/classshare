@@ -9,6 +9,7 @@ from contextlib import suppress
 from . import wanderer_inbox_actions as actions
 from . import wanderer_inbox_service as inbox
 from .social_common import SocialError
+from .wanderer_ai_service import inbox_call_scope
 
 
 async def _heartbeat(task, factory):
@@ -65,8 +66,7 @@ async def _run_claim(task: dict, *, factory=None, ai_caller=None, sleep=None) ->
         if live.get("lease_lane") == "safety" and response is None:
             inbox.release(task, "support triage no longer urgent", factory=factory, delay=0, clear_support=True)
             return "normal_pending"
-        # 被问不计入互动限额：普通私聊直接回答。安全兜底车道仍保留原反刷屏限制，
-        # 避免危机期间被同一会话的连续消息刷屏（wanderer-support-delivery）。
+        # 普通回复使用当天个人活动额度。固定求助回执继续遵守原有会话限流。
         if task["source"] == "social" and live.get("lease_lane") == "safety":
             with ctx.connect() as conn:
                 sent = _sent_since(conn, ctx.identity, task["conversation_key"], iso_before(seconds=RATE_WINDOW_SECONDS))
@@ -78,10 +78,15 @@ async def _run_claim(task: dict, *, factory=None, ai_caller=None, sleep=None) ->
         elif not window["new"]:
             response = {"status": "ok", "parts": [], "action": "skip", "mood": live["mood"], "reason": "没有待回应的有效消息"}
         else:
-            response = await _compose_or_handoff(ctx, live, window, factory=factory)
+            with inbox_call_scope(live):
+                response = await _compose_or_handoff(ctx, live, window, factory=factory)
             if response is None:
                 return "support_pending"
         if response.get("status") != "ok":
+            if response.get("status") == "chain_limit":
+                inbox.release(task, response.get("error") or "来信已达调用上限", factory=factory,
+                              blocked=True, through_message_id=live["latest_message_id"])
+                return "blocked"
             capped = response.get("status") == "capped"
             # Preserve the platform daily cap; never impersonate a decision with an emoji.
             if capped:
@@ -93,6 +98,7 @@ async def _run_claim(task: dict, *, factory=None, ai_caller=None, sleep=None) ->
                 wait = None
             inbox.release(task, response.get("error") or response.get("status") or "failed", factory=factory, delay=wait)
             return "deferred" if capped else "retry"
+        response['inbox_model_input_id'] = live['latest_message_id']
         if not inbox.save_response(task, window["anchor"], response, factory=factory):
             return "lease_lost"
         live["response_json"] = json.dumps(response, ensure_ascii=False)
@@ -124,9 +130,13 @@ async def _run_claim(task: dict, *, factory=None, ai_caller=None, sleep=None) ->
         key = actions.thread_key(task)
         invalidate_thread_cache(ctx.wanderer_id, key)
         thread = load_thread(conn, ctx.wanderer_id, key)
-    if (live.get("lease_lane") != "safety" and not response.get("support_fallback") and thread["history"]
+    if (live.get("lease_lane") != "safety" and not response.get("support_fallback")
+            and not response.get("autonomous_runtime") and task["peer_identity"] not in window["wanderer_ids"]
+            and thread["history"]
             and len(thread["history"]) + len(window["new"]) + len(response["parts"]) >= HISTORY_DB_LIMIT - 6):
-        await compact_memory(ctx, key)
+        budget = {**live, 'latest_message_id': response.get('inbox_model_input_id', live['snapshot_message_id'])}
+        with inbox_call_scope(budget):
+            await compact_memory(ctx, key)
     finished, events = actions.finish(ctx, task)
     await social_push_service.push_events(events)
     return "done" if finished else "lease_lost"

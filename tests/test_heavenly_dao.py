@@ -85,6 +85,86 @@ class HeavenlyDaoTest(WandererWorldTestCase):
         with self.connect() as conn:
             self.assertTrue(wanderer_runtime_setting_get(conn, SETTING_LAST_DAO_REVIEW_AT))
 
+    def test_budget_limited_reviews_prioritize_expiry_and_keep_the_other_applications(self):
+        from classroom_app.services.wanderer_settings_service import SETTING_DAILY_AI_CALL_CAP, daily_ai_calls_key
+        from classroom_app.time_utils import local_now
+        now = local_now()
+        applicants = self.rows("SELECT id,slug FROM wanderer_agents ORDER BY id LIMIT 8")
+        ids = [item["id"] for item in applicants]
+        for i, applicant in enumerate(applicants):
+            self.set_wanderer(applicant["slug"], tier=0, lifespan_weeks=6, lifespan_policy_version=2,
+                              born_at=(now - timedelta(days=44.5 if i == 7 else 8)).isoformat(),
+                              promotion_requested=1, promotion_requested_at=(now-timedelta(days=3)).isoformat())
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "132")
+            wanderer_runtime_setting_set(conn, daily_ai_calls_key(), "126")
+            conn.commit()
+        caller = StubCaller(NO_DISCIPLINE, _approved())
+        counts = self.review(caller, ids)["counts"]
+        self.assertEqual((counts["approved"], counts["promotion_deferred"], counts["rejected"]), (5, 3, 0))
+        self.assertEqual(len(caller.calls), 6)
+        self.assertEqual(caller.calls[1][2]["student_id"], self.agent(ids[-1])["student_id"])
+        self.assertEqual(sum(self.agent(i)["promotion_requested"] for i in ids), 3)
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "0")
+            conn.commit()
+        paused = self.review(caller, ids)
+        self.assertEqual(paused["outcome"], "budget_deferred")
+        self.assertEqual(paused["counts"]["promotion_deferred"], 3)
+        self.assertEqual(len(caller.calls), 6)
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "132")
+            wanderer_runtime_setting_set(conn, daily_ai_calls_key(), "0")
+            conn.commit()
+        resumed = self.review(StubCaller(NO_DISCIPLINE, _approved()), ids)["counts"]
+        self.assertEqual((resumed["approved"], resumed["promotion_deferred"], resumed["died"]), (3, 0, 0))
+
+    def test_an_unusable_first_application_does_not_take_the_next_days_last_credit(self):
+        from classroom_app.services.wanderer_settings_service import SETTING_DAILY_AI_CALL_CAP, daily_ai_calls_key
+        from classroom_app.time_utils import local_now
+        now = local_now()
+        actors = [self.set_wanderer(slug, tier=0, promotion_requested=1,
+                                   promotion_requested_at=(now - timedelta(days=5-i)).isoformat())
+                  for i, slug in enumerate(("atai", "xiaoman"))]
+        ids = [w["id"] for w in actors]
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "2")
+            conn.commit()
+        invalid = StubCaller(NO_DISCIPLINE, "bad response")
+        first = self.review(invalid, ids)["counts"]
+        self.assertEqual((first["promotion_failed"], first["promotion_deferred"], first["rejected"]), (1, 1, 0))
+        self.assertEqual(invalid.calls[1][2]["student_id"], actors[0]["student_id"])
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, daily_ai_calls_key(), "0")
+            conn.commit()
+        second = StubCaller(NO_DISCIPLINE, _approved())
+        self.review(second, ids)
+        self.assertEqual(second.calls[1][2]["student_id"], actors[1]["student_id"])
+        self.assertEqual(self.agent(ids[0])["promotion_requested"], 1)
+
+    def test_single_daily_credit_rotates_between_discipline_and_promotion(self):
+        from classroom_app.services.wanderer_settings_service import SETTING_DAILY_AI_CALL_CAP, daily_ai_calls_key
+        from classroom_app.time_utils import local_now
+        now = local_now()
+        even = now if now.date().toordinal() % 2 == 0 else now + timedelta(days=1)
+        w = self.set_wanderer("atai", tier=0, promotion_requested=1, promotion_requested_at=now.isoformat())
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "1")
+            conn.commit()
+        caller = StubCaller(NO_DISCIPLINE)
+        with patch("classroom_app.services.heavenly_dao_service.local_now", return_value=even - timedelta(days=1)):
+            first = self.review(caller, [w["id"]])
+        self.assertEqual(caller.labels, ["dao:discipline"])
+        self.assertEqual(first["counts"]["promotion_deferred"], 1)
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, daily_ai_calls_key(), "0")
+            conn.commit()
+        caller = StubCaller(_approved())
+        with patch("classroom_app.services.heavenly_dao_service.local_now", return_value=even):
+            second = self.review(caller, [w["id"]])
+        self.assertEqual(caller.labels, ["dao:promotion"])
+        self.assertEqual(second["counts"]["approved"], 1)
+
     def test_promotion_rejected_keeps_tier_with_reason_and_advice(self):
         atai = self.set_wanderer("atai", tier=1, promotion_requested=1, promotion_note="想升阶")
         self.review(StubCaller(NO_DISCIPLINE, _rejected()), [atai["id"]])

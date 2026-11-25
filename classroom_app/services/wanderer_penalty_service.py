@@ -82,11 +82,14 @@ def _pay(conn, owner, component, units):
     from .wanderer_life_core import normalize_talents, talent_bounds, lifespan_weeks_for
     fresh = load_wanderer(conn, int(owner))
     if fresh is None or fresh.get("status") == "dead":
-        return 0
+        return 0, False
     if component == "life_seconds":
         remaining = int(current_life(fresh)["remaining_seconds"])
         paid = min(units, remaining)
         conn.execute("UPDATE wanderer_agents SET life_penalty_weeks=life_penalty_weeks+?,updated_at=? WHERE id=?", (paid / 604800, local_iso(), owner))
+        # The PostgreSQL REAL weeks column can round the last seconds away.
+        # The integer settlement under the owner lock decides exhaustion.
+        return paid, paid == remaining
     elif component == "cultivation":
         paid = min(units, max(0, int(Decimal(str(fresh["cultivation_score"])) * SCALE)))
         conn.execute("UPDATE wanderer_agents SET cultivation_score=cultivation_score-?,updated_at=? WHERE id=?", (paid / SCALE, local_iso(), owner))
@@ -121,7 +124,7 @@ def _pay(conn, owner, component, units):
         conn.execute("UPDATE wanderer_agents SET talents_json=?,updated_at=? WHERE id=?", (_json(talents), local_iso(), owner))
         if key == "vitality":
             conn.execute("UPDATE wanderer_agents SET lifespan_weeks=? WHERE id=?", (lifespan_weeks_for(fresh["tier"], talents[key]), owner))
-    return paid
+    return paid, False
 
 
 def replay_debts(conn, wanderer_id, *, check_death=True):
@@ -130,7 +133,9 @@ def replay_debts(conn, wanderer_id, *, check_death=True):
     rows = conn.execute("SELECT component,balance_units FROM wanderer_penalty_debts WHERE wanderer_id=? AND balance_units>0 ORDER BY component", (int(wanderer_id),)).fetchall()
     results = {}
     for row in rows:
-        paid = _pay(conn, int(wanderer_id), row["component"], int(row["balance_units"]))
+        paid, exhausted = _pay(conn, int(wanderer_id), row["component"], int(row["balance_units"]))
+        if exhausted:
+            results["life_exhausted"] = True
         if paid:
             conn.execute("UPDATE wanderer_penalty_debts SET balance_units=balance_units-?,updated_at=? WHERE wanderer_id=? AND component=?", (paid, local_iso(), int(wanderer_id), row["component"]))
             _mark_paid(conn, wanderer_id, row["component"], paid)
@@ -138,14 +143,14 @@ def replay_debts(conn, wanderer_id, *, check_death=True):
     # A warning threshold may have just created tier debt; no second split.
     if results.get("warning"):
         tier = conn.execute("SELECT balance_units FROM wanderer_penalty_debts WHERE wanderer_id=? AND component='tier'", (int(wanderer_id),)).fetchone()
-        paid = _pay(conn, int(wanderer_id), "tier", int(tier["balance_units"]))
+        paid, _ = _pay(conn, int(wanderer_id), "tier", int(tier["balance_units"]))
         conn.execute("UPDATE wanderer_penalty_debts SET balance_units=balance_units-?,updated_at=? WHERE wanderer_id=? AND component='tier'", (paid, local_iso(), int(wanderer_id)))
         results["tier"] = results.get("tier", 0) + paid
     from .wanderer_identity_service import invalidate_wanderer_cache, load_wanderer, death_reason, mark_dead
     owner = load_wanderer(conn, wanderer_id)
     invalidate_wanderer_cache([owner["student_id"]])
     if check_death and owner["status"] != "dead":
-        reason = death_reason(conn, owner)
+        reason = death_reason(conn, owner, life_exhausted=results.get("life_exhausted", False))
         if reason:
             mark_dead(conn, wanderer_id, reason)
     return results
@@ -182,8 +187,8 @@ def apply_penalty(conn, offender_id, components, *, reason, operation_id, notify
             _debt(conn, owner, component, units)
             allocations.append({"owner_id": owner, "component": component, "units": units, "derived": owner != int(offender_id)})
     # First settle everyone, then evaluate deaths, retaining the original graph.
-    for owner in [int(offender_id), *partners]:
-        replay_debts(conn, owner, check_death=False)
+    settlements = {owner: replay_debts(conn, owner, check_death=False)
+                   for owner in [int(offender_id), *partners]}
     from .wanderer_identity_service import load_wanderer, death_reason, mark_dead
     from .heavenly_dao_service import _record
     for owner in [int(offender_id), *partners]:
@@ -193,7 +198,7 @@ def apply_penalty(conn, offender_id, components, *, reason, operation_id, notify
         if notify_offender or owner != int(offender_id):
             _record(conn, fresh, kind="penalty", verdict="deducted", from_tier=fresh["tier"], to_tier=fresh["tier"],
                     reason=f"{str(reason).splitlines()[0][:120]}；本次{'承责' if owner != int(offender_id) else '本责'}：{shares}。", evidence={"root_penalty_id": operation_id, "derived": owner != int(offender_id), "allocations": own})
-        dead = death_reason(conn, fresh)
+        dead = death_reason(conn, fresh, life_exhausted=settlements[owner].get("life_exhausted", False))
         if dead and fresh["status"] != "dead":
             mark_dead(conn, owner, f"天罚：{str(reason)[:160]}；{dead}")
     result = {"penalty_id": str(operation_id), "allocations": allocations, "partners": partners, "reason": str(reason).splitlines()[0][:200]}

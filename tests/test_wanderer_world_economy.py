@@ -72,24 +72,27 @@ class WorldEconomyTest(WandererDbTestCase):
         with self.connect() as conn:
             self.edge(conn,a,b); self.edge(conn,b,c)
             conn.execute("UPDATE wanderer_agents SET tier=0")
+            conn.execute("UPDATE wanderer_agents SET daily_wake_limit=1 WHERE id=?", (a,))
             state = resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")
-            self.assertEqual(state["limit"],260)
-            result = resources.consume(conn,a,"ai_wake",150,"calls",budget_date="2026-11-09")
+            self.assertEqual((state["limit"], state["pooled_limit"]), (3,5))
+            self.assertFalse(resources.consume(conn,a,"ai_wake",4,"too-many",budget_date="2026-11-09")["ok"])
+            result = resources.consume(conn,a,"ai_wake",3,"calls",budget_date="2026-11-09")
             self.assertEqual([line["owner_id"] for line in result["owners"]],[a,b])
-            self.assertEqual([line["amount"] for line in result["owners"]],[120,30])
-            self.assertEqual(resources.consume(conn,a,"ai_wake",150,"calls",budget_date="2026-11-09")["state"],"consumed")
+            self.assertEqual([line["amount"] for line in result["owners"]],[1,2])
+            self.assertEqual(resources.consume(conn,a,"ai_wake",3,"calls",budget_date="2026-11-09")["state"],"consumed")
+            self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")["remaining"],0)
             bonds.end_bond(conn,a,b,expected_revision=1)
             self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")["remaining"],0)
-            self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-10")["remaining"],100)
+            self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-10")["remaining"],1)
             self.assertFalse(resources.settle(conn,"calls",release=True)["ok"])
 
     def test_daily_wake_quota_grows_with_tier(self):
         a = self.ids[0]
         with self.connect() as conn:
             conn.execute("UPDATE wanderer_agents SET tier=0,daily_wake_limit=20 WHERE id=?", (a,))
-            self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")["limit"],20)
+            self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")["limit"],3)
             conn.execute("UPDATE wanderer_agents SET tier=4 WHERE id=?", (a,))
-            self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")["limit"],92)
+            self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")["limit"],12)
             conn.execute("UPDATE wanderer_agents SET daily_wake_limit=0 WHERE id=?", (a,))
             self.assertEqual(resources.snapshot(conn,a,"ai_wake",budget_date="2026-11-09")["limit"],0)
 
@@ -248,8 +251,8 @@ class WorldEconomyTest(WandererDbTestCase):
             all_limits=resources.limits(conn,a)
             conn.set_trace_callback(None)
             self.assertEqual(set(all_limits),set(resources.RESOURCE_CATALOG))
-            self.assertLessEqual(len([s for s in sql if s.lstrip().upper().startswith('SELECT')]),10)
-            self.assertEqual(all_limits['ai_wake']['limit'],260)
+            self.assertLessEqual(len([s for s in sql if s.lstrip().upper().startswith('SELECT')]),12)
+            self.assertEqual(all_limits['ai_wake']['limit'],3)
 
     def test_ordinary_friend_and_group_mutations_account_and_release_capacity(self):
         from classroom_app.services import social_friend_service as friends, social_group_service as groups

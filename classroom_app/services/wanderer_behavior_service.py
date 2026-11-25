@@ -73,11 +73,10 @@ from .wanderer_identity_service import (
     STATUS_ACTIVE,
     clamp_tier,
     current_life,
-    death_reason,
+    settle_natural_expiry,
     knowledge_capacity_for,
     list_wanderers,
     load_wanderer,
-    mark_dead,
 )
 from .wanderer_life_core import GIFT_MIN_TIER, INTERACTION_POINTS, active_interaction_limit, can_extend_life
 from .wanderer_life_service import (
@@ -337,6 +336,19 @@ def select_tick_wanderers(
               if not wanted or int(w["id"]) in wanted]
     from .wanderer_runtime_service import runtime_enabled
     autonomous = runtime_enabled(conn)
+    timer_ready = set()
+    if autonomous:
+        from .wanderer_life_core import daily_activity_limit
+        from .wanderer_resource_service import batch_actor_activity_usage
+        from .wanderer_settings_service import ordinary_dispatch_limit, reflection_enabled
+        day = now.date().isoformat()
+        if daily_ai_calls(conn, day) >= ordinary_dispatch_limit(conn, daily_cap(conn), day):
+            return []
+        usage = batch_actor_activity_usage(conn, [w['id'] for w in active], day, include_reflections=True)
+        active = [w for w in active if usage[w['id']]['ai_wake'] < daily_activity_limit(w['tier'])]
+        protect_reflection = reflection_enabled(conn)
+        timer_ready = {w['id'] for w in active if not protect_reflection or usage[w['id']]['reflections']
+                       or usage[w['id']]['ai_wake'] + 1 < daily_activity_limit(w['tier'])}
     if reply_only:
         waiting = [w for w in active if _waiting_for_blog_reply(conn, w)]
         rng.shuffle(waiting)
@@ -350,7 +362,8 @@ def select_tick_wanderers(
     if wanted:
         # Admin "run now": everyone chosen still gets a full turn when it can;
         # over-budget chosen wanderers only answer the people waiting for them.
-        normal = [w for w in active if autonomous or today_action_count(conn, int(w["id"]), now) < daily_budget(w)]
+        normal = [w for w in active if (w['id'] in timer_ready if autonomous else
+                  today_action_count(conn, int(w["id"]), now) < daily_budget(w))]
         rng.shuffle(normal)
         picked: list[tuple[dict[str, Any], bool]] = [(w, False) for w in normal[:limit]]
         remaining = limit - len(picked)
@@ -367,7 +380,7 @@ def select_tick_wanderers(
     awake = [
         w for w in active
         if int(w["id"]) not in taken and is_awake(w, now, rng)
-        and (autonomous or today_action_count(conn, int(w["id"]), now) < daily_budget(w))
+        and (w['id'] in timer_ready if autonomous else today_action_count(conn, int(w["id"]), now) < daily_budget(w))
     ]
     rng.shuffle(awake)
     picked.extend((w, False) for w in awake[:remaining])
@@ -534,10 +547,8 @@ def _check_death(ctx: ActionContext) -> bool:
         wanderer = load_wanderer(conn, ctx.wanderer_id)
         if wanderer is None or str(wanderer.get("status")) != STATUS_ACTIVE:
             return False
-        reason = death_reason(conn, wanderer, now=ctx.current_time())
-        if not reason:
+        if not settle_natural_expiry(conn, wanderer, now=ctx.current_time()):
             return False
-        mark_dead(conn, ctx.wanderer_id, reason)
         conn.commit()
     return True
 
@@ -571,7 +582,7 @@ async def run_wanderer_actions(
         return {'wanderer_id': ctx.wanderer_id, 'slug':ctx.wanderer.get('slug'), 'died':_check_death(ctx),
                 'actions':[r.get('command_id') for r in result.get('receipts',[])],
                 'failed':int(result.get('status')=='failed'), 'ai_calls':ctx.ai_calls,
-                'stopped':result.get('status') in {'blocked','capped'}, 'runtime':result}
+                'stopped':result.get('status') in {'blocked','capped','timer_rest'}, 'runtime':result}
     if reply_only:
         done = await _run_guarded(ctx, "replies", ACTIONS["replies"])
         _award_outcomes(ctx, done)
@@ -612,7 +623,9 @@ async def run_wanderer_actions(
 # ---------------------------------------------------------------------------
 
 def _cap_reached(conn: Any) -> bool:
-    return daily_ai_calls(conn) >= daily_cap(conn)
+    from .wanderer_settings_service import ordinary_dispatch_limit
+    day = local_now().date().isoformat()
+    return daily_ai_calls(conn, day) >= ordinary_dispatch_limit(conn, daily_cap(conn), day)
 
 
 async def _run_one(ctx: ActionContext, budget_left: int, *, reply_only: bool = False) -> dict[str, Any]:

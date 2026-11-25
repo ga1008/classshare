@@ -63,7 +63,11 @@ class SupportIntegrationTest(WandererWorldTestCase):
             conn.commit()
 
     def test_immediate_support_is_zero_model_and_preserves_tier_zero_steps(self):
+        from classroom_app.services.wanderer_resource_service import consume, snapshot
         self.atai = self.set_wanderer("atai", tier=0)
+        with self.connect() as conn:
+            self.assertTrue(consume(conn, self.atai["id"], "active_interactions", 3, "ordinary-activity")["ok"])
+            conn.commit()
         incoming = self.send(self.real, self.key, URGENT)
         self.cap()
         caller = StubCaller(error=AssertionError("no model"))
@@ -77,6 +81,7 @@ class SupportIntegrationTest(WandererWorldTestCase):
         self.assertEqual(self.task()["state"], "idle")
         with self.connect() as conn:
             self.assertEqual(daily_ai_calls(conn), 1)
+            self.assertEqual(snapshot(conn, self.atai["id"], "active_interactions")["actor_used"], 3)
 
     def test_safety_one_slot_remains_available_beside_two_normal_leases(self):
         with self.connect() as conn:

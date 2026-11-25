@@ -3059,6 +3059,7 @@ def create_private_message(
     class_offering_id: Optional[int] = None,
     content: str,
     attachments: list[dict[str, Any]] | None = None,
+    system_support: bool = False,
 ) -> dict[str, Any]:
     current_user_pk, current_role, current_identity = _ensure_user_identity(user)
     ensure_private_message_attachment_schema(conn)
@@ -3138,7 +3139,8 @@ def create_private_message(
         content=normalized_content,
     )
     from .wanderer_social_budget_service import charge_private_message
-    charge_private_message(conn,message_row)
+    if not system_support:
+        charge_private_message(conn,message_row)
     record_operation(conn,operation,message_row)
     attachment_payloads = _insert_private_message_attachments(conn, message_row, prepared_attachments)
     _insert_private_message_audit(conn, message_row)

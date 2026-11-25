@@ -350,6 +350,8 @@ async def _compose(ctx: ActionContext, window: dict[str, Any], mode: str,
     passive = window["type"] == "dm" or mentioned
     result = await run_turn(ctx, scene=scene, thread_key=f"social:{window['key']}", suffix=suffix, passive=passive)
     turn = result.get("turn") or {}
+    if result.get("support_fallback"):
+        window["_support_fallback"] = result
     action = str(turn.get("action") or "skip")
     if result.get("status") == "capped":
         return [], 0, "", "capped", {}
@@ -389,7 +391,9 @@ async def post_parts(ctx: ActionContext, window: dict[str, Any], parts: list[str
                     return index, "conversation_changed"
                 if reason:
                     return index, reason
-                send_message(conn, user, key, payload, events)
+                support = window.get("_support_fallback")
+                send_message(conn, user, key, payload, events,
+                             system_support=bool(support and part in support["turn"]["parts"]))
                 conn.commit()
         except (SocialError, RateLimitExceededError) as exc:
             return index, f"{type(exc).__name__}: {exc}"[:200]

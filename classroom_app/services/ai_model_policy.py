@@ -5,6 +5,8 @@ from dataclasses import asdict, dataclass, replace
 from typing import Any, Mapping
 
 
+SINGLE_ATTEMPT_HEADER = "x-lanshare-ai-single-attempt"
+
 AI_TASK_FAST_TEXT = "fast_text_response"
 AI_TASK_DEEP_TEXT = "deep_text_reasoning"
 AI_TASK_LIGHT_MULTIMODAL = "light_multimodal_understanding"
@@ -573,7 +575,7 @@ class AIExecutionBudget:
     generations. A definite HTTP rejection releases only the generation slot.
     """
 
-    def __init__(self, state=None, *, logical_call_id="", persist=None):
+    def __init__(self, state=None, *, logical_call_id="", persist=None, single_attempt=False):
         import copy
         import uuid
         self.state = copy.deepcopy(state or {
@@ -583,6 +585,7 @@ class AIExecutionBudget:
         })
         if self.state.get("version") != 1 or not isinstance(self.state.get("attempts"), list):
             raise AIExecutionStateError("Unsupported AI execution ledger")
+        self.single_attempt = single_attempt
         self.persist = persist
         self.failed_persistence = False
         self.before_dispatch = None
@@ -591,7 +594,8 @@ class AIExecutionBudget:
     def exhausted(self):
         # At most two attempts the provider may have billed; rejected/never-processed
         # attempts are free, but a hard cap still bounds retries across both vendors.
-        return (self.failed_persistence or bool(self.state.get("legacy_history_unknown")) or len(self.state["attempts"]) >= 6
+        return (self.failed_persistence or bool(self.state.get("legacy_history_unknown"))
+                or len(self.state["attempts"]) >= (1 if self.single_attempt else 6)
                 or sum(a.get("status") != "rejected" for a in self.state["attempts"]) >= 2)
 
     def snapshot(self):

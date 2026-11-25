@@ -289,6 +289,9 @@ async def ai_gateway_post(
     future = loop.create_future()
     from .wanderer_ai_attribution import current_attribution
     attribution = current_attribution()
+    if attribution is not None or task_type in {"wanderer_turn", "wanderer_dao"}:
+        from .ai_model_policy import SINGLE_ATTEMPT_HEADER
+        request_kwargs["headers"] = {**(request_kwargs.get("headers") or {}), SINGLE_ATTEMPT_HEADER: "1"}
     attributed_id = attribution.next_call(endpoint, json_payload, logical_call_id) if attribution is not None else None
     job = _AIJob(
         priority_rank=AI_PRIORITY_ORDER[normalized_priority],

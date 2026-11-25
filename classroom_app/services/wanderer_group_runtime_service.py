@@ -180,7 +180,12 @@ async def run_member_group(wanderer: dict, group_id: int, *, conn_factory=None, 
     if context is None:
         return {"status":"nothing_new","ai_calls":0}
     with connection(conn_factory) as conn:
+        from .wanderer_message_delivery_service import reply_depth
+        from .wanderer_runtime_service import MAX_CHAIN_TURNS
         wake, reason = group_gate(conn, wanderer, context, group_id, wanderer_identities=wanderer_identities)
+        depth = reply_depth(conn, "social", context["conversation_key"], _pending_rows(context)) if wake else 0
+        if depth >= MAX_CHAIN_TURNS:
+            wake, reason = False, "chain_limit"
         if not wake:
             # A passed batch still advances the watermark, so the same text does
             # not come back as "new" on the next tick.
@@ -191,7 +196,7 @@ async def run_member_group(wanderer: dict, group_id: int, *, conn_factory=None, 
         conn.commit()
     event_key = f"{context['conversation_key']}:{context['snapshot_message_id']}:{context['membership_stamp']}"
     result = await wake_wanderer(conn_factory,int(wanderer["id"]),source="group_message",event_key=event_key,
-                                 context=context,ai_caller=ai_caller)
+                                 context=context,ai_caller=ai_caller,initial_depth=depth)
     with connection(conn_factory) as conn:
         # A crash after a completed decision but before this watermark is safe to replay.
         row = conn.execute("SELECT t.state,EXISTS(SELECT 1 FROM wanderer_wake_events r "

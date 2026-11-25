@@ -34,7 +34,7 @@ class CommunicationRecoveryTest(WandererWorldTestCase):
                           'wanderer_wake_events','wanderer_runtime_leases','wanderer_group_observations'):
                 conn.execute(f'DELETE FROM {table}')
             wanderer_runtime_setting_set(conn,'autonomous_v2_enabled','1')
-            conn.execute('UPDATE wanderer_agents SET born_at=?,lifespan_weeks=10,life_penalty_weeks=0,daily_wake_limit=100', (local_iso(),))
+            conn.execute('UPDATE wanderer_agents SET tier=2,born_at=?,lifespan_weeks=10,life_penalty_weeks=0,daily_wake_limit=100', (local_iso(),))
             conn.commit()
         from classroom_app.routers.social import router as social_router
         from classroom_app.routers.message_center import router as legacy_router

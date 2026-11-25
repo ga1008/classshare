@@ -1,10 +1,14 @@
+import asyncio
 import json
 import unittest
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from classroom_app.services import wanderer_life_core as core
 from classroom_app.services.wanderer_identity_service import (
+    current_life,
     death_reason,
+    settle_natural_expiry,
     load_wanderer_by_slug,
     mark_dead,
 )
@@ -31,9 +35,9 @@ def _value(value):
 
 
 class LifeCoreTest(unittest.TestCase):
-    def test_lifespan_table_spans_two_to_a_hundred_weeks(self):
-        self.assertEqual(core.BASE_LIFESPAN_WEEKS[0], 2.0)
-        self.assertEqual(core.BASE_LIFESPAN_WEEKS[10], 100.0)
+    def test_lifespan_table_spans_six_to_140_weeks(self):
+        self.assertEqual(core.BASE_LIFESPAN_WEEKS[0], 6.0)
+        self.assertEqual(core.BASE_LIFESPAN_WEEKS[10], 140.0)
         self.assertEqual(len(core.BASE_LIFESPAN_WEEKS), 11)
         self.assertEqual(list(core.BASE_LIFESPAN_WEEKS), sorted(core.BASE_LIFESPAN_WEEKS))
 
@@ -46,18 +50,14 @@ class LifeCoreTest(unittest.TestCase):
         self.assertEqual(core.tier_perks(3, 10)["active_speech_limit"], 400)
 
     def test_ai_wake_limit_scales_with_tier_and_keeps_zero_disabled(self):
-        self.assertEqual(core.ai_wake_limit(0), 20)
-        self.assertEqual(core.ai_wake_limit(10), 200)
-        self.assertEqual(core.wake_quota_table(),
-                         (20, 38, 56, 74, 92, 110, 128, 146, 164, 182, 200))
-        self.assertEqual(core.ai_wake_limit(0, 100), 100)
-        self.assertEqual(core.ai_wake_limit(3, 100), 370)
-        self.assertEqual(core.ai_wake_limit(10, 100), 1000)
-        self.assertEqual(core.ai_wake_limit(0, 0), 0)
-        self.assertEqual(core.ai_wake_limit(5, None), 0)
-        self.assertEqual(core.ai_wake_limit(2, 50), 140)
-        self.assertEqual(core.tier_perks(3, 10, 100)["ai_wake_limit"], 370)
-        self.assertEqual(core.tier_perks(0, 10, 0)["ai_wake_limit"], 0)
+        caps = (3, 5, 8, 10, 12, 16, 22, 32, 46, 68, 100)
+        self.assertEqual(core.wake_quota_table(), caps)
+        for tier, cap in enumerate(caps):
+            self.assertEqual(core.ai_wake_limit(tier, 1000), cap)
+            self.assertEqual(core.ai_wake_limit(tier, 0), 0)
+            self.assertEqual(core.ai_wake_limit(tier, None), 0)
+            self.assertEqual(core.tier_perks(tier, 10, 1000)["ai_wake_limit"], cap)
+        self.assertEqual(core.ai_wake_limit(0, 1), 1)
 
     def test_high_quality_interactions_are_worth_more(self):
         bare = core.interaction_gain("social_message")
@@ -71,10 +71,10 @@ class LifeCoreTest(unittest.TestCase):
                         core.interaction_gain("social_message", chars=150))
 
     def test_vitality_scales_lifespan(self):
-        self.assertEqual(core.lifespan_weeks_for(0, 1.0), 2.0)
-        self.assertEqual(core.lifespan_weeks_for(0, 1.4), 2.8)
-        self.assertEqual(core.lifespan_weeks_for(10, 1.0), 100.0)
-        self.assertEqual(core.lifespan_weeks_for(-2, 1.0), 2.0)
+        self.assertEqual(core.lifespan_weeks_for(0, 1.0), 6.0)
+        self.assertEqual(core.lifespan_weeks_for(0, 1.4), 8.4)
+        self.assertEqual(core.lifespan_weeks_for(10, 1.0), 140.0)
+        self.assertEqual(core.lifespan_weeks_for(-2, 1.0), 6.0)
 
     def test_life_state_remaining_urgent_and_expired(self):
         state = core.life_state(born_at=_ago(5), tier=0, lifespan_weeks=2.0)
@@ -111,13 +111,13 @@ class LifeCoreTest(unittest.TestCase):
         self.assertEqual(core.knowledge_capacity_for(0, 1.0), 4000)
         self.assertEqual(core.knowledge_capacity_for(0, 1.5), 6000)
         self.assertEqual(core.knowledge_capacity_for(10, 1.0), 200_000)
-        self.assertEqual(core.cultivation_target(0), 24)
-        self.assertEqual(core.cultivation_target(1), 48)
+        self.assertEqual(core.cultivation_target(0), 10)
+        self.assertEqual(core.cultivation_target(1), 24)
         self.assertTrue(all(a < b for a, b in zip(core.TIER_CULTIVATION_TARGETS,
                                                   core.TIER_CULTIVATION_TARGETS[1:])))
-        self.assertEqual(core.interaction_requirement(0, 1.0), 5)
-        self.assertEqual(core.interaction_requirement(0, 1.8), 3)
-        self.assertEqual(core.interaction_requirement(0, 0.6), 8)
+        self.assertEqual(core.interaction_requirement(0, 1.0), 3)
+        self.assertEqual(core.interaction_requirement(0, 1.8), 2)
+        self.assertEqual(core.interaction_requirement(0, 0.6), 5)
 
     def test_knowledge_gain_uses_insight_and_luck(self):
         self.assertEqual(core.knowledge_gain(200, 1.5, 1.0, lambda: 1.0), (3.0, False))
@@ -138,7 +138,8 @@ class WandererLifeDbTest(WandererDbTestCase):
             conn.execute("DELETE FROM wanderer_relationships")
             conn.execute("DELETE FROM wanderer_action_log")
             conn.execute(
-                "UPDATE wanderer_agents SET status = 'active', born_at = created_at, lifespan_weeks = 0, "
+                "UPDATE wanderer_agents SET status = 'active', born_at = created_at, lifespan_weeks = 0, lifespan_policy_version=2, "
+                "life_gift_in_weeks=0, life_gift_out_weeks=0, life_bonus_seconds=0, "
                 "life_penalty_weeks = 0, life_extensions = 0, talents_json = '{}', legacy_id = NULL, "
                 "promotion_requested = 0, promotion_requested_at = NULL, appeal_requested = 0, "
                 "last_extend_at = NULL, last_appeal_at = NULL, last_resurrect_at = NULL, stats_json = '{}', "
@@ -160,6 +161,76 @@ class WandererLifeDbTest(WandererDbTestCase):
         self.assertEqual(wanderer["life"]["lifespan_weeks"],
                          core.lifespan_weeks_for(0, wanderer["talents"]["vitality"]))
         self.assertEqual(wanderer["life"]["born_at"][:10], wanderer["created_at"][:10])
+
+    def test_legacy_lifespan_is_projected_once_without_rewriting_history(self):
+        with self.connect() as conn:
+            legacy = self._update(conn, "xiaoman", lifespan_policy_version=1, tier=0,
+                                  born_at=_ago(15), lifespan_weeks=2.4, life_extensions=1,
+                                  life_penalty_weeks=0.5, life_gift_in_weeks=0.25,
+                                  life_gift_out_weeks=0.1, life_bonus_seconds=600,
+                                  talents_json={**json.loads(TALENTS_NEUTRAL), "vitality": 1.2})
+            for status in ("active", "paused"):
+                updated = self._update(conn, "xiaoman", status=status)
+                raw = dict(conn.execute("SELECT * FROM wanderer_agents WHERE id=?", (legacy["id"],)).fetchone())
+                self.assertEqual(raw["lifespan_weeks"], 2.4)
+                moment = datetime.now()
+                self.assertEqual(current_life(raw, moment), current_life(updated, moment))
+                self.assertEqual(current_life(raw)["lifespan_weeks"], 7.2)
+                self.assertAlmostEqual(current_life(raw)["granted_weeks"], 7.2 + 1 + .25 + 600 / 604800)
+            dead = self._update(conn, "xiaoman", status="dead")
+            self.assertEqual(current_life(dead)["lifespan_weeks"], 2.4)
+            custom = self._update(conn, "xiaoman", status="active", lifespan_weeks=18)
+            self.assertEqual(current_life(custom)["lifespan_weeks"], 18)
+            live = self._update(conn, "xiaoman", lifespan_weeks=2.4)
+            mark_dead(conn, live["id"], "合成裁决")
+            ended = load_wanderer_by_slug(conn, "xiaoman")
+            self.assertEqual((ended["lifespan_weeks"], ended["lifespan_policy_version"]), (7.2, 2))
+
+    def test_valid_application_survives_natural_expiry_until_daily_review(self):
+        from classroom_app.services.heavenly_dao_service import review_promotion
+        from classroom_app.services.wanderer_bond_service import execute_command
+        filed = datetime.fromisoformat(_ago(45))
+        with self.connect() as conn:
+            w = self._update(conn, "xiaoman", tier=0, talents_json=TALENTS_NEUTRAL,
+                             born_at=_ago(85), lifespan_weeks=6, cultivation_score=10)
+            wid = w["id"]
+            conn.execute("INSERT INTO wanderer_knowledge_entries(wanderer_id,source_kind,source_ref,"
+                         "digest,chars,created_at,updated_at) VALUES(?,'world','application',?,600,?,?)",
+                         (wid, "学"*600, _ago(49), _ago(49)))
+            for _ in range(3):
+                conn.execute("INSERT INTO wanderer_action_log (wanderer_id,action_kind,outcome,created_at) "
+                             "VALUES (?,'reply','ok',?)", (wid, _ago(49)))
+            with patch("classroom_app.services.wanderer_life_service.local_now", return_value=filed):
+                request = execute_command(conn, w, {"capability": "life.promotion", "args": {"reason": "已实践"}},
+                                          operation_id="apply", turn_id="synthetic")
+            self.assertTrue(request["submitted"])
+            conn.commit()
+            pending = load_wanderer_by_slug(conn, "xiaoman")
+            self.assertTrue(current_life(pending)["expired"])
+            self.assertFalse(promotion_requirements(conn, pending)["ready"])
+            self.assertIsNone(settle_natural_expiry(conn, pending))
+
+        async def approve(_endpoint, payload, **kwargs):
+            self.assertIn('"qualification_at_submission"', payload["new_message"])
+            return {"status": "success", "response_json": {"verdict": "approved", "reason": "已核验"}}
+
+        self.assertEqual(asyncio.run(review_promotion(self.connect, pending, {}, ai_caller=approve)), "approved")
+        with self.connect() as conn:
+            fresh = load_wanderer_by_slug(conn, "xiaoman")
+            self.assertEqual((fresh["tier"], fresh["promotion_requested"], fresh["status"]), (1, 0, "active"))
+            self.assertEqual(fresh["lifespan_weeks"], core.lifespan_weeks_for(1, 1.0))
+            self.assertFalse(current_life(fresh)["expired"])
+            credits = conn.execute("SELECT delta_seconds FROM wanderer_life_ledger WHERE owner_id=? "
+                                   "AND kind='promotion_wait'", (wid,)).fetchall()
+            self.assertEqual(len(credits), 1)
+            self.assertGreaterEqual(credits[0]["delta_seconds"], 42 * 86400)
+
+    def test_late_or_missing_application_cannot_defer_death(self):
+        with self.connect() as conn:
+            w = self._update(conn, "xiaoman", tier=0, born_at=_ago(45), lifespan_weeks=6,
+                             promotion_requested=1, promotion_requested_at=_ago(2))
+            self.assertTrue(settle_natural_expiry(conn, w))
+            self.assertEqual(load_wanderer_by_slug(conn, "xiaoman")["status"], "dead")
 
     def test_expiry_is_a_death_reason_unless_lifecycle_is_off(self):
         with self.connect() as conn:
@@ -203,9 +274,9 @@ class WandererLifeDbTest(WandererDbTestCase):
             conn.commit()
             requirements = promotion_requirements(conn, load_wanderer_by_slug(conn, "xiaoman"))
             self.assertTrue(requirements["ready"], requirements)
-            self.assertEqual(requirements["knowledge_target"], 1400)
-            self.assertEqual(requirements["cultivation_target"], 24)
-            self.assertEqual(requirements["interactions_needed"], 5)
+            self.assertEqual(requirements["knowledge_target"], 600)
+            self.assertEqual(requirements["cultivation_target"], 10)
+            self.assertEqual(requirements["interactions_needed"], 3)
             self._update(conn, "xiaoman", promotion_requested_at=datetime.now().isoformat(timespec="seconds"))
             blocked = promotion_requirements(conn, load_wanderer_by_slug(conn, "xiaoman"))
         self.assertFalse(blocked["ready"])
@@ -251,7 +322,7 @@ class WandererLifeDbTest(WandererDbTestCase):
         self.assertTrue(result["changed"])
         self.assertEqual(result["to"], 1.4)
         self.assertEqual(fresh["talents"]["vitality"], 1.4)
-        self.assertEqual(payload["lifespan_weeks"], 1.4 * core.BASE_LIFESPAN_WEEKS[0])
+        self.assertAlmostEqual(payload["lifespan_weeks"], 1.4 * core.BASE_LIFESPAN_WEEKS[0])
 
     def test_mark_dead_records_expiry_and_legacy(self):
         with self.connect() as conn:

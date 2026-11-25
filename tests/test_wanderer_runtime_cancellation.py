@@ -56,7 +56,7 @@ class RuntimeCancellationTests(WandererDbTestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_commands WHERE state='succeeded'").fetchone()[0], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_wake_events WHERE state='completed'").fetchone()[0], 1)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_wake_events WHERE state='pending' AND source='callback'").fetchone()[0], 1)
-            self.assertEqual(daily_ai_calls(conn), 0 if free else 1)
+            self.assertEqual(daily_ai_calls(conn), 1)
             lease = conn.execute('SELECT lease_until FROM wanderer_runtime_leases').fetchone()[0]
             self.assertLessEqual(lease, local_iso())
 
@@ -116,7 +116,7 @@ class RuntimeCancellationTests(WandererDbTestCase):
     def test_cancel_during_accepted_free_command_preserves_three_call_entitlement(self):
         with self.connect() as conn:
             conn.execute('UPDATE wanderer_agents SET daily_wake_limit=0 WHERE id=?', (self.w['id'],))
-            wanderer_runtime_setting_set(conn, 'daily_ai_call_cap', '0')
+            wanderer_runtime_setting_set(conn, 'daily_ai_call_cap', '100')
             a, b = sorted([f"student:{self.w['student_id']}", self.peer])
             conn.execute("INSERT INTO social_friendships(identity_a,identity_b,status,requester_identity,created_at) "
                          "VALUES(?,?,'accepted',?,?)", (a, b, a, local_iso()))
@@ -157,7 +157,7 @@ class RuntimeCancellationTests(WandererDbTestCase):
                 self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_reflection_dispatches').fetchone()[0], 3)
                 self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_resource_reservations').fetchone()[0], 0)
                 self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_memory_sources').fetchone()[0], 1)
-                self.assertEqual(daily_ai_calls(conn), 0)
+                self.assertEqual(daily_ai_calls(conn), 3)
             again = Caller()
             await runtime.drain_wake_events(self.connect, ai_caller=again)
             self.assertFalse(again.calls)

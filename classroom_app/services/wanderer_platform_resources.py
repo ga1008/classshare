@@ -3,8 +3,10 @@ from fastapi import HTTPException
 
 
 def action_resources(operation):
-    if (not operation.mutates or operation.method == "GET" or operation.path.startswith("/api/social/")
-            or operation.path.startswith("/api/message-center/private/")):
+    # Deliveries charge in the message transaction, including native replays.
+    delivery_paths = {"/api/social/conversations/{key}/messages",
+                      "/api/social/conversations/{key}/nudge", "/api/message-center/private/messages"}
+    if not operation.mutates or operation.method == "GET" or (operation.method == "POST" and operation.path in delivery_paths):
         return []
     resources = ["active_interactions"]
     if operation.method == "POST" and operation.path == "/api/blog/posts":
@@ -31,4 +33,9 @@ def settle_action_resources(conn, source, operation, operation_id, status):
         return  # No HTTP receipt is evidence that an uncertain write did not occur.
     from .wanderer_resource_service import settle
     for resource in action_resources(operation):
-        settle(conn, _key(source.wanderer_id, operation_id, resource), release=status == "failed")
+        key = _key(source.wanderer_id, operation_id, resource)
+        if operation.path.startswith(("/api/social/", "/api/message-center/private/")):
+            # Jobs accepted before social writes joined this budget can still be reconciled.
+            if not conn.execute("SELECT 1 FROM wanderer_resource_reservations WHERE operation_id=?", (key,)).fetchone():
+                continue
+        settle(conn, key, release=status == "failed")

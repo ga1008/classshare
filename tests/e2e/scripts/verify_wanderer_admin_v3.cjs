@@ -24,6 +24,9 @@ const out = path.join(runtime, 'screenshots-v3'); fs.mkdirSync(out, { recursive:
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(base + '/manage/system/wanderers'); await page.waitForLoadState('networkidle');
     if (await page.locator('[data-life-tip-skip]').isVisible()) await page.locator('[data-life-tip-skip]').click();
+    const dailyCap = page.locator('input[name="daily_ai_call_cap"]');
+    assert.equal(await dailyCap.getAttribute('max'), '132');
+    assert.equal(await dailyCap.inputValue(), '132');
     await page.keyboard.press('Escape');
     if (await page.locator('.cultivation-login-reveal').count()) { await page.keyboard.press('Escape'); await page.locator('.cultivation-login-reveal').waitFor({ state: 'detached' }); }
     await page.locator(`[data-wanderer-id="${fixture.wandererWorld.id}"]`).click();
@@ -34,7 +37,7 @@ const out = path.join(runtime, 'screenshots-v3'); fs.mkdirSync(out, { recursive:
         await page.waitForFunction(key => { const el = document.querySelector(`[data-wd-workspace="${key}"]`); return el.children.length > 0 && el.getAttribute('aria-busy') !== 'true'; }, key);
     }
     await owner('overview').getByText('今日自省', { exact: true }).waitFor();
-    assert((await owner('overview').innerText()).includes('免费请求剩余'));
+    assert((await owner('overview').innerText()).includes('本场剩余次数'));
     await tab('relations');
     let data = await (await page.request.get(api + '/workspace?section=relations&kind=outgoing')).json();
     assert(data.items.length > 0); assert((await owner('relations').innerText()).includes(`${data.items[0].affinity} / 100`), await owner('relations').innerText());
@@ -123,7 +126,7 @@ const out = path.join(runtime, 'screenshots-v3'); fs.mkdirSync(out, { recursive:
     const memories = await (await page.request.get(api + '/workspace?section=memory&kind=episodes')).json();
     const original = memories.items.find(item => Number(item.id) === editorId); assert(original.content_hash);
     const priorHistory = await (await page.request.get(api + `/memory-corrections?target_kind=episode&target_id=${editorId}`)).json();
-    const draft = '已核对新世界规则：每日自省独立免费，普通思考额度照常。';
+    const draft = '已核对新世界规则：每次自省都占本人和平台的请求额度。';
     await editor.locator('textarea[name="content"]').fill(draft);
     await editor.locator('textarea[name="reason"]').fill('合成验收：核对世界手册后修正升级前的认知。');
     await tab('relations'); await tab('memory');
@@ -167,6 +170,6 @@ const out = path.join(runtime, 'screenshots-v3'); fs.mkdirSync(out, { recursive:
         reopenMs.push(Date.now() - started); assert.equal(await page.locator('#wd-detail').count(), 1);
     }
     assert.deepEqual(errors, []);
-    fs.writeFileSync(path.join(runtime, 'browser-admin-v3-result.json'), JSON.stringify({ pass: true, graph: graph.revision, geometry, reopenMs, errors, admin_record_kind_count: identity.summary.record_kinds.length, checks: ['all retained ledgers selectable, readable and preserve selection', 'outgoing/incoming real rankings', 'free reflection display', 'own/peer bubble direction', 'older prepend anchor and ID overlap', 'same text different ID retained', 'private/group delayed-response isolation', '503 transcript preserve + correct latest retry', '8 chat responsive/theme scenes + mobile list', 'stable fixed header and independent scroll', 'server conversation search', 'memory draft tab/close persistence', 'real 409 and reload preservation', 'mobile Save hit target', 'saving fields readonly and close veto', 'audited correction history and original preserved', 'modal focus return', '20 reopen-close cycles with one modal root'] }, null, 2));
+    fs.writeFileSync(path.join(runtime, 'browser-admin-v3-result.json'), JSON.stringify({ pass: true, graph: graph.revision, geometry, reopenMs, errors, admin_record_kind_count: identity.summary.record_kinds.length, checks: ['all retained ledgers selectable, readable and preserve selection', 'outgoing/incoming real rankings', 'reflection session balance and platform request ceiling', 'own/peer bubble direction', 'older prepend anchor and ID overlap', 'same text different ID retained', 'private/group delayed-response isolation', '503 transcript preserve + correct latest retry', '8 chat responsive/theme scenes + mobile list', 'stable fixed header and independent scroll', 'server conversation search', 'memory draft tab/close persistence', 'real 409 and reload preservation', 'mobile Save hit target', 'saving fields readonly and close veto', 'audited correction history and original preserved', 'modal focus return', '20 reopen-close cycles with one modal root'] }, null, 2));
     console.log(JSON.stringify({ pass: true, geometry: geometry.length, output: out })); await browser.close();
 })().catch(error => { console.error(error); process.exit(1); });

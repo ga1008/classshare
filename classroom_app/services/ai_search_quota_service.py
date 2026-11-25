@@ -97,7 +97,7 @@ def _expire(conn, key, stamp):
 
 
 def _limit_for(conn, actor_kind, actor_id):
-    """Real users keep ten; a wanderer's allowance grows with its tier (base 12, +20%/tier)."""
+    """Real users keep ten; a wanderer uses its tier-bounded independent search allowance."""
     if actor_kind != 'wanderer':
         return DAILY_LIMIT
     try:
@@ -111,7 +111,7 @@ def _limit_for(conn, actor_kind, actor_id):
     except (TypeError, ValueError, KeyError, IndexError):
         tier = 0
     from .wanderer_life_core import wanderer_search_limit
-    return max(DAILY_LIMIT, wanderer_search_limit(tier))
+    return wanderer_search_limit(tier)
 
 
 def snapshot(conn, *, actor_kind, actor_id, channel, now=None, budget_date=None, limit=None):

@@ -12,6 +12,8 @@ class AIBudgetAwareClient(httpx.AsyncClient):
         if attribution is not None and str(method).upper() == "POST":
             logical_id = attribution.next_call(str(url), kwargs.get("json"))
             await asyncio.to_thread(reserve_call, attribution, logical_id)
+            from .ai_model_policy import SINGLE_ATTEMPT_HEADER
+            kwargs["headers"] = {**(kwargs.get("headers") or {}), SINGLE_ATTEMPT_HEADER: "1"}
         async with super().stream(method, url, **kwargs) as response:
             yield response
 

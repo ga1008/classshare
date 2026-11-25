@@ -53,7 +53,7 @@ class DailyReflectionV3Tests(WandererDbTestCase):
                          "VALUES(?,?,'accepted',?,?)",(a,b,self.me,local_iso()))
             wanderer_runtime_setting_set(conn,'autonomous_v2_enabled','1')
             wanderer_runtime_setting_set(conn,'enabled','1')
-            wanderer_runtime_setting_set(conn,'daily_ai_call_cap','0')
+            wanderer_runtime_setting_set(conn,'daily_ai_call_cap','100')
             wanderer_runtime_setting_set(conn,daily_ai_calls_key(),'0')
             conn.commit()
 
@@ -64,7 +64,56 @@ class DailyReflectionV3Tests(WandererDbTestCase):
     def rating(self,grade='good',revision=0,ident='rate'):
         return command('relationship.rate',{'peer_ref':self.peer,'grade':grade,'expected_revision':revision},ident)
 
-    def test_three_free_requests_execute_final_commands_and_do_not_spend_normal_budgets(self):
+    def test_reflection_and_existing_ordinary_dispatches_share_both_hard_limits(self):
+        from classroom_app.services.wanderer_ai_service import reserve_attributed_call
+        from classroom_app.services.wanderer_resource_service import snapshot
+        from classroom_app.services.wanderer_settings_service import daily_ai_calls
+        with self.connect() as conn:
+            conn.execute("UPDATE wanderer_agents SET tier=0,daily_wake_limit=4096 WHERE id=?", (self.w['id'],))
+            wanderer_runtime_setting_set(conn, 'daily_ai_call_cap', 3)
+            conn.commit()
+        for number in range(2):
+            self.assertTrue(reserve_attributed_call(self.connect, self.w['id'], f'existing:{number}'))
+        caller = Caller(decision([], True), decision())
+        self.reflect(caller)
+        self.assertEqual(len(caller.calls), 1)
+        self.assertFalse(reserve_attributed_call(self.connect, self.w['id'], 'extra-retry'))
+        with self.connect() as conn:
+            self.assertEqual(daily_ai_calls(conn), 3)
+            projections = snapshot(conn, self.w['id'], 'ai_wake')
+            self.assertEqual((projections['used'], projections['actor_used'], projections['remaining']), (2, 3, 0))
+
+    def test_platform_zero_blocks_the_very_first_reflection_without_spending(self):
+        from classroom_app.services.wanderer_settings_service import daily_ai_calls
+        with self.connect() as conn:
+            wanderer_runtime_setting_set(conn, 'daily_ai_call_cap', 0)
+            conn.commit()
+        caller = Caller(decision())
+        result = self.reflect(caller)
+        self.assertEqual((result['ai_calls'], len(caller.calls)), (0, 0))
+        with self.connect() as conn:
+            self.assertEqual(daily_ai_calls(conn), 0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_reflection_dispatches").fetchone()[0], 0)
+
+    def test_timer_leaves_last_tier_zero_request_for_reflection_or_a_reply(self):
+        import random
+        from classroom_app.services.wanderer_ai_service import reserve_attributed_call
+        from classroom_app.services.wanderer_behavior_service import select_tick_wanderers
+        with self.connect() as conn:
+            conn.execute("UPDATE wanderer_agents SET tier=0,daily_wake_limit=20 WHERE id=?", (self.w['id'],))
+            conn.commit()
+        for n in range(2):
+            self.assertTrue(reserve_attributed_call(self.connect, self.w['id'], f'timer:{n}'))
+        with self.connect() as conn:
+            options = dict(now=local_now(), rng=random.Random(1), limit=1, wanderer_ids=[self.w['id']])
+            self.assertEqual(select_tick_wanderers(conn, **options), [])
+            wanderer_runtime_setting_set(conn, 'reflection_enabled', 0)
+            self.assertEqual([w['id'] for w, _ in select_tick_wanderers(conn, **options)], [self.w['id']])
+            conn.rollback()
+        self.assertTrue(reserve_attributed_call(self.connect, self.w['id'], 'waiting-for-user'))
+        self.assertFalse(reserve_attributed_call(self.connect, self.w['id'], 'extra'))
+
+    def test_three_reflection_requests_spend_platform_budget_and_preserve_shared_credits(self):
         caller=Caller(decision([self.rating()],True),decision([],True),
                       decision([command('memory.write',{'content':'第三次自省仍可以保存已决定的记忆。','location':'个人空间'})],True))
         result=self.reflect(caller)
@@ -79,7 +128,7 @@ class DailyReflectionV3Tests(WandererDbTestCase):
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_reflection_dispatches').fetchone()[0],3)
             self.assertEqual(affinity_state(conn,self.w['id'],self.peer)['affinity'],5)
             from classroom_app.services.wanderer_settings_service import daily_ai_calls
-            self.assertEqual(daily_ai_calls(conn),0)
+            self.assertEqual(daily_ai_calls(conn),3)
         again=self.reflect(Caller(),force=True)
         self.assertEqual(again['ai_calls'],0)
 
@@ -142,7 +191,7 @@ class DailyReflectionV3Tests(WandererDbTestCase):
         self.assertEqual(result['status'],'applied',result)
         self.assertEqual(result['reflection']['ai_calls'],3)
         self.assertEqual(len(caller.calls),3)
-        self.assertIn('计入每日自省三次免费请求',caller.calls[1]['system_prompt'])
+        self.assertIn('计入自省三次上限和模型日预算',caller.calls[1]['system_prompt'])
 
     def test_context_switch_cannot_escape_three_request_limit(self):
         caller=Caller(decision([command('context.switch',{'scope':{'kind':'public'}})],True),
@@ -157,7 +206,7 @@ class DailyReflectionV3Tests(WandererDbTestCase):
 
     def test_deferred_callback_crosses_midnight_but_scores_original_day(self):
         previous=local_now()-timedelta(days=1)
-        with patch.object(runtime,'MAX_CHAIN_DEPTH',0):
+        with patch.object(runtime,'MAX_INLINE_CALLBACKS',0):
             result=self.reflect(Caller(decision([],True)),date=previous)
         self.assertEqual(result['status'],'running',result)
         with self.connect() as conn:
@@ -179,10 +228,12 @@ class DailyReflectionV3Tests(WandererDbTestCase):
                 calls.append(payload); entered.set(); await release.wait()
                 return {'status':'success','response_json':decision([self.rating()])}
             one=asyncio.create_task(run_reflection(ActionContext(self.connect,self.w,ai_caller=provider)))
-            await entered.wait()
-            two=await run_reflection(ActionContext(self.connect,self.w,ai_caller=provider))
-            release.set()
-            first=await one
+            try:
+                await asyncio.wait_for(entered.wait(), timeout=5)
+                two=await asyncio.wait_for(run_reflection(ActionContext(self.connect,self.w,ai_caller=provider)), timeout=5)
+            finally:
+                release.set()
+                first=await asyncio.wait_for(one, timeout=5)
             return calls,first,two
         calls,first,second=asyncio.run(scenario())
         self.assertEqual(len(calls),1)
@@ -283,7 +334,7 @@ class DailyReflectionV3Tests(WandererDbTestCase):
             self.assertEqual(affinity_state(conn,self.w['id'],self.peer),before)
 
     def test_abandoned_callback_cannot_leave_daily_panel_running_forever(self):
-        with patch.object(runtime,'MAX_CHAIN_DEPTH',0):
+        with patch.object(runtime,'MAX_INLINE_CALLBACKS',0):
             result=self.reflect(Caller(decision([self.rating()],True)))
         self.assertEqual(result['status'],'running')
         with self.connect() as conn:

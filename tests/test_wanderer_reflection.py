@@ -128,20 +128,20 @@ class ReflectionTest(WandererDbTestCase):
                                  (reflection_date(self.NOW),)).fetchone()[0]
         self.assertEqual(int(count), 2)
 
-    def test_zero_ordinary_budget_does_not_cap_free_reflection(self):
+    def test_zero_platform_budget_skips_daily_reflection_without_dispatch(self):
         with self.connect() as conn:
             wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "0")
             conn.commit()
         ctx = self._ctx("lele", StubCaller(_payload()))
         result = asyncio.run(run_reflection(ctx))
-        self.assertEqual(result["status"], "applied", result)
+        self.assertEqual(result["status"], "skipped_capped", result)
         with self.connect() as conn:
             row = conn.execute("SELECT status FROM wanderer_daily_reflections WHERE wanderer_id = ?",
                                (ctx.wanderer_id,)).fetchone()
             wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "4096")
             conn.commit()
-        self.assertEqual(row["status"], "applied")
-        self.assertEqual(result['reflection']['ai_calls'],1)
+        self.assertEqual(row["status"], "skipped_capped")
+        self.assertEqual(result['reflection']['ai_calls'],0)
 
 
 class ReflectionContractTest(unittest.TestCase):

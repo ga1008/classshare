@@ -20,7 +20,7 @@ from typing import Any, Iterable, Optional
 from ..db.connection import execute_insert_returning_id
 from ..db.schema_wanderers import ensure_wanderer_schema
 from ..db.schema_wanderer_world import ensure_wanderer_world_schema
-from ..time_utils import local_iso, local_now, parse_datetime
+from ..time_utils import local_iso, local_now, parse_datetime, to_local_datetime
 from .wanderer_life_core import (
     AI_WAKE_BASE,
     active_speech_limit,
@@ -170,17 +170,7 @@ def _hydrate(row: Any) -> dict[str, Any]:
     parsed = {name: _loads(data.get(column), kind) for column, (name, kind) in _JSON_FIELDS.items()}
     ints = {key: _as_int(data.get(key)) for key in _INT_FIELDS}
     talents = normalize_talents(parsed["talents"], slug=data.get("slug"))
-    life = life_state(
-        born_at=data.get("born_at") or data.get("created_at"),
-        tier=ints["tier"],
-        lifespan_weeks=_as_float(data.get("lifespan_weeks")),
-        extensions=ints["life_extensions"],
-        penalty_weeks=_as_float(data.get("life_penalty_weeks")),
-        gift_in_weeks=_as_float(data.get("life_gift_in_weeks")),
-        gift_out_weeks=_as_float(data.get("life_gift_out_weeks")),
-        bonus_seconds=data.get("life_bonus_seconds", 0),
-        vitality=talents["vitality"],
-    )
+    life = current_life({**data, "talents": talents})
     return {
         **data,
         **parsed,
@@ -298,8 +288,8 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
             persona_source_hash, persona_source_json, speech_style_json,
             interests_json, schedule_json, activity_level, daily_action_budget, reply_policy_json,
             tier, cultivation_score, status, behaviors_json, stats_json, origin, created_at, updated_at,
-            born_at, lifespan_weeks, talents_json, legacy_id, daily_wake_limit
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            born_at, lifespan_weeks, talents_json, legacy_id, daily_wake_limit, lifespan_policy_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2)
         ON CONFLICT(slug) DO NOTHING
         """,
         (
@@ -312,7 +302,7 @@ def _insert_agent_row(conn: Any, seed: dict[str, Any], student_id: int) -> bool:
             _dumps({**DEFAULT_BEHAVIORS, **(seed.get("behaviors") or {})}), "{}",
             seed.get("origin") if seed.get("origin") in WANDERER_ORIGINS else ORIGIN_SEED, now, now,
             now, lifespan, _dumps(talents), _as_int(seed.get("legacy_id")) or None,
-            max(0, _as_int(seed.get("daily_wake_limit")) or AI_WAKE_BASE),
+            AI_WAKE_BASE if seed.get("daily_wake_limit") is None else max(0, _as_int(seed["daily_wake_limit"])),
         ),
     )
     return True
@@ -490,8 +480,9 @@ def reply_char_limit(tier: Any) -> int:
 
 
 def daily_budget_factor(tier: Any) -> float:
-    """Multiplier on ``daily_action_budget`` (2026-11-01: +20% per tier)."""
-    return round(1.0 + 0.20 * clamp_tier(tier), 2)
+    """Actual activity allowance relative to tier zero."""
+    from .wanderer_life_core import daily_activity_limit
+    return round(daily_activity_limit(tier) / daily_activity_limit(0), 2)
 
 
 _WISDOM_DIRECTIVES = (
@@ -589,23 +580,37 @@ def active_knowledge_count(conn: Any, wanderer_id: int) -> int:
 def current_life(wanderer: dict[str, Any], now: Any = None) -> dict[str, Any]:
     """Recompute the life state (cached hydrations can be up to 60 s old)."""
     stored = wanderer.get("life") or {}
+    weeks = _as_float(wanderer.get("lifespan_weeks") or stored.get("lifespan_weeks"))
+    legacy = wanderer.get("lifespan_policy_version") == 1
+    talents = wanderer.get("talents")
+    if not isinstance(talents, dict) and (legacy or weeks <= 0):
+        talents = normalize_talents(_loads(wanderer.get("talents_json"), dict), slug=wanderer.get("slug"))
+    vitality = talent_value(talents, "vitality")
+    if legacy and wanderer.get("status") in {STATUS_ACTIVE, STATUS_PAUSED}:
+        # The old recorded base stays auditable. Penalties, grants, gifts and elapsed time
+        # are accounted separately. Re-reading a hydrated row never grants time twice.
+        weeks = max(weeks, lifespan_weeks_for(wanderer.get("tier"), vitality))
+    elif legacy and weeks <= 0 and wanderer.get("status") == STATUS_DEAD:
+        # Pre-lifecycle records may never have materialized their original total.
+        old_base = (2, 4, 6, 9, 13, 18, 25, 35, 48, 70, 100)[clamp_tier(wanderer.get("tier"))]
+        weeks = round(old_base * vitality, 1)
     return life_state(
         born_at=wanderer.get("born_at") or wanderer.get("created_at"),
         tier=wanderer.get("tier"),
-        lifespan_weeks=wanderer.get("lifespan_weeks") or stored.get("lifespan_weeks"),
+        lifespan_weeks=weeks,
         extensions=wanderer.get("life_extensions") or stored.get("extensions"),
         penalty_weeks=wanderer.get("life_penalty_weeks") if "life_penalty_weeks" in wanderer else stored.get("penalty_weeks"),
         gift_in_weeks=(wanderer.get("life_gift_in_weeks") if "life_gift_in_weeks" in wanderer
                        else stored.get("gift_in_weeks")),
         gift_out_weeks=(wanderer.get("life_gift_out_weeks") if "life_gift_out_weeks" in wanderer
                         else stored.get("gift_out_weeks")),
-        vitality=talent_value(wanderer.get("talents"), "vitality"),
+        vitality=vitality,
         bonus_seconds=wanderer.get("life_bonus_seconds", 0),
-        now=now,
+        now=now or local_now(),
     )
 
 
-def death_reason(conn: Any, wanderer: dict[str, Any], *, now: Any = None) -> str:
+def death_reason(conn: Any, wanderer: dict[str, Any], *, now: Any = None, life_exhausted: bool = False) -> str:
     """'' when alive; otherwise the reason written into the death verdict.
 
     Expiry is ignored while the ``lifecycle_enabled`` runtime switch is off
@@ -614,7 +619,7 @@ def death_reason(conn: Any, wanderer: dict[str, Any], *, now: Any = None) -> str
     if str(wanderer.get("status") or "") == STATUS_DEAD:
         return "已陨落"
     life = current_life(wanderer, now)
-    if life.get("expired"):
+    if life.get("expired") or life_exhausted:
         from .wanderer_settings_service import lifecycle_enabled
 
         if lifecycle_enabled(conn):
@@ -622,6 +627,28 @@ def death_reason(conn: Any, wanderer: dict[str, Any], *, now: Any = None) -> str
             return (f"寿元耗尽（第 {tier} 境，寿元 {life['granted_weeks']:g} 周，"
                     f"{str(life['expires_at'])[:10]} 到期）。")
     return ""
+
+
+def awaiting_promotion_verdict(wanderer: dict[str, Any], now) -> bool:
+    """A timely application suspends natural death until adjudicated, without granting activity."""
+    if not wanderer.get("promotion_requested") or wanderer.get("status") != STATUS_ACTIVE:
+        return False
+    submitted = to_local_datetime(wanderer.get("promotion_requested_at"))
+    expires = to_local_datetime(current_life(wanderer, now)["expires_at"])
+    return bool(submitted and submitted <= expires <= now)
+
+
+def settle_natural_expiry(conn: Any, wanderer: dict[str, Any], *, now=None) -> tuple[int, str] | None:
+    moment = to_local_datetime(now) or local_now()
+    if not death_reason(conn, wanderer, now=moment):
+        return None
+    from .wanderer_bond_service import lock_lifecycle
+    lock_lifecycle(conn, [wanderer["id"]])
+    fresh = load_wanderer(conn, int(wanderer["id"]))
+    if not fresh or fresh["status"] == STATUS_DEAD or awaiting_promotion_verdict(fresh, moment):
+        return None
+    reason = death_reason(conn, fresh, now=moment)
+    return (mark_dead(conn, int(fresh["id"]), reason), reason) if reason else None
 
 
 def evaluate_death(conn: Any, wanderer: dict[str, Any]) -> bool:
@@ -649,9 +676,10 @@ def mark_dead(conn: Any, wanderer_id: int, reason: str) -> int:
     )
     now = local_iso()
     conn.execute(
-        "UPDATE wanderer_agents SET status = ?, promotion_requested = 0, appeal_requested = 0, "
+        "UPDATE wanderer_agents SET status = ?, lifespan_weeks = ?, lifespan_policy_version = 2, "
+        "promotion_requested = 0, appeal_requested = 0, "
         "last_review_id = ?, last_review_at = ?, updated_at = ?, life_epoch=life_epoch+1, authority_version=authority_version+1 WHERE id = ?",
-        (STATUS_DEAD, review_id, now, now, int(wanderer_id)),
+        (STATUS_DEAD, wanderer["lifespan_weeks"], review_id, now, now, int(wanderer_id)),
     )
     invalidate_wanderer_cache([wanderer["student_id"]])
     _invalidate_emblem([wanderer["student_id"]])

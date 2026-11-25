@@ -148,6 +148,23 @@ class WandererSearchTest(WandererDbTestCase):
         self.assertEqual(model.calls[2][1]["tools"], [])
         self.assertEqual(model.calls[2][1]["response_format"], "json")
 
+    def test_inbox_search_rounds_summary_and_new_worker_share_four_durable_slots(self):
+        with self.connect() as conn:
+            conn.execute("UPDATE wanderer_agents SET tier=2 WHERE id=?", (self.person['id'],))
+            conn.commit()
+        task = {'id': 43, 'handled_message_id': 0, 'latest_message_id': 80, 'attempts': 0}
+        with ai.inbox_call_scope(task):
+            first = Model(decision(tool()), decision(tool("政策更新", key="b")), FINAL)
+            self.assertEqual(self.run_turn(first)['ai_calls'], 3)
+        summary = Model({'status': 'success', 'response_json': {'summary': '已整理'}})
+        with ai.inbox_call_scope(task):
+            self.assertEqual(asyncio.run(ai.summarize_text(database.get_db_connection, self.person, '历史', ai_caller=summary)), '已整理')
+            retry = Model(FINAL)
+            self.assertEqual(self.run_turn(retry)['status'], 'chain_limit')
+        self.assertEqual((len(first.calls), len(summary.calls), len(retry.calls), self.calls_today()), (3, 1, 0, 4))
+        with ai.inbox_call_scope({**task, 'latest_message_id': 81}):
+            self.assertEqual(self.run_turn(retry)['status'], 'ok')
+
     def test_unsupported_and_invalid_tool_requests_do_not_execute_network(self):
         model = Model(decision(tool(name="fetch"), tool(key="bad", arguments="{broken")), FINAL)
         search = Search()

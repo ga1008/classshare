@@ -44,7 +44,7 @@ class RuntimeV2Tests(WandererDbTestCase):
                           'wanderer_knowledge_revisions','wanderer_evidence_snapshots'):
                 conn.execute(f'DELETE FROM {table}')
             self.w = self.wanderer(conn, "lele")
-            conn.execute("UPDATE wanderer_agents SET daily_wake_limit=100,status='active',born_at=?,lifespan_weeks=10,"
+            conn.execute("UPDATE wanderer_agents SET tier=2,daily_wake_limit=100,status='active',born_at=?,lifespan_weeks=10,"
                          "life_penalty_weeks=0 WHERE id=?", (local_iso(), self.w['id']))
             wanderer_runtime_setting_set(conn, daily_ai_calls_key(), "0")
             wanderer_runtime_setting_set(conn, "autonomous_v2_enabled", "1")
@@ -239,7 +239,7 @@ class RuntimeV2Tests(WandererDbTestCase):
             self.assertEqual(conn.execute('SELECT COUNT(*) AS n FROM wanderer_memory_sources').fetchone()['n'],0)
 
     def test_yield_keeps_callback_in_durable_queue(self):
-        with patch.object(runtime,'MAX_CHAIN_DEPTH',1):
+        with patch.object(runtime,'MAX_INLINE_CALLBACKS',1):
             result=self.wake(Caller(decision([],True),decision([],True)))
         self.assertEqual(result['ai_calls'],2)
         self.assertTrue(result['callback_deferred'])
@@ -247,7 +247,57 @@ class RuntimeV2Tests(WandererDbTestCase):
             row=conn.execute('SELECT * FROM wanderer_wake_events WHERE event_id=?',(result['callback_event_id'],)).fetchone()
             self.assertEqual(row['state'],'pending')
             self.assertGreater(row['run_at'],local_iso())
-            self.assertEqual(row['depth'],0)
+            self.assertEqual(row['depth'],2)
+
+    def test_four_decisions_include_root_and_no_fifth_callback_later(self):
+        caller = Caller(*(decision([], True) for _ in range(4)))
+        result = self.wake(caller)
+        self.assertTrue(result['chain_limit_reached'], result)
+        self.assertEqual(result['ai_calls'], 4)
+        self.assertEqual(len(caller.calls), 4)
+        self.assertIn('"chain_calls_left_after_this_turn":0', caller.calls[-1]['system_prompt'])
+        with self.connect() as conn:
+            depths = [row[0] for row in conn.execute('SELECT depth FROM wanderer_turns ORDER BY depth')]
+            self.assertEqual(depths, [0, 1, 2, 3])
+        self.assertEqual(asyncio.run(runtime.drain_wake_events(self.connect, ai_caller=Caller()))['ai_calls'], 0)
+
+    def test_sibling_switches_and_callback_share_four_dispatches(self):
+        switches = [command('context.switch', {'scope': {'kind': 'public'}}, ident=f'switch{i}') for i in range(5)]
+        result = self.wake(Caller(decision(switches, True)))
+        self.assertEqual(result['ai_calls'], 1, result)
+        self.assertEqual(sum(r['status'] == 'succeeded' for r in result['receipts']), 3)
+        caller = Caller(*(decision([], True) for _ in range(3)))
+        drained = asyncio.run(runtime.drain_wake_events(self.connect, ai_caller=caller))
+        self.assertEqual(drained['ai_calls'], 3, drained)
+        with self.connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(DISTINCT chain_id) FROM wanderer_wake_events').fetchone()[0], 1)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_wake_events WHERE state='pending'").fetchone()[0], 0)
+
+    def test_pending_preupgrade_scene_root_does_not_start_another_chain(self):
+        with self.connect() as conn:
+            old_scene = runtime.enqueue_wake_event(conn, self.w['id'], 'context', 'old-context-switch')
+            conn.commit()
+        result = asyncio.run(runtime.drain_wake_events(self.connect, ai_caller=Caller()))
+        self.assertEqual(result['ai_calls'], 0)
+        with self.connect() as conn:
+            status = conn.execute('SELECT state FROM wanderer_wake_events WHERE event_id=?', (old_scene['event_id'],)).fetchone()
+            self.assertEqual(status[0], 'chain_limit')
+
+    def test_stored_depth_zero_callback_after_four_paid_turns_is_terminal(self):
+        self.wake(Caller(*(decision([], True) for _ in range(4))))
+        with self.connect() as conn:
+            parent = conn.execute('SELECT * FROM wanderer_turns WHERE depth=3').fetchone()
+            event = runtime.enqueue_wake_event(conn, self.w['id'], 'callback', 'old-yield',
+                chain_id=parent['chain_id'], parent_turn_id=parent['turn_id'], depth=0)
+            conn.commit()
+        for _ in range(2):
+            result = asyncio.run(runtime.drain_wake_events(self.connect, ai_caller=Caller()))
+            self.assertEqual(result['ai_calls'], 0)
+        with self.connect() as conn:
+            stored = conn.execute('SELECT state FROM wanderer_wake_events WHERE event_id=?', (event['event_id'],)).fetchone()
+            self.assertEqual(stored[0], 'chain_limit')
+            with self.assertRaisesRegex(ValueError, '上限'):
+                runtime.retry_failed_event(conn, self.w['id'], event['event_id'])
 
     def test_result_references_bind_only_confirmed_dependencies(self):
         caller=Caller(decision([command('self.status',ident='status'),

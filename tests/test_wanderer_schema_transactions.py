@@ -68,6 +68,20 @@ class WandererSchemaTransactionsTest(unittest.TestCase):
     def top_level(statements):
         return [sql for sql in statements if not sql.lstrip().startswith("--")]
 
+    def test_lifespan_upgrade_is_additive_and_preserves_the_original_base(self):
+        conn = self.connect()
+        self.prepare(conn)
+        conn.execute("ALTER TABLE wanderer_agents DROP COLUMN lifespan_policy_version")
+        conn.execute("INSERT INTO wanderer_agents(student_id, slug, display_name, archetype, persona_prompt, "
+                     "created_at, updated_at, lifespan_weeks) VALUES(1,'fixture','fixture','fixture','fixture',"
+                     "'2026-10-30','2026-10-30',2.4)")
+        self.prepare(conn)
+        self.prepare(conn)
+        self.assertEqual(conn.execute("SELECT lifespan_weeks, lifespan_policy_version "
+                                      "FROM wanderer_agents").fetchone(), (2.4, 1))
+        self.assertNotIn("lifespan_policy_version", {row[1] for row in conn.execute(
+            "PRAGMA table_info(wanderer_legacies)")})
+
     def test_complete_business_and_startup_checks_are_readonly_even_with_reset_flag(self):
         conn = self.connect()
         self.prepare(conn)

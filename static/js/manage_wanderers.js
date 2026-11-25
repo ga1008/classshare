@@ -214,7 +214,7 @@ function renderCard(card) {
         ]),
         cardChips(card),
         el('span', { class: 'wd-card__meta wd-muted',
-            text: `今日动作 ${card.today_actions} / ${card.daily_action_budget} · 寿元 ${card.life_weeks} 周` }),
+            text: `今日模型请求 ${card.model_calls_today} / ${card.model_call_limit} · 寿元 ${card.life_weeks} 周` }),
         el('span', { class: 'wd-card__preview', text: card.last_action_preview || '尚无动作' }),
     ]);
 }
@@ -550,7 +550,7 @@ function fillPersonaForm(profile) {
     const form = detailEls.personaForm;
     form.elements.persona_prompt.value = profile.persona_prompt;
     form.elements.activity_level.value = profile.activity_level;
-    form.elements.daily_action_budget.value = profile.daily_action_budget;
+    form.elements.activity_limit.value = profile.activity_limit;
     form.elements.daily_wake_limit.value = profile.daily_wake_limit ?? 100;
     for (const field of REPLY_POLICY_FIELDS) form.elements[field].value = profile.reply_policy?.[field] ?? '';
     form.elements.active_hours.value = JSON.stringify(profile.schedule?.active_hours || []);
@@ -627,7 +627,6 @@ function personaPatch() {
     return {
         persona_prompt: form.elements.persona_prompt.value,
         activity_level: Number(form.elements.activity_level.value),
-        daily_action_budget: Number(form.elements.daily_action_budget.value),
         daily_wake_limit: Number(form.elements.daily_wake_limit.value),
         reply_policy_json: replyPolicyPatch(form, profile.reply_policy || {}),
         schedule_json: { ...(profile.schedule || {}), active_hours: parseActiveHours(form.elements.active_hours.value) },

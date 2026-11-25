@@ -117,9 +117,10 @@ class WandererAiTest(WandererDbTestCase):
             self.assertIn(result["status"], {"failed", "ok"})
         self.assertEqual(self._calls_today(), 3)
 
-    def test_dao_judge_uses_deep_text_and_ignores_cap(self):
+    def test_dao_judge_can_use_reserved_capacity_but_stops_at_the_hard_cap(self):
         with self.connect() as conn:
-            wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "0")
+            wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "132")
+            wanderer_runtime_setting_set(conn, daily_ai_calls_key(), "131")
             conn.commit()
         caller = StubCaller(text='```json\n{"verdict": "approved", "reason": "知识扎实", "advice": "继续"}\n```')
         result = asyncio.run(wanderer_ai_service.dao_judge(
@@ -133,7 +134,10 @@ class WandererAiTest(WandererDbTestCase):
         self.assertEqual(payload["task_label"], "dao:promotion")
         self.assertEqual(kwargs["priority"], "P2")
         self.assertEqual(kwargs["student_id"], 12)
-        self.assertEqual(self._calls_today(), 1)
+        self.assertEqual(self._calls_today(), 132)
+        again = asyncio.run(wanderer_ai_service.dao_judge(
+            database.get_db_connection, system_prompt="天道", user_message="证据", kind="promotion", ai_caller=caller))
+        self.assertEqual((again['status'], len(caller.calls)), ('capped', 1))
 
     def test_dao_mention_cap_blocks_only_mentions(self):
         from classroom_app.services.wanderer_settings_service import (
@@ -156,7 +160,7 @@ class WandererAiTest(WandererDbTestCase):
         capped = judge("mention")
         self.assertEqual((capped["status"], capped["ai_calls"]), ("capped", 0))
         self.assertEqual(len(caller.calls), 1)
-        self.assertEqual(judge("discipline")["status"], "ok")  # discipline/promotion stay uncapped
+        self.assertEqual(judge("discipline")["status"], "ok")  # independent of the mention sub-limit
         self.assertEqual(len(caller.calls), 2)
 
     def test_dao_judge_unparseable_is_failed(self):
@@ -177,7 +181,9 @@ class WandererSettingsTest(WandererDbTestCase):
                 self.assertEqual(daily_cap(conn), 7)
             with patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("WANDERER_DAILY_AI_CALL_CAP", None)
-                self.assertEqual(daily_cap(conn), 4096)
+                self.assertEqual(daily_cap(conn), 132)
+            wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "4096")
+            self.assertEqual(daily_cap(conn), 132)
             wanderer_runtime_setting_set(conn, SETTING_DAILY_AI_CALL_CAP, "55")
             self.assertEqual(daily_cap(conn), 55)
             conn.rollback()

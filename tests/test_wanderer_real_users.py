@@ -122,15 +122,15 @@ class RealUserRulesTest(WandererWorldTestCase):
         # 真人加成封顶 5×：与同等质量（同长度）的散修互动相比。
         self.assertLessEqual(high, normal * 5 + 0.001)
 
-    def test_active_and_search_limits_grow_twenty_percent_per_tier(self):
-        self.assertEqual(active_interaction_limit(0), 20)
-        self.assertEqual(active_interaction_limit(1), 24)
-        self.assertEqual(active_interaction_limit(5), 40)
-        self.assertEqual(active_interaction_limit(1, 50), 50)
-        self.assertEqual(wanderer_search_limit(0), 12)
-        self.assertEqual(wanderer_search_limit(5), 24)
-        self.assertEqual(tier_perks(1, 10)["daily_budget"], 24)
-        self.assertEqual(tier_perks(1, 10)["web_search_limit"], 14)
+    def test_active_interactions_respect_tier_ceiling_and_search_keeps_its_own_limit(self):
+        self.assertEqual(active_interaction_limit(0), 3)
+        self.assertEqual(active_interaction_limit(1), 5)
+        self.assertEqual(active_interaction_limit(5), 16)
+        self.assertEqual(active_interaction_limit(1, 50), 5)
+        self.assertEqual(wanderer_search_limit(0), 3)
+        self.assertEqual(wanderer_search_limit(5), 16)
+        self.assertEqual(tier_perks(1, 10)["daily_budget"], 5)
+        self.assertEqual(tier_perks(1, 10)["web_search_limit"], 5)
 
     def test_real_user_reply_is_awarded_more_than_a_wanderer_reply(self):
         from classroom_app.services.social_identity_service import load_people
@@ -196,9 +196,9 @@ class RealUserRulesTest(WandererWorldTestCase):
             wanderer = self.wanderer(conn, "atai")
             conn.execute('UPDATE wanderer_agents SET tier=5 WHERE id=?',(wanderer['id'],))
             quota = snapshot_for_wanderer(conn, wanderer)
-        self.assertEqual(quota["limit"], 24)
+        self.assertEqual(quota["limit"], 16)
         self.assertEqual(quota["available"], True)
-        text = search_context_block({"limit": 24, "used": 2, "remaining": 22, "history": [
+        text = search_context_block({"limit": 16, "used": 2, "remaining": 14, "history": [
             {"date": "2026-10-31", "total": 3}, {"date": "2026-11-01", "total": 2}]})
         self.assertIn("最近七天使用", text)
         self.assertIn("11-01 用 2 次", text)

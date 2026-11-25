@@ -46,7 +46,7 @@ def quote_message(conn: Any, sender: str, parsed: dict[str, Any], *, reply_to_id
             f"SELECT id,student_id FROM wanderer_agents WHERE student_id IN ({marks}) AND status IN ('active','paused')",
             tuple(student_ids)).fetchall()}
     if not recipients:
-        return {"charged":False,"reason":"human_audience"}
+        return {"charged":False,"reason":"human_audience","actor_id":int(actor["id"])}
     target = None
     if parsed["type"] == "dm":
         target = parsed["peer"]
@@ -77,6 +77,9 @@ def charge_message(conn: Any, sender: str, parsed: dict[str, Any], *, message_id
         receipt = consume(conn,quote["actor_id"],RESOURCE,quote["amount"],f"social-message:{message_id}")
         if not receipt.get("ok"):
             raise SocialError("今日散修交流额度不足，消息尚未发送。",429,retry_after=60)
+    if quote.get("actor_id") is not None and not consume(conn, quote["actor_id"], "active_interactions", 1,
+                                         f"social-activity:{message_id}")["ok"]:
+        raise SocialError("今日散修活动次数已用完，消息尚未发送。", 429)
     gained = _award_delivery(conn,sender,parsed,message_id,reply_to_id=reply_to_id)
     return {**quote,"receipt":receipt,"cultivation_gain":gained}
 
@@ -146,6 +149,8 @@ def charge_private_message(conn: Any, message: dict) -> dict:
         receipt = consume(conn,int(actor["id"]),RESOURCE,cost,f"private-message:{message['id']}")
         if not receipt.get("ok"):
             raise RateLimitExceededError("今日散修交流额度不足，私信尚未发送。",retry_after_seconds=60)
+    if not consume(conn, int(actor["id"]), "active_interactions", 1, f"private-activity:{message['id']}")["ok"]:
+        raise RateLimitExceededError("今日散修活动次数已用完，私信尚未发送。", retry_after_seconds=60)
     gain = _award_interaction(conn,actor,sender,peer,f"private-message:{message['id']}",str(message.get("content") or ""),
                               int(message['id']),str(message['conversation_key']),"dm_reply","legacy_dm") if runtime_enabled(conn) else 0.0
     return {"charged":charged,"receipt":receipt,"cultivation_gain":gain}

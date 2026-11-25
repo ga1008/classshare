@@ -96,7 +96,33 @@ class WandererLegacyDeliveryTest(WandererWorldTestCase):
             with self.assertRaises(SocialError):send_message(conn,self.user,dm_key(sender,self.peer),{'body':'另一入口','client_nonce':'different-entry'})
             conn.commit()
             self.assertEqual(snapshot(conn,self.a['id'],'social_message')['used'],3000000)
-            self.assertEqual(snapshot(conn,self.a['id'],'active_interactions')['used'],0)
+            self.assertEqual(snapshot(conn,self.a['id'],'active_interactions')['used'],1)
+
+    def test_both_message_surfaces_share_tier_zero_activity_ceiling(self):
+        from classroom_app.services.social_common import dm_key, SocialError
+        from classroom_app.services.social_message_service import send_message
+        from classroom_app.time_utils import local_iso
+
+        sender = f"student:{self.a['student_id']}"
+        with self.connect() as conn:
+            conn.execute("UPDATE wanderer_agents SET tier=0 WHERE id=?", (self.a["id"],))
+            conn.execute("INSERT INTO social_friendships(identity_a,identity_b,status,requester_identity,created_at) "
+                         "VALUES(?,?,?,?,?)", (*sorted([sender, self.peer]), "accepted", sender, local_iso()))
+            self.send(conn, "第一条合成私信")
+            send_message(conn, self.user, dm_key(sender, self.peer), {"body": "第二条", "client_nonce": "quota-two"})
+            self.send(conn, "第三条合成私信")
+            conn.commit()
+            quote_before = snapshot(conn, self.a["id"], "social_message")["used"]
+            with self.assertRaises(RateLimitExceededError):
+                self.send(conn, "第四条超过当天上限")
+            with self.assertRaises(SocialError):
+                send_message(conn, self.user, dm_key(sender, self.peer),
+                             {"body": "再次发送", "client_nonce": "quota-four", "system_support": True})
+            conn.commit()
+            self.assertEqual(snapshot(conn, self.a["id"], "active_interactions")["actor_used"], 3)
+            self.assertEqual(snapshot(conn, self.a["id"], "social_message")["used"], quote_before)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM private_messages").fetchone()[0], 2)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM social_messages").fetchone()[0], 1)
 
     def test_independent_connections_cannot_overspend_last_credit(self):
         from concurrent.futures import ThreadPoolExecutor
@@ -167,9 +193,9 @@ class WandererLegacyDeliveryTest(WandererWorldTestCase):
         with self.connect() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM private_messages').fetchone()[0],1)
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_private_message_operations').fetchone()[0],1)
-            self.assertEqual(snapshot(conn,self.a['id'],'active_interactions')['used'],0)
+            self.assertEqual(snapshot(conn,self.a['id'],'active_interactions')['used'],1)
 
-    def test_six_actual_runtime_legacy_rounds_continue_without_duplicate_delivery(self):
+    def test_verified_legacy_messages_propagate_depth_and_stop_after_four_wakes(self):
         from classroom_app.routers.message_center import router
         from classroom_app.services import wanderer_platform_service as platform,wanderer_inbox_worker as worker
         app=FastAPI();app.include_router(router);calls=[]
@@ -181,17 +207,19 @@ class WandererLegacyDeliveryTest(WandererWorldTestCase):
                 'capability':'legacy.send_message','args':{'body':{'contact_identity':context['peer_identity'],
                 'content':f'第{len(calls)}轮，我们继续谈谈各自的见闻。'}}}],'callback':{'requested':False}}}
         with patch.object(platform,'_app',return_value=app):
-            for _ in range(6):
+            for _ in range(5):
                 with self.connect() as conn:
                     conn.execute("UPDATE wanderer_social_inbox SET run_at='2000-01-01' WHERE state IN ('pending','retry')");conn.commit()
                 result=asyncio.run(worker.process_once(factory=self.connect,ai_caller=caller,sleep=ZeroSleep(),limit=1))
                 self.assertIn('done',result)
-        self.assertEqual(len(calls),6)
+        self.assertEqual(len(calls),4)
         with self.connect() as conn:
-            self.assertEqual(conn.execute('SELECT COUNT(*) FROM private_messages').fetchone()[0],7)
-            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_private_message_operations').fetchone()[0],6)
-            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_commands WHERE state='succeeded'").fetchone()[0],6)
-            self.assertEqual(snapshot(conn,self.a['id'],'ai_wake')['used']+snapshot(conn,self.b['id'],'ai_wake')['used'],6)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM private_messages').fetchone()[0],5)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM wanderer_private_message_operations').fetchone()[0],4)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM wanderer_commands WHERE state='succeeded'").fetchone()[0],4)
+            self.assertEqual([r[0] for r in conn.execute("SELECT depth FROM wanderer_turns ORDER BY depth")], [0,1,2,3])
+            self.assertEqual(snapshot(conn,self.a['id'],'ai_wake')['used']+snapshot(conn,self.b['id'],'ai_wake')['used'],4)
+        self.assertFalse(asyncio.run(worker.process_once(factory=self.connect,ai_caller=caller,sleep=ZeroSleep())))
 
     def test_legacy_protocol_repair_delivers_once_and_replay_has_no_extra_charge(self):
         from classroom_app.routers.message_center import router

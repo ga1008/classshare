@@ -59,6 +59,20 @@ class WandererInboxTest(WandererWorldTestCase):
         self.assertIn("今天心情不好", caller.calls[0][1]["system_prompt"])
         self.assertEqual(len(self.messages_from(self.ident(self.atai), key)), 1)
 
+    def test_legacy_runtime_keeps_peer_message_without_starting_an_untraceable_chain(self):
+        peer = self.ident(self.set_wanderer("lele", behaviors_json={}))
+        key = self.befriend(peer, self.atai)
+        incoming = self.send(peer, key, "道友别来无恙。")
+        caller = StubCaller()
+        self.assertEqual(self.process(caller), ["done"])
+        row = self.task(key)
+        self.assertEqual(row["handled_message_id"], incoming["id"])
+        self.assertIn("停止自动接话", row["decision_reason"])
+        self.assertEqual([m["id"] for m in self.messages_from(peer, key)], [incoming["id"]])
+        self.assertEqual(self.messages_from(self.ident(self.atai), key), [])
+        self.assertEqual(self.process(caller), [])
+        self.assertEqual(caller.calls, [])
+
     def test_failure_and_malformed_json_do_not_ack_and_recover(self):
         key = self.befriend(self.real, self.atai)
         message = self.send(self.real, key)
@@ -272,15 +286,20 @@ class WandererInboxTest(WandererWorldTestCase):
         self.assertEqual(inbox.recover(factory=self.connect), 0)
         self.assertEqual(self.task(key)["lease_token"], claim["lease_token"])
 
-    def test_long_model_outage_cools_down_then_recovers_without_new_message(self):
+    def test_four_model_failures_preserve_unread_until_the_next_incoming_message(self):
+        self.atai = self.set_wanderer("atai", tier=2)
         key = self.befriend(self.real, self.atai)
         self.send(self.real, key)
-        for _ in range(6):
-            self.assertEqual(self.process(StubCaller(error=TimeoutError("synthetic outage"))), ["retry"])
+        unavailable = StubCaller(error=TimeoutError("synthetic outage"))
+        for _ in range(4):
+            self.assertEqual(self.process(unavailable), ["retry"])
+        self.assertEqual(self.process(unavailable), ["blocked"])
+        self.assertEqual(len(unavailable.calls), 4)
         row = self.task(key)
-        self.assertEqual(row["state"], "retry")
-        self.assertEqual(row["attempts"], 6)
+        self.assertEqual(row["state"], "blocked")
+        self.assertEqual(row["attempts"], 4)
         self.assertEqual(row["handled_message_id"], 0)
+        self.send(self.real, key, "现在可以继续上次的话题吗？")
         self.assertEqual(self.process(StubCaller()), ["done"])
         self.assertEqual(self.task(key)["attempts"], 0)
 

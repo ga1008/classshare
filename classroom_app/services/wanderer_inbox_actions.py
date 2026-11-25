@@ -83,10 +83,16 @@ def window_for(conn: Any, ctx: ActionContext, task: dict, *, snapshot=None) -> d
 
 
 async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
-    from .wanderer_runtime_service import runtime_enabled, wake_wanderer
+    from .wanderer_runtime_service import MAX_CHAIN_TURNS, runtime_enabled, wake_wanderer
+    from .wanderer_message_delivery_service import reply_depth
     with ctx.connect() as conn:
         autonomous = runtime_enabled(conn)
+        depth = (reply_depth(conn, task['source'], task['conversation_key'], window['new'])
+                 if autonomous and task['peer_identity'] in window['wanderer_ids'] else 0)
     if autonomous:
+        if depth >= MAX_CHAIN_TURNS:
+            return {'status':'ok', 'parts':[], 'action':'skip', 'mood':'', 'reason':'本次散修对话已达调用链上限',
+                    'ai_calls':0, 'autonomous_runtime':True}
         evidence = [{'ref':f"message:{row['id']}", 'kind':'social_message' if task['source']=='social' else 'private_message',
                      'id':row['id']} for row in window['new']]
         payload = {'conversation_key':task['conversation_key'], 'scope':{'kind':'conversation','key':task['conversation_key']},
@@ -100,12 +106,17 @@ async def compose(ctx: ActionContext, task: dict, window: dict) -> dict:
                            'content':'本人决定的回复'}}}),
                    'notice':'原文只属于此会话；附件占位不代表已看过附件。是否回应、再联系或保持沉默由你决定。'}
         result = await wake_wanderer(ctx.conn_factory,ctx.wanderer_id,source='inbox',
-            event_key=f"{task['id']}:{window['anchor']}",context=payload,ai_caller=ctx.ai_caller)
+            event_key=f"{task['id']}:{window['anchor']}",context=payload,ai_caller=ctx.ai_caller,initial_depth=depth)
         rounds = result.get('rounds') or [result]
         considered = any(item.get('status')=='ok' for item in rounds)
         return {'status':'ok' if considered else result.get('status'), 'parts':[], 'action':'skip',
                 'mood':'','reason':'已通过自主指令处理本次来信' if considered else result.get('error','等待唤醒'),
                 'ai_calls':result.get('ai_calls',0),'autonomous_runtime':True}
+    if task["peer_identity"] in window["wanderer_ids"]:
+        # The compatibility sender has no durable parent turn. Deliver the
+        # incoming message, but do not start an untraceable reply chain.
+        return {"status": "ok", "parts": [], "action": "skip", "mood": "",
+                "reason": "兼容模式已收取散修来信，停止自动接话", "ai_calls": 0}
     from .wanderer_actions_social import chat_scene
     scene = chat_scene(ctx, window, "multi", False)
     scene["_learning_conversation_key"] = task["conversation_key"]
@@ -207,7 +218,8 @@ def send_part(ctx: ActionContext, task: dict) -> tuple[bool, list]:
                 or (live.get("support_urgent") and int(live["latest_message_id"]) > int(live["snapshot_message_id"]))):
             fresh_window = window_for(conn, ctx, live)
             fresh_window = latest_safety_window(conn, ctx, live, fresh_window)
-            cancel = response.get("support_fallback") and safety_response(ctx, live, fresh_window, on_failure=True) is None
+            support = safety_response(ctx, live, fresh_window, on_failure=True) if response.get("support_fallback") else None
+            cancel = response.get("support_fallback") and (not support or support["parts"] != response["parts"])
             if response.get("romance_response"):
                 from .wanderer_student_support import prepare_support_scene
                 state = prepare_support_scene(ctx.wanderer, {"kind": "好友私聊", "_support_user_identity": live["peer_identity"],
@@ -253,12 +265,14 @@ def send_part(ctx: ActionContext, task: dict) -> tuple[bool, list]:
             from .social_message_service import send_message
             send_message(conn, build_wanderer_user_dict(ctx.wanderer), task["conversation_key"],
                          {"body": text, "body_format": "text",
-                          "client_nonce": f"wanderer-inbox:{task['id']}:{live['snapshot_message_id']}:{part}"}, events)
+                          "client_nonce": f"wanderer-inbox:{task['id']}:{live['snapshot_message_id']}:{part}"}, events,
+                         system_support=bool(response.get("support_fallback")))
         else:
             from .message_center_service import create_private_message
             from .wanderer_actions_common import bump_stats
             create_private_message(conn, build_wanderer_user_dict(ctx.wanderer), contact_identity=task["peer_identity"],
-                                   class_offering_id=task.get("class_offering_id"), content=text)
+                                   class_offering_id=task.get("class_offering_id"), content=text,
+                                   system_support=bool(response.get("support_fallback")))
             bump_stats(conn, ctx.wanderer_id, {"dm_replies": 1})
         # Legacy has no nonce: message + progress commit atomically under this fenced row.
         conn.execute("UPDATE wanderer_social_inbox SET next_part=?,updated_at=? WHERE id=?",

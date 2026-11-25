@@ -179,6 +179,18 @@ class FailoverTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["deepseek"], [p for p, _, _ in self.requests])
         self.assertEqual(0, ai.provider_health.snapshot()["providers"]["deepseek"]["recent_failures"])
 
+    async def test_metered_request_sends_once_even_after_429_or_503(self):
+        payload = {"system_prompt": "synthetic", "messages": [], "new_message": "test",
+                   "response_format": "json", "task_type": AI_TASK_FAST_TEXT}
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=ai.app), base_url="https://isolated.invalid") as client:
+            for status, path in ((429, "/api/ai/chat"), (503, "/api/ai/chat"), (503, "/api/ai/chat-stream")):
+                with self.subTest(status=status, path=path):
+                    self.requests.clear()
+                    ai.provider_health.reset_all()
+                    self.failing["deepseek"] = lambda req: httpx.Response(status, json={"error": {"message": "synthetic"}})
+                    await client.post(path, json=payload, headers={ai.SINGLE_ATTEMPT_HEADER: '1'})
+                    self.assertEqual([p for p, _, _ in self.requests], ["deepseek"])
+
     async def test_failover_disabled_keeps_single_vendor_routes(self):
         with mock.patch.object(ai, "AI_PROVIDER_FAILOVER_ENABLED", False):
             routes = ai._build_model_routes("standard", task_type=AI_TASK_FAST_TEXT, business_context={"operation": "chat"})

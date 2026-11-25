@@ -57,6 +57,7 @@ from .wanderer_life_service import (
     extend_life as apply_life_extension,
     life_extension_cost,
     promotion_requirements,
+    submit_promotion,
     resurrect,
 )
 from .wanderer_prompt_service import INJECTION_GUARD, extract_json_object
@@ -265,17 +266,14 @@ async def request_promotion(ctx: ActionContext) -> list[dict[str, Any]]:
                       detail={"reason": result.get("status") or "declined"})
         return [outcome("request_promotion", "skipped", ai_calls=calls)]
     note = "\n".join(parts)[:500]
-    now = local_iso()
     with ctx.connect() as conn:
-        conn.execute(
-            "UPDATE wanderer_agents SET promotion_requested = 1, promotion_requested_at = ?, promotion_note = ?, "
-            "updated_at = ? WHERE id = ?",
-            (now, note, now, ctx.wanderer_id),
-        )
+        submitted = submit_promotion(conn, ctx.wanderer, note, ai_calls=calls, mood=str(turn.get("mood") or ""),
+                                     now=ctx.current_time())
         conn.commit()
-    invalidate_wanderer_cache([ctx.student_id])
-    record_action(ctx, "request_promotion", target_type="dao", content_preview=note, ai_calls=calls,
-                  mood=str(turn.get("mood") or ""), detail={"tier": tier})
+    if not submitted:
+        record_action(ctx, "request_promotion", target_type="dao", ai_calls=calls, outcome="skipped",
+                      detail={"reason": "资格或申请状态已改变"})
+        return [outcome("request_promotion", "skipped", ai_calls=calls)]
     await remember(ctx, "dao", said=[note])
     ctx.reload()
     return [outcome("request_promotion", ai_calls=calls)]

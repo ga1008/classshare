@@ -86,6 +86,7 @@ from classroom_app.services.ai_model_policy import (
     AIExecutionPlan,
     AIExecutionBudget,
     AIExecutionBudgetExceeded,
+    SINGLE_ATTEMPT_HEADER,
     AIExecutionStateError,
     AIOutputSizeError,
     AI_EXECUTION_POLICY_VERSION,
@@ -2009,9 +2010,11 @@ async def _execute_durable_ai_job_body(job: dict[str, Any]) -> None:
             state, expected_revision=revision,
         )
     try:
+        from classroom_app.services.wanderer_ai_attribution import meter_native_job
         budget = AIExecutionBudget(payload.get("execution_state"),
             logical_call_id=str((payload.get("business_context") or {}).get("logical_call_id") or job["id"]),
             persist=persist_execution)
+        await asyncio.to_thread(meter_native_job, budget, job, get_db_connection)
     except AIExecutionStateError:
         await asyncio.to_thread(reschedule_ai_job, job, error_code="unsupported_execution_state",
             error_message="Execution state requires a compatible worker or manual review", terminal=True)
@@ -2401,7 +2404,23 @@ async def lifespan(app: FastAPI):
     print("[AI SERVER] Lifespan: Shutdown complete.")
 
 
-app = FastAPI(lifespan=lifespan)  # 2. 在此处注册 lifespan
+class SingleAttemptMiddleware:
+    """Keep one metered gateway dispatch to one provider attempt, including SSE."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or dict(scope.get("headers", ())).get(SINGLE_ATTEMPT_HEADER.encode()) != b"1":
+            return await self.app(scope, receive, send)
+        token = _active_execution_budget.set(AIExecutionBudget(single_attempt=True))
+        try:
+            return await self.app(scope, receive, send)
+        finally:
+            _active_execution_budget.reset(token)
+
+
+app = FastAPI(lifespan=lifespan)
+app.add_middleware(SingleAttemptMiddleware)
 
 STREAM_EVENT_MEDIA_TYPE = "application/x-ndjson; charset=utf-8"
 STREAM_RESPONSE_HEADERS = {

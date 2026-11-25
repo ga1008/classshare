@@ -376,6 +376,8 @@ ADDED_COLUMNS = (
     # Lifespan / talents / autonomy (lifecycle doc §2–§6, 2026-10-30).
     ("wanderer_agents", "born_at", "TEXT"),
     ("wanderer_agents", "lifespan_weeks", "REAL NOT NULL DEFAULT 0"),
+    # Existing rows retain their original base and can be projected under the new policy.
+    ("wanderer_agents", "lifespan_policy_version", "INTEGER NOT NULL DEFAULT 1"),
     ("wanderer_agents", "life_penalty_weeks", "REAL NOT NULL DEFAULT 0"),
     ("wanderer_agents", "life_extensions", "INTEGER NOT NULL DEFAULT 0"),
     ("wanderer_agents", "talents_json", "TEXT NOT NULL DEFAULT '{}'"),

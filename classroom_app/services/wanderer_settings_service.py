@@ -10,12 +10,13 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+from datetime import date, timedelta
 from typing import Any, Optional
 
 from ..db.schema_wanderers import ensure_wanderer_schema
 from ..time_utils import local_iso, local_now
 
-DEFAULT_DAILY_AI_CALL_CAP = 4096
+DEFAULT_DAILY_AI_CALL_CAP = 132
 DAILY_AI_CALLS_PREFIX = "ai_calls:"
 SETTING_DAILY_AI_CALL_CAP = "daily_ai_call_cap"
 SETTING_ENABLED = "enabled"
@@ -82,8 +83,8 @@ def wanderer_runtime_setting_set(conn: Any, key: str, value: Any) -> str:
     return text
 
 
-def daily_ai_calls_key() -> str:
-    return f"{DAILY_AI_CALLS_PREFIX}{local_now().date().isoformat()}"
+def daily_ai_calls_key(day: str | None = None) -> str:
+    return f"{DAILY_AI_CALLS_PREFIX}{day or local_now().date().isoformat()}"
 
 
 def _env_int(name: str, default: int) -> int:
@@ -94,14 +95,14 @@ def _env_int(name: str, default: int) -> int:
 
 
 def daily_cap(conn: Any) -> int:
-    """Runtime setting ``daily_ai_call_cap`` wins; else env; else 4096."""
+    """Existing stricter operator limits survive; historical larger values are bounded."""
     raw = wanderer_runtime_setting_get(conn, SETTING_DAILY_AI_CALL_CAP)
     if raw not in (None, ""):
         try:
-            return max(0, int(float(raw)))
-        except ValueError:
+            return max(0, min(DEFAULT_DAILY_AI_CALL_CAP, int(float(raw))))
+        except (ValueError, OverflowError):
             pass
-    return max(0, _env_int("WANDERER_DAILY_AI_CALL_CAP", DEFAULT_DAILY_AI_CALL_CAP))
+    return max(0, min(DEFAULT_DAILY_AI_CALL_CAP, _env_int("WANDERER_DAILY_AI_CALL_CAP", DEFAULT_DAILY_AI_CALL_CAP)))
 
 
 def counter_value(conn: Any, key: str) -> int:
@@ -129,17 +130,54 @@ def increment_counter(conn: Any, key: str, amount: int = 1) -> int:
     return counter_value(conn, key)
 
 
-def daily_ai_calls(conn: Any) -> int:
-    return counter_value(conn, daily_ai_calls_key())
+def reflection_dispatch_count(conn: Any, day: str, actor_id: int | None = None) -> int:
+    """Use dispatch time, including pre-upgrade calls from an earlier reflection session."""
+    end = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+    where = "dispatched_at>=? AND dispatched_at<?"
+    args = (day, end)
+    if actor_id is not None:
+        where += " AND wanderer_id=?"
+        args += (actor_id,)
+    return int(conn.execute(f"SELECT COUNT(*) AS n FROM wanderer_reflection_dispatches WHERE {where}", args).fetchone()["n"])
 
 
-def increment_daily_ai_calls(conn: Any, amount: int = 1) -> int:
-    """Atomically add ``amount`` to today's counter and return the new total."""
-    return increment_counter(conn, daily_ai_calls_key(), amount)
+def daily_ai_calls(conn: Any, day: str | None = None) -> int:
+    day = day or local_now().date().isoformat()
+    return counter_value(conn, daily_ai_calls_key(day)) + reflection_dispatch_count(conn, day)
 
 
-def dao_mention_calls_key() -> str:
-    return f"{DAO_MENTION_CALLS_PREFIX}{local_now().date().isoformat()}"
+def increment_daily_ai_calls(conn: Any, amount: int = 1, *, day: str | None = None) -> int:
+    """Serialize dispatches on one platform-day row, then include committed reflection receipts."""
+    day = day or local_now().date().isoformat()
+    ordinary = increment_counter(conn, daily_ai_calls_key(day), amount)
+    return ordinary + reflection_dispatch_count(conn, day)
+
+
+def ordinary_dispatch_limit(conn: Any, cap: int, day: str) -> int:
+    """Protect adjudication and the first nightly thought, within one platform budget."""
+    judgement = min(6, cap // 20)
+    if 0 < cap < 40 and conn.execute(
+        "SELECT 1 FROM wanderer_agents WHERE status='active' AND promotion_requested=1 LIMIT 1"
+    ).fetchone():
+        judgement = max(judgement, min(2, cap))
+    available = cap - judgement
+    if cap < 20 or not reflection_enabled(conn):
+        return available
+    from .wanderer_runtime_service import runtime_enabled
+    if not runtime_enabled(conn):
+        return available
+    end = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+    row = conn.execute(
+        "SELECT (SELECT COUNT(*) FROM wanderer_agents WHERE status='active') AS active_count, "
+        "(SELECT COUNT(DISTINCT wanderer_id) FROM wanderer_reflection_dispatches "
+        "WHERE dispatched_at>=? AND dispatched_at<?) AS served", (day, end)
+    ).fetchone()
+    held = min(cap // 6, int(row['active_count'])) - int(row['served'])
+    return available - max(0, held)
+
+
+def dao_mention_calls_key(day: str | None = None) -> str:
+    return f"{DAO_MENTION_CALLS_PREFIX}{day or local_now().date().isoformat()}"
 
 
 def dao_mention_daily_cap(conn: Any) -> int:

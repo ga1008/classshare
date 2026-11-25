@@ -31,7 +31,7 @@ class ReflectionScheduleTests(WandererDbTestCase):
                          'lifespan_weeks=20,life_penalty_weeks=0', (local_iso(),))
             for key, value in {'autonomous_v2_enabled': '1', 'enabled': '1', 'reflection_enabled': '1',
                                'reflection_batch_size': '2', 'reflection_hour': '23:30',
-                               'daily_ai_call_cap': '0', daily_ai_calls_key(): '0'}.items():
+                               'daily_ai_call_cap': '100', daily_ai_calls_key(): '0'}.items():
                 wanderer_runtime_setting_set(conn, key, value)
             conn.commit()
 

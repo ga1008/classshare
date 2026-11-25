@@ -25,6 +25,8 @@ sms._enforce_rate_limit=lambda *args: None
 from classroom_app.time_utils import local_iso
 with get_db_connection() as c:
  seed_wanderers(c);wanderer_runtime_setting_set(c,'enabled','0')
+ # The synthetic history exercises pagination and requires 20 deliveries per actor today.
+ c.execute("UPDATE wanderer_agents SET tier=7 WHERE slug IN ('linwanzhou','atai')")
  a=load_wanderer_by_slug(c,'linwanzhou');b=load_wanderer_by_slug(c,'atai')
  now=local_iso();wid=a['id'];bid=b['id'];ia=f"student:{a['student_id']}";ib=f"student:{b['student_id']}"
  for idx in range(37):

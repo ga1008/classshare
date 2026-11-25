@@ -19,7 +19,7 @@ class WandererPlatformAITest(WandererDbTestCase):
         super().setUp()
         with self.connect() as conn:
             row = dict(conn.execute("SELECT * FROM wanderer_agents ORDER BY id LIMIT 1").fetchone())
-            conn.execute("UPDATE wanderer_agents SET status='active',daily_wake_limit=100 WHERE id=?", (row["id"],))
+            conn.execute("UPDATE wanderer_agents SET status='active',tier=2,daily_wake_limit=100 WHERE id=?", (row["id"],))
             conn.commit()
         self.source = attribution.AIAttribution(row["id"], row["student_id"], row["life_epoch"], row["authority_version"], str(uuid.uuid4()), self.connect)
         self.sent = []
@@ -51,6 +51,7 @@ class WandererPlatformAITest(WandererDbTestCase):
                     attribution._attribution.reset(marker)
         asyncio.run(run())
         self.assertEqual(len(self.sent), 4)
+        self.assertTrue(all(request.headers['x-lanshare-ai-single-attempt'] == '1' for request in self.sent))
         self.assertEqual(self.used() - before, 4)
 
     def test_restored_job_retry_requires_another_credit_but_reservation_retry_does_not(self):
@@ -73,6 +74,49 @@ class WandererPlatformAITest(WandererDbTestCase):
                     await self.request(client)
         asyncio.run(run())
         self.assertEqual(len(self.sent), 1)
+
+    def test_last_layer_cannot_dispatch_an_attributed_tool_model(self):
+        from classroom_app.services.wanderer_runtime_service import enqueue_wake_event, _claim
+        with self.connect() as conn:
+            event = enqueue_wake_event(conn, self.source.wanderer_id, "test", "fourth-layer", depth=3)
+            run = _claim(conn, event['event_id'])
+            conn.execute("INSERT INTO wanderer_commands(operation_id,turn_id,command_id,capability,args_hash,command_json,"
+                         "state,created_at,updated_at) VALUES(?,?,'lookup','platform.lookup','x','{}','running','t','t')",
+                         (self.source.operation_id, run['turn_id']))
+            conn.commit()
+        before = self.used()
+        with self.assertRaises(AIUsageBudgetError):
+            attribution.reserve_call(self.source, 'forbidden-fifth-layer')
+        self.assertEqual(self.used(), before)
+
+    def test_native_worker_reserves_first_attempt_and_blocks_recovery_even_after_rejection(self):
+        from classroom_app.services.ai_model_policy import AIExecutionBudget, AIExecutionBudgetExceeded
+        job = {'id': 779}
+        marker = attribution._attribution.set(self.source)
+        try:
+            with self.connect() as conn:
+                attribution.persist_job_attribution(conn, job['id'])
+                conn.commit()
+        finally:
+            attribution._attribution.reset(marker)
+        before = self.used()
+        budget = AIExecutionBudget()
+        attribution.meter_native_job(budget, job, self.connect)
+        attempt = asyncio.run(budget.begin({'provider': 'synthetic'}))
+        asyncio.run(budget.finish(attempt, billable=False, error="synthetic rejection"))
+        resumed = AIExecutionBudget(budget.snapshot())
+        attribution.meter_native_job(resumed, job, self.connect)
+        with self.assertRaises(AIExecutionBudgetExceeded):
+            asyncio.run(resumed.begin({'provider': 'other'}))
+        self.assertEqual(self.used() - before, 1)
+
+    def test_dao_and_wanderer_decisions_get_single_attempt_header(self):
+        async def run():
+            async with AIBudgetAwareClient(base_url="https://synthetic.invalid", transport=httpx.MockTransport(self.transport)) as client:
+                for kind in ('wanderer_turn', 'wanderer_dao', 'human_request'):
+                    await gateway.ai_gateway_post(client, '/api/ai/chat', task_type=kind, json_payload={})
+        asyncio.run(run())
+        self.assertEqual([req.headers.get('x-lanshare-ai-single-attempt') for req in self.sent], ['1','1',None])
 
     def test_durable_business_write_requires_original_live_epoch_but_no_old_turn(self):
         from dataclasses import replace
@@ -136,6 +180,7 @@ class WandererPlatformAITest(WandererDbTestCase):
         asyncio.run(run())
         self.assertEqual(self.used() - before, 1)
         self.assertEqual(len(self.sent), 1)
+        self.assertEqual(self.sent[0].headers['x-lanshare-ai-single-attempt'], '1')
 
     def test_durable_job_restores_billing_after_context_loss_and_epoch_change_denies_dispatch(self):
         marker = attribution._attribution.set(self.source)

@@ -25,7 +25,7 @@ const recordNames = {
     relationship_versions: '好感版本', group_observations: '群聊已读游标', runtime_leases: '思考执行租约',
     commands: '指令执行账本', bonds: '道侣关系档案', bond_requests: '结契与均寿申请',
     penalty_roots: '原始处罚', penalty_reversals: '处罚撤销', dao_history_blocks: '天道全历史审阅块',
-    reflection_sessions: '免费自省会话', reflection_dispatches: '自省请求计次', affinity_ratings: '每日好感评分',
+    reflection_sessions: '每日自省会话', reflection_dispatches: '自省请求计次', affinity_ratings: '每日好感评分',
     affinity_rating_operations: '评分提交回执', message_deliveries: '消息送达回执', memory_corrections: '管理员记忆修订',
 };
 
@@ -175,7 +175,7 @@ export function createWandererWorkspace(root, { getId }) {
             }));
         }
         if (value.reflection && !value.status?.daily_reflection) {
-            if (current === 'relations') nodes.push(node('div', { class: 'ww-meta' }, [badge(`今日自省免费剩余 ${value.reflection.free_remaining ?? 3} / ${value.reflection.free_limit ?? 3}`, 'success'), badge(`已评分 ${value.reflection.rated_count ?? 0} / ${value.reflection.friend_count ?? 0} 位好友`)]));
+            if (current === 'relations') nodes.push(node('div', { class: 'ww-meta' }, [badge(`本场自省剩余 ${value.reflection.free_remaining ?? 3} / ${value.reflection.free_limit ?? 3}`, 'success'), badge(`已评分 ${value.reflection.rated_count ?? 0} / ${value.reflection.friend_count ?? 0} 位好友`)]));
             else nodes.push(reflectionView(value.reflection));
         }
         if (current === 'relations' && ['outgoing', 'incoming'].includes(filter.value)) nodes.unshift(node('p', { class: 'ww-muted', text: filter.value === 'incoming' ? '只展示其他散修对本人的实际评分；真人没有虚构的反向好感值。' : '按当前好感值从高到低排序。每日自省五档评分，由系统统一计算；一般不增不减。' }));

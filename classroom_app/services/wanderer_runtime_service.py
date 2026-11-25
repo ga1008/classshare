@@ -23,7 +23,9 @@ from .wanderer_autobiography_service import decode, recall_block, scope_for_cont
 PROMPT_VERSION = "autonomous-world-v4"
 LEASE_SECONDS = 180
 MAX_COMMANDS = 12
-MAX_CHAIN_DEPTH = 16
+# The root, all callback branches and retries share these paid decision slots.
+MAX_CHAIN_TURNS = 4
+MAX_INLINE_CALLBACKS = MAX_CHAIN_TURNS - 1
 _SLOTS: asyncio.Semaphore | None = None
 _SLOT_LOOP: Any = None
 
@@ -92,6 +94,28 @@ def enqueue_wake_event(conn: Any, wanderer_id: int, source: str, event_key: str,
     return dict(row)
 
 
+def _dispatched_turns(conn, wanderer_id, chain_id):
+    return int(conn.execute(
+        "SELECT COUNT(*) FROM wanderer_turns WHERE wanderer_id=? AND chain_id=? AND dispatched_at IS NOT NULL",
+        (wanderer_id, chain_id)).fetchone()[0])
+
+
+def _enqueue_continuation(conn, run, source, key, context, *, run_at=None):
+    wid = int(run["wanderer"]["id"])
+    depth = int(run["depth"]) + 1
+    if depth >= MAX_CHAIN_TURNS:
+        return None
+    # Pending siblings (e.g. several context switches) share the same four
+    # slots. The dispatch check also covers pre-upgrade events and admin retry.
+    pending = conn.execute(
+        "SELECT COUNT(*) FROM wanderer_wake_events WHERE wanderer_id=? AND chain_id=? AND state IN ('pending','deferred')",
+        (wid, run["chain_id"])).fetchone()[0]
+    if _dispatched_turns(conn, wid, run["chain_id"]) + pending >= MAX_CHAIN_TURNS:
+        return None
+    return enqueue_wake_event(conn, wid, source, key, context, chain_id=run["chain_id"],
+                              parent_turn_id=run["turn_id"], depth=depth, run_at=run_at)
+
+
 def retry_failed_event(conn, wanderer_id, event_id):
     """Request a new metered decision, never replay an uncertain old mutation."""
     fresh = _fresh(conn,int(wanderer_id))
@@ -102,7 +126,9 @@ def retry_failed_event(conn, wanderer_id, event_id):
     from .wanderer_daily_reflection_service import session_for_run
     session = session_for_run(conn, {'wanderer':fresh, **dict(row)})
     if session and int(session['ai_calls']) >= 3:
-        raise ValueError('本日自省的三次免费请求已用完，重试不能增加次数')
+        raise ValueError('本日自省的三次自省请求已用完，重试不能增加次数')
+    if int(row['depth']) >= MAX_CHAIN_TURNS or _dispatched_turns(conn, wanderer_id, row['chain_id']) >= MAX_CHAIN_TURNS:
+        raise ValueError(f'本调用链已达 {MAX_CHAIN_TURNS} 轮上限')
     if row['state']=='pending':
         return {'event_id':row['event_id'],'state':'pending','replayed':True}
     if row['state'] not in {'failed','blocked','deferred'}:
@@ -111,7 +137,7 @@ def retry_failed_event(conn, wanderer_id, event_id):
                                                                 (row['turn_id'],)).fetchall()]
     context=decode(row['context_json'],{})
     context['recovery']={'previous_turn':row['turn_id'],'receipts':[_callback_receipt(r) for r in receipts],
-        'notice':('这是一次计入每日三次上限的免费自省重试。' if session else '这是一次新的付费思考。')
+        'notice':('这是一次计入每日自省和模型预算的重试。' if session else '这是一次新的付费思考。')
                  + '成功动作已经完成；uncertain动作必须先读取业务状态核对，不能盲目重复。'}
     changed=conn.execute("UPDATE wanderer_wake_events SET state='pending',turn_id=NULL,run_at=?,context_json=?,updated_at=? "
                          "WHERE event_id=? AND state=?",(local_iso(),packed(context),local_iso(),row['event_id'],row['state']))
@@ -183,12 +209,28 @@ def _claim(conn: Any, event_id: str) -> dict | None:
     if lease is None:
         return None
     token = int(lease["fencing_token"])
+    # This owner's lease serializes sibling claims across workers. Resuming a
+    # previously accepted output only settles its commands and needs no new AI.
+    orphaned_scene = False
+    if not old_turn and (event['parent_turn_id'] or event['source'] == 'context'):
+        # Before the hard cap, an ordinary scene switch was recorded as a new
+        # root. Its queued descendants cannot establish an intact bounded chain.
+        orphaned_scene = bool(conn.execute(
+            "SELECT 1 FROM wanderer_wake_events WHERE event_id=? AND source='context' AND parent_turn_id IS NULL",
+            (event['chain_id'],)).fetchone())
+    used = _dispatched_turns(conn, w["id"], event["chain_id"])
+    if not old_turn and (orphaned_scene or int(event["depth"]) >= MAX_CHAIN_TURNS or used >= MAX_CHAIN_TURNS):
+        conn.execute("UPDATE wanderer_wake_events SET state='chain_limit',updated_at=? WHERE event_id=?",
+                     (stamp, event_id))
+        conn.execute("UPDATE wanderer_runtime_leases SET lease_until=? WHERE wanderer_id=? AND turn_id=? AND fencing_token=?",
+                     (stamp, w["id"], tid, token))
+        return None
     if old_turn:
         conn.execute("UPDATE wanderer_turns SET state='executing',fencing_token=?,lease_until=?,updated_at=? WHERE turn_id=?",
                      (token,until,stamp,tid))
         return {**dict(event), 'turn_id':tid,'fencing_token':token,'wanderer':w,'scope':scope,'context':context,
                 'life_epoch':int(old_turn['life_epoch']),'authority_version':int(old_turn['authority_version']),
-                'resume_output':old_turn['output_json']}
+                'resume_output':old_turn['output_json'], 'chain_turn_number':used}
     conn.execute("INSERT INTO wanderer_turns(turn_id,wanderer_id,event_id,chain_id,parent_turn_id,depth,"
                  "life_epoch,authority_version,fencing_token,state,lease_until,prompt_version,scope_json,"
                  "budget_operation_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?)",
@@ -200,6 +242,7 @@ def _claim(conn: Any, event_id: str) -> dict | None:
     if changed.rowcount != 1:
         raise RuntimeError("唤醒事件已被其他执行器领取")
     return {**dict(event), "turn_id": tid, "fencing_token": token, "wanderer": w, "scope": scope,
+            "chain_turn_number": used + 1,
             "context": context, "life_epoch": int(w.get("life_epoch") or 1),
             "authority_version": int(w.get("authority_version") or 1)}
 
@@ -652,7 +695,7 @@ def build_runtime_prompt(conn: Any, run: dict) -> str:
     if reflection:
         context['daily_reflection'] = reflection_snapshot(conn, w, date=reflection['reflection_date'])
         context['daily_reflection']['instructions'] = (
-            '这是每日自省，最多三次实际AI请求，不扣个人或平台普通唤醒额度；包括协议纠正和场景切换。'
+            '这是每日自省，最多三次实际AI请求，不扣普通共享唤醒额度，计入本人境界与平台模型请求上限；包括协议纠正和场景切换。'
             '是否使用剩余回调由你决定；其他业务资源仍按原权限和额度执行。'
             '对全部当前好友用relationship.rate给五档感受；可通过reflection.friends分页读取完整未评分名单。'
             '一般不增不减；不能直接设绝对好感值。不要漏评后声称全部完成。')
@@ -694,6 +737,17 @@ def build_runtime_prompt(conn: Any, run: dict) -> str:
         tuning = tuning_for_today(w)
         context['evidence'] = inherited_evidence(context.get('evidence', []), state_scope.get('evidence', []))
     status = personal_snapshot(conn, w)
+    if run.get("source") in {"timer", "reflection"} and tier < 10:
+        from .wanderer_life_service import promotion_requirements
+        progress = promotion_requirements(conn, w)
+        progress_view = {key: progress[key] for key in ("knowledge", "knowledge_target", "cultivation",
+                         "cultivation_target", "interactions", "interactions_needed", "cooldown_days_left", "ready")}
+        progress_view["pending"] = bool(w.get("promotion_requested"))
+        if progress["ready"] and not progress_view["pending"]:
+            progress_view["next"] = "已达到下一境要求，可用 life.promotion 并附 reason 申请天道审核。"
+        status["promotion"] = progress_view
+    status['chain_calls_left_after_this_turn'] = max(
+        0, MAX_CHAIN_TURNS - max(int(run.get('chain_turn_number', 1)), int(run.get('depth', 0)) + 1))
     if status_mood:
         status['mood'] = status_mood
         if tuning.get('focus') or tuning.get('intentions'):
@@ -706,7 +760,7 @@ def build_runtime_prompt(conn: Any, run: dict) -> str:
         "你按自己的性格、记忆和当下判断行动，不扮演助手，也不表演标准答案。"
         "你只把实际看到的内容和后端确认的结果当作经历，不虚构线下生活。"
         "服务端执行你的结构化指令并反馈结果；权限、成员资格、他人意愿和资源上限由后端核验。"
-        "普通思考及回调消耗 AI 额度；系统登记的每日自省另有最多三次免费思考，剩余次数由状态给出。"
+        "普通思考及回调消耗 AI 额度；系统登记的每日自省最多三次，免扣共享额度，实际请求仍计入个人与平台上限。"
         "额度耗尽不取消已被接受且仍合法的动作。"
     )
     contract = {"protocol": "wanderer.v1", "commands": [
@@ -733,6 +787,7 @@ def build_runtime_prompt(conn: Any, run: dict) -> str:
         relationships,
         wake_block(run, context, extras=extras),
         f"【输出合同】只返回JSON，每批最多{MAX_COMMANDS}条；依赖引用前面的id。"
+        f"同一活动含首次决策、回调、切换场景和重试最多{MAX_CHAIN_TURNS}轮，剩余为零时请在本轮完成。"
         "callback.requested决定是否在执行后再次唤醒；collect仅允许只读能力。"
         "参数可用{\"$ref\":\"前置id.result.字段\"}绑定已声明depends_on的回执，数组元素使用数字路径。"
         "无需行动可返回空commands与requested=false。命令参数不包含内部运行令牌。\n" + packed(contract)
@@ -951,13 +1006,18 @@ def _local_command(conn: Any, run: dict, command: dict, operation_id: str) -> tu
         from .wanderer_daily_reflection_service import session_for_run
         session = session_for_run(conn, run)
         if session and int(session['ai_calls']) >= 3:
-            raise ValueError('本次每日自省三次思考已用完，场景切换不能增加免费次数')
-        event = enqueue_wake_event(conn, int(w["id"]), "context", operation_id,
-            {"scope": scope, "reason": "上轮请求切换场景；请在当前权限与记忆内重新决定行动。"},
-            **({'chain_id':run['chain_id'],'parent_turn_id':run['turn_id'],'depth':int(run['depth'])+1} if session else {}))
+            raise ValueError('本次每日自省三次思考已用完，场景切换不能增加次数')
+        event = _enqueue_continuation(conn, run, "context", operation_id,
+            {"scope": scope, "reason": "上轮请求切换场景；请在当前权限与记忆内重新决定行动。"})
+        if not event:
+            raise ValueError(f'本次调用链最多 {MAX_CHAIN_TURNS} 轮，无法继续切换场景')
         return True, {"event_id": event["event_id"], "scope": scope}
     if key.startswith(("bond.", "life.", "dao.")):
         from .wanderer_bond_service import execute_command
+        if key in {"bond.propose", "bond.equalize", "bond.consent", "bond.end", "life.gift", "life.resurrect"}:
+            from .wanderer_resource_service import consume
+            if not consume(conn, int(w["id"]), "active_interactions", 1, f"world-activity:{operation_id}")["ok"]:
+                raise ValueError("今日散修活动次数已用完")
         return True, execute_command(conn, w, command, operation_id=operation_id, turn_id=run["turn_id"])
     return False, None
 
@@ -1130,7 +1190,13 @@ def _finish_in_connection(conn, run: dict, state: str, *, error: str = "") -> bo
                  (state, error[:500], stamp, stamp, run["turn_id"],run['fencing_token']))
     if changed.rowcount!=1:
         return False
-    event_state = 'deferred' if state == 'capped' else 'completed' if state in {'completed','reflection_limit'} else 'failed'
+    event_state = 'deferred' if state == 'capped' else 'completed' if state in {'completed','reflection_limit','timer_rest'} else 'failed'
+    # Ordinary timers describe a moment that has already passed. A fresh timer
+    # will arrive naturally; durable human messages and actionable callbacks wait.
+    if state == 'capped' and run['source'] == 'timer':
+        event_state = 'completed'
+    if state == 'reflection_capped':
+        event_state = 'blocked'
     conn.execute("UPDATE wanderer_wake_events SET state=?,updated_at=? WHERE event_id=? AND turn_id=?",
                  (event_state, stamp, run["event_id"], run["turn_id"]))
     conn.execute("UPDATE wanderer_runtime_leases SET lease_until=? WHERE wanderer_id=? AND turn_id=? AND fencing_token=?",
@@ -1170,8 +1236,7 @@ def _model_failure(factory, run: dict, result: dict) -> dict:
             if len(packed(context))>120_000:
                 context={'scope':run['scope'],'evidence':_evidence(run),'model_retry':context['model_retry'],
                     'original_event':{'capability':'runtime.context','args':{'event_id':run['event_id']}}}
-            next_event = enqueue_wake_event(conn,int(run['wanderer']['id']),'model_retry',run['chain_id'],context,
-                chain_id=run['chain_id'],parent_turn_id=run['turn_id'],depth=0,
+            next_event = _enqueue_continuation(conn,run,'model_retry',run['chain_id'],context,
                 run_at=(local_now()+timedelta(seconds=60)).isoformat(timespec='seconds'))
         sync_session(conn,run)
         conn.commit()
@@ -1187,14 +1252,13 @@ def _enqueue_protocol_repair(conn, run: dict, reason: str, diagnostic: dict, *, 
     context = {**run['context'], 'scope':run['scope'], 'protocol_repair':{
         'reason':reason, 'response_shape':diagnostic, 'original_source':run['source'],
         'notice':'上次回答未通过完整协议校验，未接受任何指令。这是本链仅有一次的协议纠正；'
-                 + ('计入每日自省三次免费请求。' if session else '消耗一次普通唤醒额度。')
+                 + ('计入自省三次上限和模型日预算。' if session else '消耗一次普通唤醒额度。')
                  + '请根据原事件重新给出完整JSON。'}}
     if len(packed(context)) > 120_000:
         context = {'scope':run['scope'], 'evidence':_evidence(run),
                    'protocol_repair':context['protocol_repair'],
                    'original_event':{'capability':'runtime.context','args':{'event_id':run['event_id']}}}
-    return enqueue_wake_event(conn, int(run['wanderer']['id']), 'protocol_repair', run['chain_id'], context,
-        chain_id=run['chain_id'], parent_turn_id=run['turn_id'], depth=0 if yielding else int(run['depth'])+1,
+    return _enqueue_continuation(conn, run, 'protocol_repair', run['chain_id'], context,
         run_at=(local_now()+timedelta(seconds=30)).isoformat(timespec='seconds') if yielding else None)
 
 
@@ -1206,7 +1270,7 @@ def _protocol_failure(factory, run: dict, raw: str, error: ValueError, ai_calls:
     """
     diagnostic = decision_shape(raw)
     next_event = None
-    yielding = int(run['depth']) >= MAX_CHAIN_DEPTH
+    yielding = int(run['depth']) >= MAX_INLINE_CALLBACKS
     with connection(factory) as conn:
         assert_turn_authority(conn, **_authority(run))
         previous = conn.execute('SELECT prompt_json FROM wanderer_turns WHERE turn_id=?', (run['turn_id'],)).fetchone()
@@ -1251,11 +1315,13 @@ def recover_protocol_failures(conn, *, limit=12) -> int:
         "AND t.prompt_version IN ('autonomous-world-v2.1','autonomous-world-v2.2') "
         "AND t.dispatched_at IS NOT NULL AND t.dispatched_at<>'' AND t.output_json='{}' "
         f"AND t.error IN ({errors}) AND e.source IN ({sources}) "
+        "AND e.depth+1<? AND (SELECT COUNT(*) FROM wanderer_turns d WHERE d.wanderer_id=e.wanderer_id "
+        "AND d.chain_id=e.chain_id AND d.dispatched_at IS NOT NULL)<? "
         "AND NOT EXISTS(SELECT 1 FROM wanderer_commands c WHERE c.turn_id=t.turn_id) "
         "AND NOT EXISTS(SELECT 1 FROM wanderer_wake_events r WHERE r.wanderer_id=e.wanderer_id "
         "AND r.chain_id=e.chain_id AND r.source='protocol_repair') "
         "ORDER BY e.updated_at,e.event_id LIMIT ?" + (' FOR UPDATE OF e SKIP LOCKED' if postgres else ''),
-        (*PROTOCOL_PARSE_ERRORS,*REPAIRABLE_EVENT_SOURCES,max(1,min(12,int(limit))))).fetchall()
+        (*PROTOCOL_PARSE_ERRORS,*REPAIRABLE_EVENT_SOURCES,MAX_CHAIN_TURNS,MAX_CHAIN_TURNS,max(1,min(12,int(limit))))).fetchall()
     recovered = 0
     for row in rows:
         run = dict(row)
@@ -1305,7 +1371,7 @@ async def _process(factory, event_id: str, *, ai_caller=None) -> dict:
                 rows = conn.execute('SELECT receipt_json FROM wanderer_commands WHERE turn_id=? ORDER BY created_at,command_id',
                                      (event['turn_id'],)).fetchall()
                 return {'status':'ok','ai_calls':0,'receipts':[decode(r['receipt_json'],{}) for r in rows], 'replayed':True}
-            if event and event['state'] in {'failed','blocked','deferred'}:
+            if event and event['state'] in {'failed','blocked','deferred','chain_limit'}:
                 from .wanderer_daily_reflection_service import sync_event_session
                 sync_event_session(conn,event)
                 conn.commit()
@@ -1378,7 +1444,8 @@ async def _process(factory, event_id: str, *, ai_caller=None) -> dict:
                 conn.commit()
             return {'status':'submitted','ai_calls':calls,'turn_id':run['turn_id'],'receipts':receipts}
         collected = []
-        if decision["callback"]["requested"]:
+        chain_exhausted = (run['chain_turn_number'] >= MAX_CHAIN_TURNS or int(run['depth']) + 1 >= MAX_CHAIN_TURNS)
+        if decision["callback"]["requested"] and not chain_exhausted:
             for i, item in enumerate(decision["callback"]["collect"]):
                 receipt=await execute_command(factory, run, {**item, 'args':_resolve_results(item.get('args',{}),result_values), "id": f"collect_{i}"}, read_only=True)
                 collected.append(receipt)
@@ -1388,8 +1455,8 @@ async def _process(factory, event_id: str, *, ai_caller=None) -> dict:
         with connection(factory) as conn:
             reflection = session_for_run(conn, run)
         reflection_limit = bool(reflection and int(reflection['ai_calls']) >= 3)
-        yielding = bool(decision['callback']['requested'] and int(run['depth'])>=MAX_CHAIN_DEPTH)
-        if decision["callback"]["requested"] and not reflection_limit:
+        yielding = bool(decision['callback']['requested'] and int(run['depth']) >= MAX_INLINE_CALLBACKS)
+        if decision["callback"]["requested"] and not reflection_limit and not chain_exhausted:
             evidence = list(_evidence(run))
             callback_scope = run['scope']
             for receipt in receipts + collected:
@@ -1408,13 +1475,12 @@ async def _process(factory, event_id: str, *, ai_caller=None) -> dict:
                 lease=conn.execute('SELECT * FROM wanderer_runtime_leases WHERE wanderer_id=?',(int(run['wanderer']['id']),)).fetchone()
                 if not lease or lease['turn_id']!=run['turn_id'] or int(lease['fencing_token'])!=int(run['fencing_token']):
                     raise PermissionError('租约已交给新的执行器，旧运行不能追加回调')
-                next_event = enqueue_wake_event(conn, int(run["wanderer"]["id"]), "callback", run["turn_id"],
+                next_event = _enqueue_continuation(conn, run, "callback", run["turn_id"],
                     {"scope": callback_scope, "receipts": [_callback_receipt(r) for r in receipts],
                      "collected": [_callback_receipt(r) for r in collected],
                      "evidence": list({packed(item):item for item in evidence}.values()),
                      "trigger":trigger,"trigger_event_id":trigger_event_id,
                      "previous_event": {"source": run["source"], "event_key": run["event_key"]}},
-                    chain_id=run["chain_id"], parent_turn_id=run["turn_id"], depth=0 if yielding else int(run["depth"])+1,
                     run_at=(local_now()+timedelta(seconds=30)).isoformat(timespec='seconds') if yielding else None)
                 conn.commit()
         _finish(factory, run, "completed")
@@ -1427,7 +1493,8 @@ async def _process(factory, event_id: str, *, ai_caller=None) -> dict:
         return {"status": "ok", "turn_id": run["turn_id"], "ai_calls": calls, "receipts": receipts,
                 "callback_event_id": next_event["event_id"] if next_event else None,
                 "reflection_callback_limit_reached": bool(reflection_limit and decision['callback']['requested']),
-                "callback_deferred": yielding}
+                "chain_limit_reached": bool(decision['callback']['requested'] and not reflection_limit and not next_event),
+                "callback_deferred": bool(yielding and next_event)}
     except Exception as exc:
         _finish(factory, run, "failed", error=str(exc))
         return {"status": "failed", "turn_id": run["turn_id"], "ai_calls": calls,
@@ -1469,11 +1536,11 @@ async def _await_owned_turn(work: asyncio.Task) -> dict:
 
 
 async def wake_wanderer(conn_factory, wanderer_id: int, *, source: str, event_key: str,
-                        context: dict | None = None, ai_caller=None, force: bool = False) -> dict:
+                        context: dict | None = None, ai_caller=None, force: bool = False, initial_depth: int = 0) -> dict:
     global _SLOTS, _SLOT_LOOP
     from .wanderer_settings_service import is_wanderer_runtime_enabled
     with connection(conn_factory) as conn:
-        event = enqueue_wake_event(conn, wanderer_id, source, event_key, context)
+        event = enqueue_wake_event(conn, wanderer_id, source, event_key, context, depth=initial_depth)
         conn.commit()
         if not force and (not runtime_enabled(conn) or not is_wanderer_runtime_enabled(conn)):
             return {"status": "disabled", "ai_calls": 0, "receipts": []}
@@ -1483,7 +1550,7 @@ async def wake_wanderer(conn_factory, wanderer_id: int, *, source: str, event_ke
     total, rounds, last = 0, [], None
     async with _SLOTS:
         eid = event["event_id"]
-        for _ in range(MAX_CHAIN_DEPTH+1):
+        for _ in range(MAX_INLINE_CALLBACKS + 1):
             work = asyncio.create_task(_process(conn_factory, eid, ai_caller=ai_caller))
             last = await _await_owned_turn(work)
             total += int(last.get("ai_calls") or 0)
@@ -1501,10 +1568,13 @@ async def drain_wake_events(conn_factory=None, *, ai_caller=None, limit: int = 2
         from .wanderer_group_runtime_service import recover_group_events
         recover_group_events(conn, limit=100)
         protocol_repairs = recover_protocol_failures(conn)
-        # A capped event is retained until the following local budget day.
+        # A capped durable event is retained until the following local budget day.
+        # Consume obsolete timer roots without waking them en masse after midnight.
         today = local_iso()[:10]
+        conn.execute("UPDATE wanderer_wake_events SET state='completed',updated_at=? "
+                     "WHERE source='timer' AND state IN ('pending','deferred') AND created_at<?", (local_iso(), today))
         conn.execute("UPDATE wanderer_wake_events SET state='pending',turn_id=NULL WHERE state='deferred' "
-                     "AND substr(updated_at,1,10)<?", (today,))
+                     "AND updated_at<?", (today,))
         rows = [dict(row) for row in conn.execute("SELECT e.* FROM wanderer_wake_events e LEFT JOIN wanderer_runtime_leases l "
                   "ON l.wanderer_id=e.wanderer_id WHERE (e.state='pending' OR (e.state='processing' AND l.lease_until<=?)) "
                   "AND e.run_at<=? ORDER BY e.run_at,e.event_id LIMIT ?", (local_iso(),local_iso(), max(1,min(100,limit)))).fetchall()]

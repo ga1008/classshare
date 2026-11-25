@@ -44,6 +44,7 @@ from .wanderer_identity_service import (
 )
 from .wanderer_knowledge_service import forget_all, knowledge_summary
 from .wanderer_settings_service import (
+    DEFAULT_DAILY_AI_CALL_CAP,
     SETTING_DAILY_AI_CALL_CAP,
     SETTING_ENABLED,
     GENESIS_INT_SETTINGS,
@@ -107,7 +108,7 @@ SETTING_LAST_TICK_AT = "last_tick_at"
 SETTING_LAST_DAO_REVIEW_AT = "last_dao_review_at"
 DEFAULT_TICK_BATCH_SIZE = 6
 DEFAULT_DAO_REVIEW_HOUR = "03:30"
-DAILY_AI_CALL_CAP_RANGE = (0, 5000)
+DAILY_AI_CALL_CAP_RANGE = (0, DEFAULT_DAILY_AI_CALL_CAP)
 TICK_BATCH_SIZE_RANGE = (1, 20)
 REFLECTION_BATCH_RANGE = (1, 20)
 PROMPT_CHAR_BUDGET_RANGE = (30_000, 800_000)
@@ -407,7 +408,8 @@ def _latest_actions(conn: Any) -> dict[int, dict[str, Any]]:
     return {item["wanderer_id"]: item for item in latest}
 
 
-def _card(wanderer: dict[str, Any], today_count: int, last_action: Optional[dict[str, Any]]) -> dict[str, Any]:
+def _card(wanderer: dict[str, Any], today_count: int, last_action: Optional[dict[str, Any]], model_calls: int) -> dict[str, Any]:
+    from .wanderer_life_core import daily_activity_limit
     from .wanderer_identity_service import current_life
 
     status = str(wanderer.get("status") or STATUS_ACTIVE)
@@ -425,6 +427,8 @@ def _card(wanderer: dict[str, Any], today_count: int, last_action: Optional[dict
         "status": status,
         "status_label": STATUS_LABELS.get(status, status),
         "today_actions": today_count,
+        "model_calls_today": model_calls,
+        "model_call_limit": daily_activity_limit(wanderer.get("tier")),
         "daily_action_budget": int(wanderer.get("daily_action_budget") or 0),
         "warnings_count": int(wanderer.get("warnings_count") or 0),
         "promotion_requested": bool(wanderer.get("promotion_requested")),
@@ -449,7 +453,10 @@ def list_wanderer_cards(conn: Any) -> list[dict[str, Any]]:
     wanderers = list_wanderers(conn)
     today = _today_action_counts(conn)
     latest = _latest_actions(conn)
-    return [_card(item, today.get(int(item["id"]), 0), latest.get(int(item["id"]))) for item in wanderers]
+    from .wanderer_resource_service import batch_actor_activity_usage
+    usage = batch_actor_activity_usage(conn, [w["id"] for w in wanderers], local_now().date().isoformat())
+    return [_card(item, today.get(item["id"], 0), latest.get(item["id"]), int(usage[item["id"]]["ai_wake"]))
+            for item in wanderers]
 
 
 def _card_for(conn: Any, wanderer_id: int) -> dict[str, Any]:
@@ -463,7 +470,9 @@ def _card_for(conn: Any, wanderer_id: int) -> dict[str, Any]:
     row = conn.execute(
         "SELECT * FROM wanderer_action_log WHERE wanderer_id = ? ORDER BY id DESC LIMIT 1", (int(wanderer_id),)
     ).fetchone()
-    return _card(wanderer, today, _serialize_action(row) if row is not None else None)
+    from .wanderer_resource_service import actor_activity_usage
+    usage = actor_activity_usage(conn, wanderer_id, local_now().date().isoformat(), ["ai_wake"])
+    return _card(wanderer, today, _serialize_action(row) if row is not None else None, int(usage["ai_wake"]))
 
 
 # ---------------------------------------------------------------------------
@@ -502,7 +511,9 @@ def _recent(conn: Any, table: str, wanderer_id: int, limit: int) -> list[Any]:
 
 
 def _profile_payload(wanderer: dict[str, Any]) -> dict[str, Any]:
+    from .wanderer_life_core import daily_activity_limit
     return {
+        "activity_limit": daily_activity_limit(wanderer.get("tier")),
         "persona_prompt": str(wanderer.get("persona_prompt") or ""),
         "public_intro": str(wanderer.get("public_intro") or ""),
         "activity_level": int(wanderer.get("activity_level") or 0),
@@ -1219,6 +1230,7 @@ def get_settings(conn: Any) -> dict[str, Any]:
         "enabled": _runtime_enabled_flag(conn),
         "env_enabled": _env_enabled(),
         "daily_ai_call_cap": daily_cap(conn),
+        "max_daily_ai_call_cap": DEFAULT_DAILY_AI_CALL_CAP,
         "tick_batch_size": max(low, min(high, batch)),
         "autonomous_v2_enabled": _flag(wanderer_runtime_setting_get(conn, "autonomous_v2_enabled", "1"), True),
         "social_message_base": _as_int(wanderer_runtime_setting_get(conn, "social_message_base", "20"), 20),

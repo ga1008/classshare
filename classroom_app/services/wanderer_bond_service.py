@@ -382,7 +382,7 @@ def execute_command(conn, wanderer, command, *, operation_id, turn_id):
     if key == "bond.end":
         return end_bond(conn, actor_id, args["peer_id"], expected_revision=args["expected_revision"], reason=args.get("reason", ""))
     from .wanderer_identity_service import load_wanderer, invalidate_wanderer_cache
-    from .wanderer_life_service import life_payload, promotion_requirements, extend_life, resurrect
+    from .wanderer_life_service import life_payload, promotion_requirements, extend_life, resurrect, submit_promotion
     fresh = load_wanderer(conn, actor_id)
     if key == "life.status":
         return {"life": life_payload(fresh), "promotion": promotion_requirements(conn, fresh),
@@ -403,9 +403,8 @@ def execute_command(conn, wanderer, command, *, operation_id, turn_id):
     note = str(args.get("reason") or "").strip()[:500]
     now = local_iso()
     if key == "life.promotion":
-        if fresh.get("promotion_requested") or not promotion_requirements(conn, fresh)["ready"]:
+        if not submit_promotion(conn, fresh, note):
             raise ValueError("已在等待裁决或尚未满足破境条件")
-        conn.execute("UPDATE wanderer_agents SET promotion_requested=1,promotion_requested_at=?,promotion_note=?,updated_at=? WHERE id=?", (now, note, now, actor_id))
     elif key == "life.appeal":
         from .wanderer_actions_knowledge import appeal_eligible
         if not note or not appeal_eligible(conn, fresh):

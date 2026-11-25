@@ -50,6 +50,8 @@ class WandererInboxPostgresTest(unittest.TestCase):
         with self.connect() as conn:
             conn.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
             schema_wanderers.ensure_wanderer_schema(conn, allow_schema_changes=True)
+            from classroom_app.db.schema_wanderer_reflection import ensure_wanderer_reflection_schema
+            ensure_wanderer_reflection_schema(conn, engine="postgres", allow_schema_changes=True)
             conn.commit()
 
     def race(self, count, fn):
@@ -112,6 +114,8 @@ class WandererInboxPostgresTest(unittest.TestCase):
         with self.connect() as conn:
             self.assertEqual(conn.execute("SELECT value FROM wanderer_runtime_settings WHERE key='business-tx'").fetchone()[0], 'kept')
             schema_wanderers.ensure_wanderer_schema(conn, allow_schema_changes=True)
+            from classroom_app.db.schema_wanderer_reflection import ensure_wanderer_reflection_schema
+            ensure_wanderer_reflection_schema(conn, engine="postgres", allow_schema_changes=True)
             conn.commit()
 
     def test_quiesced_additive_upgrade_preserves_rows_and_is_readonly_next_time(self):
@@ -179,7 +183,7 @@ class WandererInboxPostgresTest(unittest.TestCase):
         with self.connect() as conn:
             wanderer_runtime_setting_set(conn, "daily_ai_call_cap", 3)
             conn.commit()
-        results = self.race(8, lambda _: _reserve_call(self.connect, enforce_cap=True, interactive=True))
+        results = self.race(8, lambda _: _reserve_call(self.connect, interactive=True))
         self.assertEqual(sum(result[0] for result in results), 3)
         with self.connect() as conn:
             self.assertEqual(daily_ai_calls(conn), 3)
@@ -189,10 +193,10 @@ class WandererInboxPostgresTest(unittest.TestCase):
         with self.connect() as conn:
             wanderer_runtime_setting_set(conn, "daily_ai_call_cap", 10)
             conn.commit()
-        results = self.race(12, lambda _: _reserve_call(self.connect, enforce_cap=True))
+        results = self.race(12, lambda _: _reserve_call(self.connect))
         self.assertEqual(sum(result[0] for result in results), 9)
-        self.assertTrue(_reserve_call(self.connect, enforce_cap=True, interactive=True)[0])
-        self.assertFalse(_reserve_call(self.connect, enforce_cap=True, interactive=True)[0])
+        self.assertTrue(_reserve_call(self.connect, interactive=True)[0])
+        self.assertFalse(_reserve_call(self.connect, interactive=True)[0])
 
     def test_parallel_memory_append_preserves_all_turns(self):
         wanderer = {"id": 1, "slug": "synthetic"}

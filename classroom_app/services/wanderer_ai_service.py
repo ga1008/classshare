@@ -10,7 +10,7 @@ while the model runs.
 Each model round reserves one unit of the daily cap
 (``wanderer_runtime_settings['ai_calls:<date>']``) before calling; when the cap
 is reached the turn is not sent and the caller degrades to non-AI actions.
-天道 verdicts are counted too but never blocked (the daily review must run).
+The hard platform ceiling includes reflection and 天道. A small share is reserved for adjudication.
 
 ``ai_caller`` is injectable so tests never reach a paid model. Its contract:
 ``await ai_caller(endpoint, json_payload, **gateway_kwargs) -> dict`` returning
@@ -22,19 +22,22 @@ import json
 import asyncio
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Awaitable, Callable, Optional
 
+from ..time_utils import local_iso
 from .ai_model_policy import AI_TASK_DEEP_TEXT
 from .prompt_utils import build_time_context_text
 from .wanderer_prompt_service import default_turn, extract_json_object, max_parts_for, parse_turn_output
 from .wanderer_settings_service import (
-    counter_value,
     daily_ai_calls,
     daily_cap,
     dao_mention_calls_key,
     dao_mention_daily_cap,
     increment_counter,
     increment_daily_ai_calls,
+    ordinary_dispatch_limit,
 )
 
 DAO_KIND_MENTION = "mention"
@@ -68,6 +71,43 @@ class _TurnCapped(RuntimeError):
     """A required model continuation cannot be reserved."""
 
 
+class _InboxChainExhausted(RuntimeError):
+    pass
+
+
+_inbox_claim = ContextVar("wanderer_inbox_claim", default=None)
+
+
+@contextmanager
+def inbox_call_scope(task):
+    token = _inbox_claim.set(task)
+    try:
+        yield
+    finally:
+        _inbox_claim.reset(token)
+
+
+def _legacy_wake_key(conn, wanderer):
+    """Each paid attempt, search continuation and summary occupies one durable slot."""
+    task = _inbox_claim.get()
+    if task is None:
+        return f"legacy-wake:{uuid.uuid4().hex}"
+    from .social_common import serialize_on
+    from .wanderer_runtime_service import MAX_CHAIN_TURNS
+    prefix = f"inbox-wake:{wanderer['id']}:{task['id']}:{task['handled_message_id']}:{task['latest_message_id']}"
+    serialize_on(conn, 'inbox-model-attempt', [prefix])
+    slots = tuple(f"{prefix}:{n}" for n in range(MAX_CHAIN_TURNS))
+    marks = ','.join('?' for _ in slots)
+    spent = {row['operation_id'] for row in conn.execute(
+        f"SELECT operation_id FROM wanderer_resource_reservations WHERE operation_id IN ({marks})", slots).fetchall()}
+    # Older work predates per-dispatch receipts. Preserve its existing retry count.
+    start = min(MAX_CHAIN_TURNS, max(0, int(task.get('attempts') or 0)))
+    for key in slots[start:]:
+        if key not in spent:
+            return key
+    raise _InboxChainExhausted("本次来信已达四次模型请求上限，保留未读等待新消息。")
+
+
 async def _gateway_caller(endpoint: str, json_payload: dict[str, Any], **gateway_kwargs: Any) -> dict[str, Any]:
     from ..core import ai_client
     from .ai_gateway_service import ai_gateway_post
@@ -85,28 +125,36 @@ def _connection(conn_factory: ConnFactory) -> Any:
     return get_db_connection()
 
 
-def _reserve_call(conn_factory: ConnFactory, *, enforce_cap: bool, interactive: bool = False,
-                  wanderer: Optional[dict[str, Any]] = None) -> tuple[bool, int, int]:
-    """Count one call; with ``enforce_cap`` an over-cap reservation is rolled back."""
+def _reserve_call(conn_factory: ConnFactory, *, interactive: bool = False, adjudication: bool = False,
+                  mention: bool = False, wanderer: Optional[dict[str, Any]] = None) -> tuple[bool, int, int]:
+    """Reserve every applicable ledger together before submitting a model request."""
     with _connection(conn_factory) as conn:
+        key = _legacy_wake_key(conn, wanderer) if wanderer is not None else None
+        day = local_iso()[:10]
         cap = daily_cap(conn)
-        available = cap
-        if enforce_cap and not interactive:
+        available = cap if adjudication else ordinary_dispatch_limit(conn, cap, day)
+        if not adjudication and not interactive and not mention:
             waiting = conn.execute("SELECT 1 FROM wanderer_social_inbox i WHERE i.state IN ('pending','running','retry') "
                 "AND i.latest_message_id>i.handled_message_id AND NOT EXISTS (SELECT 1 FROM wanderer_agents w "
                 "WHERE i.peer_identity='student:' || CAST(w.student_id AS TEXT)) LIMIT 1").fetchone()
             if waiting:
-                available = max(0, cap - min(20, max(1, cap // 10)))
-        if enforce_cap and daily_ai_calls(conn) >= available:
-            return False, daily_ai_calls(conn), cap
-        if enforce_cap and wanderer is not None:
+                available = max(0, available - min(20, max(1, cap // 10)))
+        used = daily_ai_calls(conn, day)
+        if used >= available:
+            return False, used, cap
+        if wanderer is not None:
             from .wanderer_resource_service import consume
-            personal = consume(conn, int(wanderer['id']), 'ai_wake', 1, f"legacy-wake:{uuid.uuid4().hex}")
+            personal = consume(conn, int(wanderer['id']), 'ai_wake', 1, key, budget_date=day)
             if not personal.get('ok'):
                 conn.rollback()
-                return False, daily_ai_calls(conn), cap
-        total = increment_daily_ai_calls(conn)
-        if enforce_cap and total > available:
+                return False, used, cap
+        if mention:
+            key = dao_mention_calls_key(day)
+            if increment_counter(conn, key) > dao_mention_daily_cap(conn):
+                conn.rollback()
+                return False, used, cap
+        total = increment_daily_ai_calls(conn, day=day)
+        if total > available:
             conn.rollback()
             return False, total - 1, cap
         conn.commit()
@@ -114,13 +162,20 @@ def _reserve_call(conn_factory: ConnFactory, *, enforce_cap: bool, interactive: 
 
 
 def reserve_attributed_call(conn_factory: ConnFactory, wanderer_id: int, operation_id: str, *,
-                            life_epoch: int | None = None, authority_version: int | None = None) -> bool:
+                            life_epoch: int | None = None, authority_version: int | None = None,
+                            source_operation_id: str | None = None) -> bool:
     """Meter a platform AI subtask once, retaining its trusted account origin."""
-    from .wanderer_runtime_service import _fresh
+    from .wanderer_runtime_service import MAX_CHAIN_TURNS, _fresh
     from .wanderer_resource_service import reserve, settle
     with _connection(conn_factory) as conn:
+        day = local_iso()[:10]
         _fresh(conn, wanderer_id)
-        personal = reserve(conn, int(wanderer_id), 'ai_wake', 1, f'tool-ai:{operation_id}')
+        if source_operation_id:
+            origin = conn.execute("SELECT t.depth FROM wanderer_commands c JOIN wanderer_turns t ON t.turn_id=c.turn_id "
+                                  "WHERE c.operation_id=? AND t.wanderer_id=?", (source_operation_id, wanderer_id)).fetchone()
+            if origin is not None and int(origin['depth']) + 1 >= MAX_CHAIN_TURNS:
+                return False
+        personal = reserve(conn, int(wanderer_id), 'ai_wake', 1, f'tool-ai:{operation_id}', budget_date=day)
         if not personal.get('ok'):
             conn.rollback()
             return False
@@ -132,27 +187,12 @@ def reserve_attributed_call(conn_factory: ConnFactory, wanderer_id: int, operati
         if personal.get('state') == 'consumed':
             conn.rollback()
             return True
-        if increment_daily_ai_calls(conn) > daily_cap(conn):
+        if increment_daily_ai_calls(conn, day=day) > ordinary_dispatch_limit(conn, daily_cap(conn), day):
             conn.rollback()
             return False
         settle(conn, f'tool-ai:{operation_id}')
         conn.commit()
         return True
-
-
-def _reserve_dao_mention(conn_factory: ConnFactory) -> tuple[bool, int, int]:
-    """Count one @天道 reply against ``dao_mention_daily_cap``; over-cap reservations are rolled back."""
-    key = dao_mention_calls_key()
-    with _connection(conn_factory) as conn:
-        cap = dao_mention_daily_cap(conn)
-        if counter_value(conn, key) >= cap:
-            return False, counter_value(conn, key), cap
-        total = increment_counter(conn, key)
-        if total > cap:
-            conn.rollback()
-            return False, total - 1, cap
-        conn.commit()
-        return True, total, cap
 
 
 def _payload(
@@ -277,7 +317,7 @@ async def _complete_turn(
             raise RuntimeError("模型未在有限轮次内完成回复")
         # Reserve the required continuation before spending a search request.
         # A failed or cancelled continuation keeps the existing failed-call accounting.
-        allowed, used, cap = _reserve_call(conn_factory, enforce_cap=True, interactive=interactive, wanderer=wanderer)
+        allowed, used, cap = _reserve_call(conn_factory, interactive=interactive, wanderer=wanderer)
         base.update(daily_calls=used, daily_cap=cap)
         if not allowed:
             raise _TurnCapped("散修今日 AI 额度已用尽，未执行额外搜索或模型请求")
@@ -344,7 +384,10 @@ async def generate_turn(
     status: ``ok`` | ``capped`` (a required round could not be reserved) |
     ``failed`` (sent, unusable; turn = skip).
     """
-    reserved, used, cap = _reserve_call(conn_factory_or_none, enforce_cap=True, interactive=interactive, wanderer=wanderer)
+    try:
+        reserved, used, cap = _reserve_call(conn_factory_or_none, interactive=interactive, wanderer=wanderer)
+    except _InboxChainExhausted as exc:
+        return {"status": "chain_limit", "turn": default_turn(), "raw_text": "", "ai_calls": 0, "error": str(exc)}
     if not reserved:
         return {"status": "capped", "turn": default_turn(), "raw_text": "", "ai_calls": 0,
                 "daily_calls": used, "daily_cap": cap, "error": ""}
@@ -366,6 +409,8 @@ async def generate_turn(
         raw_text = await asyncio.wait_for(_complete_turn(
             conn_factory_or_none, wanderer, payload, caller, base, interactive=interactive, search_caller=search_caller,
         ), timeout=TURN_TIMEOUT_SECONDS + 5)
+    except _InboxChainExhausted as exc:
+        return {**base, "status": "chain_limit", "turn": default_turn(), "raw_text": "", "error": str(exc)}
     except _TurnCapped as exc:
         return {**base, "status": "capped", "turn": default_turn(), "raw_text": "", "error": str(exc)}
     except Exception as exc:  # noqa: BLE001 - a failed turn degrades to skip, never raises into the tick
@@ -385,7 +430,6 @@ async def generate_decision(conn_factory: ConnFactory, run: dict[str, Any], *, a
     """Exactly one recorded thought; daily reflection has a separate three-call ledger."""
     from .wanderer_resource_service import reserve, settle
     from .wanderer_runtime_service import assert_turn_authority, build_runtime_prompt, packed, _authority, DECISION_RESPONSE_INSTRUCTION
-    from ..time_utils import local_iso
 
     operation_id = f"wake:{run['turn_id']}"
     with _connection(conn_factory) as conn:
@@ -395,22 +439,34 @@ async def generate_decision(conn_factory: ConnFactory, run: dict[str, Any], *, a
         if row['dispatched_at']:
             return {"status": "failed", "ai_calls": 0, "error": "已有派发记录，不能重复调用模型"}
         from .wanderer_daily_reflection_service import reserve_free_call
-        free = reserve_free_call(conn, run)
+        dispatched_at = local_iso()
+        day = dispatched_at[:10]
+        free = reserve_free_call(conn, run, dispatched_at=dispatched_at)
         if free is not None:
             if not free['ok']:
                 conn.rollback()
-                return {'status': 'reflection_limit', 'ai_calls': 0, 'error': '本次每日自省的三次免费思考已用完；已接受的指令仍保留执行结果。'}
+                return {'status': free.get('status', 'reflection_limit'), 'ai_calls': 0,
+                        'error': free.get('reason', '本次每日自省已达三次请求上限。')}
         else:
-            personal = reserve(conn, int(fresh['id']), 'ai_wake', 1, operation_id)
-            cap = daily_cap(conn)
+            personal = reserve(conn, int(fresh['id']), 'ai_wake', 1, operation_id, budget_date=day)
             if not personal.get('ok'):
                 conn.rollback()
-                return {"status": "capped", "ai_calls": 0, "error": "本人及直接道侣可用思考额度不足"}
-            total = increment_daily_ai_calls(conn)
-            if total > cap:
+                return {"status": "capped", "ai_calls": 0, "error": "今日个人思考次数或可借用额度已用尽"}
+            from .wanderer_life_core import daily_activity_limit
+            from .wanderer_settings_service import reflection_enabled, reflection_dispatch_count
+            from .wanderer_resource_service import actor_activity_usage
+            root = conn.execute("SELECT source FROM wanderer_wake_events WHERE event_id=?", (run['chain_id'],)).fetchone()
+            if (root and root['source'] == 'timer' and reflection_enabled(conn)
+                    and not reflection_dispatch_count(conn, day, fresh['id'])
+                    and actor_activity_usage(conn, fresh['id'], day, ['ai_wake'])['ai_wake'] >= daily_activity_limit(fresh['tier'])):
                 conn.rollback()
-                return {"status": "capped", "ai_calls": 0, "error": "平台今日思考预算已用尽"}
+                return {"status": "timer_rest", "ai_calls": 0, "error": "保留最后一次思考给今晚自省或待回复消息"}
             settle(conn, operation_id)
+        # Reflection dispatches have their own receipt, but serialize on the same
+        # platform-day row so concurrent ordinary and reflection calls share one hard cap.
+        if increment_daily_ai_calls(conn, 0 if free else 1, day=day) > ordinary_dispatch_limit(conn, daily_cap(conn), day):
+            conn.rollback()
+            return {"status": "reflection_capped" if free else "capped", "ai_calls": 0, "error": "平台今日活动预算已用尽"}
         # Both budget ledgers can wait behind authority changes.
         fresh=assert_turn_authority(conn, **_authority(run))
         run['wanderer']=fresh
@@ -418,7 +474,7 @@ async def generate_decision(conn_factory: ConnFactory, run: dict[str, Any], *, a
         # amount is exactly what is available for a requested continuation.
         prompt = build_runtime_prompt(conn, run)
         conn.execute("UPDATE wanderer_turns SET dispatched_at=?,prompt_json=?,updated_at=? WHERE turn_id=?",
-                     (local_iso(), packed({"system_prompt": prompt}), local_iso(), run['turn_id']))
+                     (dispatched_at, packed({"system_prompt": prompt}), local_iso(), run['turn_id']))
         conn.commit()
     payload = _payload(system_prompt=prompt, user_message="请根据当前事件、记忆和剩余资源自主决定下一步。" + DECISION_RESPONSE_INSTRUCTION,
                        task_type=WANDERER_TASK_TYPE, task_label=f"wanderer:{fresh['slug']}:autonomous",
@@ -446,17 +502,16 @@ async def dao_judge(
     ``result`` is the parsed JSON object or None (status ``failed``); callers
     must validate its fields before acting on it.
 
-    Discipline/promotion verdicts are never capped; ``kind="mention"`` (@天道
-    replies) is capped by ``dao_mention_daily_cap`` and returns status
-    ``capped`` without calling the model.
+    Every verdict counts against the platform hard ceiling. Promotion and other
+    required judgements have reserved capacity. Mentions have an additional daily cap.
     """
     label_kind = str(kind or "review").strip() or "review"
-    if label_kind == DAO_KIND_MENTION:
-        reserved, mention_used, mention_cap = _reserve_dao_mention(conn_factory_or_none)
-        if not reserved:
-            return {"status": "capped", "result": None, "raw_text": "", "ai_calls": 0,
-                    "daily_calls": mention_used, "daily_cap": mention_cap, "error": "天道今日答问已达上限"}
-    _reserved, used, cap = _reserve_call(conn_factory_or_none, enforce_cap=False)
+    allowed, used, cap = _reserve_call(conn_factory_or_none,
+        adjudication=label_kind in {"promotion", "discipline", "appeal", "audit", "daily_audit", "revive"},
+        mention=label_kind == DAO_KIND_MENTION)
+    if not allowed:
+        return {"status": "capped", "result": None, "raw_text": "", "ai_calls": 0,
+                "daily_calls": used, "daily_cap": cap, "error": "今日模型额度已用尽"}
     logical_call_id = f"dao:{label_kind}:{uuid.uuid4().hex[:12]}"
     payload = _payload(
         system_prompt=system_prompt,
@@ -503,7 +558,10 @@ async def summarize_text(
     ai_caller: Optional[AiCaller] = None,
 ) -> str:
     """One memory-compaction call (counts toward the daily cap). Returns '' when capped or failed."""
-    reserved, _used, _cap = _reserve_call(conn_factory_or_none, enforce_cap=True, wanderer=wanderer)
+    try:
+        reserved, _used, _cap = _reserve_call(conn_factory_or_none, wanderer=wanderer)
+    except _InboxChainExhausted:
+        return ""
     if not reserved:
         return ""
     slug = str(wanderer.get("slug") or wanderer.get("id") or "unknown")

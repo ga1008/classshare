@@ -228,7 +228,8 @@ def _validated_body(payload: dict[str, Any]) -> tuple[str, str]:
 
 
 @_atomic_delivery
-def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], events: Optional[list] = None) -> dict[str, Any]:
+def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], events: Optional[list] = None,
+                 *, system_support: bool = False) -> dict[str, Any]:
     from . import social_media_service as media_service
     from .social_notification_service import consume_mention, mention_quota, notify_message
 
@@ -283,7 +284,9 @@ def send_message(conn: Any, user: dict, key: Any, payload: dict[str, Any], event
         client_nonce=nonce,
     )
     from .wanderer_social_budget_service import charge_message
-    charge_message(conn, me, parsed, message_id=message_id, reply_to_id=payload.get("reply_to_id"))
+    # Only the server's fixed response to a current human safety request uses this flag.
+    if not system_support:
+        charge_message(conn, me, parsed, message_id=message_id, reply_to_id=payload.get("reply_to_id"))
     record_delivery(conn, delivery, message_id)
     media_service.attach_media(conn, message_id, tokens)
     if lan_specs:

@@ -104,21 +104,30 @@ def session_for_run(conn, run):
     raise PermissionError('每日自省回调来源链不完整')
 
 
-def reserve_free_call(conn, run):
+def reserve_free_call(conn, run, *, dispatched_at=None):
     session = session_for_run(conn, run)
     if session is None:
         return None
     wid, date = int(session['wanderer_id']), session['reflection_date']
+    from .wanderer_bond_service import lock_agents
+    from .wanderer_life_core import daily_activity_limit
+    from .wanderer_resource_service import actor_activity_usage
+    lock_agents(conn, [wid])
     serialize_on(conn, 'wanderer-reflection-session', [f'{wid}:{date}'])
     if conn.execute('SELECT 1 FROM wanderer_reflection_dispatches WHERE turn_id=?', (run['turn_id'],)).fetchone():
         raise PermissionError('此自省回合已经派发，不得重复请求模型')
+    stamp = dispatched_at or local_iso()
+    used = actor_activity_usage(conn, wid, stamp[:10], ['ai_wake'])['ai_wake']
+    tier = conn.execute('SELECT tier FROM wanderer_agents WHERE id=?', (wid,)).fetchone()['tier']
+    if used >= daily_activity_limit(tier):
+        return {'ok': False, 'status': 'reflection_capped', 'reason': '今日个人模型请求已达境界上限'}
     row = conn.execute('UPDATE wanderer_reflection_sessions SET ai_calls=ai_calls+1,status=\'running\',updated_at=? '
                        'WHERE wanderer_id=? AND reflection_date=? AND ai_calls<? RETURNING ai_calls',
                        (local_iso(), wid, date, FREE_CALL_LIMIT)).fetchone()
     if row is None:
         return {'ok': False, 'reflection_date': date, 'limit': FREE_CALL_LIMIT}
     conn.execute('INSERT INTO wanderer_reflection_dispatches(turn_id,wanderer_id,reflection_date,event_id,ordinal,dispatched_at) '
-                 'VALUES(?,?,?,?,?,?)', (run['turn_id'], wid, date, run['event_id'], int(row['ai_calls']), local_iso()))
+                 'VALUES(?,?,?,?,?,?)', (run['turn_id'], wid, date, run['event_id'], int(row['ai_calls']), stamp))
     return {'ok': True, 'reflection_date': date, 'used': int(row['ai_calls']), 'remaining': FREE_CALL_LIMIT-int(row['ai_calls'])}
 
 
@@ -246,9 +255,18 @@ def sync_session(conn, run):
     row = conn.execute('SELECT ai_calls FROM wanderer_reflection_sessions WHERE wanderer_id=? AND reflection_date=?', (wid, date)).fetchone()
     coverage = friend_ratings(conn, run['wanderer'], date=date, limit=1)
     pending = conn.execute("SELECT 1 FROM wanderer_wake_events WHERE wanderer_id=? AND chain_id=? AND state IN ('pending','processing','deferred') LIMIT 1", (wid, session['chain_id'])).fetchone()
-    completed = conn.execute("SELECT 1 FROM wanderer_turns WHERE wanderer_id=? AND chain_id=? AND state='completed' LIMIT 1", (wid, session['chain_id'])).fetchone()
+    outcomes = conn.execute(
+        "SELECT MAX(CASE WHEN state='completed' THEN 1 ELSE 0 END) AS completed,"
+        "MAX(CASE WHEN state='reflection_capped' THEN 1 ELSE 0 END) AS capped "
+        "FROM wanderer_turns WHERE wanderer_id=? AND chain_id=?", (wid, session['chain_id'])).fetchone()
+    completed = bool(outcomes['completed'])
     unresolved = len(unresolved_failures(conn, wid, session['chain_id']))
-    status = 'running' if pending else ('partial' if coverage['missing_count'] or unresolved else 'applied') if completed else 'failed'
+    if pending:
+        status = 'running'
+    elif completed:
+        status = 'partial' if coverage['missing_count'] or unresolved else 'applied'
+    else:
+        status = 'skipped_capped' if outcomes['capped'] else 'failed'
     now = local_iso()
     conn.execute('UPDATE wanderer_reflection_sessions SET status=?,updated_at=?,closed_at=? WHERE wanderer_id=? AND reflection_date=?',
                  (status, now, None if pending else now, wid, date))

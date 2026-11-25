@@ -24,10 +24,10 @@ RESOURCE_CATALOG = {
     "reflection_chars": {"unit":"字/自省","period":"ability","base":"min(3200,1200+200*tier)","share_mode":"ability"},
     "todo_title_chars": {"unit":"字/标题","period":"ability","base":"80","share_mode":"ability"},
     "todo_detail_chars": {"unit":"字/详情","period":"ability","base":"400","share_mode":"ability"},
-    "ai_wake": {"unit":"次","period":"day","base":"daily_wake_limit(default 20)*(1+0.9*tier)","share_mode":"consume"},
+    "ai_wake": {"unit":"次","period":"day","base":"境界日上限与个人配置取较低值，借用和自省均受本人实际请求硬上限约束","share_mode":"consume"},
     "social_message": {"unit":"整数通信积分；3,000,000=普通零好感一条","period":"day","base":"social_message_base(default20)*3,000,000","share_mode":"consume"},
-    "web_search": {"unit":"次","period":"day","base":"12*(1+0.2*tier)","share_mode":"consume"},
-    "active_interactions": {"unit":"次","period":"day","base":"max(daily_action_budget,20*(1+0.2*tier))","share_mode":"consume"},
+    "web_search": {"unit":"次","period":"day","base":"独立搜索日额度与本人境界活动上限取较低值","share_mode":"consume"},
+    "active_interactions": {"unit":"次","period":"day","base":"主动互动受本人境界日上限约束","share_mode":"consume"},
     "blog_posts": {"unit":"篇","period":"day","base":"personal_blog_posts_base(default1)","share_mode":"consume"},
     "cultivation_interaction": {"unit":"修为","period":"day","base":"60","share_mode":"consume"},
     "cultivation_todo": {"unit":"修为","period":"day","base":"3","share_mode":"consume"},
@@ -117,6 +117,41 @@ def _restricted(row, resource):
     return bool(until and until > local_now() and int(row.get("interaction_limit_penalty") or 0) >= 1_000_000)
 
 
+def batch_actor_activity_usage(conn, actor_ids, day, resources=('ai_wake',), *, include_reflections=False):
+    """Actual actors across all funding owners. At most two indexed grouped queries."""
+    from datetime import date, timedelta
+    keys = tuple(key for key in resources if key in {'ai_wake', 'active_interactions', 'web_search'})
+    result = {int(actor): dict.fromkeys(keys, 0) for actor in actor_ids}
+    if not result or not keys:
+        return result
+    actors = ','.join('?' for _ in result)
+    resources_sql = ','.join('?' for _ in keys)
+    for row in conn.execute(
+        f"SELECT actor_id,resource,SUM(amount_units) AS units FROM wanderer_resource_reservations "
+        f"WHERE actor_id IN ({actors}) AND budget_date=? AND resource IN ({resources_sql}) "
+        "AND state IN ('consumed','reserved') GROUP BY actor_id,resource", (*result, day, *keys)
+    ).fetchall():
+        result[int(row['actor_id'])][row['resource']] = _number(int(row['units']), row['resource'])
+    if 'ai_wake' in keys:
+        if include_reflections:
+            for usage in result.values():
+                usage['reflections'] = 0
+        end = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
+        for row in conn.execute(
+            f"SELECT wanderer_id,COUNT(*) AS n FROM wanderer_reflection_dispatches WHERE wanderer_id IN ({actors}) "
+            "AND dispatched_at>=? AND dispatched_at<? GROUP BY wanderer_id", (*result, day, end)
+        ).fetchall():
+            usage = result[int(row['wanderer_id'])]
+            usage['ai_wake'] += int(row['n'])
+            if include_reflections:
+                usage['reflections'] = int(row['n'])
+    return result
+
+
+def actor_activity_usage(conn, actor_id, day, resources):
+    return batch_actor_activity_usage(conn, [actor_id], day, resources)[int(actor_id)]
+
+
 def _snapshots(conn,actor_id,resources,dates,*,base_limits=None,allow_share=True):
     """Bounded queries per projection, independent of number of resource kinds."""
     ensure_wanderer_world_schema(conn)
@@ -154,6 +189,8 @@ def _snapshots(conn,actor_id,resources,dates,*,base_limits=None,allow_share=True
     usages={(int(r['owner_id']),r['resource'],r['budget_date']):r for r in conn.execute(f'SELECT * FROM wanderer_resource_usage WHERE owner_id IN ({marks}) AND resource IN ({keymarks}) AND budget_date IN ({daymarks})',(*owners,*resources,*days)).fetchall()}
     settings={r['key']:r['value'] for r in conn.execute("SELECT key,value FROM wanderer_runtime_settings WHERE key IN ('social_message_base','personal_blog_posts_base')").fetchall()} if any(k in resources for k in ('social_message','blog_posts')) else {}
     result={}
+    metered = [key for key in resources if key in {'ai_wake', 'active_interactions', 'web_search'}]
+    actual = actor_activity_usage(conn, actor_id, dates[metered[0]], metered) if metered else {}
     for resource in resources:
         projected=[]
         for owner in owners:
@@ -177,6 +214,14 @@ def _snapshots(conn,actor_id,resources,dates,*,base_limits=None,allow_share=True
                               'remaining':_number(max(0,limit-used-reserved),resource)})
         result[resource]={'resource':resource,'date':dates[resource],'owners':projected,
                           **{key:sum(o[key] for o in projected) for key in ('base','limit','used','reserved','remaining')}}
+        if resource in actual:
+            from .wanderer_life_core import daily_activity_limit, wanderer_search_limit
+            total = result[resource]
+            tier = agents[actor_id].get('tier', 0)
+            ceiling = wanderer_search_limit(tier) if resource == 'web_search' else daily_activity_limit(tier)
+            total.update(actor_limit=ceiling, actor_used=actual[resource], pooled_limit=total['limit'])
+            total['limit'] = min(total['limit'], ceiling)
+            total['remaining'] = min(total['remaining'], max(0, ceiling - actual[resource]))
     return result
 
 
@@ -207,7 +252,7 @@ def reserve(conn, actor_id, resource, amount, operation_id, *, base_limits=None,
     state = snapshot(conn, actor_id, resource, base_limits=base_limits, budget_date=day, allow_share=allow_share)
     locked = {int(r["id"]) for r in rows}
     candidates = [o for o in state["owners"] if o["owner_id"] in locked]
-    if sum(_units(o["remaining"], resource) for o in candidates) < wanted:
+    if _units(state['remaining'], resource) < wanted or sum(_units(o["remaining"], resource) for o in candidates) < wanted:
         return {"ok": False, "reason": "资源额度不足", "receipt": None, "owners": [], "snapshot": state}
     left, lines, now = wanted, [], local_iso()
     for owner in candidates:

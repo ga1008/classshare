@@ -42,6 +42,20 @@ def private_payload_hash(content, attachments):
         for item in attachments]})
 
 
+def reply_depth(conn, channel, conversation_key, messages):
+    """Depth for an inbound batch. A new human or independent message opens a fresh activity."""
+    ids = {int(row['id']) for row in messages}
+    if not ids:
+        return 0
+    marks = ','.join('?' for _ in ids)
+    result = conn.execute(
+        "SELECT COUNT(DISTINCT d.message_id), MIN(t.depth) FROM wanderer_message_deliveries d "
+        "JOIN wanderer_turns t ON t.turn_id=d.turn_id AND t.wanderer_id=d.wanderer_id "
+        f"WHERE d.channel=? AND d.conversation_key=? AND d.delivery_kind='sent' AND d.message_id IN ({marks})",
+        (channel, conversation_key, *ids)).fetchone()
+    return 1 + int(result[1]) if int(result[0]) == len(ids) else 0
+
+
 def _binding(conn, user):
     from .agent_platform_request_context import _request_identity, is_verified_wanderer_request_user
     if not is_verified_wanderer_request_user(user):

@@ -66,8 +66,9 @@ def reserve_call(attribution, logical_call_id):
     with attribution.conn_factory() as conn:
         validate_attribution(conn, attribution)
     if not reserve_attributed_call(attribution.conn_factory, attribution.wanderer_id, logical_call_id,
-            life_epoch=attribution.life_epoch, authority_version=attribution.authority_version):
-        raise AIUsageBudgetError("散修当日模型额度或平台预算已耗尽。")
+            life_epoch=attribution.life_epoch, authority_version=attribution.authority_version,
+            source_operation_id=attribution.operation_id):
+        raise AIUsageBudgetError("散修当日模型额度、平台预算或本次调用层数已达上限。")
 
 
 def _job_table(job_kind):
@@ -89,13 +90,32 @@ def persist_job_attribution(conn, job_id, *, job_kind="ai_jobs"):
          attribution.authority_version, attribution.operation_id))
 
 
+def _load_job_attribution(conn, job, conn_factory, job_kind):
+    from .account_control_service import table_exists
+    table = _job_table(job_kind)
+    row = conn.execute(f"SELECT * FROM {table} WHERE job_id=?", (int(job["id"]),)).fetchone() if table_exists(conn, table) else None
+    return AIAttribution(**dict(row), conn_factory=conn_factory, job_kind=job_kind) if row else None
+
+
+def meter_native_job(budget, job, conn_factory):
+    """The AI service executes some durable jobs directly, outside the HTTP gateway."""
+    import asyncio
+    with conn_factory() as conn:
+        attribution = _load_job_attribution(conn, job, conn_factory, "ai_jobs")
+    if attribution is None:
+        return
+    budget.single_attempt = True
+
+    async def charge_attempt(plan, attempt_id):
+        await asyncio.to_thread(reserve_call, attribution, f"native-job:{job['id']}:{attempt_id}")
+
+    budget.before_dispatch = charge_attempt
+
+
 @contextmanager
 def restored_job_attribution(job, conn_factory, *, job_kind="ai_jobs"):
-    from .account_control_service import table_exists
     with conn_factory() as conn:
-        table = _job_table(job_kind)
-        row = conn.execute(f"SELECT * FROM {table} WHERE job_id=?", (int(job["id"]),)).fetchone() if table_exists(conn, table) else None
-        attribution = AIAttribution(**dict(row), conn_factory=conn_factory, job_kind=job_kind) if row else None
+        attribution = _load_job_attribution(conn, job, conn_factory, job_kind)
         if attribution is not None:
             validate_attribution(conn, attribution)
     marker = _attribution.set(attribution)

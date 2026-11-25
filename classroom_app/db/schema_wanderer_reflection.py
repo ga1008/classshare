@@ -27,6 +27,7 @@ TABLES = {
         request_hash TEXT NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL""",
 }
 INDEXES = (
+    'CREATE INDEX IF NOT EXISTS idx_wanderer_reflection_dispatch_day ON wanderer_reflection_dispatches(dispatched_at,wanderer_id)',
     'CREATE INDEX IF NOT EXISTS idx_wanderer_rating_peer ON wanderer_affinity_ratings(wanderer_id,peer_identity,reflection_date)',
     'CREATE INDEX IF NOT EXISTS idx_wanderer_reflection_dispatch_owner ON wanderer_reflection_dispatches(wanderer_id,reflection_date)',
 )

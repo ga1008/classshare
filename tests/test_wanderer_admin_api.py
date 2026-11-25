@@ -349,7 +349,7 @@ class WandererAdminApiTest(WandererDbTestCase):
             "prompt_char_budget": 90_000, "memory_retention_days": 200,
         })
         self.addCleanup(lambda: self.super_client().post(f"{API}/settings", json={
-            "enabled": 1, "daily_ai_call_cap": 4096, "reflection_enabled": 1,
+            "enabled": 1, "daily_ai_call_cap": current.json()["settings"]["daily_ai_call_cap"], "reflection_enabled": 1,
             "reflection_hour": "23:30", "reflection_batch_size": 10,
             "prompt_char_budget": 120_000, "memory_retention_days": 180,
         }))

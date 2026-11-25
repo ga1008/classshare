@@ -184,7 +184,8 @@ class WandererSeedingTest(WandererDbTestCase):
             conn.execute("INSERT INTO students (student_id_number, name, class_id) "
                          "SELECT 'WANDERER-racer', '抢先者', id FROM classes WHERE name = ?", (WANDERER_CLASS_NAME,))
             racer_pk = conn.execute("SELECT id FROM students WHERE student_id_number = 'WANDERER-racer'").fetchone()[0]
-            raced = ensure_wanderer_students(recorder, [{**seed, "slug": "racer"}])
+            raced = ensure_wanderer_students(recorder, [{**seed, "slug": "racer", "daily_wake_limit": 0}])
+            self.assertEqual(conn.execute("SELECT daily_wake_limit FROM wanderer_agents WHERE slug='racer'").fetchone()[0], 0)
             conn.rollback()
         self.assertEqual(first, second)
         self.assertEqual(raced["racer"], racer_pk)
