@@ -768,8 +768,27 @@ test('教师从大厅设置逐游戏放行，冲突保留选择，倒计时在�
 test('课堂边界复核关闭已载入的游戏，续租仅上报可见游戏画面', async ({page}) => {
   await page.clock.install();
   const originTime = Date.now();
-  const samples:any[] = [];
+  const samples:any[] = [], revoked:any[] = [];
   const {errors} = await fixture(page,'host');
+  // A server can send response headers before the body. Keep one sync body pending
+  // so the classroom denial aborts its JSON read after fetch() has already resolved.
+  await page.addInitScript(() => {
+    const state = (window as any).syncBody = { hold: false, reading: false, aborted: false };
+    const fetchOriginal = window.fetch;
+    window.fetch = async (input, init) => {
+      const response = await fetchOriginal(input, init);
+      if (!state.hold || new URL(response.url).pathname !== '/api/games/v1/sync') return response;
+      state.hold = false;
+      const body = new ReadableStream({ start(controller) {
+        state.reading = true;
+        init!.signal!.addEventListener('abort', () => {
+          state.aborted = true;
+          controller.error(new DOMException('Response body aborted', 'AbortError'));
+        }, {once:true});
+      }});
+      return new Response(body, {headers:response.headers, status:response.status});
+    };
+  });
   await page.route('**/games/g1/launches', r=>r.fulfill({json:{
     leaseId:'sample-lease',serverNow:originTime,expiresAt:originTime+90000,accessUntil:originTime+14000,
     contentEntryUrl:content+'/main.html',definition,versionId:'v1',
@@ -777,6 +796,10 @@ test('课堂边界复核关闭已载入的游戏，续租仅上报可见游戏�
   await page.route('**/launches/sample-lease/renew', r=>{
     samples.push(r.request().postDataJSON());
     return r.fulfill({status:403,json:{detail:{code:'CLASSROOM_GAME_RESTRICTED',message:'课表显示现在是上课时间，课间可再来。'}}});
+  });
+  await page.route('**/launches/sample-lease/revoke', r=>{
+    revoked.push(r.request().postDataJSON());
+    return r.fulfill({json:{revoked:true}});
   });
   await page.reload();
   await expect(page.frameLocator('.game-frame-box iframe').locator('#result')).toHaveText('合成玩家');
@@ -787,8 +810,13 @@ test('课堂边界复核关闭已载入的游戏，续租仅上报可见游戏�
   await page.clock.fastForward(1500);
   await visible(false);
   await page.clock.fastForward(3500);
+  await page.evaluate(() => { (window as any).syncBody.hold = true; });
   await visible(true);
+  await page.clock.fastForward(2700);
+  await expect.poll(() => page.evaluate(() => (window as any).syncBody.reading)).toBe(true);
   await page.clock.fastForward(12000);
+  await expect.poll(() => page.evaluate(() => (window as any).syncBody.aborted)).toBe(true);
+  await expect.poll(() => revoked.length).toBe(1);
   await expect(page.locator('[data-game-notice]')).toContainText('课间可再来');
   await expect(page.locator('.game-frame-box iframe')).toHaveCount(0);
   expect(samples).toHaveLength(1);
@@ -796,6 +824,8 @@ test('课堂边界复核关闭已载入的游戏，续租仅上报可见游戏�
   const intervals=samples[0].playIntervals;
   expect(intervals).toHaveLength(2);
   expect(intervals[1][0]-intervals[0][1]).toBeGreaterThanOrEqual(3000);
+  expect(intervals[1][1]).toBeLessThanOrEqual(14000);
+  expect(revoked[0]).toMatchObject({usageAnchor: samples[0].usageAnchor, playIntervals: intervals});
   expect(errors).toEqual([]);
 });
 

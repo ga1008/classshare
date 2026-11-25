@@ -78,7 +78,10 @@ const title = document.querySelector('[data-stage-title]'),
     countRing = document.querySelector('[data-countdown-ring]'),
     count = document.querySelector('[data-countdown]');
 const flags = { preview: !!previewVersion };
-const playClock = flags.preview ? null : createPlayClock();
+// A throttled/background tab can run its boundary timer late. Never include
+// time after the last authorized instant in a renewal or final revoke sample.
+const playClock = flags.preview ? null : createPlayClock(() =>
+    Math.min(performance.now(), lease?.accessDeadline ?? Infinity, lease?.deadline ?? Infinity));
 const checkingAccess = document.querySelector('[data-access-check]');
 let frameReady = false, latestWellbeing, expiryTimer, accessTimer;
 function pendingAccess(pending) {
@@ -93,8 +96,8 @@ function updatePlayClock() {
 function releaseLease() {
     if (!lease) return;
     const bound = lease;
-    lease = null;
     playClock?.active(false);
+    lease = null;
     const headers = {...authHeaders(makeId()), 'Content-Type':'application/json'};
     fetch(apiBase + idpath('launches', bound.leaseId) + '/revoke', {
         method:'POST', credentials:'same-origin', keepalive:true, headers,
@@ -455,8 +458,7 @@ function stop(text, heading = '已停止') {
     clearTimeout(accessTimer);
     pendingAccess(false);
     releaseLease();
-    syncRequest?.abort();
-    clearTimeout(pollTimer);
+    stopSync();
     clearTimeout(leaseTimer);
     clearTimeout(clockTimer);
     disposeFrame();
@@ -682,7 +684,7 @@ async function sync() {
             waitMs: snap.phase === 'waiting' || snap.phase === 'countdown' ? 1000 : 0,
         };
         const r = await pollSnapshot(previous, args, controller.signal);
-        if (controller !== syncRequest || mutating || previous !== snap) return;
+        if (controller !== syncRequest || stopped || mutating || previous !== snap) return;
         if (r.released) {
             disposeFrame();
             snap = null;
@@ -707,14 +709,15 @@ async function sync() {
         }
         renderChat();
     } catch (e) {
-        if (e.name === 'AbortError') return;
+        if (controller !== syncRequest || controller.signal.aborted || stopped || e.name === 'AbortError') return;
         if ([401, 403, 404, 410].includes(e.status)) return stop(e.code === 'CLASSROOM_GAME_RESTRICTED' ? e.message : '访问已结束或游戏已下架');
         if (e.status === 409 && previous === snap) {
             const result = await api(
                 '/sync?' + new URLSearchParams({ ...subject(), hostInstance, after: 0 }),
                 { signal: controller.signal }
             ).catch(() => null);
-            if (controller === syncRequest && result?.snapshot) apply(result.snapshot);
+            if (controller !== syncRequest || stopped) return;
+            if (result?.snapshot) apply(result.snapshot);
         }
         notice(e.status === 409 ? '状态已更新' : '重连中…');
         delay = 3500;
@@ -766,8 +769,8 @@ function setLeaseClock(grant) {
     lease.deadline = received + grant.expiresAt - serverNow;
     lease.accessDeadline = grant.accessUntil ? received + grant.accessUntil - serverNow : Infinity;
     clearTimeout(accessTimer);
-    pendingAccess(false);
-    if (Number.isFinite(lease.accessDeadline)) {
+    pendingAccess(lease.accessDeadline <= received);
+    if (Number.isFinite(lease.accessDeadline) && lease.accessDeadline > received) {
         accessTimer = setTimeout(() => pendingAccess(true), Math.max(0, lease.accessDeadline - performance.now()));
     }
 }
@@ -875,10 +878,9 @@ function command(path, body, method = 'POST', key) {
 }
 
 function stopSync() {
-    if (syncRequest) {
-        syncRequest.abort();
-        syncRequest = null;
-    }
+    const controller = syncRequest;
+    syncRequest = null;
+    controller?.abort();
     clearTimeout(pollTimer);
 }
 
@@ -1343,9 +1345,10 @@ document.querySelector('[data-exit-game]').addEventListener('click', (e) => {
 });
 
 document.addEventListener('visibilitychange', () => {
-    updatePlayClock();
     if (!document.hidden && lease && performance.now() >= lease.deadline)
         return stop('游玩授权已到期。请重新连接以检查当前的课堂规则。');
+    if (lease && performance.now() >= lease.accessDeadline) pendingAccess(true);
+    else updatePlayClock();
     if (document.hidden) return;
     schedule(0);
     if (foreign && !flags.preview && !stopped)
@@ -1365,8 +1368,7 @@ addEventListener('pagehide', () => {
     pendingAccess(false);
     releaseLease();
     releaseInstance?.();
-    syncRequest?.abort();
-    clearTimeout(pollTimer);
+    stopSync();
     clearTimeout(clockTimer);
     clearTimeout(leaseTimer);
     clearTimeout(saveClearTimer);

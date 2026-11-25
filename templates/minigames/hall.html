@@ -87,7 +87,10 @@
 <li class="game-muted game-side-empty">{{ empty }}</li>
 {% endfor %}
 </ul>
-{% if key == 'popular' %}<details class="game-ranking-help"><summary>热度怎么算</summary><p>按最近 7 天的游玩人数、前台游玩时长和累计玩过人数排名。同一账号反复打开只算一人，每人每天最多贡献 20 分钟的时长加分。</p></details>{% endif %}
+{% if key == 'popular' %}<details class="game-ranking-help"><summary>热度怎么算</summary>
+<p>近 7 天每位玩家加 10 分。同一账号反复打开只算一人。每人每天在前台每玩满 5 分钟再加 1 分，最多加 4 分。</p>
+<p>累计玩过人数达到 1、2、4、8 人等翻倍门槛时，各加 1 分，最多加 10 分。近 7 天无人游玩的游戏退出榜单。</p>
+</details>{% endif %}
 </section>
 {% endfor %}
 </aside>
