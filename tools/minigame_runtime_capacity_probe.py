@@ -38,6 +38,7 @@ from tools.native_postgres_temp import OwnedPostgresRuntime
 # Changing package bytes requires a new review and an explicit pin here.
 SAMPLE_ZIP_SHA256 = "7e091377f709c3873220fce271c73e550d79033e9a664a9bc69aa82d49121b8a"
 SAMPLE_MANIFEST_SHA256 = "8a1d6e67814eea9c743df9afc77ffe5a98b4b024636cf83ee6df171fef5ea6c4"
+PROBE_ENTRY = b"<!doctype html><title>Capacity game</title>"
 
 
 def port():
@@ -116,7 +117,7 @@ class WindowsServerBudget:
         }
 
 
-def main_worker(owned_path, web_port, classroom_only=False, connections=2, production_api=False):
+def main_worker(owned_path, web_port, classroom_only=False, connections=2, production_api=False, content_only=False):
     marker = Path(owned_path) / "cluster" / "postmaster.pid"
     pid = marker.read_text(encoding="utf-8").splitlines()
     owner = json.loads((Path(owned_path) / ".native-pg-owner.json").read_text(encoding="utf8"))
@@ -142,9 +143,10 @@ def main_worker(owned_path, web_port, classroom_only=False, connections=2, produ
         POSTGRES_BACKEND_READY="true",
         POSTGRES_POOL_ENABLED="true",
         POSTGRES_POOL_MIN="1",
-        POSTGRES_POOL_MAX="6",
+        POSTGRES_POOL_MAX=str(connections) if production_api else "6",
+        POSTGRES_APPLICATION_NAME=f"capacity-{web_port}",
         GAMES_DB_WORKERS=str(connections),
-        LOGIN_ATTENDANCE_ENABLED="1" if production_api and not classroom_only else "0",
+        LOGIN_ATTENDANCE_ENABLED="1" if production_api and not (classroom_only or content_only) else "0",
         LANSHARE_DATA_ROOT=str(data),
     )
     from unittest.mock import patch
@@ -160,7 +162,9 @@ def main_worker(owned_path, web_port, classroom_only=False, connections=2, produ
         from fastapi import FastAPI
         import uvicorn
 
-        if production_api and not classroom_only:
+        if content_only:
+            from classroom_app.minigame_content import app as deployed_content
+        elif production_api and not classroom_only:
             from classroom_app.minigame_api import app as deployed_api
     import threading
     from contextlib import contextmanager
@@ -225,7 +229,9 @@ def main_worker(owned_path, web_port, classroom_only=False, connections=2, produ
                 await rt.stop_runtime()
             close_connection_pool()
 
-    if production_api and not classroom_only:
+    if content_only:
+        app = deployed_content
+    elif production_api and not classroom_only:
         app = deployed_api
     else:
         app = FastAPI(lifespan=lifespan)
@@ -263,6 +269,9 @@ def main_worker(owned_path, web_port, classroom_only=False, connections=2, produ
                 "ok": True,
                 "gameConnections": dict(metric),
                 "workerBudget": p._WORKERS,
+                "poolMax": int(os.environ["POSTGRES_POOL_MAX"]),
+                "role": "content" if content_only else "classroom" if classroom_only else "api",
+                "pid": os.getpid(),
                 "runtimeSQL": dict(sql_counts),
                 "processCPUSeconds": time.process_time(),
             }
@@ -350,6 +359,12 @@ def seed(dsn, secret, app_data):
             "INSERT INTO mg_versions(id,game_id,status,created_at,config_json,rules_json,writeback_json) VALUES('v1','probe','ready',1,?,?,?)",
             tuple(json.dumps(v) for v in (config, rules, writeback)),
         )
+        entry = PROBE_ENTRY
+        runtime_dir = p.game_root() / "versions" / "probe" / "v1" / "runtime"
+        runtime_dir.mkdir(parents=True)
+        (runtime_dir / "main.html").write_bytes(entry)
+        c.execute("""INSERT INTO mg_version_files(version_id,path,mime,byte_size,sha256)
+            VALUES('v1','main.html','text/html',?,?)""", (len(entry), hashlib.sha256(entry).hexdigest()))
         accounts = []
         for i in range(1, 202):
             sid = uuid.uuid4().hex
@@ -404,7 +419,7 @@ def stats(values):
     return {"n": len(values), "p50_ms": q(0.5), "p95_ms": q(0.95), "p99_ms": q(0.99), "max_ms": q(1)}
 
 
-def classroom_probe(port_number, credential, duration, log_path):
+def classroom_probe(port_number, credential, duration, log_path, stop_file):
     """A separate OS process clocks real classroom requests at the same 5 Hz in both phases."""
     import httpx
 
@@ -418,7 +433,7 @@ def classroom_probe(port_number, credential, duration, log_path):
         client.get(url, headers=headers).raise_for_status()
         until = time.monotonic() + duration
         next_log = time.monotonic() + 15
-        while time.monotonic() < until:
+        while time.monotonic() < until and not stop_file.exists():
             start = time.perf_counter()
             wall = time.time_ns() / 1e6
             try:
@@ -504,10 +519,13 @@ async def verify_two_workers(req):
 
 
 async def probe(
-    target, ports, accounts, seconds, baseline, classroom_pool, classroom_port, verify_http=False, measure_play=False
+    target, ports, accounts, seconds, baseline, classroom_pool, classroom_port, stop_file,
+    verify_http=False, content_port=None,
 ):
     import httpx
 
+    measure_play = content_port is not None
+    game_ports = [*ports, *([content_port] if measure_play else [])]
     origin = f"http://127.0.0.1:{ports[0]}"
     errors = Counter()
     samples = {}
@@ -518,6 +536,7 @@ async def probe(
             timeout=httpx.Timeout(8.0),
             limits=httpx.Limits(max_connections=160, max_keepalive_connections=80),
         ) as client,
+        httpx.AsyncClient(trust_env=False, timeout=8.0) as content_client,
     ):
 
         async def req(
@@ -560,7 +579,7 @@ async def probe(
                 errors[str(label) + ":" + type(e).__name__ + ":" + str(e)[:110]] += 1
                 raise
 
-        for wp in set((*ports, classroom_port)):
+        for wp in set((*game_ports, classroom_port)):
             for _ in range(90):
                 try:
                     if (await client.get(f"http://127.0.0.1:{wp}/__capacity/health")).status_code == 200:
@@ -573,6 +592,9 @@ async def probe(
 
         maintenance_window = []
         classroom_observations = {}
+        if measure_play:
+            # Fail before timing the classroom baseline if this synthetic catalog is incomplete.
+            await req(1, "GET", "/api/games/v1/sidebar")
 
         async def administer():
             # Independent synthetic game: ensure revocation does not interrupt the measured 20 rooms.
@@ -626,6 +648,7 @@ async def probe(
                 accounts[200][0],
                 duration,
                 target / (label + ".json"),
+                stop_file,
             )
             samples[label] = latency
             samples[label + "_service"] = service
@@ -691,7 +714,7 @@ async def probe(
 
         await asyncio.gather(*(form(j) for j in range(20)))
         # Periodic members stay attached. Controllers cross between the two HTTP processes.
-        before = [(await client.get(f"http://127.0.0.1:{p}/__capacity/health")).json() for p in ports]
+        before = [(await client.get(f"http://127.0.0.1:{p}/__capacity/health")).json() for p in game_ports]
         until = time.monotonic() + seconds
         stats_path = target / "progress.json"
         pending = {rid: {} for _, rid, _ in rooms}
@@ -790,6 +813,14 @@ async def probe(
             instance = f"capacity-player-{i}"
             grant = await req(i, "POST", "/api/games/v1/games/probe/launches",
                               {"hostInstance": instance}, "play_launch")
+            url = httpx.URL(grant["contentEntryUrl"])
+            if url.host != "localhost" or url.port != content_port:
+                raise AssertionError("The game lease did not target the isolated content worker")
+            start = time.perf_counter()
+            response = await content_client.get(url)
+            samples.setdefault("play_content_get", []).append((time.perf_counter() - start) * 1000)
+            if response.status_code != 200 or response.content != PROBE_ENTRY or "cookie" in response.request.headers:
+                raise RuntimeError(f"Isolated game entry GET failed: HTTP {response.status_code}")
             delay = 45 + 20 * ((i * 37) % 200) / 200
             while time.monotonic() + delay < until:
                 await asyncio.sleep(delay)
@@ -799,6 +830,19 @@ async def probe(
                 }, "play_usage_renew")
                 if "playWellbeing" not in grant:
                     raise AssertionError("Foreground interval was not recorded")
+
+        async def read_hall():
+            # Sixty open halls, each refreshing about once per minute.
+            i = 0
+            next_read = time.monotonic()
+            while measure_play and next_read < until:
+                await asyncio.sleep(max(0, next_read - time.monotonic()))
+                i = i % 200 + 1
+                next_read = max(next_read + 1, time.monotonic())
+                try:
+                    await req(i, "GET", "/api/games/v1/sidebar", label="hall_sidebar")
+                except httpx.TransportError:
+                    continue
 
         async def observe():
             while time.monotonic() < until:
@@ -814,6 +858,7 @@ async def probe(
             *(keep(i) for i in range(1, 201)),
             *(foreground_usage(i) for i in range(1, 201) if measure_play),
             *(command(*r) for r in rooms),
+            read_hall(),
             administer(),
             classroom(seconds, "classroom_mixed"),
             observe(),
@@ -824,14 +869,23 @@ async def probe(
             phase = "during_package" if maintenance_window[0] <= at <= maintenance_window[1] else "steady"
             samples.setdefault("classroom_" + phase, []).append(client_ms)
             samples.setdefault("classroom_" + phase + "_service", []).append(service_ms)
-        peaks = [(await client.get(f"http://127.0.0.1:{p}/__capacity/health")).json() for p in ports]
+        peaks = [(await client.get(f"http://127.0.0.1:{p}/__capacity/health")).json() for p in game_ports]
+        popularity = None
+        if measure_play and seconds >= 90:
+            board = await req(1, "GET", "/api/games/v1/sidebar")
+            game = next(row for row in board["popular"] if row["id"] == "probe")
+            popularity = {key: game[key] for key in ("playerCount", "recentPlayerCount", "recentPlaySeconds", "heatScore")}
+            if game["playerCount"] != 200 or game["recentPlayerCount"] != 200 or game["recentPlaySeconds"] <= 0:
+                raise AssertionError(f"The popular game lost or duplicated players: {popularity}")
     return {
+        "popularGame": popularity,
         "seconds": seconds,
         "baselineSeconds": baseline,
         "packageWindowSeconds": round((maintenance_window[1] - maintenance_window[0]) / 1000, 3),
         "players": 200,
         "rooms": 20,
         "workers": 2,
+        "contentWorkers": int(measure_play),
         "scope": "Windows loopback HTTP, owned PostgreSQL, actual game/QR handlers, independent classroom measurement process; no production/Nginx",
         "samples": {k: stats(v) for k, v in samples.items()},
         "errors": dict(errors),
@@ -860,7 +914,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seconds", type=int, default=1800)
     ap.add_argument("--baseline", type=int, default=60)
-    ap.add_argument("--connections-per-api", type=int, choices=(1, 2), default=2)
+    ap.add_argument("--connections-per-api", type=int, choices=(1, 2))
     ap.add_argument(
         "--production-api",
         action="store_true",
@@ -881,16 +935,24 @@ def main():
         help="Windows: below-normal scheduling for dedicated game processes",
     )
     ap.add_argument("--classroom-only", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--content-only", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--verify-budget-only", action="store_true")
     ap.add_argument("--verify-http", action="store_true")
     args = ap.parse_args()
+    if args.connections_per_api is None:
+        args.connections_per_api = 1 if args.production_api else 2
+    if args.production_api:
+        args.separate_classroom = True
+        if args.connections_per_api != 1:
+            ap.error("The production profile reserves one database connection per game HTTP process")
     if args.external_browser and not args.windows_2c4g:
         ap.error("External executor comparison requires the explicit 2c4g server budget")
     if args.deprioritize_games and not args.separate_classroom:
         ap.error("Scheduling priority only applies to separate game processes")
     if args.owned_worker:
         main_worker(
-            args.owned_worker, args.port, args.classroom_only, args.connections_per_api, args.production_api
+            args.owned_worker, args.port, args.classroom_only, args.connections_per_api, args.production_api,
+            args.content_only,
         )
         return
     if not 5 <= args.seconds <= 3600 or not 3 <= args.baseline <= 300:
@@ -920,6 +982,7 @@ def main():
                 "worker-0.log",
                 "worker-1.log",
                 "worker-2.log",
+                "worker-3.log",
                 "browser-executor.log",
                 "cluster-commands.log",
                 "postgres.log",
@@ -950,7 +1013,9 @@ def main():
         if budget:
             budget.attach_database(cluster)
         secret = secrets.token_hex(32)
-        ports = [port() for _ in range(3 if args.separate_classroom else 2)]
+        ports = [port() for _ in range(2 + int(args.separate_classroom) + int(args.production_api))]
+        content_port = ports[3] if args.production_api else None
+        classroom_port = ports[2] if args.separate_classroom else ports[1]
         if len(ports) != len(set(ports)):
             raise RuntimeError("Port collision")
         accounts = seed(f"postgresql://rehearsal_admin@127.0.0.1:{cluster.port}/postgres", secret, app_data)
@@ -964,7 +1029,7 @@ def main():
         )
         files.append(Path(__file__).resolve())
         if args.production_api:
-            files.append(ROOT / "classroom_app/minigame_api.py")
+            files.extend(ROOT / "classroom_app" / name for name in ("minigame_api.py", "minigame_content.py"))
         source = {
             file.relative_to(ROOT).as_posix(): hashlib.sha256(file.read_bytes()).hexdigest() for file in files
         }
@@ -986,7 +1051,7 @@ def main():
                     MINIGAME_PROBE_OWNER=str(cluster.target),
                     MINIGAME_PROBE_DATA=str(app_data),
                     MINIGAMES_APP_ORIGIN=f"http://127.0.0.1:{ports[0]}",
-                    MINIGAMES_CONTENT_ORIGIN=f"http://localhost:{ports[0]}",
+                    MINIGAMES_CONTENT_ORIGIN=f"http://localhost:{content_port or ports[0]}",
                     MINIGAMES_EXTERNAL_API="1" if args.production_api else "0",
                     TEMP=str(browser_temp),
                     TMP=str(browser_temp),
@@ -1085,6 +1150,7 @@ def main():
                         str(args.connections_per_api),
                         *(["--production-api"] if args.production_api else []),
                         *(["--classroom-only"] if w == 2 else []),
+                        *(["--content-only"] if w == 3 else []),
                     ],
                     cwd=ROOT,
                     env=env,
@@ -1096,7 +1162,7 @@ def main():
                 controls.callback(stop, proc)
                 if budget:
                     budget.add(proc.pid)
-                if args.deprioritize_games and w < 2:
+                if args.deprioritize_games and w != 2:
                     import psutil
 
                     psutil.Process(proc.pid).nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
@@ -1110,19 +1176,16 @@ def main():
             classroom_pool = controls.enter_context(
                 ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
             )
-            report = asyncio.run(
-                probe(
-                    evidence,
-                    ports[:2],
-                    accounts,
-                    args.seconds,
-                    args.baseline,
-                    classroom_pool,
-                    ports[-1],
-                    args.verify_http,
-                    args.production_api,
-                )
-            )
+            stop_file = app_data / "stop-classroom-probe"
+            try:
+                report = asyncio.run(probe(
+                    evidence, ports[:2], accounts, args.seconds, args.baseline,
+                    classroom_pool, classroom_port, stop_file, args.verify_http, content_port,
+                ))
+            finally:
+                # Cancelling an asyncio Future cannot interrupt an active ProcessPool job.
+                # Wake this run's observer before ExitStack waits for its executor.
+                stop_file.touch()
             if args.production_api and not args.verify_http:
                 from classroom_app.services import minigame_platform
 
@@ -1130,6 +1193,26 @@ def main():
                     daily = conn.execute("SELECT COUNT(DISTINCT student_id),"
                                          "SUM(early_seconds+day_seconds+late_seconds) FROM mg_play_days").fetchone()
                     visits = conn.execute("SELECT COUNT(DISTINCT student_id), COUNT(*) FROM login_attendance_access").fetchone()
+                    connections = {row[0]: row[1] for row in conn.execute("""
+                        SELECT application_name,COUNT(*) FROM pg_stat_activity
+                        WHERE application_name LIKE 'capacity-%' GROUP BY application_name""")}
+                peaks = report["workersObserved"]
+                total_peak = sum(worker["gameConnections"]["peak"] for worker in peaks)
+                report["connectionAudit"] = {
+                    "gameWorkerPeakUpperBound": total_peak,
+                    "gameWorkerConfiguredMaximum": sum(worker["poolMax"] for worker in peaks),
+                    "withClassroomMaximum": 1 + sum(worker["poolMax"] for worker in peaks),
+                    "observedPostgresConnections": {
+                        label: connections.get(f"capacity-{port_number}", 0)
+                        for label, port_number in zip(("api-1", "api-2", "classroom", "content"), ports)
+                    },
+                }
+                if ([w["role"] for w in peaks] != ["api", "api", "content"]
+                        or len({w["pid"] for w in peaks}) != 3
+                        or any(w["gameConnections"]["peak"] != 1 or w["poolMax"] != 1 for w in peaks)
+                        or any(n != 1 for n in report["connectionAudit"]["observedPostgresConnections"].values())
+                        or total_peak + 1 > 4):
+                    raise AssertionError(f"Unexpected database connection budget: {report['connectionAudit']}")
                 report["foregroundPlay"] = {"students": daily[0], "seconds": daily[1] or 0,
                                             "studentsWithVisits": visits[0], "visitRows": visits[1]}
                 if args.seconds >= 90 and (daily[0] != 200 or visits[0] != 200):
