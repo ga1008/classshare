@@ -363,6 +363,35 @@
     color: hsl(var(--lq-material-muted, var(--ls-ink-2)));
 }
 
+.game-side-main > .game-popular-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px var(--ls-s-2);
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+}
+
+.game-popular-title .lq-badge {
+    white-space: nowrap;
+}
+
+.game-side-main > .game-popular-people {
+    white-space: normal;
+    font-variant-numeric: tabular-nums;
+}
+
+.game-ranking-help {
+    font-size: var(--ls-t-caption);
+    color: hsl(var(--lq-material-muted, var(--ls-ink-2)));
+}
+
+.game-ranking-help summary {
+    width: fit-content;
+    cursor: pointer;
+}
+
 .game-friend-line {
     display: inline-flex;
     align-items: center;
@@ -528,7 +557,13 @@
 }
 
 .game-frame-box[data-tone='light'] {
-    background: hsl(var(--ls-surface-0));
+    background: hsl(var(--ls-fixed-white));
+}
+
+/* The game owns its letterbox. Platform controls and their glass sit on the
+   account theme's stage while the frame loads, waits or hands back control. */
+.game-frame-box:has(~ [data-stage-panel]:not([hidden])) {
+    visibility: hidden;
 }
 
 .game-frame-box iframe {
@@ -548,6 +583,8 @@
 .game-stage-panel {
     position: relative;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    box-sizing: border-box;
     justify-items: center;
     gap: var(--ls-s-3);
     max-height: calc(100% - 24px);
@@ -561,6 +598,7 @@
 
 .game-stage-panel h2 {
     margin: 0;
+    overflow-wrap: anywhere;
     font-size: clamp(1.2rem, 2.2vw, 1.5rem);
     color: hsl(var(--lq-material-ink, var(--ls-ink)));
 }
@@ -577,7 +615,7 @@
     display: grid;
     place-items: center;
     background: hsl(var(--ls-primary-soft));
-    color: hsl(var(--ls-primary));
+    color: hsl(var(--ls-on-primary-soft));
 }
 
 .game-stage-emblem[data-tone='success'] {
@@ -623,7 +661,7 @@
 
 .game-mode-deck {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
     gap: var(--ls-s-2);
     width: 100%;
     margin-top: var(--ls-s-1);
@@ -646,7 +684,7 @@
     display: grid;
     place-items: center;
     background: hsl(var(--ls-primary-soft));
-    color: hsl(var(--ls-primary));
+    color: hsl(var(--ls-on-primary-soft));
 }
 
 .game-mode-card__icon svg {
@@ -662,6 +700,25 @@
 .game-mode-card small {
     font-size: var(--ls-t-caption);
     color: hsl(var(--lq-material-muted, var(--ls-ink-2)));
+}
+
+@container (max-width: 27rem) {
+    .game-mode-deck {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .game-mode-card {
+        grid-template-columns: auto minmax(0, 1fr);
+        justify-items: start;
+        align-items: center;
+        gap: 0 var(--ls-s-3);
+        padding: var(--ls-s-2) var(--ls-s-3);
+        text-align: start;
+    }
+
+    .game-mode-card__icon {
+        grid-row: span 2;
+    }
 }
 
 .game-countdown-wrap {
@@ -716,7 +773,7 @@
 }
 
 .game-code-icon {
-    color: hsl(var(--ls-primary));
+    color: hsl(var(--ls-on-primary-soft));
     display: inline-grid;
     place-items: center;
 }
@@ -728,7 +785,7 @@
     letter-spacing: 0.22em;
     padding-left: 0.12em;
     user-select: all;
-    color: hsl(var(--lq-material-ink, var(--ls-ink)));
+    color: hsl(var(--ls-on-primary-soft));
 }
 
 .game-code-input {
@@ -760,7 +817,9 @@
     font-size: var(--ls-t-footnote);
     font-weight: 600;
     background: hsl(var(--ls-tone-neutral-soft));
-    color: hsl(var(--lq-material-ink, var(--ls-ink)));
+    color: hsl(var(--ls-tone-neutral-fg));
+    max-width: 100%;
+    overflow-wrap: anywhere;
 }
 
 .game-seat__num {
@@ -792,9 +851,9 @@
 }
 
 .game-seat--empty {
-    opacity: 0.55;
     border: 1px dashed hsl(var(--ls-control-line));
     background: transparent;
+    color: hsl(var(--lq-material-muted, var(--ls-ink-2)));
 }
 
 .game-stage-actions {
@@ -886,31 +945,25 @@
 .game-review-list {
     list-style: none;
     margin: 0;
-    padding: 0;
+    padding: var(--ls-s-1);
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: max-content;
     gap: var(--ls-s-2);
-}
-
-.game-review-item {
-    border-radius: var(--ls-r-lg);
-    border: 1px solid hsl(var(--ls-line));
-    overflow: hidden;
-    transition: border-color var(--ls-dur-fast) var(--ls-ease-out), background-color var(--ls-dur-fast) var(--ls-ease-out);
-}
-
-.game-review-item[data-lq-selected='true'] {
-    border-color: hsl(var(--ls-primary));
-    background: hsl(var(--ls-primary-soft));
+    overflow-y: auto;
+    align-content: start;
 }
 
 .game-review-card {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--ls-s-2);
     width: 100%;
     padding: var(--ls-s-3);
     text-align: left;
     justify-items: stretch;
     white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .game-review-card__top {
@@ -935,7 +988,6 @@
 
 .game-review-card__copy strong {
     font-size: var(--ls-t-sub);
-    overflow-wrap: anywhere;
 }
 
 .game-review-card__reason {
@@ -1106,15 +1158,14 @@
         max-height: calc(100vh - 6rem);
         grid-template-rows: auto minmax(0, 1fr) auto;
     }
-    .game-review-list {
-        overflow-y: auto;
-        align-content: start;
-    }
 }
 
 @media (max-width: 1080px) {
     .game-review-split {
         grid-template-columns: minmax(0, 1fr);
+    }
+    .game-review-list {
+        max-height: min(50vh, 26rem);
     }
 }
 

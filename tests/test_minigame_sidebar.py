@@ -10,7 +10,7 @@ from classroom_app.routers.minigames import sidebar_data
 from classroom_app.services import minigame_platform as platform
 from classroom_app.services.minigame_packages import ensure_package_schema
 from classroom_app.services.minigame_runtime_store import ensure_runtime_schema
-from classroom_app.services import minigame_wellbeing
+from classroom_app.services import minigame_popularity, minigame_wellbeing
 
 
 class SidebarTests(TestCase):
@@ -122,6 +122,7 @@ class SidebarTests(TestCase):
         activity("my-old", [viewer["actor"]], now - 9 * 86400000)
         activity("hot", ["student:2", "student:3", "student:4"], now - 50)
         activity("hot", ["student:2"], now - 20)
+        minigame_popularity.ensure_schema(conn, now)
         with patch.object(
             platform, "public_game", wraps=platform.public_game
         ) as projected:

@@ -92,6 +92,10 @@ def backup_counts(dsn, game_id):
         assert row
         counts = {"status": row[0], "version": row[1]}
         for table, column in (
+            ("mg_heat_games", "game_id"),
+            ("mg_heat_players", "game_id"),
+            ("mg_heat_days", "game_id"),
+            ("mg_heat_windows", "game_id"),
             ("mg_versions", "game_id"),
             ("mg_launch_leases", "game_id"),
             ("mg_admin_assets", "game_id"),
@@ -121,6 +125,8 @@ def make_backup(owned, game_id, survivor_id):
     assert target_counts["mg_versions"] == 2 and keep_counts["mg_versions"] == 1
     assert target_counts["mg_rt_progress"] and target_counts["mg_rt_activity"]
     assert target_counts["mg_launch_leases"] and keep_counts["mg_launch_leases"]
+    assert all(target_counts[key] for key in ("mg_heat_games", "mg_heat_players", "mg_heat_days", "mg_heat_windows"))
+    assert keep_counts["mg_heat_players"] == 1
     native_tool(owned, "pg_dump", "--format=custom", "--file", snapshot / "games.dump", "postgres")
     shutil.copytree(platform.game_root(), snapshot / "games")
     target_files = package_fingerprints(snapshot / "games/versions" / game_id)
@@ -249,6 +255,69 @@ def restore_and_replay(owned, backup, game_id, survivor_id):
     }
 
 
+def exercise_heat(assets, p, launch, catalog, player, teacher, gid):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from classroom_app.services import minigame_popularity as heat
+
+    now = p.now_ms()
+    with patch.object(p, "now_ms", return_value=now):
+        grants = [launch.launch(teacher, gid, {"hostInstance": "teacher-play-" + str(i)}, uuid.uuid4().hex)
+                  for i in range(2)]
+        for grant in grants:
+            assert assets.head(grant["contentEntryUrl"]).status_code == 200
+            assert assets.get(grant["contentEntryUrl"], headers={"Range": "bytes=0-0"}).status_code == 206
+        with p.game_db() as conn:
+            query = catalog.CatalogQuery(player, p._audience(conn, player))
+            initial = heat.popular(conn, query, now, 5)[0]
+            assert (initial["playerCount"], initial["recentPlayerCount"], initial["playSeconds"]) == (1, 1, 0)
+        barrier = Barrier(2)
+        def open_tab(grant):
+            barrier.wait(8)
+            return assets.get(grant["contentEntryUrl"]).status_code
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            assert list(pool.map(open_tab, grants)) == [200, 200]
+    with patch.object(p, "now_ms", return_value=now+37000):
+        def report(i):
+            barrier.wait(8)
+            sample = {"usageAnchor": grants[i]["expiresAt"], "playIntervals": [[0,37000]]}
+            return launch.change_grant(teacher, grants[i]["leaseId"], "teacher-play-"+str(i), False, sample)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            assert all("playWellbeing" not in data for data in pool.map(report, range(2)))
+        with p.game_db() as conn:
+            result = heat.popular(conn, query, now+37000, 5)[0]
+            assert tuple(result[k] for k in ("playerCount","effectiveOpens","recentPlayerCount","playSeconds","heatScore")) == (2,2,2,37,22)
+            conn.execute("SAVEPOINT heat_upgrade")
+            for table in ("mg_heat_migrations","mg_heat_windows","mg_heat_days","mg_heat_games","mg_heat_players"):
+                conn.execute("DELETE FROM "+table)
+            heat.ensure_schema(conn, now+37000)
+            heat.ensure_schema(conn, now+37000)
+            history = heat.popular(conn, query, now+37000, 5)
+            assert len(history)==1 and history[0]["playerCount"]==1 and history[0]["playSeconds"]==0
+            conn.execute("ROLLBACK TO SAVEPOINT heat_upgrade")
+            # Exercise the natural planner with enough rankings for a selective LIMIT.
+            # All synthetic scale rows and ANALYZE changes are rolled back with the savepoint.
+            conn.execute("SAVEPOINT heat_explain")
+            conn.execute("""INSERT INTO mg_games(id,owner_teacher_id,status,scope,current_version_id,created_at,updated_at)
+                SELECT 'heat-fixture-' || i,1,'listed','public','heat-fixture-' || i,1,1 FROM generate_series(1,5000) i""")
+            conn.execute("""INSERT INTO mg_versions(id,game_id,status,created_at)
+                SELECT id,id,'ready',1 FROM mg_games WHERE id LIKE 'heat-fixture-%'""")
+            conn.execute("""INSERT INTO mg_heat_games SELECT id,10,0 FROM mg_games WHERE id LIKE 'heat-fixture-%'""")
+            day = heat.local_day(now//1000)
+            conn.execute("""INSERT INTO mg_heat_windows(game_id,slot,day,people,heat,bonus)
+                SELECT g.game_id,mod(d,7),d,10,104,4 FROM mg_heat_games g CROSS JOIN generate_series(?::int,?::int) d
+                WHERE g.game_id<>?""",(day,day+6,gid))
+            for table in ("mg_games", "mg_versions", "mg_heat_games", "mg_heat_windows"):
+                conn.execute("ANALYZE "+table)
+            explanation = conn.execute("EXPLAIN (ANALYZE,BUFFERS,FORMAT TEXT) "+heat.popular_statement(query),
+                                       (day, *query.args, 5)).fetchall()
+            plan = "\n".join(row[0] for row in explanation)
+            assert "mg_heat_rank" in plan and "mg_rt_seats" not in plan and "mg_heat_players" not in plan, plan
+            conn.execute("ROLLBACK TO SAVEPOINT heat_explain")
+    return {"parallelTeacherTabs":2, "distinctPlayers":2,"overlappingForegroundSeconds":37,
+            "ignoredHeadRangeAndPreview":True, "rankedGamesInExplain":5001, "rankIndex":"mg_heat_rank", "rankPlan":plan}
+
+
 def exercise(owned):
     from fastapi.testclient import TestClient
     from classroom_app.services import (
@@ -334,6 +403,7 @@ def exercise(owned):
             player, gid, {"purpose": "play", "versionId": first, "hostInstance": "kept-solo"}, new_key()
         )
         assert assets.get(grant["contentEntryUrl"]).status_code == 200
+        heat_results = exercise_heat(assets, p, launch, catalog, player, teacher, gid)
         from classroom_app.services import minigame_classroom_access as classroom_access
         restricted = classroom_access.save(teacher, 8, {
             "mode": "deny", "durationMinutes": 2, "gameIds": [gid], "expectedRevision": 0,
@@ -398,11 +468,17 @@ def exercise(owned):
         survivor_id = survivor["id"]
         with (source.parent / "three-in-line.zip").open("rb") as stream:
             survivor = publish(survivor_id, stream, survivor["revision"])
+        surviving_grant = launch.launch(player, survivor_id, {"hostInstance": "surviving-game"}, new_key())
+        assert assets.get(surviving_grant["contentEntryUrl"]).status_code == 200
         # Snapshot the live, listed target, including its active old-version lease and saved rank.
         # No worker or other game writer runs while the two backup components are captured.
         backup = make_backup(owned, gid, survivor_id)
         unlisted = action("unlist", gid, {"expectedRevision": updated["revision"]})["game"]
         assert assets.get(grant["contentEntryUrl"]).status_code == 404
+        with p.game_db() as conn:
+            from classroom_app.services import minigame_popularity as heat
+            visible = heat.popular(conn, catalog.CatalogQuery(player, p._audience(conn, player)), p.now_ms(), 5)
+            assert [r["id"] for r in visible] == [survivor_id]
         plan = action("plan", gid, {"expectedRevision": unlisted["revision"]})
         assert plan["impact"]["saves"] == 1
         ticket = action(
@@ -439,6 +515,7 @@ def exercise(owned):
         "scopeChecks": 21,
         "classroomLeaseDeniedAndRestored": True,
         "filterChecks": 3,
+        "popularity": heat_results,
         "cursorChecks": 2,
         "versionsPublished": 2,
         "htmlPreviewReceipt": True,

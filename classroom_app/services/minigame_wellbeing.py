@@ -102,7 +102,7 @@ def _settle_courses(conn, student_id, local_day, now_ms, delta):
         mark_student_learning_progress_dirty(conn, row["id"], student_id, source_ref=ref)
 
 
-def _sample_seconds(anchor, intervals, now_ms):
+def sample_seconds(anchor, intervals, now_ms):
     """Each bit is a server-clock second. A lease can supply at most 90 seconds."""
     if not isinstance(intervals, list) or len(intervals) > 32:
         raise HTTPException(422, "游戏计时区间无效")
@@ -118,12 +118,13 @@ def _sample_seconds(anchor, intervals, now_ms):
     return covered
 
 
-def record(conn, student_id, expires_at, sample, now_ms, *, allowed_until=None):
+def record(conn, student_id, expires_at, sample, now_ms, *, allowed_until=None, seconds=None):
     """Caller owns the verified lease row. Its prior expiry is the single-use sample anchor."""
     if not sample or sample.get("usageAnchor") != expires_at or now_ms >= expires_at:
         return None
     end = now_ms if allowed_until is None else min(allowed_until, now_ms)
-    seconds = _sample_seconds(expires_at, sample.get("playIntervals"), end)
+    if seconds is None:
+        seconds = sample_seconds(expires_at, sample.get("playIntervals"), end)
     if not seconds:
         return None
     serialize_on(conn, "mg-play-time", [str(student_id)])

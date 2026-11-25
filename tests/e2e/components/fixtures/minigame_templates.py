@@ -63,7 +63,8 @@ if page == "classroom":
 html = env.get_template(template_name).render(
     request=SimpleNamespace(query_params={}, url=SimpleNamespace(path="/manage/library/games/reviews" if page == "reviews" else "/games")),
     user_info=user, user=user,
-    games=[data["game"]], game=data["game"], csrf_token="synthetic-only", sidebar={}, preview_version_id=None,
+    games=[data["game"]], game=data["game"], csrf_token="synthetic-only",
+    sidebar=data.get("sidebar", {}), sidebar_hydrated=bool(data.get("sidebar")), preview_version_id=None,
     active_page=active_page, manage_nav=build_manage_nav(user, active_page, is_super_admin=is_super),
     page_title=page_title,
     current_teacher_is_super_admin=is_super, can_publish=is_super,

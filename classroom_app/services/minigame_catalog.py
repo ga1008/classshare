@@ -183,6 +183,8 @@ def page(conn, user, q="", mode="", tag="", cursor="", limit=24, audience=None, 
 
 def recommended(conn, query, recent, popular, limit):
     """Fill in priority order; each query returns only the unfilled number of cards."""
+    from .minigame_popularity import METRICS
+
     cards = {}
 
     def pick(condition, args, reason):
@@ -216,7 +218,7 @@ def recommended(conn, query, recent, popular, limit):
         if len(cards) == limit:
             break
         if game["id"] not in cards:
-            cards[game["id"]] = {k: v for k, v in game.items() if k != "playerCount"}
+            cards[game["id"]] = {k: v for k, v in game.items() if k not in METRICS}
             cards[game["id"]]["reason"] = "近期热门"
     pick("1=1", (), lambda _: "最近更新")
     return list(cards.values())

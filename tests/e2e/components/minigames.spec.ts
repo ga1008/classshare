@@ -18,8 +18,9 @@ const game = {id:'g1',slug:'beacon-relay',title:'航标接力',summary:'点亮�
   minTier:0,maxTier:10,scope:'public',status:'listed',revision:4,currentVersionId:'v1',iconUrl:'/api/games/v1/games/g1/icon',
   authorName:'合成作者',allowRemix:true,versionCount:2,sourceVersionId:'v1',sourceUrl:'/api/games/v1/games/g1/source'};
 function render(view:string, role:string, preference?:any){
+  const sidebar = view === 'hall' ? {popular:[{...game, playerCount:120, recentPlayerCount:13, heatScore:138}]} : undefined;
   return execFileSync(python,[path.join(__dirname,'fixtures/minigame_templates.py')],{
-    cwd:repo,input:JSON.stringify({page:view,role,game,preference}),encoding:'utf8',
+    cwd:repo,input:JSON.stringify({page:view,role,game,preference,sidebar}),encoding:'utf8',
     env:{...process.env,PYTHONDONTWRITEBYTECODE:'1',PYTHONUTF8:'1'}
   });
 }
@@ -54,7 +55,7 @@ async function fixture(page:Page,view:string,role='student',waitingForProbe=fals
       view==='hall' && discovery.revision ? render(view,role,discovery) : html});
     if(req.method()!=='GET'&&u.pathname.startsWith('/api/games/v1'))writes.push({path:p,body});
     if(p==='/catalog')return json({items:u.searchParams.get('q')==='无此游戏'?[]:[game],nextCursor:null});
-    if(p==='/sidebar')return json({recent:[game],popular:[game],friends:[],recommended:[game]});
+    if(p==='/sidebar')return json({recent:[game],popular:[{...game, playerCount:121, recentPlayerCount:14, heatScore:148}],friends:[],recommended:[game]});
     if(p==='/me/preferences')return json(req.method()==='GET'?pref:Object.assign(pref,body));
     if(p==='/discovery-preferences'){
       if(req.method()==='PUT')discovery={genres:body.genres,tags:body.tags,revision:discovery.revision+1};
@@ -381,6 +382,25 @@ test('游戏大厅布局、原生链接、搜索和游玩偏好',async({page},in
   await expect.poll(()=>writes.filter(x=>x.path==='/me/preferences').length).toBe(1);
   await page.getByRole('searchbox').fill('无此游戏');await expect(page.locator('[data-grid-empty]')).toBeVisible();
 });
+test('热门游戏名称后的热度、累计人数与近期人数在首屏和刷新后一致呈现', async ({page}, info) => {
+  await page.setViewportSize({width:320,height:720});
+  await fixture(page,'hall');
+  const popular = page.locator('[data-sidebar="popular"] a');
+  const title = popular.locator('.game-popular-title');
+  await expect(title).toContainText(game.title);
+  await expect(title.locator('.lq-badge')).toHaveText('热度 138');
+  await expect(popular).toContainText('累计 120 人玩过 · 近 7 天 13 人');
+  await page.getByRole('button',{name:'刷新动态'}).click();
+  await expect(title.locator('.lq-badge')).toHaveText('热度 148');
+  await expect(popular).toContainText('累计 121 人玩过 · 近 7 天 14 人');
+  await expect(popular).toHaveAttribute('href','/games/beacon-relay');
+  await page.getByText('热度怎么算',{exact:true}).click();
+  await expect(page.getByText(/同一账号反复打开只算一人/)).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  await popular.locator('..').scrollIntoViewIfNeeded();
+  await page.screenshot({path:info.outputPath('热门排行-320.png'),animations:'disabled'});
+});
+
 test('真实隔离 SDK 单人开局与动作，错码保留原局后转队',async({page})=>{
   const {writes}=await fixture(page,'host');
   await expect(page.getByRole('link',{name:'下载源码'})).toHaveAttribute('href','/api/games/v1/games/g1/source');

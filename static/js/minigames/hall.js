@@ -13,6 +13,7 @@ import {
 } from './ui.js';
 
 import { wellbeingSummary } from './play-time.js';
+import { createComponent } from '../lq/components.js';
 
 const boot = bootstrap();
 const wellbeing = document.querySelector('[data-wellbeing-summary]');
@@ -284,8 +285,7 @@ async function chooseDiscovery() {
 }
 discoverySummary();
 
-function shortNote(name, row) {
-    if (name === 'popular' && row.playerCount != null) return String(row.playerCount);
+function shortNote(row) {
     const raw = row.reason || row.label || '';
     return raw.replace(/^同标签\s*·\s*/, '#').replace('教师精选', '精选').replace('近期热门', '热门').replace('最近更新', '新上');
 }
@@ -312,16 +312,26 @@ function section(name, rows) {
             dot.setAttribute('aria-hidden', 'true');
             liveWrap.append(dot, el('strong', person));
             info.append(liveWrap, el('small', g.title));
+        } else if (name === 'popular') {
+            const title = el('span', null, 'game-popular-title');
+            title.append(el('span', g.title));
+            if (row.heatScore != null) {
+                title.append(createComponent('badge', { value: '热度 ' + row.heatScore, tone: 'warning' }));
+            }
+            info.append(title);
+            if (row.playerCount != null) {
+                const recent = row.recentPlayerCount == null ? '' : ' · 近 7 天 ' + row.recentPlayerCount + ' 人';
+                info.append(el('small', '累计 ' + row.playerCount + ' 人玩过' + recent, 'game-popular-people'));
+            }
         } else {
             info.append(el('span', g.title));
         }
         const restricted = restriction(row.access || g.access);
         if (restricted) info.append(restricted);
         a.append(info);
-        const note = shortNote(name, row);
+        const note = name !== 'popular' && shortNote(row);
         if (note) {
             const badge = el('small', note, 'game-side-badge');
-            if (name === 'popular') badge.prepend(svgIcon('solo', 'game-mini-icon'));
             a.append(badge);
         }
         li.append(a);

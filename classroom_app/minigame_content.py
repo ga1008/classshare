@@ -1,6 +1,9 @@
 """Standalone ASGI application for the cookie-free game content hostname."""
 
+import asyncio
+from contextlib import suppress
 import logging
+import random
 import re
 import unicodedata
 from urllib.parse import unquote_to_bytes, urlsplit
@@ -8,7 +11,8 @@ from urllib.parse import unquote_to_bytes, urlsplit
 from fastapi import FastAPI, Request, HTTPException
 from starlette.responses import FileResponse, Response
 
-from .services.minigame_launch import mark_preview_loaded, resolve_asset
+from .services.minigame_launch import mark_entry_loaded, resolve_asset
+from .services import minigame_platform
 from .services.minigame_platform import asset_usage, content_origins, platform_origins, run_db
 
 app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None)
@@ -64,7 +68,7 @@ async def serve(request: Request, handle: str, path: str):
         ):
             raise HTTPException(404)
         path = canonical_asset(request.scope.get("raw_path", b""), handle, path)
-        filename, mime, game_id, preview = await run_db(resolve_asset, handle, path)
+        filename, mime, game_id, entry = await run_db(resolve_asset, handle, path)
     except HTTPException as exc:
         return Response(
             status_code=503 if exc.status_code == 503 else 404, headers=BASE_HEADERS
@@ -77,7 +81,7 @@ async def serve(request: Request, handle: str, path: str):
     return GameFileResponse(
         game_id,
         filename,
-        preview=preview
+        entry=entry
         if request.method == "GET" and "range" not in request.headers
         else None,
         media_type=mime,
@@ -86,10 +90,10 @@ async def serve(request: Request, handle: str, path: str):
 
 
 class GameFileResponse(FileResponse):
-    def __init__(self, game_id, *args, preview=None, **kwargs):
+    def __init__(self, game_id, *args, entry=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.game_id = game_id
-        self.preview = preview
+        self.entry = entry
 
     async def __call__(self, scope, receive, send):
         try:
@@ -107,17 +111,52 @@ class GameFileResponse(FileResponse):
                         if k != "http.response.pathsend"
                     },
                 }
-                await super().__call__(scope, receive, send)
+                if not self.entry:
+                    return await super().__call__(scope, receive, send)
+                # Uvicorn may silently ignore sends after transport loss. Observe peer
+                # disconnects until the final body send, before normal ASGI completion
+                # itself makes receive() return http.disconnect.
+                disconnected = False
+                delivered = None
+
+                async def watch_connection():
+                    nonlocal disconnected
+                    while True:
+                        if (await receive())["type"] == "http.disconnect":
+                            disconnected = True
+                            return
+
+                async def send_entry(message):
+                    nonlocal delivered
+                    await send(message)
+                    if message["type"] == "http.response.body" and not message.get("more_body") and not disconnected:
+                        delivered = minigame_platform.now_ms()
+
+                watcher = asyncio.create_task(watch_connection())
+                try:
+                    await super().__call__(scope, receive, send_entry)
+                finally:
+                    watcher.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await watcher
         except HTTPException as exc:
             return await Response(status_code=exc.status_code, headers=BASE_HEADERS)(
                 scope, receive, send
             )
-        if self.preview:
-            # A failed or interrupted send never reaches this point. Recheck
-            # the live preview lease before accepting this completed transfer.
-            try:
-                await run_db(mark_preview_loaded, self.preview)
-            except Exception:
-                logging.getLogger(__name__).exception(
-                    "Could not record the completed game preview"
-                )
+        if delivered is not None:
+            # Recheck the live lease before accepting this completed transfer.
+            for attempt in range(3):
+                try:
+                    await run_db(mark_entry_loaded, self.entry, delivered)
+                    break
+                except HTTPException as exc:
+                    if exc.status_code in (401, 403, 404, 410):
+                        break
+                    if exc.status_code == 503 and attempt < 2:
+                        await asyncio.sleep(1.5 + random.random() + attempt)
+                        continue
+                    logging.getLogger(__name__).exception("Could not record the completed game entry")
+                    break
+                except Exception:
+                    logging.getLogger(__name__).exception("Could not record the completed game entry")
+                    break

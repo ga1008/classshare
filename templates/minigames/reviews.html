@@ -38,9 +38,9 @@
     </header>
     {{ ui.notice() }}
     <div class="game-review-split">
-        <aside class="lq-surface game-review-queue" data-lq-component="surface" aria-label="待审核小游戏列表">
+        <aside class="lq-surface game-review-queue" data-lq-component="surface" aria-labelledby="game-review-queue-heading">
             <div class="game-section-head game-review-queue__head">
-                <h2 class="game-section-title">{{ ui.g_icon('shield', 'game-mini-icon') }}<span data-queue-heading>待人工审核</span></h2>
+                <h2 class="game-section-title" id="game-review-queue-heading">{{ ui.g_icon('shield', 'game-mini-icon') }}<span data-queue-heading>待人工审核</span></h2>
                 <small class="game-key-pill" data-queue-total>0 项</small>
             </div>
             <ul class="game-review-list" data-review-list aria-label="审核队列"></ul>

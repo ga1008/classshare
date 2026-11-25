@@ -34,19 +34,20 @@
 </nav>
 </header>
 <section class="game-stage" aria-label="游戏舞台">
+<span class="sr-only" role="status" aria-atomic="true" data-stage-announcement></span>
 <div data-stage-frame class="game-frame-box"></div>
 <p class="lq-status game-access-check" role="status" data-access-check hidden>正在检查课堂访问规则…</p>
-<section class="lq-surface game-stage-panel" data-lq-component="surface" data-stage-panel aria-label="游玩状态">
+<section class="lq-surface game-stage-panel" data-lq-component="surface" data-lq-material="raised" data-stage-panel aria-label="游玩状态">
 <div class="game-stage-emblem" data-stage-emblem data-tone="primary" aria-hidden="true">{{ ui.g_icon('gamepad', 'game-emblem-svg') }}</div>
 <h2 data-stage-title>{{ game.title }}</h2>
 <p data-stage-message class="game-muted" hidden></p>
 <div class="game-mode-deck" data-stage-modes hidden></div>
-<div class="game-countdown-wrap" data-countdown-wrap hidden>
+<div class="game-countdown-wrap" data-countdown-wrap role="timer" aria-label="开局倒计时（秒）" hidden>
 <svg class="game-ring-svg" viewBox="0 0 120 120" aria-hidden="true">
 <circle class="game-ring-track" cx="60" cy="60" r="52" pathLength="100"/>
 <circle class="game-ring-fill" data-countdown-ring cx="60" cy="60" r="52" pathLength="100"/>
 </svg>
-<strong class="game-countdown" aria-hidden="true" data-countdown hidden></strong>
+<strong class="game-countdown" data-countdown hidden></strong>
 </div>
 <div class="game-code-bar" data-room-code hidden>
 <span class="game-code-icon" aria-hidden="true">{{ ui.g_icon('key', 'game-mini-icon') }}</span>

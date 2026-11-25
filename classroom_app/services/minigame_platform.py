@@ -178,6 +178,8 @@ def ensure_catalog_schema(conn):
         "CREATE INDEX IF NOT EXISTS mg_lease_expiry ON mg_launch_leases(expires_at)",
     ):
         conn.execute(sql)
+    from ..db.schema_social import _add_column_if_missing
+    _add_column_if_missing(conn, get_configured_db_engine(), "mg_launch_leases", "play_loaded_at", "BIGINT NOT NULL DEFAULT 0")
     pending = conn.execute("""SELECT v.id,v.files_json FROM mg_versions v
         WHERE v.status IN ('ready','retired') AND v.files_json<>'{}'
           AND NOT EXISTS (SELECT 1 FROM mg_version_files f WHERE f.version_id=v.id)""").fetchall()
@@ -199,7 +201,7 @@ def index_version_files(conn, version_id, files):
 def ensure_all_schema(conn):
     from .minigame_packages import ensure_package_schema
     from .minigame_runtime import ensure_runtime_schema
-    from . import minigame_discovery, minigame_moderation, minigame_wellbeing
+    from . import minigame_discovery, minigame_moderation, minigame_popularity, minigame_wellbeing
 
     # SQLite otherwise auto-commits initial DDL before its first DML statement.
     # PostgreSQL's IF NOT EXISTS alone does not serialize concurrent first installs.
@@ -210,6 +212,7 @@ def ensure_all_schema(conn):
     minigame_discovery.ensure_schema(conn)
     minigame_moderation.ensure_schema(conn)
     minigame_wellbeing.ensure_schema(conn)
+    minigame_popularity.ensure_schema(conn, now_ms())
     missing = []
     if not schema_installed(conn, missing=missing):
         raise RuntimeError("小游戏迁移未完成，事务将回滚。缺少 " + "、".join(missing))
@@ -685,7 +688,12 @@ def schema_installed(conn=None, *, missing=None):
         "mg_games": "id* slug owner_teacher_id title summary tags_json scope targets_json org_json min_tier max_tier featured status current_version_id revision policy_revision created_at updated_at",
         "mg_versions": "id* game_id release_version digest config_json writeback_json rules_json files_json status created_at",
         "mg_version_files": "version_id* path* mime byte_size sha256",
-        "mg_launch_leases": "handle_hash* lease_id actor sid_hash game_id version_id purpose policy_revision host_instance expires_at run_id signature command_key command_digest revoked",
+        "mg_heat_players": "game_id* actor* last_day day_seconds prior_seconds coverage_base coverage_bits",
+        "mg_heat_games": "game_id* people seconds",
+        "mg_heat_days": "game_id* slot* day seconds",
+        "mg_heat_windows": "game_id* slot* day people heat bonus",
+        "mg_heat_migrations": "version*",
+        "mg_launch_leases": "play_loaded_at handle_hash* lease_id actor sid_hash game_id version_id purpose policy_revision host_instance expires_at run_id signature command_key command_digest revoked",
         "mg_admin_jobs": "id* game_id version_id actor kind status stage token expires due reserved error_json result_json created",
         "mg_admin_receipts": "actor* op* key_value* game_id digest result",
         "mg_admin_plans": "token* actor game_id revision expires",
@@ -747,7 +755,7 @@ def schema_installed(conn=None, *, missing=None):
         }:
             problems.append(table + " PRIMARY KEY")
     indexes = set(
-        "mg_catalog_status mg_versions_game mg_versions_release mg_lease_game mg_lease_expiry "
+        "mg_heat_rank mg_catalog_status mg_versions_game mg_versions_release mg_lease_game mg_lease_expiry "
         "idx_mg_jobs_due idx_mg_jobs_game idx_mg_preview_receipt idx_mg_preview_age idx_mg_releases_series "
         "mg_content_reviews_queue mg_review_notices_due idx_mg_authorship_digest".split()
     )
@@ -763,6 +771,8 @@ def schema_installed(conn=None, *, missing=None):
         and not conn.execute("SELECT 1 FROM mg_admin_serial WHERE id=1").fetchone()
     ):
         problems.append("mg_admin_serial[1]")
+    if not problems and not conn.execute("SELECT 1 FROM mg_heat_migrations WHERE version=1").fetchone():
+        problems.append("mg_heat_migrations[1]")
     if missing is not None:
         missing.extend(problems)
     return not problems

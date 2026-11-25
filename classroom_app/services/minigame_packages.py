@@ -1508,6 +1508,7 @@ def delete_job(job):
         purge_game(conn, game)
         conn.execute("DELETE FROM mg_launch_leases WHERE game_id=?", (game,))
         for table in (
+            "mg_heat_players", "mg_heat_days", "mg_heat_windows", "mg_heat_games",
             "mg_admin_assets",
             "mg_admin_plans",
             "mg_admin_playtests",

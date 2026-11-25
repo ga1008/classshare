@@ -403,7 +403,7 @@
       "layer": "composite",
       "summary": "游玩大厅（/games）、沉浸沙盒宿主（/games/{slug}）、个人作品管理（/manage/library/games 与 /games/workshop）及超管小游戏审核台（/manage/library/games/reviews）。左侧资源库下设“小游戏”分类，包含所有人一致的“小游戏管理”与超管独有的“小游戏审核”；作品详情页默认展示当前状态、快捷切换操作、只读属性卡（编辑/保存/取消）及同游戏版本与关联作品跳转；超管审核台采用状态芯片筛选、自动 AI 审核策略开关、主从分栏队列、AI 风险查验报告与可点击跳转证据，并内嵌复用材料管理器（createMaterialsExplorer 只读模式 + material_renderers）实现已解压文件包树形浏览、源码/图片/音视频在线预览、原包下载与隔离试玩。",
       "params": "复用 LQ Topbar、Surface(content/embedded)、Button(lq_props/createComponent)、Chip(filter/status)、Badge、Alert、Choice 复合卡(data-lq-shape=surface)、Form(input/textarea/select/checkbox/file)、Dropdown、Progress、Dialog/Drawer/Sheet/Confirm、Composer、bindTooltip 及材料管理器 createMaterialsExplorer(mode=embedded,readOnly=true) / renderMaterialPreview；局部绘制游戏矢量图标沿用 lq-btn__icon 槽位，不扩首屏共享图标包。",
-      "states": "大厅 SSR 展示学生当日游戏时长和游戏访问状态。课堂与大厅共用规则表单，支持逐游戏搜索多选、冲突后重读、倒计时及到期恢复。宿主通过既有租约续期上报前台游玩，切回前台时核对权限。作者管理本人版本，超管管理全部作品。所有新版本静态校验完成后进入终审队列，AI 查验仅提供报告，超管可查看原包、隔离预览、终审通过或退回。",
+      "states": "大厅首屏与刷新共用热门榜口径，游戏名后展示热度，下一行展示累计玩家与近七天玩家。审核左栏随状态和理由换行，溢出由队列滚动处理；组队、退出等待及倒计时面板使用账户主题，游戏留边颜色仅作用于画框。大厅 SSR 展示学生当日游戏时长和游戏访问状态。课堂与大厅共用规则表单，支持逐游戏搜索多选、冲突后重读、倒计时及到期恢复。宿主通过既有租约续期上报前台游玩，切回前台时核对权限。作者管理本人版本，超管管理全部作品。所有新版本静态校验完成后进入终审队列，AI 查验仅提供报告，超管可查看原包、隔离预览、终审通过或退回。",
       "rules": "页面 CSS 仅负责网格、主从分栏、嵌入式文件浏览器尺寸、属性列表、版本跳转行、席位与徽记几何，零硬编码字面色值、零私有 backdrop-filter、零字面 z-index；精细指针仅激活当前卡光晕并在粗指针/减少动效/强制色下完全关闭，空闲零 rAF。"
     }
   },

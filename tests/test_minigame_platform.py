@@ -194,7 +194,7 @@ class GamePlatformTests(GamePlatformFixture):
         source = self.root / "main.html"
         source.write_bytes(b"synthetic preview")
         response = minigame_content.GameFileResponse(
-            uuid.uuid4().hex, source, preview=("fixture",)
+            uuid.uuid4().hex, source, entry=("preview","fixture")
         )
 
         async def disconnected(message):
@@ -202,15 +202,57 @@ class GamePlatformTests(GamePlatformFixture):
                 raise OSError("synthetic client disconnected")
 
         with (
-            patch.object(minigame_content, "mark_preview_loaded") as receipt,
+            patch.object(minigame_content, "mark_entry_loaded") as receipt,
             self.assertRaises(OSError),
         ):
             asyncio.run(
                 response(
-                    {"type": "http", "method": "GET", "headers": []}, None, disconnected
+                    {"type": "http", "method": "GET", "headers": []}, asyncio.Event().wait, disconnected
                 )
             )
         receipt.assert_not_called()
+
+    def test_silent_transport_disconnect_excludes_partial_entry(self):
+        import asyncio
+        from unittest.mock import AsyncMock
+        from classroom_app import minigame_content
+
+        source = self.root / "main.html"
+        source.write_bytes(b"synthetic bytes split into chunks")
+        response = minigame_content.GameFileResponse("game", source, entry=("play","game","ver","teacher:901","lease"))
+        response.chunk_size = 4
+
+        async def exercise():
+            lost = asyncio.Event()
+            async def receive():
+                await lost.wait()
+                return {"type": "http.disconnect"}
+            async def send(message):
+                if message["type"] == "http.response.body" and message.get("more_body"):
+                    lost.set()
+                # Like Uvicorn, sends after disconnect return without raising.
+                await asyncio.sleep(0)
+            await response({"type":"http","method":"GET","headers":[]}, receive, send)
+
+        with patch.object(minigame_content, "run_db", AsyncMock()) as receipt:
+            asyncio.run(exercise())
+            receipt.assert_not_awaited()
+
+    def test_completed_entry_retries_transient_database_busy(self):
+        import asyncio
+        from unittest.mock import AsyncMock
+        from fastapi import HTTPException
+        from classroom_app import minigame_content
+
+        source = self.root / "main.html"
+        source.write_bytes(b"synthetic")
+        entry = ("play", "game", "version", "student:931", "lease")
+        response = minigame_content.GameFileResponse("game", source, entry=entry)
+        db = AsyncMock(side_effect=[HTTPException(503), None])
+        with patch.object(minigame_content, "run_db", db), patch.object(minigame_content.asyncio, "sleep", AsyncMock()):
+            asyncio.run(response({"type":"http","method":"GET","headers":[]}, asyncio.Event().wait, AsyncMock()))
+        self.assertEqual(db.await_count, 2)
+        self.assertEqual(db.await_args_list[0], db.await_args_list[1])
 
     def test_author_can_regenerate_portable_package(self):
         import zipfile

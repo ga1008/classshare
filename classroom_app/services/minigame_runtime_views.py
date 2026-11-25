@@ -358,30 +358,18 @@ def _friends_playing(conn, user, query, now, limit):
 def runtime_sidebar(conn, user, query, limit):
     from .minigame_catalog import CATALOG
 
-    def ranked(condition, args, *, count_people=False):
-        metrics = "MAX(a.started) AS last_play"
-        ordering = "last_play DESC, game_id"
-        if count_people:
-            metrics += ",COUNT(DISTINCT s.actor) AS people"
-            ordering = "people DESC," + ordering
-        sql = f"""WITH picks AS (
-            SELECT g.id AS game_id,{metrics} FROM {CATALOG}
-            JOIN mg_rt_activity a ON a.game=g.id JOIN mg_rt_seats s ON s.activity=a.id
-            WHERE {query.visible} AND {condition}
-            GROUP BY g.id ORDER BY {ordering} LIMIT ?)
-            SELECT {query.card_columns},picks.* FROM {CATALOG} JOIN picks ON picks.game_id=g.id
-            ORDER BY {ordering}"""
-        result = []
-        for row in conn.execute(sql, (*query.args, *args, limit)):
-            game = platform.public_game(row)
-            if count_people:
-                game["playerCount"] = row["people"]
-            result.append(game)
-        return result
+    from . import minigame_popularity
 
+    recent = conn.execute(f"""WITH picks AS (
+        SELECT g.id AS game_id,MAX(a.started) AS last_play FROM {CATALOG}
+        JOIN mg_rt_activity a ON a.game=g.id JOIN mg_rt_seats s ON s.activity=a.id
+        WHERE {query.visible} AND s.actor=? AND a.started IS NOT NULL
+        GROUP BY g.id ORDER BY last_play DESC,game_id LIMIT ?)
+        SELECT {query.card_columns} FROM {CATALOG} JOIN picks ON picks.game_id=g.id
+        ORDER BY picks.last_play DESC,picks.game_id""", (*query.args, user["actor"], limit))
     now = platform.now_ms()
     return {
-        "recent": ranked("s.actor=? AND a.started IS NOT NULL", (user["actor"],)),
-        "popular": ranked("a.started>=?", (now - 7 * 86400000,), count_people=True),
+        "recent": [platform.public_game(row) for row in recent],
+        "popular": minigame_popularity.popular(conn, query, now, limit),
         "friends": _friends_playing(conn, user, query, now, limit),
     }

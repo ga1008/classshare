@@ -25,7 +25,7 @@ import {
 import { gameBridge } from './bridge.js';
 import { createPlayClock, wellbeingSummary } from './play-time.js';
 
-const { game, previewVersion, role } = bootstrap(),
+const { game, previewVersion } = bootstrap(),
     gamePath = '/games/' + encodeURIComponent(game.id);
 const hostKey = 'minigame:instance:' + game.id;
 let hostInstance = sessionStorage.getItem(hostKey) || makeId(),
@@ -78,7 +78,7 @@ const title = document.querySelector('[data-stage-title]'),
     countRing = document.querySelector('[data-countdown-ring]'),
     count = document.querySelector('[data-countdown]');
 const flags = { preview: !!previewVersion };
-const playClock = role === 'student' && !flags.preview ? createPlayClock() : null;
+const playClock = flags.preview ? null : createPlayClock();
 const checkingAccess = document.querySelector('[data-access-check]');
 let frameReady = false, latestWellbeing, expiryTimer, accessTimer;
 function pendingAccess(pending) {
@@ -191,7 +191,7 @@ function renderStageModes(show) {
 function availableControls() {
     const modes = gameMode(),
         multi = modes.multiplayer,
-        active = snap && !terminal(snap.phase),
+        active = !stopped && snap && !terminal(snap.phase),
         running = snap?.phase === 'running';
     const other = document.querySelector('[data-foreign-game]');
     other.hidden = !foreign;
@@ -208,17 +208,25 @@ function availableControls() {
     showControl(
         'chapters',
         !flags.preview &&
+            !stopped &&
             !snap?.readOnly &&
             modes.solo &&
             (!active || snap.mode === 'solo') &&
             progress?.rank > 0
     );
-    showControl('restart', !flags.preview && !stopped && !!snap && terminal(snap.phase) && !!modes.solo);
-    showControl('room', !!snap?.roomId && !terminal(snap.phase));
-    showControl('rotate', snap?.isOwner && !snap.readOnly && snap.phase === 'waiting');
+    const canStartSolo = !flags.preview && !stopped && !active && modes.solo;
+    showControl('restart', canStartSolo);
+    if (canStartSolo) {
+        const restart = document.querySelector('[data-action="restart"]');
+        const label = snap ? '再玩一次' : '返回单人游戏';
+        restart.querySelector('.lq-btn__label').textContent = label;
+        restart.setAttribute('aria-label', label);
+    }
+    showControl('room', active && !!snap.roomId);
+    showControl('rotate', active && snap.isOwner && !snap.readOnly && snap.phase === 'waiting');
     showControl('leave', !!active && !running && !snap.readOnly);
     showControl('takeover', !!active && snap.readOnly);
-    showControl('retry', !bridge && (!active || running || stopped));
+    showControl('retry', stopped);
     const muteBtn = document.querySelector('[data-action="mute"]');
     if (muteBtn) {
         const muted = !!prefs.audioMuted;
@@ -233,6 +241,10 @@ function announce(text) {
         lastAnnouncement = text;
         notice(text);
     }
+}
+
+function stageAnnouncement(text) {
+    document.querySelector('[data-stage-announcement]').textContent = text;
 }
 
 function context() {
@@ -399,8 +411,6 @@ function fitStage() {
         ratio = display.aspectRatio || 'free',
         tone = display.stageTone || 'auto';
     holder.dataset.tone = tone;
-    if (tone === 'dark' || tone === 'light') stage.dataset.lqTone = tone;
-    else delete stage.dataset.lqTone;
     if (['16:9', '4:3', '1:1', '3:4', '9:16'].includes(ratio)) {
         const [w, h] = ratio.split(':').map(Number);
         holder.dataset.ratio = ratio;
@@ -424,14 +434,7 @@ function mount() {
             focusStage();
         },
         onFault(text) {
-            frameReady = false;
-            updatePlayClock();
-            bridge = null;
-            stage.hidden = false;
-            setEmblem('shield', 'danger', false);
-            title.textContent = '连接中断';
-            message.textContent = text;
-            showControl('retry', true);
+            stop(text, '连接中断');
         },
     });
 }
@@ -445,7 +448,7 @@ function disposeFrame() {
     holder.replaceChildren();
 }
 
-function stop(text) {
+function stop(text, heading = '已停止') {
     stopped = true;
     suspended = true;
     clearTimeout(expiryTimer);
@@ -459,9 +462,10 @@ function stop(text) {
     disposeFrame();
     roomPanel?.destroy();
     roomPanel = null;
+    stageAnnouncement('');
     stage.hidden = false;
     setEmblem('pause', 'warning', false);
-    title.textContent = '已停止';
+    title.textContent = heading;
     message.hidden = false;
     message.textContent = text;
     if (countWrap) countWrap.hidden = true;
@@ -481,12 +485,17 @@ function clockTick() {
     if (!snap || snap.phase !== 'countdown' || stopped) return;
     const rawMs = Math.max(0, (snap.startsAt || 0) - lastClock - (performance.now() - nowAt));
     const sec = Math.max(0, Math.ceil(rawMs / 1000));
-    count.textContent = sec > 0 ? String(sec) : '0';
+    if (!sec) {
+        countWrap.hidden = true;
+        title.textContent = '正在进入游戏';
+        return;
+    }
+    count.textContent = String(sec);
     if (countRing) {
         const progressRatio = Math.min(1, Math.max(0, rawMs / 5000));
         countRing.style.setProperty('--ring-offset', String((1 - progressRatio) * 100));
     }
-    if (rawMs > 0) clockTimer = setTimeout(clockTick, 120);
+    clockTimer = setTimeout(clockTick, 120);
 }
 
 function chapter(rank) {
@@ -541,7 +550,7 @@ function apply(snapshot) {
         renderChat();
     }
     clearTimeout(clockTimer);
-    const inCountdown = snapshot.phase === 'countdown';
+    const inCountdown = !snapshot.readOnly && snapshot.phase === 'countdown';
     if (countWrap) countWrap.hidden = !inCountdown;
     count.hidden = !inCountdown;
     document.querySelector('[data-room-code]').hidden = !snapshot.code || snapshot.phase !== 'waiting';
@@ -554,6 +563,7 @@ function apply(snapshot) {
         snapshot.generation !== previous.generation ||
         snapshot.roomId !== previous.roomId;
 
+    if (wasNew) stageAnnouncement('');
     if (snapshot.readOnly && !terminal(snapshot.phase)) {
         stage.hidden = false;
         setEmblem('bolt', 'warning', false);
@@ -562,11 +572,11 @@ function apply(snapshot) {
     } else if (snapshot.phase === 'running') {
         setEmblem('gamepad', 'primary', true);
         title.textContent = game.title;
-        message.textContent = '';
-        stage.hidden = !!bridge;
+        message.textContent = frameReady ? '' : '正在连接游戏…';
+        stage.hidden = frameReady;
         if (lease) mount();
         if (stage.hidden && !wasHidden) focusStage();
-        if (wasNew) announce('');
+        if (wasNew && previous?.phase === 'countdown') stageAnnouncement('对局已开始');
     } else if (snapshot.phase === 'countdown') {
         stage.hidden = false;
         setEmblem('coop', 'success', true);
@@ -575,7 +585,10 @@ function apply(snapshot) {
             chapter(snapshot.startRank ?? 0) +
             (snapshot.ownRank < snapshot.startRank ? ' · 进度同步' : '');
         clockTick();
-        if (wasNew) announce('');
+        if (wasNew) {
+            const seconds = remaining();
+            stageAnnouncement(seconds ? '队伍已满员，' + seconds + ' 秒后开始' : '正在进入游戏');
+        }
     } else if (snapshot.phase === 'reconnecting') {
         stage.hidden = false;
         setEmblem('refresh', 'warning', true);
@@ -841,6 +854,7 @@ async function initial() {
 
 function chooseMode() {
     clearTimeout(clockTimer);
+    stageAnnouncement('');
     if (countWrap) countWrap.hidden = true;
     count.hidden = true;
     stage.hidden = false;
@@ -1165,7 +1179,7 @@ async function openRoom() {
 }
 
 async function leave(goHall) {
-    if (!snap || terminal(snap.phase) || snap.readOnly) {
+    if (stopped || !snap || terminal(snap.phase) || snap.readOnly) {
         if (goHall) location.assign('/games');
         return;
     }

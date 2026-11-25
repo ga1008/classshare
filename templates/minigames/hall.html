@@ -2,6 +2,7 @@
 {% set embedded_mode=true %}
 {% set suppress_account_widgets=true %}
 {% import "minigames/ui.html" as ui with context %}
+{% from "macros/lq/indicators.html" import lq_badge with context %}
 {% block title %}小游戏{% endblock %}
 {% block css %}<link rel="stylesheet" href="{{ asset_url('css/lq/pages/minigames.css') }}">{% if user_info.role == 'teacher' %}<link rel="stylesheet" href="{{ asset_url('css/minigame_classroom_access.css') }}">{% endif %}{% endblock %}
 {% block body %}
@@ -71,13 +72,14 @@
 {% if g.access and (not g.access.allowed or g.access.source == 'classroom_allow') %}<small title="{{ g.access.reason }}">{{ '临时开放' if g.access.allowed else '课堂限制' }}</small>{% endif %}
 {%- if key == 'friends' and g.displayName -%}
 <span class="game-friend-line"><i class="game-live-dot" aria-hidden="true"></i><strong>{{ g.displayName }}</strong></span><small>{{ g.title }}</small>
+{%- elif key == 'popular' -%}
+<span class="game-popular-title"><span>{{ g.title }}</span>{% if g.heatScore is defined and g.heatScore is not none %}{{ lq_badge('热度 ' ~ g.heatScore, tone='warning') }}{% endif %}</span>
+{% if g.playerCount is defined and g.playerCount is not none %}<small class="game-popular-people">累计 {{ g.playerCount }} 人玩过{% if g.recentPlayerCount is defined and g.recentPlayerCount is not none %} · 近 7 天 {{ g.recentPlayerCount }} 人{% endif %}</small>{% endif %}
 {%- else -%}
 <span>{{ g.title }}</span>
 {%- endif -%}
 </span>
-{%- if key == 'popular' and g.playerCount is defined and g.playerCount is not none -%}
-<small class="game-side-badge">{{ ui.g_icon('solo', 'game-mini-icon') }}{{ g.playerCount }}</small>
-{%- elif g.reason -%}
+{%- if key != 'popular' and g.reason -%}
 <small class="game-side-badge">{{ g.reason|replace('同标签 · ', '#')|replace('教师精选', '精选')|replace('近期热门', '热门')|replace('最近更新', '新上') }}</small>
 {%- endif -%}
 </a></li>
@@ -85,6 +87,7 @@
 <li class="game-muted game-side-empty">{{ empty }}</li>
 {% endfor %}
 </ul>
+{% if key == 'popular' %}<details class="game-ranking-help"><summary>热度怎么算</summary><p>按最近 7 天的游玩人数、前台游玩时长和累计玩过人数排名。同一账号反复打开只算一人，每人每天最多贡献 20 分钟的时长加分。</p></details>{% endif %}
 </section>
 {% endfor %}
 </aside>

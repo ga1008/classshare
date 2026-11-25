@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from ..config import SECRET_KEY
 from ..db.sessions import get_user_session
 from . import minigame_platform as p
+from . import minigame_popularity as popularity
 from . import minigame_wellbeing as wellbeing
 from . import minigame_classroom_access as classroom_access
 from .minigame_classroom_access import require_access
@@ -253,7 +254,7 @@ def change_grant(user, lease_id, instance, revoke, sample=None, network=None):
         ).fetchone()
         if not row or row["sid_hash"] != digest(user["session_id"]):
             raise HTTPException(404, "窗口已失效")
-        has_sample = (user["role"] == "student" and row["purpose"] == "play"
+        has_sample = (row["purpose"] == "play"
                       and sample and sample.get("playIntervals") and sample.get("usageAnchor") == row["expires_at"])
         now = p.now_ms()
         measured = None
@@ -276,7 +277,13 @@ def change_grant(user, lease_id, instance, revoke, sample=None, network=None):
                     raise
                 has_sample = False
         if has_sample:
-            measured = wellbeing.record(conn, user["id"], row["expires_at"], sample, now, allowed_until=allowed_until)
+            end = min(allowed_until, now) if allowed_until is not None else now
+            seconds = wellbeing.sample_seconds(row["expires_at"], sample["playIntervals"], end)
+            if user["role"] == "student":
+                measured = wellbeing.record(conn, user["id"], row["expires_at"], sample, now, seconds=seconds)
+            if row["play_loaded_at"] and seconds:
+                delivered = row["play_loaded_at"] // 1000
+                popularity.record(conn, row["game_id"], user["actor"], now, seconds=(s for s in seconds if s >= delivered))
             if measured and network:
                 from ..db.savepoint import best_effort
                 from .login_attendance_access_service import enabled, record_access
@@ -346,17 +353,25 @@ def resolve_asset(handle, path):
         actual = (root / path).resolve()
         if not actual.is_relative_to(root) or not actual.is_file():
             raise HTTPException(404, "资源不可用")
-        preview = (
-            (row["game_id"], row["version_id"], row["actor"], row["lease_id"])
-            if path == "main.html" and row["purpose"] == "preview"
-            else None
-        )
-        return actual, meta["mime"], row["game_id"], preview
+        entry = None
+        if path == "main.html" and (row["purpose"] == "preview" or not row["play_loaded_at"]):
+            entry = (row["purpose"], row["game_id"], row["version_id"], row["actor"], row["lease_id"])
+        return actual, meta["mime"], row["game_id"], entry
 
 
-def mark_preview_loaded(preview):
-    from .minigame_packages import mark_preview_loaded as mark
-
+def mark_entry_loaded(entry, delivered):
+    purpose, game_id, version_id, actor, lease_id = entry
     with p.game_db() as conn:
-        p.db_start(conn, preview[0], shared=True)
-        mark(conn, *preview)
+        p.db_start(conn, game_id, shared=True)
+        if purpose == "preview":
+            from .minigame_packages import mark_preview_loaded
+            mark_preview_loaded(conn, game_id, version_id, actor, lease_id)
+            return
+        now = p.now_ms()
+        claimed = conn.execute("""UPDATE mg_launch_leases SET play_loaded_at=? WHERE lease_id=? AND game_id=?
+            AND actor=? AND purpose='play' AND revoked=0 AND expires_at>? AND play_loaded_at=0 RETURNING *""",
+            (delivered, lease_id, game_id, actor, now)).fetchone()
+        if claimed:
+            # The game, account or class policy may have changed during transfer.
+            check_grant(conn, claimed)
+            popularity.record(conn, game_id, actor, delivered, entry=True)

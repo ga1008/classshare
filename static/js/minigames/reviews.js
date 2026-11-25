@@ -152,9 +152,7 @@ function syncTabs(counts = {}) {
 
 function aiVerdictBadge(item) {
     const verdict = item?.aiVerdict || item?.aiReport?.verdict || '';
-    if (item?.status === 'queued' || item?.status === 'running') {
-        return statusChip(statusLabels[item.status], 'info');
-    }
+    if (item?.status === 'queued' || item?.status === 'running') return null;
     if (verdict === 'major_risk') return statusChip('AI 预警：重大风险', 'danger');
     if (verdict === 'uncertain') return statusChip('AI 需人工确认', 'warning');
     if (verdict === 'error') return statusChip('AI 未完成', 'warning');
@@ -182,21 +180,23 @@ function renderQueue() {
         return;
     }
 
+    const focusedVersion = listRoot.contains(document.activeElement) ? document.activeElement.dataset.reviewVersion : '';
     const rows = listItems.map((item) => {
-        const li = el('li', null, 'game-review-item');
+        const li = el('li');
         const selected = item.versionId === selectedVersionId;
-        if (selected) li.dataset.lqSelected = 'true';
 
-        const btn = el('button', null, 'lq-btn lq-btn--ghost lq-domain-choice game-review-card');
+        const btn = el('button', null, 'lq-btn lq-btn--glass lq-domain-choice game-review-card');
         btn.type = 'button';
         btn.dataset.lqComponent = 'choice';
         btn.dataset.lqShape = 'surface';
+        btn.dataset.reviewVersion = item.versionId;
         btn.setAttribute('aria-pressed', String(selected));
         btn.addEventListener('click', () => {
             if (selectedVersionId === item.versionId && activeDetail?.versionId === item.versionId) return;
             selectedVersionId = item.versionId;
             syncUrl();
-            renderQueue();
+            listRoot.querySelector('[aria-pressed="true"]')?.setAttribute('aria-pressed', 'false');
+            btn.setAttribute('aria-pressed', 'true');
             run(null, () => loadDetail(item.versionId));
         });
 
@@ -227,6 +227,7 @@ function renderQueue() {
         return li;
     });
     listRoot.replaceChildren(...rows);
+    if (focusedVersion) listRoot.querySelector(`[data-review-version="${CSS.escape(focusedVersion)}"]`)?.focus({ preventScroll: true });
 }
 
 function renderEmptyStage(message, detailText) {
