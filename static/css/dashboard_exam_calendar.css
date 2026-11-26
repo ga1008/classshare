@@ -46,7 +46,16 @@
 }
 .ls-exam-copy { display: grid; gap: .2em; overflow-wrap: anywhere; }
 .ls-exam-copy strong { font-size: var(--ls-t-body); line-height: var(--ls-leading-body); }
-.ls-exam-copy small { font-size: var(--ls-t-footnote); font-weight: normal; }
+.ls-exam-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ls-s-1) var(--ls-s-2); }
+.ls-exam-meta small { min-width: 0; font-size: var(--ls-t-footnote); font-weight: normal; }
+.ls-exam-meta [data-exam-kind="exam"] {
+    --lq-tone-soft: var(--tone-agenda-exam-soft);
+    --lq-tone-fg: var(--tone-agenda-exam-fg);
+}
+.ls-exam-meta [data-exam-kind="invigilation"] {
+    --lq-tone-soft: var(--tone-agenda-proctor-soft);
+    --lq-tone-fg: var(--tone-agenda-proctor-fg);
+}
 .ls-exam-count { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ls-exam-facts {
     display: grid;

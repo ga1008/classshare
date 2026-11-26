@@ -86,7 +86,7 @@
     "title": "Chip 芯片",
     "layer": "component",
     "summary": "筛选/标签/状态胶囊：`kind=filter` 时是可按下的 toggle（aria-pressed），其余为只读标签；tone 六色成对填充与前景。",
-    "params": "`label, kind(status|tag|filter), tone, size, pressed, removable, removeLabel, id, attrs, disabled, href`。教师作业列表用只读 status 展示申请人数，待处理用 warning，已处理用 success，仅显示人数大于零的状态。",
+    "params": "`label, kind(status|tag|filter), tone, size, pressed, removable, removeLabel, id, attrs, disabled, href`。教师作业列表用只读 status 展示申请人数，待处理用 warning，已处理用 success，仅显示人数大于零的状态。首页教务倒计时复用小号只读 status 芯片和日程分类色，考试为红色、监考为琥珀色，文字随主题保留，整行负责打开详情。",
     "states": "pressed / hover / focus-visible / disabled。",
     "entries": {
       "react": [

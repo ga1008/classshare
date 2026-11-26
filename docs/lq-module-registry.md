@@ -28,7 +28,7 @@
 | [Ability radar 六边形能力雷达](#ability-radar) | component | `lq-radar` | 仅 CSS | 3 |
 | [Business 业务呈现（DeadlineClock / JobStatus / QuestionNavigator）](#business) | component | `lq-clock`, `lq-job`, `lq-nav-grid` | 宏 / JS / Py | 1 |
 | [Button 按钮](#button) | component | `lq-btn` | 宏 / JS / Py / React | 297 |
-| [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 47 |
+| [Chip 芯片](#chip) | component | `lq-chip` | 宏 / JS / Py / React | 48 |
 | [ChipRow 芯片行](#chip-row) | component | `lq-chip-row` | 宏 / JS / Py | 10 |
 | [Collapsible 折叠](#collapsible) | component | `lq-collapsible`, `lq-filter-more` | 宏 / JS / Py | 18 |
 | [Composer 输入区](#composer) | component | `lq-composer` | 宏 / JS / Py | 6 |
@@ -47,7 +47,7 @@
 | [OverflowLabel 固定宽度长标签](#overflow-label) | component | — | JS | 1 |
 | [Search 搜索包装](#search) | component | `lq-search` | 仅 CSS | 15 |
 | [Selection / Dropdown 选择列表](#selection) | component | `lq-dropdown`, `lq-selection` | 宏 / JS / Py | 10 |
-| [Skeleton 骨架屏](#skeleton) | component | `lq-skeleton` | 宏 / JS / Py | 33 |
+| [Skeleton 骨架屏](#skeleton) | component | `lq-skeleton` | 宏 / JS / Py | 34 |
 | [Status / SaveStatus / Alert / Conflict](#status) | component | `lq-alert`, `lq-conflict`, `lq-save-status`, `lq-status` | 宏 / JS / Py / React | 33 |
 | [Table / Pager / BulkBar / ResultCount](#tables) | component | `lq-bulk-bar`, `lq-pager`, `lq-result-count`, `lq-table`, `lq-table-shell` | 宏 / JS / Py / React | 13 |
 | [Toast 通知](#toast) | component | `lq-toast`, `lq-toast-fallback`, `lq-toasts` | JS | 5 |
@@ -954,7 +954,7 @@
 **Chip 芯片** · 层：component · CSS：`static/css/lq/components/chip.css`
 
 - **设计摘要**：筛选/标签/状态胶囊：`kind=filter` 时是可按下的 toggle（aria-pressed），其余为只读标签；tone 六色成对填充与前景。
-- **参数 / 变体**：`label, kind(status|tag|filter), tone, size, pressed, removable, removeLabel, id, attrs, disabled, href`。教师作业列表用只读 status 展示申请人数，待处理用 warning，已处理用 success，仅显示人数大于零的状态。
+- **参数 / 变体**：`label, kind(status|tag|filter), tone, size, pressed, removable, removeLabel, id, attrs, disabled, href`。教师作业列表用只读 status 展示申请人数，待处理用 warning，已处理用 success，仅显示人数大于零的状态。首页教务倒计时复用小号只读 status 芯片和日程分类色，考试为红色、监考为琥珀色，文字随主题保留，整行负责打开详情。
 - **状态**：pressed / hover / focus-visible / disabled。
 - **规则**：芯片是单行胶囊：不换行，过长标签以省略号截断（2026-10-24）。
 - **根类**：`lq-chip`
@@ -962,7 +962,7 @@
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
 - **React 适配器**：`LqChipGroup`, `LqStatusChip`（`frontend/src/components/lq-presentation.tsx`）
-- **消费者**：47 个文件
+- **消费者**：48 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1000,6 +1000,7 @@
 - `static/js/attendance_calendar_controls.js` ×1
 - `static/js/attendance_dashboard.js` ×1
 - `static/js/course_schedule_styles.js` ×1
+- `static/js/dashboard_exam_calendar.js` ×1
 - `static/js/login_attendance.js` ×1
 - `static/js/manage_classes.js` ×1
 - `static/js/manage_gongwen.js` ×1
@@ -1949,7 +1950,7 @@
 - **Jinja 宏** `templates/macros/lq/skeleton.html`：`lq_skeleton`
 - **JS 入口** `static/js/lq/components.js`：`avatar`, `badge`, `button`, `chip`, `componentMarkup`, `createComponent`, `enhanceComponents`, `html`, `progress`, `skeleton`, `spinner`
 - **Python props** `classroom_app/lq_components.py`
-- **消费者**：33 个文件
+- **消费者**：34 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1961,6 +1962,7 @@
 - `static/js/attendance_reports.js` ×2
 - `static/js/collaboration.js` ×2
 - `static/js/course_schedule_changes.js` ×2
+- `static/js/dashboard_exam_calendar.js` ×2
 - `static/js/knowledge_tree/chrome.js` ×2
 - `static/js/knowledge_tree/side.js` ×2
 - `static/js/login_attendance.js` ×2

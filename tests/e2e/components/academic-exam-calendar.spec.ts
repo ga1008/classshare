@@ -1,7 +1,8 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { PNG } from 'playwright-core/lib/utilsBundle';
 
 const assets = JSON.parse(fs.readFileSync('static/assets/manifest.json', 'utf8')).entries;
 const asset = (key: string) => '/static/' + assets[key];
@@ -57,7 +58,54 @@ async function mount(page: Page, role: 'teacher' | 'student', width: number,
     return page.locator('#dashboard-exam-calendar');
 }
 
-for (const [role, width] of [['teacher', 1280], ['student', 320]] as const) {
+function luminance(rgb: number[]) {
+    const [r, g, b] = rgb.map(value => {
+        const s = value / 255;
+        return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+async function measureKindChip(row: Locator, kind: 'exam' | 'invigilation') {
+    const chip = row.locator(`.lq-chip--status[data-exam-kind="${kind}"]`);
+    await expect(chip).toHaveText(kind === 'exam' ? '考试' : '监考');
+    const metrics = await chip.evaluate(node => {
+        const bounds = node.getBoundingClientRect();
+        const row = node.closest('button')!;
+        const rowBounds = row.getBoundingClientRect();
+        const overlaps = (other: Element) => {
+            const r = other.getBoundingClientRect();
+            return Math.min(bounds.right, r.right) - Math.max(bounds.left, r.left) > 1
+                && Math.min(bounds.bottom, r.bottom) - Math.max(bounds.top, r.top) > 1;
+        };
+        const label = node.querySelector<HTMLElement>('.lq-chip__label')!;
+        const style = getComputedStyle(node);
+        const ctx = document.createElement('canvas').getContext('2d')!;
+        ctx.fillStyle = getComputedStyle(label).color;
+        ctx.fillRect(0, 0, 1, 1);
+        return {
+            ink: Array.from(ctx.getImageData(0, 0, 1, 1).data).slice(0, 3),
+            fill: [style.backgroundColor, style.backgroundImage],
+            collides: [...row.querySelectorAll('strong, small, .ls-exam-count')].some(overlaps),
+            inside: bounds.left >= rowBounds.left && bounds.right <= rowBounds.right,
+            clipped: label.scrollWidth > label.clientWidth + 1,
+        };
+    });
+    expect(metrics.inside).toBe(true);
+    expect(metrics.collides).toBe(false);
+    expect(metrics.clipped).toBe(false);
+    // Sample the actual tinted glass behind the label, including the row and card.
+    const backing = PNG.sync.read(await chip.screenshot({animations: 'disabled', scale: 'css',
+        style: '.lq-chip__label { visibility: hidden !important; }'}));
+    const pixel = 4 * (Math.floor(backing.height / 2) * backing.width + Math.floor(backing.width * 0.65));
+    const background = Array.from<number>(backing.data.subarray(pixel, pixel + 3));
+    const fg = luminance(metrics.ink), bg = luminance(background);
+    const contrast = (Math.max(fg, bg) + .05) / (Math.min(fg, bg) + .05);
+    expect(contrast, `${kind} label contrast over the rendered row`).toBeGreaterThanOrEqual(4.5);
+    return { kind, ink: metrics.ink, fill: metrics.fill, background, contrast };
+}
+
+for (const [role, width] of [['teacher', 1280], ['teacher', 320], ['student', 320]] as const) {
     test.describe(`${role} at ${width}px`, () => {
         test.use({hasTouch: width < 500, timezoneId: 'America/Los_Angeles'});
         test('shows local school days, accessible details, and a coalesced full refresh', async ({page}, info) => {
@@ -73,7 +121,25 @@ for (const [role, width] of [['teacher', 1280], ['student', 320]] as const) {
             await expect(card.getByRole('heading')).toHaveText(role === 'teacher' ? '考试与监考倒计时' : '考试倒计时');
             const row = card.getByRole('button', {name: new RegExp(subject)});
             await expect(row).toContainText('明天');
-            if (role === 'teacher') await expect(card.getByRole('button', {name: /大学英语/})).toContainText('待定');
+            const examColor = await measureKindChip(row, 'exam');
+            const colors = [examColor];
+            if (role === 'teacher') {
+                const dutyRow = card.getByRole('button', {name: /大学英语/});
+                await expect(dutyRow).toContainText('待定');
+                const dutyColor = await measureKindChip(dutyRow, 'invigilation');
+                expect(dutyColor.ink).not.toEqual(examColor.ink);
+                expect(dutyColor.fill).not.toEqual(examColor.fill);
+                expect(dutyColor.background).not.toEqual(examColor.background);
+                colors.push(dutyColor);
+                await dutyRow.focus();
+                await page.keyboard.press('Enter');
+                await expect(page.getByRole('dialog', {name: '监考详情'})).toContainText('大学英语');
+                await page.keyboard.press('Escape');
+                await expect(dutyRow).toBeFocused();
+            } else await expect(card.locator('[data-exam-kind="invigilation"]')).toHaveCount(0);
+            const metricsFile = info.outputPath('chip-colors.json');
+            fs.writeFileSync(metricsFile, JSON.stringify(colors, null, 2));
+            await info.attach('chip-colors', {contentType: 'application/json', path: metricsFile});
             const refresh = card.getByRole('button', {name: '同步本学期教务安排'});
             await expect(refresh).toHaveText('');
             const corner = await refresh.evaluate(button => {
@@ -97,7 +163,7 @@ for (const [role, width] of [['teacher', 1280], ['student', 320]] as const) {
             await expect(dialog.getByText(role === 'teacher' ? '时间' : '场次时间范围', {exact: true})).toBeVisible();
             await expect(dialog).toContainText('网络工程合成一班');
             await expect(dialog).toContainText('<校内通知>');
-            if (width < 500) {
+            if (role === 'student' && width < 500) {
                 expect(await dialog.evaluate(node => Number(getComputedStyle(node.parentElement!).zIndex)
                     > Number(getComputedStyle(document.querySelector('.app-bottomnav')!).zIndex))).toBe(true);
                 const lastFact = dialog.locator('dd').last();
@@ -119,6 +185,8 @@ for (const [role, width] of [['teacher', 1280], ['student', 320]] as const) {
             await expect(card.getByRole('status')).toHaveText('已完成', {timeout: 12000});
             await expect(card.getByRole('listitem')).toHaveCount(1);
             await expect(row).toContainText('新考场 203');
+            await expect(row.locator('.lq-chip--status[data-exam-kind="exam"]')).toHaveText('考试');
+            await expect(card.locator('[data-exam-kind="invigilation"]')).toHaveCount(0);
             await expect(refresh).toBeEnabled();
             expect(posts).toBe(1);
             expect(polls).toBe(2);

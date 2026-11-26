@@ -1,4 +1,5 @@
 import { apiFetch } from './api.js';
+import { createComponent } from './lq/components.js';
 import { createDomainButton } from './lq/domain-controls.js';
 import { openDialog } from './lq/dialogs.js';
 
@@ -26,7 +27,9 @@ function eventView(item, now) {
     const ongoing = start <= now && now < end;
     const countdown = ongoing ? '进行中' : !Number.isFinite(days) ? '待定' :
         days <= 0 ? '今天' : days === 1 ? '明天' : `还有 ${days} 天`;
-    const kind = item.kind === 'invigilation' ? '监考' : '考试';
+    const kind = item.kind === 'invigilation'
+        ? { key: 'invigilation', label: '监考', tone: 'warning' }
+        : { key: 'exam', label: '考试', tone: 'danger' };
     const dayLabel = Number.isFinite(days) ? date : '日期待定';
     let time = '';
     if (Number.isFinite(start)) time = schoolTime.format(start);
@@ -53,7 +56,7 @@ function detail(view, trigger, onClose) {
     for (const [label, value] of rows) {
         if (label && value) facts.append(element('dt', label), element('dd', value));
     }
-    openDialog({ title: kind + '详情', size: 'sm', body: facts, attrs: { 'data-exam-details': '' } },
+    openDialog({ title: kind.label + '详情', size: 'sm', body: facts, attrs: { 'data-exam-details': '' } },
         { trigger, onClose, onDestroy: onClose });
 }
 
@@ -90,8 +93,11 @@ function mountExamCalendar(panel) {
                 button.dataset.examKey = JSON.stringify([item.kind, item.subject, dayLabel, view.start, item.location]);
                 if (button.dataset.examKey === focusedKey) replacement = button;
                 const copy = element('span', '', 'ls-exam-copy');
-                copy.append(element('strong', item.subject || kind),
-                    element('small', [kind, dayLabel, item.location || '教室待定'].join(' · ')));
+                const meta = element('span', '', 'ls-exam-meta');
+                meta.append(createComponent('chip', { kind: 'status', size: 'sm', label: kind.label,
+                    tone: kind.tone, attrs: { 'data-exam-kind': kind.key } }),
+                    element('small', [dayLabel, item.location || '教室待定'].join(' · ')));
+                copy.append(element('strong', item.subject || '科目待定'), meta);
                 button.append(copy, element('span', countdown, 'ls-exam-count'));
                 button.addEventListener('click', () => {
                     dialogOpen = true;
