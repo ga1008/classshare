@@ -1650,6 +1650,9 @@ def _insert_notification(conn, payload: dict[str, Any]) -> int:
                 conn.execute("RELEASE SAVEPOINT notification_email_enqueue")
             except Exception:
                 pass
+        if payload["category"] == MESSAGE_CATEGORY_ACADEMIC_EXAM:
+            # Retry the source snapshot with inbox and email in the same transaction.
+            raise
         print(f"[EMAIL] queue notification email failed: {exc}")
     return notification_id
 

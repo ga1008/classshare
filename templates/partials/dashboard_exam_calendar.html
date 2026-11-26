@@ -1,0 +1,14 @@
+{% from 'macros/lq/button.html' import lq_btn %}
+{% from 'macros/lq/content.html' import lq_card %}
+{% set exam_calendar_title = '考试与监考倒计时' if user_info.role == 'teacher' else '考试倒计时' %}
+{% call(slot) lq_card(exam_calendar_title, id='dashboard-exam-calendar', attrs={'data-exam-calendar': '', 'aria-label': exam_calendar_title}) -%}
+    {%- if slot == 'actions' -%}
+        {{ lq_btn(variant='ghost', size='sm', icon='refresh-cw', attrs={'data-exam-refresh': '', 'aria-label': '同步本学期教务安排', 'title': '同步本学期教务安排'}) }}
+    {%- elif slot == 'body' -%}
+        <ul class="ls-exam-list" data-exam-list aria-label="本学期安排" hidden></ul>
+        <p data-exam-empty class="ls-muted" hidden>本学期暂无待进行的安排。</p>
+        <p data-exam-status class="lq-card__meta" role="status">正在读取本学期安排…</p>
+        <noscript>启用 JavaScript 后可查看考试安排。</noscript>
+    {%- endif -%}
+{%- endcall %}
+<script type="module" src="{{ asset_url('js/dashboard_exam_calendar.js') }}"></script>

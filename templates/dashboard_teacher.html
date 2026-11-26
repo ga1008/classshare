@@ -9,6 +9,7 @@
 {% set inbox = dashboard_work_inbox|default({}) %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="{{ asset_url('css/dashboard_exam_calendar.css') }}">
 {% endblock %}
 
 {% block body_class %}page-wrapper dashboard-page ls-page role-teacher{% endblock %}
@@ -51,6 +52,7 @@
     {% endif %}
 
     {# ── 今天：统一收件箱 ─────────────────────────────────────────── #}
+    <div class="ls-exam-overview">
     <div data-lanshare-island="dashboard-workspace" data-island-id="dashboard-workspace">
         <script type="application/json" data-dashboard-workspace-payload>{{ workspace|tojson }}</script>
         <section class="ls-focus" aria-labelledby="ls-focus-title" data-agenda-reminder data-reminder-endpoint="/api/manage/system/exam-reminders/email">
@@ -76,6 +78,9 @@
                 <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-ls-open="items">全部事项与历史</button>
             </div>
         </section>
+    </div>
+
+    {% include "partials/dashboard_exam_calendar.html" %}
     </div>
 
     {# ── 我的课堂 ─────────────────────────────────────────────────── #}

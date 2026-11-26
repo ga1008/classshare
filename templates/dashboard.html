@@ -7,6 +7,7 @@
 {% block body_class %}page-wrapper dashboard-page ls-page role-{{ dashboard_theme }}{% endblock %}
 {% block css %}
 {{ super() }}
+<link rel="stylesheet" href="{{ asset_url('css/dashboard_exam_calendar.css') }}">
 {% endblock %}
 
 {% block navbar_actions %}
@@ -61,6 +62,7 @@
             <button data-lq-component="button" type="button" class="lq-btn lq-btn--sm ls-link lq-btn--link" data-ls-open="items">全部事项与历史</button>
         </section>
     </div>
+    {% if user_info.role in ('student', 'teacher') %}{% include "partials/dashboard_exam_calendar.html" %}{% endif %}
     {% if user_info.role == 'student' %}</div>{% endif %}
 
     {% if user_info.role == 'teacher' %}

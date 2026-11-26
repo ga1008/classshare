@@ -1,9 +1,30 @@
 from .common import *
 from fastapi import Query
 from typing import Literal
+from ...services.dashboard_academic_exams import load_exam_dashboard
 
 
 router = APIRouter()
+
+
+def _exam_dashboard_response(user, *, refresh=False):
+    if user.get("role") not in {"student", "teacher"}:
+        raise HTTPException(status_code=403, detail="当前账号不能读取考试安排")
+    with get_db_connection() as conn:
+        payload = load_exam_dashboard(conn, user, refresh=refresh)
+        if refresh:
+            conn.commit()
+    return JSONResponse(payload, headers={"Cache-Control": "private, no-store"})
+
+
+@router.get("/api/dashboard/academic-exams", response_class=JSONResponse)
+def dashboard_academic_exams(user: dict = Depends(get_current_user)):
+    return _exam_dashboard_response(user)
+
+
+@router.post("/api/dashboard/academic-exams/refresh", response_class=JSONResponse)
+def refresh_dashboard_academic_exams(user: dict = Depends(get_current_user)):
+    return _exam_dashboard_response(user, refresh=True)
 
 
 @router.get("/dashboard", response_class=HTMLResponse)

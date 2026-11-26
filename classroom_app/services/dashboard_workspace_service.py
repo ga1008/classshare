@@ -567,11 +567,15 @@ def iter_workspace_sources(conn, *, offerings: list[dict[str, Any]], user: dict[
             }
         # Student academic examinations are separate from site assignments.
         if not teacher:
-            for row in _iter_rows(conn, f"SELECT * FROM teacher_academic_course_exam_items WHERE class_offering_id IN ({placeholders}) AND sync_status = 'active' ORDER BY id", tuple(ids)):
+            from .academic_exam_audience import active_student_exam_class, student_exam_location, student_exam_rows
+            exam_rows = list(_iter_rows(conn, f"SELECT * FROM teacher_academic_course_exam_items WHERE class_offering_id IN ({placeholders}) AND sync_status = 'active' ORDER BY id", tuple(ids)))
+            student_class_id = active_student_exam_class(conn, user["id"]) if exam_rows else None
+            for row in student_exam_rows(conn, exam_rows, student_class_id):
+                location = student_exam_location(row)
                 yield {
                     "source_type": "academic_exam", "source_id": row["id"], "kind": "exam", "class_offering_id": row["class_offering_id"],
-                    "title": row.get("course_name") or row.get("exam_name") or "教务考试", "subtitle": row.get("location") or labels.get(_integer(row["class_offering_id"]), ""),
-                    "location": row.get("location") or "",
+                    "title": row.get("course_name") or row.get("exam_name") or "教务考试", "subtitle": location or labels.get(_integer(row["class_offering_id"]), ""),
+                    "location": location,
                     "starts_at": row.get("starts_at") or row.get("exam_date"), "ends_at": row.get("ends_at"),
                     "date_only": not row.get("starts_at"), "href": f"/classroom/{row['class_offering_id']}#timeline-panel",
                 }

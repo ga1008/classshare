@@ -5,14 +5,15 @@ import json
 import re
 import sqlite3
 import time as time_module
+from collections import Counter
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 import httpx
 
 from ..database import get_db_connection
-from ..db.connection import execute_insert_returning_id, get_configured_db_engine
+from ..db.connection import get_configured_db_engine
 from ..db.errors import DatabaseProgrammingError
 from .academic_calendar_sync_service import prepare_current_semester_from_academic_system
 from .academic_class_mapping_service import (
@@ -24,14 +25,20 @@ from .academic_location_service import (
     enrich_campus_building,
     load_teaching_place_location_index,
 )
+from .academic_exam_feed import (
+    exam_snapshot_start, fetch_exam_feed, load_current_exam_semester, parse_exam_time, superseding_exam_snapshot,
+)
+from .academic_exam_audience import course_exam_student_rules
 from .academic_integration_service import (
     load_teacher_academic_access_method,
     open_authenticated_academic_client,
 )
 from .academic_service import china_now, parse_date_input
-from .message_center_service import create_academic_exam_notification
-from .organization_scope_service import load_teacher_org_scope
-from .semester_identity_service import zf_term_params_from_semester
+from .semester_identity_service import identity_from_semester_record, parse_semester_identity
+from .academic_exam_publication_service import (
+    CALENDAR_LINK, lock_exam_snapshot, save_exam_event, withdraw_exam_events,
+    student_exam_groups, publish_student_exam_groups,
+)
 
 
 ACADEMIC_COURSE_EXAM_SOURCE = "gxufl_jwxt"
@@ -40,11 +47,10 @@ TEACHER_CALENDAR_SOURCE_COURSE_EXAM = "academic_course_exam"
 
 ZF_COURSE_EXAM_INDEX_PATH = "/kwgl/rkjskscx_cxRkjsksIndex.html?gnmkdm=N358126&layout=default"
 ZF_COURSE_EXAM_QUERY_PATH = "/kwgl/rkjskscx_cxRkjsksIndex.html?doType=query&gnmkdm=N358126"
-ZF_EXAM_NAME_OPTIONS_PATH = "/ksglcommon/common_cxKsmcByXnxq.html"
 COURSE_EXAM_PAGE_SIZE = 150
 
 FOLLOW_UP_ITEMS = [
-    "已识别的任课考试会写入课堂日程与教师日历，学生端会收到重要通知和邮件队列。",
+    "已识别的任课考试会写入课堂日程与教师日历，任课教师及对应课堂的在读学生会收到重要通知，邮件进入发送队列。",
     "课堂详情浮窗会显示本课程匹配到的考试安排；若教务后续调整，重新同步会更新同一条考试记录。",
     "如果教务系统返回了考试但本地未能唯一匹配课堂，记录仍会保留在教师端教务对接卡片中，便于后续修正课程/班级映射。",
 ]
@@ -268,27 +274,6 @@ def _optional_int(value: Any) -> int | None:
     return parsed or None
 
 
-def _term_param_candidates(semester: dict[str, Any]) -> list[dict[str, str]]:
-    params = zf_term_params_from_semester(semester)
-    return [params] if params else []
-
-
-def _ajax_headers(client: httpx.AsyncClient, *, referer: str = ZF_COURSE_EXAM_INDEX_PATH) -> dict[str, str]:
-    base_url = str(client.base_url).rstrip("/")
-    return {
-        "Accept": "application/json,text/javascript,*/*;q=0.8",
-        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        "X-Requested-With": "XMLHttpRequest",
-        "Origin": base_url,
-        "Referer": base_url + referer,
-    }
-
-
-def _decode_json_response(response: httpx.Response) -> Any:
-    text = response.content.decode("utf-8", errors="replace")
-    return json.loads(text)
-
-
 def _build_query_form(term_params: dict[str, str], *, page: int = 1) -> dict[str, Any]:
     return {
         **term_params,
@@ -319,37 +304,6 @@ def _split_course(value: Any) -> tuple[str, str, str]:
     return "", display, display
 
 
-def _parse_exam_time(value: Any) -> tuple[str, str, str, str]:
-    text = _normalize_space(value)
-    match = re.search(
-        r"(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\s*[（(]?\s*(\d{1,2}:\d{2})\s*[-~—至]\s*(\d{1,2}:\d{2})",
-        text,
-    )
-    if not match:
-        date_match = re.search(r"(20\d{2})[-/](\d{1,2})[-/](\d{1,2})", text)
-        if not date_match:
-            return "", "", "", text
-        exam_date = f"{int(date_match.group(1)):04d}-{int(date_match.group(2)):02d}-{int(date_match.group(3)):02d}"
-        return exam_date, "", "", text
-
-    exam_date = f"{int(match.group(1)):04d}-{int(match.group(2)):02d}-{int(match.group(3)):02d}"
-    start_text = match.group(4)
-    end_text = match.group(5)
-    try:
-        starts_dt = datetime.fromisoformat(f"{exam_date}T{start_text}")
-        ends_dt = datetime.fromisoformat(f"{exam_date}T{end_text}")
-        if ends_dt < starts_dt:
-            ends_dt += timedelta(days=1)
-        return (
-            exam_date,
-            starts_dt.isoformat(timespec="minutes"),
-            ends_dt.isoformat(timespec="minutes"),
-            text,
-        )
-    except ValueError:
-        return exam_date, "", "", text
-
-
 def _fallback_key(row: dict[str, Any], term_params: dict[str, str]) -> str:
     pieces = [
         term_params.get("xnm", ""),
@@ -374,7 +328,7 @@ def _item_from_row(
     source_url: str,
 ) -> AcademicCourseExamItem:
     course_code, course_name, course_display_name = _split_course(_field(row, "kcmc", "kcmc_id"))
-    exam_date, starts_at, ends_at, exam_time_text = _parse_exam_time(_field(row, "kssj"))
+    exam_date, starts_at, ends_at, exam_time_text = parse_exam_time(_field(row, "kssj"))
     exam_key = _field(row, "pkvalue") or _fallback_key(row, term_params)
     return AcademicCourseExamItem(
         exam_key=exam_key,
@@ -415,219 +369,26 @@ def _item_from_row(
     )
 
 
-def _items_from_payload(
-    payload: Any,
-    *,
-    term_params: dict[str, str],
-    source_url: str,
-) -> tuple[list[AcademicCourseExamItem], int, int]:
-    raw_rows: list[Any] = []
-    total_page = 1
-    total_result = 0
-    if isinstance(payload, dict):
-        for key in ("items", "rows", "data"):
-            if isinstance(payload.get(key), list):
-                raw_rows = payload[key]
-                break
-        total_page = max(1, _parse_int(payload.get("totalPage") or payload.get("total_page") or 1))
-        total_result = _parse_int(
-            payload.get("totalResult")
-            or payload.get("totalCount")
-            or payload.get("records")
-            or len(raw_rows)
-        )
-    elif isinstance(payload, list):
-        raw_rows = payload
-        total_result = len(raw_rows)
-
-    items = [
-        _item_from_row(row, term_params=term_params, source_url=source_url)
-        for row in raw_rows
-        if isinstance(row, dict)
-    ]
-    return items, total_page, total_result
-
-
-async def _fetch_exam_name_options(
-    client: httpx.AsyncClient,
-    *,
-    term_params: dict[str, str],
-    sources: list[dict[str, Any]],
-) -> None:
-    try:
-        response = await client.post(
-            ZF_EXAM_NAME_OPTIONS_PATH,
-            data=term_params,
-            headers=_ajax_headers(client),
-        )
-        try:
-            payload = _decode_json_response(response)
-        except (json.JSONDecodeError, ValueError):
-            payload = None
-        sources.append(
-            {
-                "path": ZF_EXAM_NAME_OPTIONS_PATH,
-                "method": "POST",
-                "params": dict(term_params),
-                "status_code": response.status_code,
-                "parser": "exam_name_options",
-                "item_count": len(payload) if isinstance(payload, list) else 0,
-                "url": str(response.url),
-            }
-        )
-    except httpx.HTTPError as exc:
-        sources.append(
-            {
-                "path": ZF_EXAM_NAME_OPTIONS_PATH,
-                "method": "POST",
-                "params": dict(term_params),
-                "status": "failed",
-                "parser": "exam_name_options",
-                "message": str(exc)[:180],
-            }
-        )
-
-
-async def _fetch_course_exams_for_term(
-    client: httpx.AsyncClient,
-    *,
-    term_params: dict[str, str],
-    sources: list[dict[str, Any]],
-) -> list[AcademicCourseExamItem]:
-    items: list[AcademicCourseExamItem] = []
-    total_page = 1
-    total_result = 0
-    for page in range(1, 100):
-        form = _build_query_form(term_params, page=page)
-        response = await client.post(
-            ZF_COURSE_EXAM_QUERY_PATH,
-            data=form,
-            headers=_ajax_headers(client),
-        )
-        payload = _decode_json_response(response)
-        page_items, payload_total_page, payload_total_result = _items_from_payload(
-            payload,
-            term_params=term_params,
-            source_url=str(response.url),
-        )
-        total_page = max(total_page, payload_total_page)
-        total_result = max(total_result, payload_total_result, len(items) + len(page_items))
-        items.extend(page_items)
-        sources.append(
-            {
-                "path": ZF_COURSE_EXAM_QUERY_PATH,
-                "method": "POST",
-                "params": dict(term_params),
-                "status_code": response.status_code,
-                "parser": "course_exam_query",
-                "page": page,
-                "total_page": total_page,
-                "item_count": len(page_items),
-                "total_result": total_result,
-                "url": str(response.url),
-            }
-        )
-        if page >= total_page or not page_items:
-            break
-    return items
-
-
 async def _fetch_teacher_course_exams(
     client: httpx.AsyncClient,
     semester: dict[str, Any],
 ) -> tuple[list[AcademicCourseExamItem], list[dict[str, Any]], list[dict[str, str]]]:
-    sources: list[dict[str, Any]] = []
-    try:
-        response = await client.get(
-            ZF_COURSE_EXAM_INDEX_PATH,
-            headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"},
-        )
-        sources.append(
-            {
-                "path": ZF_COURSE_EXAM_INDEX_PATH,
-                "method": "GET",
-                "status_code": response.status_code,
-                "parser": "index_page",
-                "url": str(response.url),
-            }
-        )
-    except httpx.HTTPError as exc:
-        sources.append(
-            {
-                "path": ZF_COURSE_EXAM_INDEX_PATH,
-                "method": "GET",
-                "status": "failed",
-                "message": str(exc)[:180],
-            }
-        )
-
-    candidates = _term_param_candidates(semester)
-    last_empty_items: list[AcademicCourseExamItem] = []
-    for term_params in candidates:
-        await _fetch_exam_name_options(client, term_params=term_params, sources=sources)
-        try:
-            items = await _fetch_course_exams_for_term(client, term_params=term_params, sources=sources)
-        except (httpx.HTTPError, json.JSONDecodeError, ValueError) as exc:
-            sources.append(
-                {
-                    "path": ZF_COURSE_EXAM_QUERY_PATH,
-                    "method": "POST",
-                    "params": dict(term_params),
-                    "status": "failed",
-                    "parser": "course_exam_query",
-                    "message": str(exc)[:180],
-                }
-            )
-            continue
-        if items:
-            return items, sources, [term_params]
-        last_empty_items = items
-    return last_empty_items, sources, candidates
-
-
-def _load_current_semester(conn: sqlite3.Connection, teacher_id: int, today: date) -> dict[str, Any] | None:
-    teacher_scope = load_teacher_org_scope(conn, teacher_id)
-    row = conn.execute(
-        """
-        SELECT *
-        FROM academic_semesters
-        WHERE lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
-          AND date(start_date) <= date(?)
-          AND date(end_date) >= date(?)
-        ORDER BY CASE WHEN teacher_id = ? THEN 0 ELSE 1 END, updated_at DESC, id DESC
-        LIMIT 1
-        """,
-        (
-            teacher_scope["school_code"],
-            teacher_scope["school_code"],
-            today.isoformat(),
-            today.isoformat(),
-            int(teacher_id),
-        ),
-    ).fetchone()
-    return dict(row) if row else None
-
-
-def _load_semester_by_id(conn: sqlite3.Connection, teacher_id: int, semester_id: int) -> dict[str, Any] | None:
-    teacher_scope = load_teacher_org_scope(conn, teacher_id)
-    row = conn.execute(
-        """
-        SELECT *
-        FROM academic_semesters
-        WHERE id = ?
-          AND lower(TRIM(COALESCE(school_code, ?))) = lower(TRIM(?))
-        LIMIT 1
-        """,
-        (int(semester_id), teacher_scope["school_code"], teacher_scope["school_code"]),
-    ).fetchone()
-    return dict(row) if row else None
+    return await fetch_exam_feed(
+        client, semester,
+        index_path=ZF_COURSE_EXAM_INDEX_PATH,
+        query_path=ZF_COURSE_EXAM_QUERY_PATH,
+        parser="course_exam_query",
+        build_form=_build_query_form,
+        parse_row=_item_from_row,
+        item_key=lambda item: item.exam_key,
+    )
 
 
 def _load_teacher_offering_contexts(
     conn: sqlite3.Connection,
     *,
     teacher_id: int,
-    semester_id: int | None,
+    semester: dict,
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
@@ -636,6 +397,8 @@ def _load_teacher_offering_contexts(
                o.course_id,
                o.teacher_id,
                o.semester_id,
+               o.semester AS legacy_semester,
+               o.academic_teaching_class_id,
                o.academic_teaching_class_name,
                c.name AS class_name,
                c.academic_class_code,
@@ -654,16 +417,26 @@ def _load_teacher_offering_contexts(
         JOIN teachers t ON t.id = o.teacher_id
         LEFT JOIN academic_semesters s ON s.id = o.semester_id
         WHERE o.teacher_id = ?
-          AND (? IS NULL OR o.semester_id = ? OR o.semester_id IS NULL)
+          AND (o.semester_id = ? OR o.semester_id IS NULL)
         ORDER BY o.semester_id DESC, o.id DESC
         """,
-        (int(teacher_id), semester_id, semester_id),
+        (int(teacher_id), int(semester["id"])),
     ).fetchall()
-    return [dict(row) for row in rows]
+    current_term = identity_from_semester_record(semester)
+    return [
+        dict(row) for row in rows if row["semester_id"] is not None
+        or (current_term is not None and parse_semester_identity(row["legacy_semester"]) == current_term)
+    ]
 
 
 def _score_exam_for_offering(item: AcademicCourseExamItem, context: dict[str, Any]) -> int:
     score = 0
+    local_class_id = _normalize_key(context.get("academic_teaching_class_id"))
+    remote_class_id = _normalize_key(_field(item.raw_json, "jxb_id"))
+    if local_class_id and remote_class_id:
+        if local_class_id != remote_class_id:
+            return 0
+        score += 100
     local_course_code = _normalize_key(context.get("academic_course_code"))
     remote_course_code = _normalize_key(item.course_code)
     if local_course_code and remote_course_code and local_course_code == remote_course_code:
@@ -672,6 +445,8 @@ def _score_exam_for_offering(item: AcademicCourseExamItem, context: dict[str, An
         local_course_code in remote_course_code or remote_course_code in local_course_code
     ):
         score += 30
+    elif local_course_code and remote_course_code:
+        return 0
 
     local_course_name = _normalize_key(context.get("course_name"))
     remote_course_name = _normalize_key(item.course_name)
@@ -684,6 +459,11 @@ def _score_exam_for_offering(item: AcademicCourseExamItem, context: dict[str, An
 
     teaching_class_name = _normalize_key(context.get("academic_teaching_class_name"))
     remote_teaching_class = _normalize_key(item.teaching_class_name)
+    if not (local_class_id and remote_class_id):
+        local_section = re.search(r"[-_－—–](\d{3,4})$", teaching_class_name)
+        remote_section = re.search(r"[-_－—–](\d{3,4})$", remote_teaching_class)
+        if local_section and remote_section and local_section[1] != remote_section[1]:
+            return 0
     if teaching_class_name and remote_teaching_class and teaching_class_name == remote_teaching_class:
         score += 48
     elif teaching_class_name and remote_teaching_class and (
@@ -791,22 +571,12 @@ def _upsert_calendar_event(
     semester: dict[str, Any],
     item_id: int,
     item: AcademicCourseExamItem,
+    student_rule: dict,
     synced_at: str,
-) -> tuple[bool, bool, int]:
-    source_key = _source_key(item)
-    existing = conn.execute(
-        """
-        SELECT id, starts_at, ends_at, location, title, status
-        FROM teacher_calendar_events
-        WHERE teacher_id = ?
-          AND source_type = ?
-          AND source_key = ?
-        LIMIT 1
-        """,
-        (int(teacher_id), TEACHER_CALENDAR_SOURCE_COURSE_EXAM, source_key),
-    ).fetchone()
+) -> tuple[bool, bool, Counter]:
     class_display_name = _resolve_class_display_name(conn, teacher_id=teacher_id, item=item)
     metadata = {
+        **student_rule,
         "academic_source": ACADEMIC_COURSE_EXAM_SOURCE,
         "course_exam_item_id": item_id,
         "exam_name": item.exam_name,
@@ -829,194 +599,17 @@ def _upsert_calendar_event(
         "location_full": _full_location(item),
         "signature": _signature(item),
     }
-    title = _event_title(item)
-    subtitle = item.exam_name or "教务系统任课考试"
-    notes = _event_notes(item, class_display_name=class_display_name)
-    full_location = _full_location(item)
-    starts_at = item.starts_at or None
-    ends_at = item.ends_at or item.starts_at or None
-    due_at = item.starts_at or item.exam_date or None
-    link_url = f"/classroom/{item.class_offering_id}#timeline-panel" if item.class_offering_id else "/dashboard#dashboard-semester"
-    params = (
-        int(teacher_id),
-        int(semester["id"]),
-        TEACHER_CALENDAR_SOURCE_COURSE_EXAM,
-        int(item_id),
-        source_key,
-        title,
-        subtitle,
-        notes,
-        starts_at,
-        ends_at,
-        due_at,
-        full_location,
-        "active",
-        "academic_exam",
-        link_url,
-        _json_dumps(metadata),
-        synced_at,
-        synced_at,
+    metadata["note"] = item.note
+    return save_exam_event(
+        conn, teacher_id=teacher_id, semester_id=int(semester["id"]), source_type=TEACHER_CALENDAR_SOURCE_COURSE_EXAM,
+        source_id=item_id, source_key=_source_key(item), title=_event_title(item),
+        subtitle=item.exam_name or "教务系统任课考试",
+        notes=_event_notes(item, class_display_name=class_display_name),
+        starts_at=item.starts_at or None, ends_at=item.ends_at or item.starts_at or None,
+        due_at=item.starts_at or item.exam_date or None, location=_full_location(item),
+        tone="academic_exam", link_url=f"/classroom/{item.class_offering_id}#timeline-panel" if item.class_offering_id else CALENDAR_LINK,
+        metadata=metadata, synced_at=synced_at,
     )
-    if existing is None:
-        event_id = execute_insert_returning_id(
-            conn,
-            """
-            INSERT INTO teacher_calendar_events (
-                teacher_id, semester_id, source_type, source_id, source_key,
-                title, subtitle, notes, starts_at, ends_at, due_at, location,
-                status, tone, link_url, metadata_json, synced_at, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (*params, synced_at),
-        )
-        return True, False, event_id
-
-    changed = any(
-        str(existing[key] or "") != str(value or "")
-        for key, value in {
-            "starts_at": starts_at,
-            "ends_at": ends_at,
-            "location": full_location,
-            "title": title,
-            "status": "active",
-        }.items()
-    )
-    conn.execute(
-        """
-        UPDATE teacher_calendar_events
-        SET semester_id = ?,
-            source_id = ?,
-            title = ?,
-            subtitle = ?,
-            notes = ?,
-            starts_at = ?,
-            ends_at = ?,
-            due_at = ?,
-            location = ?,
-            status = 'active',
-            tone = 'academic_exam',
-            link_url = ?,
-            metadata_json = ?,
-            synced_at = ?,
-            updated_at = ?,
-            deleted_at = NULL
-        WHERE id = ?
-        """,
-        (
-            int(semester["id"]),
-            int(item_id),
-            title,
-            subtitle,
-            notes,
-            starts_at,
-            ends_at,
-            due_at,
-            full_location,
-            link_url,
-            _json_dumps(metadata),
-            synced_at,
-            synced_at,
-            int(existing["id"]),
-        ),
-    )
-    return False, changed, int(existing["id"])
-
-
-def _student_rows_for_offering(conn: sqlite3.Connection, class_offering_id: int) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT s.id,
-               s.name,
-               s.student_id_number
-        FROM class_offerings o
-        JOIN students s ON (s.class_id = o.class_id OR EXISTS (SELECT 1 FROM class_offering_class_links cocl_m WHERE cocl_m.offering_id = o.id AND cocl_m.class_id = s.class_id))
-        WHERE o.id = ?
-          AND COALESCE(s.enrollment_status, 'active') = 'active'
-        ORDER BY s.student_id_number, s.id
-        """,
-        (int(class_offering_id),),
-    ).fetchall()
-    return [dict(row) for row in rows]
-
-
-def _maybe_notify_students(
-    conn: sqlite3.Connection,
-    *,
-    teacher_id: int,
-    item: AcademicCourseExamItem,
-    is_created: bool,
-    is_changed: bool,
-) -> int:
-    if not item.class_offering_id or not item.starts_at or not (is_created or is_changed):
-        return 0
-    try:
-        starts_at = datetime.fromisoformat(item.starts_at)
-    except ValueError:
-        return 0
-    if starts_at < china_now().replace(tzinfo=None):
-        return 0
-
-    change_label = "新增" if is_created else "更新"
-    ref_id = f"academic-course-exam:{_source_key(item)}:{_signature(item)}"
-    title = f"教务系统{change_label}考试：{item.course_name or item.exam_name or '课程考试'}"
-    body_preview = _event_notes(
-        item,
-        class_display_name=_resolve_class_display_name(conn, teacher_id=int(teacher_id), item=item),
-    )
-    count = 0
-    for student in _student_rows_for_offering(conn, int(item.class_offering_id)):
-        count += create_academic_exam_notification(
-            conn,
-            recipient_role="student",
-            recipient_user_pk=int(student["id"]),
-            title=title,
-            body_preview=body_preview,
-            link_url=f"/classroom/{item.class_offering_id}#timeline-panel",
-            class_offering_id=int(item.class_offering_id),
-            ref_id=ref_id,
-            actor_display_name="教务系统",
-            metadata={
-                "source": ACADEMIC_COURSE_EXAM_SOURCE,
-                "source_key": _source_key(item),
-                "starts_at": item.starts_at,
-                "ends_at": item.ends_at,
-                "campus": item.campus,
-                "building": item.building,
-                "location": _full_location(item),
-                "course_name": item.course_name,
-                "exam_name": item.exam_name,
-            },
-        )
-    return count
-
-
-def _mark_stale_events(
-    conn: sqlite3.Connection,
-    *,
-    teacher_id: int,
-    semester_id: int,
-    source_keys: list[str],
-    synced_at: str,
-) -> int:
-    if not source_keys:
-        return 0
-    placeholders = ",".join("?" for _ in source_keys)
-    cursor = conn.execute(
-        f"""
-        UPDATE teacher_calendar_events
-        SET status = 'stale',
-            synced_at = ?,
-            updated_at = ?
-        WHERE teacher_id = ?
-          AND semester_id = ?
-          AND source_type = ?
-          AND status = 'active'
-          AND source_key IN ({placeholders})
-        """,
-        (synced_at, synced_at, int(teacher_id), int(semester_id), TEACHER_CALENDAR_SOURCE_COURSE_EXAM, *source_keys),
-    )
-    return int(cursor.rowcount or 0)
 
 
 def _mark_stale_items_for_terms(
@@ -1028,7 +621,7 @@ def _mark_stale_items_for_terms(
     seen_keys: set[str],
     synced_at: str,
     class_offering_id: int | None = None,
-) -> int:
+) -> tuple[int, Counter]:
     stale_keys: list[str] = []
     stale_count = 0
     for term_params in term_params_list:
@@ -1044,14 +637,14 @@ def _mark_stale_items_for_terms(
             params.append(int(class_offering_id))
         rows = conn.execute(
             f"""
-            SELECT id, academic_year, academic_term, exam_key
+            SELECT id, sync_status, academic_year, academic_term, exam_key
             FROM teacher_academic_course_exam_items
             WHERE teacher_id = ?
               AND semester_id = ?
               AND school_code = 'gxufl'
               AND academic_year = ?
               AND academic_term = ?
-              AND sync_status = 'active'
+              AND sync_status IN ('active', 'stale')
               {offering_clause}
             """,
             tuple(params),
@@ -1060,9 +653,11 @@ def _mark_stale_items_for_terms(
             key = str(row["exam_key"] or "")
             if key in seen_keys:
                 continue
-            stale_count += 1
             source_key = f"gxufl:{row['academic_year']}:{row['academic_term']}:{key}"
             stale_keys.append(source_key)
+            if row["sync_status"] == "stale":
+                continue
+            stale_count += 1
             conn.execute(
                 """
                 UPDATE teacher_academic_course_exam_items
@@ -1073,14 +668,15 @@ def _mark_stale_items_for_terms(
                 """,
                 (synced_at, synced_at, int(row["id"])),
             )
-    _mark_stale_events(
+    counts = withdraw_exam_events(
         conn,
         teacher_id=teacher_id,
         semester_id=semester_id,
+        source_type=TEACHER_CALENDAR_SOURCE_COURSE_EXAM,
         source_keys=stale_keys,
         synced_at=synced_at,
     )
-    return stale_count
+    return stale_count, counts
 
 
 def _persist_course_exams(
@@ -1093,18 +689,20 @@ def _persist_course_exams(
     synced_at: str,
     class_offering_id: int | None = None,
 ) -> dict[str, int]:
+    lock_exam_snapshot(conn, teacher_id, TEACHER_CALENDAR_SOURCE_COURSE_EXAM)
+    previous_groups = student_exam_groups(conn, teacher_id, int(semester["id"]))
     ensure_course_exam_schema(conn)
     contexts = _load_teacher_offering_contexts(
         conn,
         teacher_id=int(teacher_id),
-        semester_id=_optional_int(semester.get("id")),
+        semester=semester,
     )
     created_count = 0
     updated_count = 0
     matched_offering_count = 0
     event_created_count = 0
     event_updated_count = 0
-    student_notification_count = 0
+    notices = Counter()
     seen_keys: set[str] = set()
     place_index = load_teaching_place_location_index(conn, int(teacher_id))
 
@@ -1120,13 +718,16 @@ def _persist_course_exams(
         score = _attach_best_offering(item, contexts)
         if score:
             matched_offering_count += 1
+    # Determine split-room audiences from the entire validated snapshot
+    # before sending the very first notice.
+    for item, student_rule in zip(items, course_exam_student_rules(conn, items)):
         if class_offering_id and item.class_offering_id != int(class_offering_id):
             continue
 
         seen_keys.add(item.exam_key)
         existing = conn.execute(
             """
-            SELECT id, starts_at, ends_at, location, exam_name, class_offering_id, sync_status
+            SELECT id
             FROM teacher_academic_course_exam_items
             WHERE teacher_id = ?
               AND school_code = 'gxufl'
@@ -1137,23 +738,10 @@ def _persist_course_exams(
             """,
             (int(teacher_id), item.academic_year, item.academic_term, item.exam_key),
         ).fetchone()
-        is_created = existing is None
-        is_changed = False
-        if is_created:
+        if existing is None:
             created_count += 1
         else:
             updated_count += 1
-            is_changed = any(
-                str(existing[key] or "") != str(value or "")
-                for key, value in {
-                    "starts_at": item.starts_at or None,
-                    "ends_at": item.ends_at or None,
-                    "location": item.location,
-                    "exam_name": item.exam_name,
-                    "class_offering_id": item.class_offering_id,
-                    "sync_status": "active",
-                }.items()
-            )
 
         conn.execute(
             """
@@ -1272,25 +860,20 @@ def _persist_course_exams(
         ).fetchone()
         if item_row is None:
             continue
-        event_created, event_changed, _ = _upsert_calendar_event(
+        event_created, event_changed, delivered = _upsert_calendar_event(
             conn,
             teacher_id=int(teacher_id),
             semester=semester,
             item_id=int(item_row["id"]),
             item=item,
+            student_rule=student_rule,
             synced_at=synced_at,
         )
         event_created_count += 1 if event_created else 0
         event_updated_count += 1 if event_changed else 0
-        student_notification_count += _maybe_notify_students(
-            conn,
-            teacher_id=int(teacher_id),
-            item=item,
-            is_created=is_created or event_created,
-            is_changed=is_changed or event_changed,
-        )
+        notices.update(delivered)
 
-    stale_count = _mark_stale_items_for_terms(
+    stale_count, withdrawn_notices = _mark_stale_items_for_terms(
         conn,
         teacher_id=int(teacher_id),
         semester_id=int(semester["id"]),
@@ -1299,6 +882,8 @@ def _persist_course_exams(
         synced_at=synced_at,
         class_offering_id=class_offering_id,
     )
+    notices.update(withdrawn_notices)
+    notices.update(publish_student_exam_groups(conn, teacher_id, int(semester["id"]), previous_groups))
     return {
         "course_exam_count": created_count + updated_count,
         "created_count": created_count,
@@ -1306,7 +891,8 @@ def _persist_course_exams(
         "matched_offering_count": matched_offering_count,
         "event_created_count": event_created_count,
         "event_updated_count": event_updated_count,
-        "student_notification_count": student_notification_count,
+        "student_notification_count": notices["student"],
+        "teacher_notification_count": notices["teacher"],
         "stale_count": stale_count,
     }
 
@@ -1792,7 +1378,7 @@ def merge_course_exams_into_teaching_plan(
 async def sync_current_teacher_course_exams_from_academic_system(teacher_id: int) -> dict[str, Any]:
     with get_db_connection() as conn:
         access_payload = load_teacher_academic_access_method(conn, teacher_id, school_code=SCHOOL_CODE)
-        semester = _load_current_semester(conn, teacher_id, china_now().date())
+        semester = load_current_exam_semester(conn, teacher_id, china_now().date())
 
     if not access_payload:
         return {
@@ -1809,7 +1395,7 @@ async def sync_current_teacher_course_exams_from_academic_system(teacher_id: int
                 "source_summary": semester_result.get("source_summary") or [],
             }
         with get_db_connection() as conn:
-            semester = _load_semester_by_id(conn, teacher_id, int(semester_result["semester_id"]))
+            semester = load_current_exam_semester(conn, teacher_id, china_now().date())
 
     if not semester:
         return {
@@ -1819,6 +1405,7 @@ async def sync_current_teacher_course_exams_from_academic_system(teacher_id: int
 
     try:
         async with open_authenticated_academic_client(access_payload) as (client, profile, login_result):
+            started_at = exam_snapshot_start()
             items, source_summary, term_params_list = await _fetch_teacher_course_exams(client, semester)
     except (ValueError, httpx.HTTPError) as exc:
         return {
@@ -1829,6 +1416,10 @@ async def sync_current_teacher_course_exams_from_academic_system(teacher_id: int
     synced_at = _now_iso()
     with get_db_connection() as conn:
         try:
+            newer = superseding_exam_snapshot(conn, teacher_id=teacher_id, semester=semester, term=term_params_list[0],
+                                             source="course_exam", started_at=started_at)
+            if newer is not None:
+                return newer
             result = _persist_course_exams(
                 conn,
                 teacher_id=int(teacher_id),
@@ -1847,7 +1438,7 @@ async def sync_current_teacher_course_exams_from_academic_system(teacher_id: int
         f"新增 {result['created_count']} 条、更新 {result['updated_count']} 条，"
         f"匹配课堂 {result['matched_offering_count']} 条，"
         f"写入日历 {result['event_created_count'] + result['event_updated_count']} 条，"
-        f"学生重要通知 {result['student_notification_count']} 条，"
+        f"师生重要通知 {result['teacher_notification_count'] + result['student_notification_count']} 条，"
         f"标记待复核 {result['stale_count']} 条。"
     )
     if not items:

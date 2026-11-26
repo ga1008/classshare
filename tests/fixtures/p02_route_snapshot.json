@@ -3465,6 +3465,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/dashboard/academic-exams",
+    "methods": [
+      "GET"
+    ],
+    "name": "dashboard_academic_exams",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/dashboard/academic-exams/refresh",
+    "methods": [
+      "POST"
+    ],
+    "name": "refresh_dashboard_academic_exams",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/dashboard/calendar",
     "methods": [
       "GET"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, Awaitable, Callable
 
@@ -76,6 +77,7 @@ def _compact_course_exam_counts(result: dict[str, Any]) -> dict[str, int]:
         "event_created_count": _int_value(result, "event_created_count"),
         "event_updated_count": _int_value(result, "event_updated_count"),
         "student_notification_count": _int_value(result, "student_notification_count"),
+        "teacher_notification_count": _int_value(result, "teacher_notification_count"),
         "stale_count": _int_value(result, "stale_count"),
     }
 
@@ -458,7 +460,13 @@ async def _run_stage(
     count_builder: Callable[[dict[str, Any]], dict[str, int]],
 ) -> dict[str, Any]:
     try:
-        result = await runner(int(teacher_id))
+        if key in {"course_exams", "invigilations"}:
+            async with asyncio.timeout(240):
+                result = await runner(int(teacher_id))
+        else:
+            result = await runner(int(teacher_id))
+    except TimeoutError:
+        result = {"status": "failed", "message": f"{label}读取超时，请稍后重试。"}
     except Exception as exc:
         result = {
             "status": "failed",

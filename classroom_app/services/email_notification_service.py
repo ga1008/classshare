@@ -901,7 +901,7 @@ def _load_recipient_email(conn, *, role: str, user_pk: int) -> Optional[dict[str
 # Categories whose mail may go out through the platform sender when the
 # natural sender (recipient teacher / acting teacher / offering teacher) has no
 # working SMTP configuration. Workflow notices must not silently vanish.
-PLATFORM_FALLBACK_CATEGORIES = frozenset({"approval_workflow", "signature_workflow"})
+PLATFORM_FALLBACK_CATEGORIES = frozenset({"approval_workflow", "signature_workflow", "academic_exam"})
 
 
 def platform_sender_teacher_id() -> int:
@@ -1070,6 +1070,9 @@ def _email_detail_lines(payload: dict[str, Any]) -> list[tuple[str, str]]:
             return []
         return [(_normalize_text(item.get("name"), limit=40), _normalize_text(item.get("text"), limit=600))
                 for item in context[-4:] if isinstance(item, dict)]
+    if category == "academic_exam":
+        schedules = _payload_metadata(payload).get("room_schedules")
+        return [("候选考场", str(item)) for item in schedules if item] if isinstance(schedules, list) else []
     if category not in {"submission", "ai_feedback"}:
         return []
     metadata = _payload_metadata(payload)

@@ -1,6 +1,6 @@
 # LanShare 前端迁移清单
 
-> 生成时间：2026-11-24 00:07:14（Asia/Shanghai）。
+> 生成时间：2026-11-27 00:15:53（Asia/Shanghai）。
 > 生成命令：`python tools/frontend_migration_inventory.py`。
 
 ## 用途
@@ -33,14 +33,14 @@
 | 业务域 | 模板数量 | 关键模板 | 关键脚本线索 |
 | --- | ---: | --- | --- |
 | 作业与提交 | 6 | `assignment_detail_student.html`, `assignment_detail_teacher.html`, `assignment_wrong_summary.html`, `macros/assignment_applicants.html`, `partials/submission_retained_grade.html`, `submission_detail.html` | `js/behavior_tracker.js`, `js/feedback.js`, `js/ui.js`, `js/assessment_editor.js`, `js/assessment_questions.js`, `js/submission_upload.js` 等 25 项 |
-| 其他页面 | 108 | `achievements.html`, `assessment_plan_editor.html`, `base.html`, `base_centered.html`, `base_navbar.html`, `career_path.html` | `js/auth.js`, `js/assessment_plan_editor.js`, `js/ls_date_picker.js`, `js/cultivation_identity.js`, `js/cultivation_emblems.js`, `js/message_center_bell.js` 等 47 项 |
+| 其他页面 | 110 | `achievements.html`, `assessment_plan_editor.html`, `base.html`, `base_centered.html`, `base_navbar.html`, `career_path.html` | `js/auth.js`, `js/assessment_plan_editor.js`, `js/ls_date_picker.js`, `js/cultivation_identity.js`, `js/cultivation_emblems.js`, `js/message_center_bell.js` 等 48 项 |
 | 教师管理中心 | 30 | `manage/academic_overview.html`, `manage/ai.html`, `manage/archive_pipeline.html`, `manage/assessment_plans.html`, `manage/attendance_reports.html`, `manage/classes.html` | `js/manage_ai.js`, `js/manage_assessment_plans.js`, `js/attendance_reports.js`, `js/base_resource_modes.js`, `js/manage_classes.js`, `js/manage_classrooms.js` 等 32 项 |
 | 消息、反馈、博客、个人中心 | 23 | `blog.html`, `feedback_review.html`, `manage/profile.html`, `partials/blog_button.html`, `partials/feedback_button.html`, `partials/feedback_modal.html` | `js/blog.js`, `js/feedback_review.js`, `js/echarts.min.js`, `js/profile.js`, `js/cultivation_panel.js`, `js/profile_signatures.js` |
 | 系统与超管 | 15 | `manage/system/academic_integrations.html`, `manage/system/agent_keys.html`, `manage/system/ai_usage.html`, `manage/system/blog_crawler.html`, `manage/system/blog_review.html`, `manage/system/diagnostics.html` | `js/manage_academic_integrations.js`, `js/manage_agent_keys.js`, `js/manage_blog_crawler.js`, `js/manage_blog_review.js`, `js/feedback_admin.js`, `js/manage_gongwen_integrations.js` 等 11 项 |
 | 考试与试卷 | 9 | `exam_editor.html`, `exam_take.html`, `manage/exams.html`, `partials/classroom_members/exams.html`, `partials/exams/board.html`, `partials/exams/control_panel.html` | `js/auth.js`, `js/ui.js`, `js/lq/domain-modal.js`, `js/assessment_editor.js`, `js/assessment_questions.js`, `js/lq/dropdown.js` 等 27 项 |
 | 认证与账号 | 7 | `partials/login_remember.html`, `partials/student_security_modal.html`, `permission_denied.html`, `session_expired.html`, `student_login_v4.html`, `teacher_login_v4.html` | `js/session_expired.js`, `js/student_login.js`, `js/local_draft_scope.js`, `js/teacher_login.js` |
 | 资料与文件 | 13 | `manage/academic_final_materials.html`, `manage/material_hub.html`, `manage/materials.html`, `material_reader_unavailable.html`, `material_render_shell.html`, `material_viewer.html` | `js/academic_final_materials.js`, `js/material_hub.js`, `js/base_resource_modes.js`, `js/materials_manage.js`, `js/material_reader_return.js`, `js/teacher_whiteboard.js` 等 9 项 |
-| 首页与课堂 | 8 | `classroom_main_v4.html`, `dashboard.html`, `dashboard_teacher.html`, `learning_path.html`, `partials/dashboard_agenda_widget.html`, `partials/dashboard_schedule_tools.html` | `js/tools.js`, `js/lq/navigation.js`, `js/classroom_group_qr.js`, `js/behavior_tracker.js`, `js/feedback.js`, `js/student_security.js` 等 12 项 |
+| 首页与课堂 | 9 | `classroom_main_v4.html`, `dashboard.html`, `dashboard_teacher.html`, `learning_path.html`, `partials/dashboard_agenda_widget.html`, `partials/dashboard_exam_calendar.html` | `js/tools.js`, `js/minigames/classroom-access-entry.js`, `js/lq/navigation.js`, `js/classroom_group_qr.js`, `js/behavior_tracker.js`, `js/feedback.js` 等 14 项 |
 
 ## 模板清单
 
@@ -56,9 +56,9 @@
 | `base_navbar.html` | `base.html`, `partials/lq_shell_prepaint.html`, `partials/lq_navbar_topbar.html`, `partials/lq_report_card_topbar.html` 等 10 项 | `js/navbar_lq.js`, `css/lq/pages/navbar.css`, `js/ui.js`, `js/student_security.js`, `js/feedback.js` 等 6 项 | - | - |
 | `blog.html` | `base_navbar.html`, `partials/markdown_assets.html` | `css/blog-paper.css`, `css/blog_moderation.css`, `js/blog.js` | - | - |
 | `career_path.html` | `base.html` | `css/career_path.css`, `js/career_tools_client.js`, `js/career_path_network.js`, `js/career_path_app.js` | - | - |
-| `classroom_main_v4.html` | `base.html`, `partials/markdown_assets.html`, `partials/student_security_modal.html`, `partials/feedback_modal.html` 等 23 项 | `css/ordinary_grade_kind_controls.css`, `css/classroom_group_qr.css`, `css/classroom_closeout.css`, `css/classroom_members.css`, `css/attendance_reports.css` 等 19 项 | `frontend/src/islands/classroom-page.tsx` | `classroom-page`, `assignment-authoring-sync`, `exam-assign-sync` |
-| `dashboard.html` | `base_navbar.html`, `partials/dashboard_schedule_tools.html`, `partials/student_dashboard_schedule.html`, `partials/semester_calendar_panel.html` 等 9 项 | `js/learning_certificate_reveal.js` | `frontend/src/islands/dashboard-quick-actions.tsx` | `dashboard-workspace` |
-| `dashboard_teacher.html` | `manage/layout.html`, `partials/dashboard_schedule_tools.html`, `partials/semester_calendar_panel.html`, `macros/ui_explanation.html` 等 8 项 | `js/global_search.js` | `frontend/src/islands/dashboard-quick-actions.tsx` | `dashboard-workspace` |
+| `classroom_main_v4.html` | `base.html`, `partials/markdown_assets.html`, `partials/student_security_modal.html`, `partials/feedback_modal.html` 等 24 项 | `css/ordinary_grade_kind_controls.css`, `css/classroom_group_qr.css`, `css/minigame_classroom_access.css`, `css/classroom_closeout.css`, `css/classroom_members.css` 等 21 项 | `frontend/src/islands/classroom-page.tsx` | `classroom-page`, `assignment-authoring-sync`, `exam-assign-sync` |
+| `dashboard.html` | `base_navbar.html`, `partials/dashboard_schedule_tools.html`, `partials/student_dashboard_schedule.html`, `partials/dashboard_exam_calendar.html` 等 10 项 | `css/dashboard_exam_calendar.css`, `js/learning_certificate_reveal.js` | `frontend/src/islands/dashboard-quick-actions.tsx` | `dashboard-workspace` |
+| `dashboard_teacher.html` | `manage/layout.html`, `partials/dashboard_schedule_tools.html`, `partials/dashboard_exam_calendar.html`, `partials/semester_calendar_panel.html` 等 9 项 | `css/dashboard_exam_calendar.css`, `js/global_search.js` | `frontend/src/islands/dashboard-quick-actions.tsx` | `dashboard-workspace` |
 | `dev/lq.html` | `base.html`, `dev/lq_presentation.html`, `dev/lq_interactions.html`, `dev/lq_content.html` 等 9 项 | `css/lq/preview.css`, `js/lq/preview.js` | - | - |
 | `dev/lq_business.html` | `macros/lq/business.html`, `macros/lq/upload.html`, `macros/lq/forms.html` | - | - | - |
 | `dev/lq_centered.html` | `base_centered.html`, `macros/lq/button.html`, `macros/lq/forms.html` | `css/lq/preview.css`, `js/lq/preview-shell.js` | - | - |
@@ -163,10 +163,12 @@
 | `material_render_shell.html` | `base.html`, `partials/markdown_assets.html` | `js/material_reader_return.js`, `js/teacher_whiteboard.js`, `js/behavior_tracker.js`, `js/material_render_shell.js` | - | - |
 | `material_viewer.html` | `base.html`, `partials/markdown_assets.html` | `js/material_reader_return.js`, `js/teacher_whiteboard.js`, `js/behavior_tracker.js`, `js/material_viewer.js` | - | - |
 | `minigames/author_guide.html` | `minigames/student_workspace.html`, `macros/lq/button.html`, `macros/lq/content.html` | `css/lq/pages/minigames.css` | - | - |
+| `minigames/classroom_access.html` | - | - | - | - |
 | `minigames/detail.html` | `minigames/student_workspace.html`, `minigames/upload_form.html` | `css/lq/pages/minigames.css`, `js/minigames/manage.js` | - | - |
-| `minigames/hall.html` | `base.html` | `css/lq/pages/minigames.css`, `js/minigames/hall.js` | - | - |
+| `minigames/hall.html` | `base.html`, `minigames/classroom_access.html`, `macros/lq/indicators.html` | `css/lq/pages/minigames.css`, `css/minigame_classroom_access.css`, `js/minigames/classroom-access-entry.js`, `js/minigames/hall.js` | - | - |
 | `minigames/host.html` | `base.html`, `macros/lq/button.html` | `css/lq/pages/minigames.css`, `js/minigames/host.js` | - | - |
-| `minigames/manage.html` | `minigames/student_workspace.html`, `minigames/upload_form.html`, `macros/lq/button.html` | `css/lq/pages/minigames.css`, `js/minigames/manage.js` | - | - |
+| `minigames/manage.html` | `minigames/student_workspace.html`, `minigames/upload_form.html`, `minigames/classroom_access.html`, `macros/lq/button.html` | `css/lq/pages/minigames.css`, `css/minigame_classroom_access.css`, `js/minigames/classroom-access-entry.js`, `js/minigames/manage.js` | - | - |
+| `minigames/restricted.html` | `base.html` | `css/lq/pages/minigames.css` | - | - |
 | `minigames/reviews.html` | `manage/layout.html` | `css/materials_library.css`, `css/lq/pages/minigames.css`, `js/minigames/reviews.js` | - | - |
 | `minigames/student_workspace.html` | `base.html` | - | - | - |
 | `minigames/ui.html` | - | - | - | - |
@@ -192,6 +194,7 @@
 | `partials/cultivation_card.html` | - | - | - | - |
 | `partials/cultivation_panel.html` | - | - | - | - |
 | `partials/dashboard_agenda_widget.html` | - | - | - | - |
+| `partials/dashboard_exam_calendar.html` | `macros/lq/button.html`, `macros/lq/content.html` | `js/dashboard_exam_calendar.js` | - | - |
 | `partials/dashboard_schedule_tools.html` | `macros/lq/nav-menu.html` | - | - | - |
 | `partials/exams/board.html` | `partials/assessment_kind_control.html` | - | - | - |
 | `partials/exams/control_panel.html` | - | - | - | - |
@@ -311,7 +314,7 @@
 | `classroom_app/routers/lesson_plans.py` | 14 | `GET /classroom/{class_offering_id}/generation-plan`, `POST /classroom/{class_offering_id}/session-draft`, `GET /{plan_id}`, `GET /{plan_id}/task` 等 8 项 | - |
 | `classroom_app/routers/lessondoc.py` | 14 | `POST /api/lessondoc/packs`, `GET /api/lessondoc/packs`, `GET /api/lessondoc/classrooms/{class_offering_id}/pack`, `GET /api/lessondoc/packs/by-root/{root_material_id}` 等 8 项 | - |
 | `classroom_app/routers/lessondoc_editor.py` | 17 | `GET /packs/{pack_id}/document`, `GET /editability/{material_id}`, `GET /legacy-context/{material_id}`, `POST /packs/{pack_id}/validate` 等 8 项 | `lessondoc_editor.html` |
-| `classroom_app/routers/login_attendance.py` | 20 | `GET /history`, `GET /dashboard/visibility`, `GET /calendar`, `GET /calendar/sessions/{session_id}` 等 8 项 | - |
+| `classroom_app/routers/login_attendance.py` | 22 | `GET /history`, `GET /dashboard/visibility`, `GET /calendar`, `GET /calendar/sessions/{session_id}` 等 8 项 | - |
 | `classroom_app/routers/manage_parts/academic_teachers.py` | 5 | `GET /academic/teachers/options`, `POST /academic/teachers/query`, `POST /academic/teachers/sync`, `POST /academic/teachers/{teacher_no:path}/sync` 等 5 项 | - |
 | `classroom_app/routers/manage_parts/base_resource_modes.py` | 13 | `GET /classes/{class_id}/attributes`, `PATCH /classes/{class_id}/attributes`, `GET /classes/{class_id}/students`, `PATCH /students/{student_id}` 等 8 项 | - |
 | `classroom_app/routers/manage_parts/classes_courses_classes.py` | 20 | `POST /classes/create`, `POST /classes/custom`, `POST /classes/sync-current-academic`, `POST /academic-sync/preview` 等 8 项 | - |
@@ -335,9 +338,9 @@
 | `classroom_app/routers/materials_parts/library.py` | 24 | `GET /manage/library/materials`, `GET /manage/archive/postclass-materials`, `GET /manage/archive/grading-rubrics`, `GET /manage/archive/ordinary-grade-records` 等 8 项 | `manage/materials.html` |
 | `classroom_app/routers/materials_parts/node_ops.py` | 6 | `POST /api/materials/folders`, `POST /api/materials/files`, `GET /api/materials/folder-options`, `POST /api/materials/{material_id}/move` 等 6 项 | - |
 | `classroom_app/routers/message_center.py` | 19 | `GET /message-center`, `GET /api/message-center/bootstrap`, `GET /api/message-center/summary`, `GET /api/message-center/items` 等 8 项 | - |
-| `classroom_app/routers/minigame_admin.py` | 19 | `GET /games`, `GET /games/{game_id}`, `POST /games`, `PATCH /games/{game_id}` 等 8 项 | - |
+| `classroom_app/routers/minigame_admin.py` | 20 | `GET /games`, `GET /games/{game_id}`, `POST /games`, `PATCH /games/{game_id}` 等 8 项 | - |
 | `classroom_app/routers/minigame_moderation.py` | 11 | `GET /settings`, `PATCH /settings`, `GET /{vid}`, `GET /{vid}/tree` 等 8 项 | - |
-| `classroom_app/routers/minigames.py` | 0 | - | `minigames/hall.html`, `minigames/host.html`, `minigames/author_guide.html`, `minigames/reviews.html`, `minigames/detail.html` 等 6 项 |
+| `classroom_app/routers/minigames.py` | 0 | - | `minigames/hall.html`, `minigames/restricted.html`, `minigames/host.html`, `minigames/author_guide.html`, `minigames/reviews.html` 等 7 项 |
 | `classroom_app/routers/mp/auth.py` | 5 | `POST /login`, `POST /bind/student`, `POST /bind/teacher`, `GET /me` 等 5 项 | - |
 | `classroom_app/routers/mp/classroom.py` | 1 | `GET /live` | - |
 | `classroom_app/routers/mp/life_tips.py` | 1 | `POST /feedback` | - |
@@ -366,7 +369,7 @@
 | `classroom_app/routers/ui_parts/assignment_pages.py` | 5 | `GET /assignment/{assignment_id}`, `GET /assignment/{assignment_id}/wrong-summary`, `GET /api/assignments/{assignment_id}/wrong-summary/status`, `POST /api/assignments/{assignment_id}/wrong-summary/reorganize` 等 5 项 | `status.html`, `assignment_detail_teacher.html`, `assignment_detail_student.html`, `assignment_wrong_summary.html`, `submission_detail.html` |
 | `classroom_app/routers/ui_parts/auth.py` | 20 | `GET /student/login/identity`, `POST /student/login/identity`, `POST /student/password/setup`, `GET /student/password/forgot` 等 8 项 | `teacher_login_v4.html`, `student_login_v4.html`, `student_auth_flow_v4.html`, `status.html`, `permission_denied.html` |
 | `classroom_app/routers/ui_parts/classroom.py` | 2 | `GET /api/classrooms/{class_offering_id}/member-panels/{panel_key}`, `GET /classroom/{class_offering_id}` | `partials/classroom_members/{panel_key}.html`, `classroom_main_v4.html` |
-| `classroom_app/routers/ui_parts/dashboard.py` | 4 | `GET /dashboard`, `GET /api/dashboard/workspace`, `GET /api/dashboard/calendar`, `GET /api/dashboard/course-schedule/overview` | `dashboard_teacher.html`, `dashboard.html` |
+| `classroom_app/routers/ui_parts/dashboard.py` | 6 | `GET /api/dashboard/academic-exams`, `POST /api/dashboard/academic-exams/refresh`, `GET /dashboard`, `GET /api/dashboard/workspace` 等 6 项 | `dashboard_teacher.html`, `dashboard.html` |
 | `classroom_app/routers/ui_parts/design_system.py` | 1 | `GET /dev/lq` | `dev/lq_centered.html`, `dev/lq_shell.html`, `dev/lq.html` |
 | `classroom_app/routers/ui_parts/exam_pages.py` | 4 | `GET /manage/library/exams`, `GET /exam/{exam_id}/edit`, `GET /exam/new`, `GET /exam/take/{assignment_id}` | `manage/exams.html`, `exam_editor.html`, `status.html`, `exam_take.html` |
 | `classroom_app/routers/ui_parts/lesson_plan_pages.py` | 3 | `GET /manage/library/lesson-plans`, `GET /lesson-plan/{plan_id}/edit`, `GET /lesson-plan/{plan_id}/preview` | `manage/lesson_plans.html`, `lesson_plan_editor.html` |

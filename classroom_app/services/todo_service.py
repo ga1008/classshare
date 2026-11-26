@@ -9,6 +9,7 @@ from ..db.connection import execute_insert_returning_id
 from .academic_service import china_now, parse_date_input
 from .academic_class_mapping_service import resolve_teaching_class_display_name
 from .academic_course_exam_sync_service import ensure_course_exam_schema
+from .academic_exam_audience import active_student_exam_class, student_exam_location, student_exam_rows
 from .assignment_lifecycle_service import submission_effective_status, submission_resubmission_accepts
 from .assessment_classification_service import assessment_kind_info
 from .course_planning_service import weekday_label
@@ -718,12 +719,13 @@ def _academic_exam_items(
     conn: sqlite3.Connection,
     *,
     class_offering_id: int,
+    user: dict[str, Any],
     now: datetime,
 ) -> list[dict[str, Any]]:
     ensure_course_exam_schema(conn)
     rows = conn.execute(
         """
-        SELECT id,
+        SELECT id, class_offering_id, campus, building,
                teacher_id,
                exam_name,
                academic_year,
@@ -747,8 +749,11 @@ def _academic_exam_items(
         """,
         (int(class_offering_id),),
     ).fetchall()
+    records = [dict(row) for row in rows]
+    if records and user.get("role") == "student":
+        records = student_exam_rows(conn, records, active_student_exam_class(conn, user["id"]))
     items: list[dict[str, Any]] = []
-    for row in rows:
+    for row in records:
         start_at = parse_datetime_input(row["starts_at"] or row["exam_date"], "考试时间")
         due_at = parse_datetime_input(row["ends_at"] or row["starts_at"] or row["exam_date"], "考试结束时间")
         created_at = parse_datetime_input(row["synced_at"], "同步时间")
@@ -777,10 +782,10 @@ def _academic_exam_items(
         notes = " | ".join(
             part
             for part in [
-                str(row["exam_time_text"] or ""),
-                str(row["location"] or ""),
+                str(row.get("student_room_times") or row["exam_time_text"] or ""),
+                student_exam_location(row),
                 class_display_name,
-                f"座位 {int(row['seat_count'] or 0)}" if row["seat_count"] else "",
+                f"座位 {int(row['seat_count'] or 0)}" if row["seat_count"] and not row.get("student_room_options") else "",
             ]
             if part
         )
@@ -801,8 +806,8 @@ def _academic_exam_items(
             metadata={
                 "academic_exam_item_id": row["id"],
                 "exam_name": row["exam_name"],
-                "location": row["location"],
-                "exam_time_text": row["exam_time_text"],
+                "location": student_exam_location(row),
+                "exam_time_text": row.get("student_room_times") or row["exam_time_text"],
                 "teaching_class_name": class_display_name,
                 "academic_teaching_class_name": row["teaching_class_name"],
             },
@@ -961,7 +966,7 @@ def build_classroom_todo_overview(
     items: list[dict[str, Any]] = []
     items.extend(_lesson_items(plan, now))
     items.extend(_assignment_items(conn, class_offering_id=int(class_offering_id), user=user, now=now))
-    items.extend(_academic_exam_items(conn, class_offering_id=int(class_offering_id), now=now))
+    items.extend(_academic_exam_items(conn, class_offering_id=int(class_offering_id), user=user, now=now))
     if str(user.get("role") or "").strip().lower() == "student":
         items.extend(_stage_items(conn, class_offering_id=int(class_offering_id), student_id=int(user["id"]), now=now))
     items.extend(_manual_items(_load_manual_todos(conn, class_offering_id=int(class_offering_id), user=user), now))

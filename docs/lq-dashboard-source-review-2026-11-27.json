@@ -1,0 +1,35 @@
+{
+  "reviewedAt": "2026-11-27",
+  "sources": [
+    {
+      "path": "templates/dashboard.html",
+      "previousReviewedSha256": "a9d388c2e8864cbe76fce2304a546b17a24af50b2aa64aeeefdfac5ffcdd8221",
+      "sha256": "f1d8802cc2ae765d8c00e6f7520027678bcec81ac73417844997175c8850de09",
+      "gitLfSha256": "fa4f7b29b7f202cbe8e04525e660cb29ae9284c512a3d9c348ebd00551a9b141"
+    },
+    {
+      "path": "templates/dashboard_teacher.html",
+      "previousReviewedSha256": "a4f3cf71ab8b91bb1d7fada47fce3d3c5d0b3b930134d4e0354916eaefc57e51",
+      "sha256": "8de05645fa0c2a3d908583e630b5b0b2f40299bde8291353cae99c4a214b2eb1",
+      "gitLfSha256": "388f188465417ac9555784bd1554afcbf5ca6829cb042322089f8a95f99aad5f"
+    }
+  ],
+  "sourceReview": [
+    "学生首页将考试卡片放在 workspace 岛外，师生角色分支与首页工具、表单及日历入口沿用原控制器。",
+    "教师首页将原 workspace 岛与考试卡片并列。原生筛选、课堂链接、待办操作及权限分支保留原 DOM 钩子。",
+    "图标刷新按钮、复合条目及弹窗复用 LQ。请求只通过当前会话读取本人安排，手动请求与渲染、详情焦点管理独立。"
+  ],
+  "backendChecks": {
+    "test_lq_navbar_shell": "passed",
+    "test_manage_lq_pilot_templates": "passed",
+    "test_lq_report_card_pilot": "passed",
+    "test_lq_guard_sources": "passed",
+    "test_lq_partial_scope": "passed"
+  },
+  "frontendEvidence": [
+    "tests/e2e/components/academic-exam-calendar.spec.ts",
+    ".codex-temp/evidence/exam-calendar-ui/dashboard/teacher.json",
+    ".codex-temp/evidence/exam-calendar-ui/dashboard/student.json"
+  ],
+  "scope": "当前首页和共享模板源码复核。正式资源的详情与同步交互使用合成数据，亮暗整页探针报告包含既有壳体候选项。"
+}

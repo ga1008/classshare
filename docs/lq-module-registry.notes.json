@@ -167,7 +167,7 @@
     "summary": "数据呈现家族：Card（标题/meta/actions/body/foot 槽）、List+Row（lead/main/trail 槽，未读边、滑动动作）、Empty（reason + variant inline|card|page）、PageHead（标题/说明/说明浮窗/动作）、FilterBar（搜索 + filters/actions 槽）、Prose、Bubble（incoming/outgoing/assistant，连续气泡收紧）。",
     "params": "card: `title, meta, variant(default|flat|stat|hero), primary, actions, value`；row: `title, meta, unread, primary, actions, swipe`；list: `label, items|groups, ordered`；empty: `reason, title, description, variant, actions`；bubble: `author, time, side, connected, datetime`。",
     "states": "row: is-unread / interactive / swipe open / busy；empty: error/forbidden 标题变危险色；bubble: connected / data-tone。",
-    "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。",
+    "rules": "内容工厂不接受 raw HTML，槽位只收 Node；列表数据项不是模糊宿主；选中态用 `data-lq-selected` Surface 表达。 修炼卡（partials/cultivation_card.html）嵌在宿主卡里时传 `embedded: true`。 页头所在的普通块容器自动成为纵向堆叠（零特异性 grid + gap），页头与筛选栏、列表之间不再相贴；已自带布局的容器不受影响。师生首页的考试倒计时使用 Card 的 actions 槽放置无文字刷新 Button，body 槽容纳可换行的 Choice 列表。详情交给共享 Dialog 管理焦点、退场和滚动锁。",
     "entries": {
       "react": [
         "LqCardFrame",
