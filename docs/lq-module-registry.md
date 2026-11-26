@@ -34,12 +34,12 @@
 | [Composer 输入区](#composer) | component | `lq-composer` | 宏 / JS / Py | 6 |
 | [Content 内容组件（Card / List / Row / Empty / PageHead / FilterBar / Prose / Bubble）](#content) | component | `lq-board`, `lq-bubble`, `lq-card`, `lq-empty`, `lq-filter-bar`, `lq-list` … | 宏 / JS / Py / React | 192 |
 | [Cultivation emblem 境界标志与道印图案身份](#cultivation-emblem) | component | `lq-cultivation-emblem`, `lq-cultivation-emblem-img`, `lq-cultivation-host`, `cultivation-card__emblem` | 仅 CSS | 8 |
-| [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 45 |
+| [Dialog / Sheet / Drawer / Confirm / Choose](#dialogs) | component | `lq-dialog`, `lq-dialog-root`, `lq-drawer`, `lq-modal`, `lq-popover`, `lq-scrim` … | 宏 / JS / Py | 46 |
 | [EmojiPicker 表情选择器](#emoji-picker) | component | `.emoji-picker`, `.emoji-picker-item`, `.emoji-picker-grid`, `createEmojiPicker` | JS | 5 |
 | [Forms 字段与原生输入](#forms) | component | `lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions` … | 宏 / JS / Py / React | 198 |
 | [Indicators 徽标 / 头像 / 进度 / 加载](#indicators) | component | `lq-avatar`, `lq-badge`, `lq-progress`, `lq-spinner` | 宏 / JS / Py / React | 28 |
 | [Insights 统计（AvatarStack / Ring / Bars / Meter）](#insights) | component | `lq-avatar-stack`, `lq-bars`, `lq-insight`, `lq-meter`, `lq-ring` | 宏 / JS / Py | 4 |
-| [Layer 层栈](#layers) | component | — | JS | 39 |
+| [Layer 层栈](#layers) | component | — | JS | 40 |
 | [Lightbox 灯箱](#lightbox) | component | `lq-lightbox` | JS | 1 |
 | [Menu / Popover 菜单与浮层](#menus) | component | `lq-menu` | 宏 / JS / Py | 12 |
 | [NavMenu 导航菜单](#nav-menu) | component | `lq-nav-menu` | 宏 / JS / Py | 6 |
@@ -1347,7 +1347,7 @@
 - **Jinja 宏** `templates/macros/lq/dialogs.html`：`lq_dialog`
 - **JS 入口** `static/js/lq/dialogs.js`：`choiceProps`, `choose`, `confirm`, `createDialog`, `dialogMarkup`, `dialogProps`, `disposeDialog`, `openDialog`
 - **Python props** `classroom_app/lq_dialogs.py`
-- **消费者**：45 个文件
+- **消费者**：46 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1369,6 +1369,7 @@
 - `static/js/ai_workspace_history.js` ×2
 - `static/js/assessment_appeal.js` ×2
 - `static/js/assessment_editor.js` ×2
+- `static/js/attendance_backfill.js` ×2
 - `static/js/attendance_calendar.js` ×2
 - `static/js/attendance_calendar_sync.js` ×2
 - `static/js/attendance_dashboard.js` ×2
@@ -1426,7 +1427,7 @@
 - **设计摘要**：`lq-field`（label / control / help / error / count）包裹原生 input / textarea / select / checkbox / radio / switch / range / file；`enhanceForms` 提供清空、计数、自动增高、首错聚焦，不接管值与校验。
 - **参数 / 变体**：`id, name, label, type, value, placeholder, required, readonly, min/max/step, autocomplete, help, error, clearable, count, autoGrow, attrs`。
 - **状态**：focus-visible 环 / aria-invalid 错误 / disabled 虚线 / readonly；IME composition 期间不触发派生逻辑。
-- **规则**：搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。课堂 AI 使用原生复选框，由学生为本次提问明确选择课堂归属。
+- **规则**：搜索输入统一 `type=search`（图标由组件画）；迁移必须保留 id/name/type/form/校验与 input/change 次数。课堂 AI 使用原生复选框，由学生为本次提问明确选择课堂归属。点名补录按学生 ID 保存逐人选择，筛选和翻页后恢复原生 select 的值。
 - **根类**：`lq-checkbox`, `lq-choice`, `lq-control`, `lq-error-summary`, `lq-field`, `lq-form-actions`, `lq-form-section`, `lq-input`, `lq-native-color`, `lq-native-file`, `lq-radio`, `lq-range`, `lq-select`, `lq-switch`, `lq-textarea`
 - **Jinja 宏** `templates/macros/lq/forms.html`：`lq_input`, `lq_textarea`, `lq_select`, `lq_checkbox`, `lq_radio`, `lq_range`, `lq_switch`, `lq_field`, `lq_form_section`, `lq_form_actions`, `lq_error_summary`
 - **JS 入口** `static/js/lq/forms.js`：`checkbox`, `createForm`, `enhanceForms`, `errorSummary`, `field`, `focusFirstError`, `formActions`, `formKinds`, `formMarkup`, `formProps`, `formSection`, `html`, `input`, `nativeSelect` …
@@ -1712,7 +1713,7 @@
 - **设计摘要**：`getLayerSystem()` 唯一持有层级、焦点、背景 inert、滚动锁、嵌套顺序与关闭；可移植领域弹层显式注册。
 - **规则**：禁止第二个焦点栈或滚动锁。 2026-10-27 道印使用 createDomainModal(type=viewer)；颁发与修为面板中的历史查看共享同一 Viewer 控制器，空白/Escape 退出、焦点恢复、inert 与滚动锁均交给 LQ。历史查看销毁临时节点、监听器和动画，不改颁发已读状态。 2026-10-28 close 的 beforeClose 自有确认子层沿祖先推进 pending 序号，成功关闭仍返回有效触发器；无关新层打断后不再恢复旧焦点请求。覆盖新开/重开/ordered external，保留新窗口防抢焦点与取消合同，见 social-dm-sidebar-2026-10-28 和 layer-core 浏览器回归。 2026-11-16：exam_board使用registerExternal(mode=ordered)登记既有画板，消费共享层级、将Tooltip置于其上；保留原画板开关和焦点owner，isPresent覆盖180ms退场直至root.hidden。close先销毁本次Tooltip绑定再refresh，open只重建已清空的绑定集合，destroy解除external登记；不硬改z-index、不增加扫描观察。
 - **JS 入口** `static/js/lq/layer.js`：`getLayerSystem`
-- **消费者**：39 个文件
+- **消费者**：40 个文件
 
 <details><summary>消费者清单（按命中次数）</summary>
 
@@ -1723,6 +1724,7 @@
 - `static/js/assessment_appeal.js` ×2
 - `static/js/assessment_editor.js` ×2
 - `static/js/assessment_kind_controls.js` ×2
+- `static/js/attendance_backfill.js` ×2
 - `static/js/attendance_calendar.js` ×2
 - `static/js/attendance_calendar_sync.js` ×2
 - `static/js/attendance_dashboard.js` ×2

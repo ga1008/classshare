@@ -30,6 +30,23 @@ def _receipt(conn, user, offering_id, session_id, key, scope_hash):
         return calendar.status(conn, user, offering_id, session_id, key)
 
 
+def _check_backfill_version(conn, user, offering_id, session_id, key, student_ids):
+    if not key.startswith("backfill.v1."):
+        return
+    parts = key.split(".", 3)
+    if len(parts) != 4 or not parts[2].isdigit() or len(parts[2]) > 18 or student_ids is not None:
+        raise HTTPException(409, "补录回执与本课全班范围不符。")
+    row = conn.execute("""SELECT r.revision,a.after_json FROM login_attendance_rounds r
+        JOIN login_attendance_audit a ON a.round_id=r.id WHERE r.id=? AND r.class_offering_id=?
+        AND r.session_id=? AND r.is_current=1 AND r.state='published' AND a.actor_id=?
+        AND a.action='backfill_saved' AND a.reason=?""", (int(parts[2]), offering_id, session_id, user["id"], parts[3])).fetchone()
+    receipt = local._load(row["after_json"]) if row else {}
+    from .login_attendance_calendar_service import _slot_revision
+    if (not receipt.get("sync_school") or receipt["result"]["round_revision"] != row["revision"]
+            or receipt["slot_revision"] != _slot_revision(local._session(conn, offering_id, session_id))):
+        raise HTTPException(409, "本课补录版本已变化，请核对当前名单后使用本课同步。")
+
+
 async def reconcile(user, offering_id, session_id, student_ids, key, location=None):
     if student_ids is not None and len(set(student_ids)) != len(student_ids):
         raise HTTPException(422, "选择中含有重复学生。")
@@ -40,12 +57,15 @@ async def reconcile(user, offering_id, session_id, student_ids, key, location=No
         if existing:
             return existing
 
+        _check_backfill_version(conn, user, offering_id, session_id, key, student_ids)
+
     def consume(revision, source, slot, access, snapshot):
         with get_db_connection() as conn:
             calendar._session(conn, user, offering_id, session_id, lock=True)
             existing = _receipt(conn, user, offering_id, session_id, key, scope_hash)
             if existing:
                 return existing
+            _check_backfill_version(conn, user, offering_id, session_id, key, student_ids)
             flow.assert_current_alignment(conn, user, offering_id, session_id, source, slot, revision)
             ledger._account_access(conn, user["id"], source["external_account_key"], access["credential_generation"])
             result = _apply(conn, user, offering_id, session_id, student_ids, key, location,
@@ -83,11 +103,17 @@ def compare_for_push(ctx, snapshot, selection):
         row = people[target["student_id"]]
         direction = register.decision_direction(row, ctx, snapshot)
         directions[target["student_id"]] = direction
-        if direction == "local_newer" and target["target_status"]:
+        actual = snapshot["students"].get(target["student_number"])
+        protected = actual in ledger.PROTECTED_STATUSES or actual == "NOT_APPLICABLE"
+        if direction == "local_newer" and target["target_status"] and not (protected and row.get("backfill_inferred")):
             target["reconcile_newer"] = True
     rows = ledger.compare_students(targets, baseline, snapshot["students"], school_authoritative=True)
     for row in rows:
         if row["state"] != "needs_teacher_action":
+            continue
+        student = people[row["student_id"]]
+        if student.get("backfill_inferred") and row.get("remote_status") == "NOT_APPLICABLE":
+            row.update(state="protected", reason="保留学校免考勤记录。")
             continue
         if directions[row["student_id"]] != "local_newer":
             row.update(state="conflict", reason="两端状态有差异，时间未能证明本地较新。")
@@ -197,10 +223,12 @@ def _create(conn, user, ctx, selection, ids, key, location, access, snapshot):
     if ids is not None or not available:
         return _result("school_missing", "新建学校点名将涉及全班。" if ids is not None and available else "学校暂未开放该课次点名。",
                        requires_full_roster=bool(ids is not None and available), can_create=available)
-    targets = {t["student_number"]: t for t in ledger._targets(ctx)}
-    unresolved = sum(not targets.get(n, {}).get("target_status") for n in snapshot["students"])
+    unresolved = auto.unresolved_creation_students(ctx, snapshot["students"])
     if unresolved or not snapshot["students"]:
-        return _result("partial", f"学校新建点名会默认缺课；学校名单有 {unresolved} 人尚无可推送的本地状态，请先核对。")
+        people = {r["student_number"]: r["student_id"] for r in ctx["students"]}
+        rows = [{**_unmatched_school_student(n, snapshot), "student_id": people.get(n),
+                 "state": "unconfirmed", "remote_status": None, "reason": "请先核对本课考勤。"} for n in unresolved]
+        return _result("partial", f"学校新建点名会默认缺课；学校名单有 {len(rows)} 人尚无可推送的本地状态，请先核对。", rows)
     if location is None:
         return _result("location_required", "新建本课学校点名需要本次浏览器定位。")
     location = auto._location(location)

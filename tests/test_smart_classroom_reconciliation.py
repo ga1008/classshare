@@ -172,6 +172,48 @@ class ReconciliationTests(WorkflowRouterFixture):
         self.assertEqual("partial",self.sync()["state"])
         self.assertEqual(0, self.conn.execute("SELECT count(*) FROM smart_attendance_auto_sync").fetchone()[0])
 
+    def test_backfill_http_to_new_school_record_and_verified_readback(self):
+        from classroom_app.routers import login_attendance as routes
+        from classroom_app.db.schema_behavior_inbox import ensure_behavior_inbox_schema
+        from classroom_app.db.schema_academic_schedule_predictions import ensure_academic_schedule_prediction_schema
+        from classroom_app.db.schema_attendance_reports import ensure_attendance_report_schema
+        from classroom_app.services import login_attendance_service as local, approval_workflow_schema
+        from classroom_app.services.login_attendance_access_service import record_access
+        ensure_behavior_inbox_schema(self.conn, engine="sqlite")
+        ensure_academic_schedule_prediction_schema(self.conn)
+        ensure_attendance_report_schema(self.conn, engine="sqlite")
+        self.enterContext(patch.object(approval_workflow_schema, "_SCHEMA_READY", False))
+        approval_workflow_schema.ensure_approval_workflow_schema(self.conn)
+        self.client.app.include_router(routes.router)
+        self.enterContext(patch.object(routes, "get_db_connection", self.database))
+        self.enterContext(patch.object(local, "now_ms", return_value=local.rules.to_ms("2026-11-09T12:30:00")))
+        school, self.record = self.record, None
+        record_access(self.conn, student_id=1, source="login", ip_address="192.0.2.7",
+                      observed_at_ms=local.rules.to_ms("2026-11-09T08:31:00"))
+        self.conn.commit()
+        path = "/api/classrooms/10/login-attendance/calendar/sessions/21/backfill"
+        preview = self.client.get(path)
+        self.assertEqual(200, preview.status_code, preview.text)
+        body = {"idempotency_key":"backfill-integration","sync_school":True,"revision":preview.json()["revision"],
+                "overrides":[{"student_id":2,"status":"SICK_LEAVE"}],"reason":"Verified synthetic leave"}
+        res = self.client.post(path, headers=self.headers,json=body)
+        self.assertEqual(200,res.status_code,res.text)
+        result = res.json()
+        self.assertEqual((1,1,"location_required"),(result["automatic"],result["manual"],result["school"]["state"]))
+        def start(*args):
+            self.record = {**school,"id":"created","isStop":False}
+            self.remote = {"S1":"UNCHECKED","S2":"UNCHECKED"}
+            return self.record
+        self.enterContext(patch.object(mini,"read_history",AsyncMock(side_effect=lambda *a:[self.record.copy()] if self.record else [])))
+        starts = self.enterContext(patch.object(mini,"start_checkin",AsyncMock(side_effect=start)))
+        self.enterContext(patch.object(mini,"stop_checkin",AsyncMock(side_effect=lambda *a:self.record.update(isStop=True))))
+        self.assertEqual("queued", self.sync(result["school_key"],location={"latitude":1.25,"longitude":2.8,
+                                                      "captured_at_ms":int(time.time()*1000)})["state"])
+        self.assertEqual("confirmed",asyncio.run(auto.process_auto_sync(7,result["round_id"]))["state"])
+        self.assertEqual("confirmed", self.client.post(path,headers=self.headers,json=body).json()["school"]["state"])
+        self.assertEqual(1, starts.await_count)
+        self.assertEqual({"S1":"CHECKED","S2":"SICK_LEAVE"},self.remote)
+
     def test_full_creation_counts_local_only_student_as_not_enrolled(self):
         school, self.record = self.record, None
         self.conn.execute("INSERT INTO students(id,name,student_id_number,class_id,enrollment_status) VALUES(3,'Three','S3',1,'active')")

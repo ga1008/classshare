@@ -1,6 +1,7 @@
 import { openDialog, confirm } from './lq/dialogs.js';
 import { enhanceDropdowns } from './lq/dropdown.js';
 import { openCalendarSync } from './attendance_calendar_sync.js';
+import { openAttendanceBackfill } from './attendance_backfill.js';
 import { action, badge, calendarRequests, element, feedback, field, lessonLabel, sourceText, stateOptions, statusText, studentLabel } from './attendance_calendar_controls.js';
 
 export function openCalendarLesson({ base, date, lessons, calendarNote, selected, students, trigger, parentLayer, onClose }) {
@@ -38,7 +39,9 @@ export function openCalendarLesson({ base, date, lessons, calendarNote, selected
     const push = action('本课同步', event => syncLesson(event.currentTarget, marked.size ? [...marked] : selected ? [selected] : null));
     const save = action('保存到本地', () => saveDraft(false));
     const savePush = action('保存并同步', () => saveDraft(true), 'prominent');
-    footer.append(push, save, savePush);
+    const backfill = action('按操作记录补录点名', event => openAttendanceBackfill({ base, sessionId: lesson.session_id,
+        trigger: event.currentTarget, parentLayer: handle, onChange: () => { changed = true; void load(); } }));
+    footer.append(backfill, push, save, savePush);
     body.append(lessonField.wrapper, info, notice, retry, edit);
     let busy = true, saving = false, conflict = false, page = 0, records = [], lesson = lessons[0], changed = false, writeKey = null, loadEpoch = 0;
     function dirty() { return Boolean(draft.size || reason.input.value.trim()); }
@@ -55,6 +58,8 @@ export function openCalendarLesson({ base, date, lessons, calendarNote, selected
             fixedScope: true, trigger: button, parentLayer: handle, onLocalChanged: refreshLesson, onChange: refreshLesson });
     }
     function gate() {
+        backfill.hidden = Boolean(selected) || !lesson.can_backfill;
+        backfill.disabled = busy || dirty() || conflict;
         edit.setAttribute('aria-busy', String(busy));
         lessonField.input.disabled = busy;
         reason.input.disabled = busy; search.input.disabled = busy;

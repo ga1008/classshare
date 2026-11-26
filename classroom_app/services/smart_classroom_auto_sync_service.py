@@ -526,6 +526,11 @@ def _project_initial(user, plan, ctx, source, snapshot):
             plan['intent_json'] = sealed
 
 
+def unresolved_creation_students(ctx, school_students):
+    targets = {t["student_number"]: t["target_status"] for t in ledger._targets(ctx)}
+    return [number for number in school_students if not targets.get(number)]
+
+
 async def _prepare_remote(client, user, plan, ctx):
     source, slot = json.loads(plan["source_json"]), json.loads(plan["slot_json"])
     _validate_slot_context(ctx, source, slot)
@@ -569,6 +574,8 @@ async def _prepare_remote(client, user, plan, ctx):
             return None
         if not plan["enabled"] or ctx.get("closed") or ctx["state"] == "void" or not intent.get("allow_create") or not snap["can_checkin"]:
             raise HTTPException(409, "当前课次不能新建学校点名。")
+        if ctx.get("backfill_window") and unresolved_creation_students(ctx, snap["students"]):
+            raise HTTPException(409, "学校名单中仍有待确认学生，请完成本课补录后再同步。")
         location = _location(intent.get("location"))
         before = await mini.read_history(client, slot["schedule_id"])
         if create_preview:

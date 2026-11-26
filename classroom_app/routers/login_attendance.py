@@ -13,6 +13,7 @@ from ..services import login_attendance_service as service
 from ..services import login_attendance_settlement_service as settlement
 from ..services import attendance_dashboard_service as dashboard_service
 from ..services import login_attendance_calendar_service as calendar_service
+from ..services import login_attendance_backfill_service as backfill_service
 from ..services import approval_workflow_service as workflow
 from ..services.trusted_network_service import client_network, require_same_origin
 
@@ -79,6 +80,21 @@ class Appeal(BaseModel):
     reason: str = Field(min_length=1, max_length=1000)
 
 
+class BackfillOverride(BaseModel):
+    model_config = {"extra": "forbid"}
+    student_id: int = Field(gt=0, strict=True)
+    status: Literal["PENDING", "PRESENT", "ABSENT", "SICK_LEAVE", "PERSONAL_LEAVE", "LATE", "EARLY"]
+
+
+class BackfillRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    revision: str = Field(pattern="^[0-9a-f]{64}$")
+    overrides: list[BackfillOverride] = Field(default_factory=list, max_length=500)
+    reason: str = Field(default="", max_length=1000)
+    idempotency_key: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9._:-]+$")
+    sync_school: bool = Field(strict=True)
+
+
 class Policy(Revision):
     networks: list[str] = Field(default_factory=list, max_length=16)
     enforce_network: bool = Field(default=False, strict=True)
@@ -124,6 +140,46 @@ def attendance_calendar(offering_id: int, student_id: int | None = None, user: d
 def calendar_session(offering_id: int, session_id: int, student_id: int | None = None, user: dict = Depends(get_current_teacher)):
     with get_db_connection() as conn:
         return calendar_service.session_detail(conn, offering_id, session_id, user, student_id)
+
+
+@router.get("/calendar/sessions/{session_id}/backfill")
+def preview_backfill(offering_id: int, session_id: int, user: dict = Depends(get_current_teacher)):
+    with get_db_connection() as conn:
+        return backfill_service.preview(conn, offering_id, session_id, user)
+
+
+@router.post("/calendar/sessions/{session_id}/backfill")
+async def save_backfill(offering_id: int, session_id: int, body: BackfillRequest, request: Request,
+                        user: dict = Depends(get_current_teacher)):
+    from starlette.concurrency import run_in_threadpool
+    from ..services.smart_classroom_reconciliation_service import reconcile
+
+    _origin(request)
+
+    def commit_register():
+        with get_db_connection() as conn:
+            result = backfill_service.save(conn, offering_id, session_id, user, body.model_dump())
+            conn.commit()
+            return result
+
+    result = await run_in_threadpool(commit_register)
+    if body.sync_school:
+        # Use the same receipt for the browser's location continuation or a lost response.
+        key = f"backfill.v1.{result['round_id']}.{body.idempotency_key}"
+        try:
+            sync = await reconcile(user, offering_id, session_id, None, key)
+        except HTTPException as error:
+            detail = error.detail
+            message = detail.get("message") if isinstance(detail, dict) else str(detail)
+            sync = {"state": "blocked", "message": message or "请核对智慧课堂账号与课次后重试。"}
+        except Exception:
+            # The local transaction is complete. Recover the original school receipt
+            # even if the failure happened after the school queue accepted the request.
+            import logging
+            logging.getLogger(__name__).exception("School reconciliation interrupted after attendance backfill")
+            sync = {"state": "outcome_unknown", "message": "本地已保存，正在核对学校同步回执。"}
+        result = {**result, "school_key": key, "school": sync}
+    return result
 
 
 @router.patch("/calendar/sessions/{session_id}")

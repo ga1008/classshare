@@ -2585,6 +2585,22 @@
     "include_in_schema": true
   },
   {
+    "path": "/api/classrooms/{offering_id}/login-attendance/calendar/sessions/{session_id}/backfill",
+    "methods": [
+      "GET"
+    ],
+    "name": "preview_backfill",
+    "include_in_schema": true
+  },
+  {
+    "path": "/api/classrooms/{offering_id}/login-attendance/calendar/sessions/{session_id}/backfill",
+    "methods": [
+      "POST"
+    ],
+    "name": "save_backfill",
+    "include_in_schema": true
+  },
+  {
     "path": "/api/classrooms/{offering_id}/login-attendance/dashboard",
     "methods": [
       "GET"

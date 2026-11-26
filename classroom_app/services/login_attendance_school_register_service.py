@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from . import login_attendance_service as local
 from . import smart_classroom_miniapp_adapter as mini
+from .smart_classroom_write_service import PROTECTED_STATUSES
 from .login_attendance_calendar_service import create_register, semester_sessions
 from .login_attendance_settlement_service import has_unpublished_settlement
 
@@ -120,7 +121,8 @@ def reconcile_snapshot(conn, user, offering_id, session_id, snapshot, student_id
         if observe_only:
             continue
         row.update(school_status=local.school_status(row), school_baseline=baseline)
-        if local_status != "PENDING" and decision_direction(row, ctx, snapshot) != "school_newer":
+        protected_backfill = local.backfill_inferred(row) and (actual in PROTECTED_STATUSES or actual == "NOT_APPLICABLE")
+        if local_status != "PENDING" and not protected_backfill and decision_direction(row, ctx, snapshot) != "school_newer":
             continue
         decision["applied"] = True
         changed.append((row, decision, status, local_status))

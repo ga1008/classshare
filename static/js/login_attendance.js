@@ -216,7 +216,8 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
             }
             // A voided exact link can point behind a newer live round. Only
             // the actual lesson projection can authorize showing a restart.
-            const latest = attendanceId && !historyOnly && result.state === 'void' ? await call(`/sessions/${lesson}`, { signal }) : null;
+            const historicalRegister = ['manual_register', 'school_register'].includes(result.context?.time_source);
+            const latest = attendanceId && !historyOnly && (result.state === 'void' || historicalRegister) ? await call(`/sessions/${lesson}`, { signal }) : null;
             if (closed || generation !== epoch) return;
             data = attendanceId ? { ...latest, round: result, policy: latest?.policy || result.policy, session } : result;
             round = data.round;
@@ -243,6 +244,7 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         } finally { shell.inert = false; }
     }
     function paintHeadingState() {
+        if (round?.context?.backfill_window) { headingState.replaceChildren(chip('已点名 · 课后补录')); return; }
         const schoolRegister = round?.state === 'published' && round?.context?.time_source === 'school_register';
         const label = schoolRegister ? '已点名 · 智慧课堂登记' : round?.state === 'settling' && SETTLEMENT_LABELS[settlement?.taskState()];
         headingState.replaceChildren(chip(label || ROUND_LABELS[round?.state] || '尚未开启'));
@@ -250,6 +252,12 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
     function paintClock() {
         const now = clock?.now(), minutes = Number(fields.duration?.value);
         endForecast.textContent = now != null && minutes >= 1 && minutes <= 240 ? `现在开始，预计 ${time(now + minutes * 60000)} 结束（北京时间）。` : '点击开始记录时，以服务器实际时间开始；结束时间按预计时长计算。';
+        const historical = round?.context?.backfill_window;
+        if (historical) {
+            elapsed.hidden = false;
+            elapsed.textContent = `补录依据时段 · ${time(historical.starts_at_ms)}–${time(historical.ends_at_ms)}（北京时间）`;
+            return;
+        }
         const start = Number(round?.actual_started_at_ms || round?.starts_at_ms);
         elapsed.hidden = !Number.isFinite(start) || !start || round?.context?.time_source === 'school_register';
         if (elapsed.hidden) return;
@@ -281,7 +289,15 @@ export function openLoginAttendance({ classOfferingId, session, userRole, trigge
         const settlementFocused = document.activeElement === settlement?.button;
         actions.replaceChildren(); secondaryActions.replaceChildren(button('刷新记录', () => load().catch(fail)), button('学期签到统计', openDashboard));
         if (!mountHistory) secondaryActions.append(button('历史点名', openHistory));
-        if (readyToStart) { const start = button('开始记录', createRound, 'prominent'); start.disabled = Boolean(data?.policy?.closed_at_ms); start.dataset.laDisabled = String(start.disabled); actions.append(start); }
+        if (teacher && !historyOnly && data?.can_backfill && (readyToStart || isCurrent())) actions.append(button('按操作记录补录点名', async event => {
+            const trigger = event.currentTarget;
+            try {
+                const { openAttendanceBackfill } = await import('./attendance_backfill.js');
+                if (!closed && trigger.isConnected) openAttendanceBackfill({ base, sessionId: lesson, trigger, parentLayer: handle,
+                    onChange: () => load().catch(fail) });
+            } catch (error) { fail(error); }
+        }, 'prominent'));
+        if (readyToStart) { const start = button('开始记录', createRound, data?.can_backfill ? 'glass' : 'prominent'); start.disabled = Boolean(data?.policy?.closed_at_ms); start.dataset.laDisabled = String(start.disabled); actions.append(start); }
         if (!historyOnly && isCurrent() && ['running', 'scheduled'].includes(round?.state)) actions.append(button('结束本地点名', endRound));
         if (settlement) { actions.append(settlement.button); settlement.update(); if (settlementFocused && !settlement.button.disabled) settlement.button.focus({ preventScroll: true }); }
         if (!historyOnly && isCurrent() && round.state !== 'void') secondaryActions.append(button('作废本轮', voidRound, 'destructive'));

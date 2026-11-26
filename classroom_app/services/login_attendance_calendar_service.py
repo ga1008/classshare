@@ -95,6 +95,17 @@ def _edit_note(lesson, round_id, now):
     return ""
 
 
+def can_backfill(lesson, policy, state, time_source, now):
+    if policy.get("closed_at_ms") or lesson.get("schedule_status") in {"cancelled", "canceled", "suspended"}:
+        return False
+    if state and (state != "published" or time_source not in {"school_register", "manual_register"}):
+        return False
+    try:
+        return local.rules.resolve_session_window(lesson)["ends_at_ms"] <= now
+    except (ValueError, TypeError):
+        return False
+
+
 def _slot_revision(lesson):
     # Manual plan edits and official timetable reconciliation can retain a
     # session id while changing its date, periods, cancellation or identity.
@@ -225,6 +236,10 @@ def session_detail(conn, offering_id, session_id, user, student_id=None):
     offering = local.require_teacher(conn, offering_id, user)
     _, lessons = semester_sessions(conn, offering, session_id)
     sessions, _, records = _projection(conn, offering, lessons, student_id, detail=True)
+    session = sessions[0]
+    current = local.load_round(conn, session["round_id"]) if session["round_id"] else {}
+    session["can_backfill"] = student_id is None and can_backfill(lessons[0], local.load_policy(conn, offering_id),
+        current.get("state"), local._load(current.get("context_json")).get("time_source"), local.now_ms())
     return {"session": sessions[0], "records": records}
 
 

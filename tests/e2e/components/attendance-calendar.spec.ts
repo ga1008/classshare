@@ -26,6 +26,17 @@ async function fixture(page: Page, { studentId = null, conflict = false, align =
         if (target.startsWith('/api/')) {
             if (target.endsWith('/calendar')) return api({ students: roster, sessions: calendarSessions(), offering: { course_name: '计算机网络', semester: '2026 秋季' },
                 calendar: { today: '2026-11-18', start: '2026-09-01', end: '2027-01-20', days: [{ date: '2026-11-15', label: '调休上课', makeup_for_date: '2026-11-20' }] } });
+            if (target.endsWith('/calendar/sessions/11/backfill')) {
+                if (route.request().method() === 'POST') {
+                    const payload = route.request().postDataJSON(); saves.push(payload);
+                    return api({ round_id: 91, automatic: 1, manual: 1, pending: 0, school_key: 'synthetic-backfill',
+                        school: { state: 'confirmed', message: '本课学校回读一致。', has_receipt: true } });
+                }
+                return api({ session: sessions[1], revision: 'a'.repeat(64), window: { starts_at_ms: 1794795600000, ends_at_ms: 1794801000000 },
+                    records: roster.map((row, i) => ({ ...row, eligible: i < 2, suggested: i === 0 ? 'PRESENT' : null,
+                        evidence: i === 0 ? { access_count: 2, first_ms: 1794795650000, last_ms: 1794795950000 } : {},
+                        effective_status: i < 2 ? null : 'PERSONAL_LEAVE', status: 'PENDING' })) });
+            }
             if (target.includes('/calendar/sessions/')) {
                 const id = Number(target.split('/').pop());
                 if (route.request().method() === 'PATCH') {
@@ -34,7 +45,7 @@ async function fixture(page: Page, { studentId = null, conflict = false, align =
                 }
                 const scoped = Number(url.searchParams.get('student_id'));
                 const session = calendarSessions().find(row => row.session_id === id)!;
-                return api({ session: { ...session, slot_revision: (revision === 1 ? 'a' : 'b').repeat(64), ...(revision > 1 ? { date: '2026-11-17', section_text: '第3–4节' } : {}) },
+                return api({ session: { ...session, can_backfill: id === 11, slot_revision: (revision === 1 ? 'a' : 'b').repeat(64), ...(revision > 1 ? { date: '2026-11-17', section_text: '第3–4节' } : {}) },
                     records: roster.filter(s => !scoped || s.student_id === scoped)
                     .map(row => ({ ...row, revision: id === 11 && !imported.has(row.student_id) ? 0 : revision, status: id === 11 && imported.has(row.student_id) ? 'PRESENT' : 'PENDING', effective_status: id === 11 ? 'PRESENT' : 'ABSENT', source: id === 11 && !imported.has(row.student_id) ? 'smart_synced' : 'local', editable: true, expected: true })) });
             }
@@ -91,6 +102,35 @@ async function fixture(page: Page, { studentId = null, conflict = false, align =
     await page.getByRole('button', { name: '查看学期出勤' }).click();
     return { saves, sends, errors, aligns, readbacks, creations };
 }
+
+for (const width of [390, 1440]) test(`teacher backfills a historical lesson at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const { saves, sends, errors } = await fixture(page);
+    const calendar = page.getByRole('dialog', { name: '学期出勤日历' });
+    await calendar.getByRole('button', { name: /2026-11-16，/ }).click();
+    const detail = page.getByRole('dialog', { name: '2026-11-16 出勤记录' });
+    await detail.locator('select').first().selectOption('11', { force: true });
+    await detail.getByRole('button', { name: '按操作记录补录点名' }).click();
+    const form = page.getByRole('dialog', { name: '按操作记录补录点名' });
+    await expect(form.getByText('按记录出勤 1 人 · 人工判定 0 人 · 待确认 1 人')).toBeVisible();
+    await form.getByLabel('同学2 · S002').selectOption('SICK_LEAVE');
+    await form.getByRole('button', { name: '补录并同步智慧课堂' }).click();
+    expect(saves).toHaveLength(0);
+    await form.getByLabel('人工判定依据').fill('已核对请假单');
+    await expect(form.getByText('已有记录 · 事假')).toBeVisible();
+    expect(await form.evaluate(n => n.scrollWidth <= n.clientWidth + 1)).toBeTruthy();
+    await page.screenshot({ path: testInfo.outputPath('backfill.png') });
+    await form.getByRole('button', { name: '补录并同步智慧课堂' }).click();
+    const sync = page.getByRole('dialog', { name: '智慧课堂同步' });
+    await expect(sync.getByText('本课学校回读一致。')).toBeVisible();
+    expect(saves).toHaveLength(1);
+    expect(saves[0]).toMatchObject({ sync_school: true, overrides: [{ student_id: 2, status: 'SICK_LEAVE' }] });
+    expect(sends).toHaveLength(0);
+    await page.keyboard.press('Escape'); await expect(sync).toHaveCount(0);
+    await form.getByRole('button', { name: '完成', exact: true }).click();
+    await expect(form).toHaveCount(0);
+    expect(errors).toEqual([]);
+});
 
 test('semester calendar shows same-day school and local lessons and keeps personal correction scope on mobile', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 }); await page.emulateMedia({ colorScheme: 'dark' });

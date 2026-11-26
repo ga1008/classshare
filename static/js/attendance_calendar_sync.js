@@ -40,7 +40,7 @@ function multiField(label, rows, value, labelOf, selected) {
     return { wrapper, input };
 }
 
-export function openCalendarSync({ base, students = [], sessions = [], today, studentIds = null, fixedScope = false, trigger, parentLayer, onLocalChanged, onChange }) {
+export function openCalendarSync({ base, students = [], sessions = [], today, studentIds = null, fixedScope = false, initialReceipt, trigger, parentLayer, onLocalChanged, onChange }) {
     const req = calendarRequests(), store = receiptStore(base), body = element('div', 'la-workspace lac-sync'), footer = element('div', 'la-actions');
     const scope = element('div', 'lac-sync-filters'), feedbackNode = element('p', 'la-notice'), list = element('div', 'lac-sync-list');
     const pupilNames = new Map(students.map(student => [Number(student.student_id), studentLabel(student)]));
@@ -124,7 +124,7 @@ export function openCalendarSync({ base, students = [], sessions = [], today, st
                     const name = pupilNames.get(Number(row.student_id)) || studentLabel(row) || '未匹配学生';
                     const statuses = '本地 ' + statusText(row.local_status) + ' / 学校 ' + remoteText(row.remote_status);
                     const reason = row.reason || rowStates[row.state];
-                    rows.append(element('p', '', [name, statuses, reason].filter(Boolean).join('　·　')));
+                    rows.append(element('p', '', [name, row.state === 'unconfirmed' ? '' : statuses, reason].filter(Boolean).join('　·　')));
                 }
             }); content.push(details);
         }
@@ -162,13 +162,13 @@ export function openCalendarSync({ base, students = [], sessions = [], today, st
             locationError = error.message + '允许定位后可继续为本课全班新建学校点名。'; throw new Error(locationError);
         }
     }
-    async function reconcile(entry) {
+    async function reconcile(entry, initialResult) {
         const payload = { student_ids: entry.selected, idempotency_key: entry.key };
         const post = () => req.read(endpoint(entry) + '/calendar-reconcile', { method: 'POST', body: payload }, 100000);
         posting = true;
         store.remember(entry.lesson.session_id, entry.key);
         try {
-            let result = await post();
+            let result = initialResult || await post();
             if (closed) return;
             if (result.state === 'location_required' && entry.selected === null && !stopped) {
                 entry.value = { ...result, message: '正在取得浏览器定位，以便为本课全班新建学校点名。' }; render(entry); gate();
@@ -180,7 +180,8 @@ export function openCalendarSync({ base, students = [], sessions = [], today, st
             if (closed) return;
             acceptResult(entry, result);
             const hasReceipt = result.has_receipt || result.receipt;
-            if (!hasReceipt) store.forget(entry.key);
+            if (!hasReceipt && result.state !== 'outcome_unknown') store.forget(entry.key);
+            if (!hasReceipt && result.state === 'outcome_unknown') { await receipt(entry); return; }
             if (hasReceipt && result.state === 'outcome_unknown' && !result.historical && !entry.triedReadback) {
                 await receipt(entry, true); return;
             }
@@ -269,6 +270,9 @@ export function openCalendarSync({ base, students = [], sessions = [], today, st
         if (pending.length) await run(async () => { for (const entry of pending.slice(0, 3)) { if (closed) break; await receipt(entry); } });
     }, { intervalMs: 12000, timeoutMs: 85000, active: () => !closed && !busy && !document.hidden && getLayerSystem(document).top() === handle });
     poll.start(12000); gate();
-    if (fixedScope && sessions.length === 1) void synchronize();
+    if (fixedScope && sessions.length === 1) {
+        if (initialReceipt) void run(() => reconcile(makeEntry(sessions[0], initialReceipt.key, studentIds), initialReceipt.result));
+        else void synchronize();
+    }
     return handle;
 }

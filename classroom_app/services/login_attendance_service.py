@@ -534,6 +534,11 @@ def school_status(record):
     return None
 
 
+def backfill_inferred(record):
+    return (not record["manual_confirmed"] and not school_status(record)
+            and "backfill" in _load(record.get("evidence_json")))
+
+
 def record_status(record):
     return rules.SCHOOL_STATUS.get(school_status(record), record["status"])
 
@@ -622,12 +627,17 @@ def history(conn,offering_id,user,*,before_id=None,limit=50):
 
 
 def session_view(conn, offering_id, session_id, user):
+    from .login_attendance_calendar_service import can_backfill
     offering = require_teacher(conn,offering_id,user)
     session = _session(conn,offering_id,session_id)
     current = conn.execute("SELECT id FROM login_attendance_rounds WHERE session_id=? ORDER BY is_current DESC,id DESC LIMIT 1",(session_id,)).fetchone()
     result = {"session":session,"policy":load_policy(conn,offering_id),"round":round_view(conn,current["id"],user) if current else None,
               'server_now_ms':now_ms(), 'default_duration_minutes':rules.default_duration_minutes(session)}
     result["context"] = _context(conn, offering, session)
+    active = result["round"] or {}
+    active = active if active.get("is_current") and active.get("state") != "void" else {}
+    result["can_backfill"] = can_backfill(session, result["policy"], active.get("state"),
+        (active.get("context") or {}).get("time_source"), result["server_now_ms"])
     try:
         result["window"] = rules.resolve_session_window(session)
         result["window_error"] = None
@@ -690,6 +700,8 @@ def load_attendance_sync_context(conn, user, round_id):
             student = {k:record[k] for k in ("student_id","student_number","name","revision","manual_confirmed","expected","updated_at_ms","decided_at_ms")}
             student.update(status=rules.SCHOOL_STATUS.get(imported, record["status"]), school_status=imported,
                            school_baseline=_load(record.get("school_decision_json")))
+            if backfill_inferred(record):
+                student["backfill_inferred"] = True
             students.append(student)
         else:
             exempt.append(record["student_id"])
