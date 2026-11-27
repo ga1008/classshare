@@ -27,7 +27,7 @@ from .social_common import (
     row_dict,
     user_identity,
 )
-from .social_identity_service import avatar_url, load_people, sender_card
+from .social_identity_service import avatar_url, conversation_people, load_people, sender_card
 from .social_relations import active_group_ids, group_member_identities
 
 PAGE_LIMIT_DEFAULT = 50
@@ -191,26 +191,39 @@ def preview_text(row: Optional[dict[str, Any]], media_kinds: Iterable[str] = ())
     return body[:PREVIEW_CHARS]
 
 
-def _reply_payloads(conn: Any, rows: list[dict[str, Any]], people: dict[str, dict]) -> dict[int, dict[str, Any]]:
+def _reply_rows(conn: Any, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ids = sorted({as_int(row.get("reply_to_id")) for row in rows if as_int(row.get("reply_to_id")) > 0})
     if not ids:
-        return {}
+        return []
     marks, params = in_clause(ids)
-    replies = [row_dict(row) for row in conn.execute(
+    return [row_dict(row) for row in conn.execute(
         f"SELECT * FROM social_messages WHERE id IN ({marks})", params).fetchall()]
-    people.update(load_people(conn, [row["sender_identity"] for row in replies if row["sender_identity"] not in people]))
-    return {int(row["id"]): {
-        "id": int(row["id"]),
-        "preview": preview_text(row),
-        "sender_name": sender_card(people.get(row["sender_identity"]), row["sender_identity"])["name"],
-    } for row in replies}
+
+
+def _message_senders(conn: Any, rows: list[dict[str, Any]]) -> dict[tuple[str, str], dict]:
+    identities_by_key: dict[str, set[str]] = {}
+    for row in rows:
+        identities_by_key.setdefault(row["conversation_key"], set()).add(row["sender_identity"])
+    senders = {}
+    for key, identities in identities_by_key.items():
+        group_id = parse_conversation_key(key).get("group_id")
+        people = conversation_people(conn, identities, group_id)
+        for identity in identities:
+            senders[key, identity] = sender_card(people.get(identity), identity, group=group_id is not None)
+    return senders
 
 
 def serialize_messages(conn: Any, me: str, rows: list[Optional[dict[str, Any]]]) -> list[dict[str, Any]]:
     items = [row for row in rows if row]
-    people = load_people(conn, [row["sender_identity"] for row in items])
     media = _media_by_message(conn, [int(row["id"]) for row in items])
-    replies = _reply_payloads(conn, items, people)
+    quoted = _reply_rows(conn, items)
+    senders = _message_senders(conn, [*items, *quoted])
+    replies = {(row["conversation_key"], int(row["id"])): {
+        "id": int(row["id"]),
+        "preview": preview_text(row),
+        "sender_identity": row["sender_identity"],
+        "sender_name": senders[row["conversation_key"], row["sender_identity"]]["name"],
+    } for row in quoted}
     result = []
     for row in items:
         recalled = bool(row.get("recalled_at"))
@@ -218,11 +231,11 @@ def serialize_messages(conn: Any, me: str, rows: list[Optional[dict[str, Any]]])
         result.append({
             "id": int(row["id"]),
             "conversation_key": str(row["conversation_key"]),
-            "sender": sender_card(people.get(sender), sender),
+            "sender": senders[row["conversation_key"], sender],
             "body": "" if recalled else str(row["body"] or ""),
             "body_format": str(row["body_format"] or "text"),
             "message_type": str(row["message_type"] or "text"),
-            "reply_to": replies.get(as_int(row.get("reply_to_id"))),
+            "reply_to": replies.get((row["conversation_key"], as_int(row.get("reply_to_id")))),
             "mentions": loads_list(row.get("mentions_json")),
             "media": [] if recalled else media.get(int(row["id"]), []),
             "created_at": str(row["created_at"] or ""),

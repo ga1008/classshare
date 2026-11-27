@@ -159,6 +159,17 @@ class AvatarChainTest(WandererDbTestCase):
         self.assertIn("max-age=3600", response.headers["cache-control"])
         return response.content
 
+    def test_group_avatar_fallback_preserves_wanderer_illustration(self):
+        with self.connect() as conn:
+            student_id = self.wanderer(conn, "suqinghe")["student_id"]
+        normal = self.fetch("suqinghe")
+        response = self.client.get("/api/profile/avatar", params={
+            "role": "student", "user_id": student_id, "fallback": "transparent",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, normal)
+        self.assertIn("max-age=3600", response.headers["cache-control"])
+
     def test_versioned_roster_avatar_checks_binding_and_caches_only_its_target(self):
         # The indexed binding expression is portable; exercise it against the fixture.
         with patch("classroom_app.routers.profile.get_configured_db_engine", return_value="postgres"):

@@ -42,7 +42,7 @@ from .social_conversation_service import (
     require_access,
     serialize_messages,
 )
-from .social_identity_service import load_people
+from .social_identity_service import conversation_people
 from .social_relations import are_friends, group_member_identities
 
 BODY_MAX = 4000
@@ -394,7 +394,7 @@ def nudge(conn: Any, user: dict, key: Any, target: Any = None, events: Optional[
     ).fetchone()
     if recent is not None:
         raise SocialError("拍得太频繁了，休息一下吧。", 429, retry_after=NUDGE_WINDOW_SECONDS)
-    names = load_people(conn, [me, whom])
+    names = conversation_people(conn, [me, whom], parsed.get("group_id"))
     body = f"{(names.get(me) or {}).get('name', '')} 拍了拍 {(names.get(whom) or {}).get('name', '')}"
     message_id = insert_message(conn, key=parsed["key"], sender=me, body=body, message_type="nudge", mentions=[whom])
     from .wanderer_social_budget_service import charge_message

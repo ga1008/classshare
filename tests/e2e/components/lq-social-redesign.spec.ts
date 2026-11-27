@@ -9,6 +9,7 @@ const asset = (name: string) => `/static/${manifest.entries[name]}`;
 const DM = 'dm:student:1|student:2';
 const friend = { identity: 'student:2', name: '林晚舟', role_label: '散修', org_label: '散修·无宗门', is_wanderer: true, relation: 'friend', online: true, conversation_key: DM, unread: 0 };
 const requestUser = { identity: 'student:3', name: '陈清禾', role_label: '学生', org_label: '合成测试班', relation: 'pending_in' };
+const searchUser = { identity: 'student:7', name: '合成新朋友', role_label: '学生' };
 
 async function mount(page: Page, options: { empty?: boolean; mobile?: boolean; dark?: boolean; deepLink?: boolean; member?: boolean } = {}) {
     if (options.mobile) await page.setViewportSize({ width: 360, height: 780 });
@@ -52,12 +53,23 @@ async function mount(page: Page, options: { empty?: boolean; mobile?: boolean; d
             const json = (value: any, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
             if (api === '/friends') return json({ items: state.friends, counts: { pending_in: state.incoming.length } });
             if (api === '/friends/requests' && method === 'GET') return json({ incoming: state.incoming, outgoing: state.outgoing });
-            if (api === '/friends/requests/6' && method === 'DELETE') { state.outgoing = []; return json({ ok: true }); }
+            if (api.startsWith('/friends/requests/') && method === 'DELETE') {
+                const id = Number(api.split('/').at(-1));
+                state.outgoing = state.outgoing.filter((request: any) => request.id !== id);
+                return json({ ok: true });
+            }
             if (api === '/friends/requests/5/accept') { state.incoming = []; return json({ status: 'accepted' }); }
-            if (api === '/friends/requests' && method === 'POST') return json({ status: 'pending', request_id: 12 });
+            if (api === '/friends/requests' && method === 'POST') {
+                state.outgoing.push({ id: 12, direction: 'outgoing', user: searchUser, message: body.message });
+                return json({ status: 'pending', request_id: 12 });
+            }
             if (api === '/recommendations') return json(state.recommendations);
             if (api === '/scope') return json({ can_add: true, tier: 4, tier_name: '灵台', ladder: [], ai_search: false });
-            if (api === '/users/search') return json({ items: [{ ...friend, identity: 'student:4', name: url.searchParams.get('q'), relation: 'none' }] });
+            if (api === '/users/search') {
+                const relation = state.friends.some((item: any) => item.identity === searchUser.identity) ? 'friend'
+                    : state.outgoing.some((item: any) => item.user.identity === searchUser.identity) ? 'pending_out' : 'none';
+                return json({ items: [{ ...searchUser, name: url.searchParams.get('q'), relation }] });
+            }
             if (api === '/blocks') return json({ items: [] });
             if (api.endsWith('/profile')) return json({ ...friend, recent: [] });
             if (api === '/groups') return json({ items: options.empty ? [] : [group] });
@@ -102,6 +114,93 @@ async function openFriendsManager(page: Page) {
     if (!await manage.isVisible()) await page.locator('[data-chat-toggle=list]').click();
     await manage.click();
 }
+
+for (const mobile of [false, true]) test.describe(`LQ upper-left add friend (${mobile ? '360px' : 'desktop'})`, () => {
+    test.use({ hasTouch: mobile, isMobile: mobile });
+    test('opens search from either window', async ({ page }, info) => {
+        const state = await mount(page, { mobile, dark: mobile });
+        await page.locator('[data-social-entry]').click();
+        const chat = page.locator('#social-chat');
+        const manager = page.locator('#social-friends');
+        const search = page.locator('#social-user-search');
+        for (const parent of [chat, manager]) {
+            if (parent === manager) {
+                const manage = chat.locator('[data-social-manage-friends]');
+                if (!await manage.isVisible()) await chat.locator('[data-chat-toggle=list]').click();
+                await manage.click();
+            }
+            const head = parent.locator('.lq-dialog__head');
+            const plus = head.getByRole('button', { name: '添加好友', exact: true });
+            await expect(plus).toBeVisible();
+            await expect(plus).toHaveAttribute('aria-haspopup', 'dialog');
+            const headBox = (await head.boundingBox())!;
+            const box = (await plus.boundingBox())!;
+            expect(box.x).toBeGreaterThanOrEqual(headBox.x);
+            expect(box.x - headBox.x).toBeLessThan(headBox.width / 4);
+            expect(box.y).toBeGreaterThanOrEqual(headBox.y - 1);
+            expect(box.y + box.height).toBeLessThanOrEqual(headBox.y + headBox.height + 1);
+            if (mobile) {
+                expect(box.width).toBeGreaterThanOrEqual(44);
+                expect(box.height).toBeGreaterThanOrEqual(44);
+            }
+            await page.screenshot({ path: info.outputPath(`add-${parent === chat ? 'chat' : 'friends'}.png`) });
+            await plus.focus();
+            await page.keyboard.press('Enter');
+            await expect(search).toBeVisible();
+            if (parent === chat) {
+                await expect(manager).toBeHidden();
+                await search.fill('合成新朋友');
+                await expect(page.locator('.social-results')).toContainText('合成新朋友');
+                await page.locator('#social-request-message').fill('一起学习');
+                await page.locator('.social-results [data-act=request]').click();
+                await expect(page.locator('.social-results').getByRole('button', { name: '已申请' })).toBeDisabled();
+                const requests = state.calls.filter((call: any) => call.api === '/friends/requests' && call.method === 'POST');
+                expect(requests.map((call: any) => call.body)).toEqual([{ target_identity: searchUser.identity, message: '一起学习' }]);
+            } else {
+                await expect(search).toHaveValue('合成新朋友');
+            }
+            await page.keyboard.press('Escape');
+            await expect(page.locator('#social-add')).toBeHidden();
+            await expect(plus).toBeFocused();
+        }
+    });
+});
+
+for (const change of ['withdrawal', 'acceptance']) test(`LQ add friend reconciles ${change} while keeping search and greeting drafts`, async ({ page }) => {
+    const state = await mount(page, { empty: true });
+    await page.locator('[data-social-entry]').click();
+    await page.locator('[data-social-chat-add]').click();
+    const term = page.locator('#social-user-search');
+    const greeting = page.locator('#social-request-message');
+    const results = page.locator('.social-results');
+    const pending = page.locator('.social-add__outgoing');
+    const add = results.getByRole('button', { name: '加好友', exact: true });
+    await term.fill(searchUser.name);
+    await greeting.fill('一起学习');
+    await add.click();
+    await expect(pending).toContainText(searchUser.name);
+    if (change === 'withdrawal') {
+        await pending.getByRole('button', { name: '撤回' }).click();
+        await expect(add).toBeEnabled();
+    } else {
+        await greeting.focus();
+        state.friends.push({ ...searchUser, relation: 'friend' });
+        state.outgoing = [];
+        const before = state.calls.length;
+        await page.evaluate(identity => {
+            for (let i = 0; i < 4; i++) (window as any).socialClient.onFrame(JSON.stringify({ type: 'friend_accepted', identity }));
+        }, searchUser.identity);
+        await expect(results.getByRole('button', { name: '发消息' })).toBeEnabled();
+        await expect(pending).toBeHidden();
+        const refreshed = state.calls.slice(before);
+        expect(refreshed.filter((call: any) => call.api === '/users/search')).toHaveLength(1);
+        expect(refreshed.filter((call: any) => call.api === '/friends/requests')).toHaveLength(1);
+        await expect(greeting).toBeFocused();
+    }
+    await expect(pending).toBeHidden();
+    await expect(term).toHaveValue(searchUser.name);
+    await expect(greeting).toHaveValue('一起学习');
+});
 
 test('LQ friends groups hide empty sections and nested new-friend window returns focus', async ({ page }) => {
     const state = await mount(page);

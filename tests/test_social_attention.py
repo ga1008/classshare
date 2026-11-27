@@ -79,6 +79,16 @@ class SocialAttentionTest(SocialDbTestCase):
         self.assertEqual(card["body_preview"], "仍需查看")
         self.assertEqual(json.loads(card["metadata_json"])["message_id"], first["id"])
 
+    def test_recall_restores_group_nickname_on_remaining_unread_card(self):
+        group, _ = self.run_service(groups.create_group, self.user(self.a), "讨论群", [self.b, self.c])
+        key = group["conversation_key"]
+        self.send(self.a, key, "保留这条")
+        last, _ = self.send(self.c, key, "撤回这条")
+        self.run_service(groups.update_me, self.user(self.a), group["id"], nickname="木棉")
+        self.run_service(messages.recall_message, self.user(self.c), last["id"])
+        card = self.inbox(self.b)[0]
+        self.assertEqual((card["actor_display_name"], card["body_preview"]), ("木棉", "保留这条"))
+
     def test_preferences_require_conversation_access_and_boolean(self):
         with self.assertRaises(SocialError):
             self.run_service(attention.set_preferences, self.user(self.c), self.key, True)

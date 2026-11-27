@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
+from classroom_app.services import social_group_service as groups
 from classroom_app.services import social_media_service as media
 from classroom_app.services import social_message_service as messages
 from classroom_app.services.social_common import SocialError, dm_key
@@ -65,6 +66,15 @@ class SocialMediaTest(SocialDbTestCase):
         self.assertEqual(message["message_type"], "media")
         self.assertEqual(message["media"][0]["size"], len(data))
         self.assertEqual(self.count("SELECT ref_count FROM social_media_blobs WHERE blob_hash = ?", (sha(data),)), 1)
+
+    def test_group_file_uploader_uses_current_nickname(self):
+        group, _ = self.run_service(groups.create_group, self.user(self.a), "合成文件群", [self.b])
+        token = self.upload(self.b, b"public group file")
+        self.run_service(messages.send_message, self.user(self.b), group["conversation_key"], {"media_tokens": [token]})
+        self.run_service(groups.update_me, self.user(self.b), group["id"], nickname="群内乙")
+        files, _ = self.run_service(groups.list_group_files, self.user(self.a), group["id"])
+        self.assertEqual(files["items"][0]["sender_identity"], self.b)
+        self.assertEqual(files["items"][0]["sender_name"], "群内乙")
 
     def test_global_store_only_reached_through_a_verified_upload(self):
         data = b"global bytes " * 100

@@ -25,6 +25,7 @@ const PHASE_LABEL = { wait: '等待上传', hash: '校验中', check: '查重中
 export function createChatComposer({ client, onSent }) {
     const form = el('form', { class: 'social-composer', novalidate: true, 'aria-label': '发送消息' });
     const reply = el('div', { class: 'social-composer__reply', hidden: true });
+    const replyText = el('span', { class: 'social-composer__reply-text' });
     const mention = el('div', { class: 'social-mention', role: 'group', 'aria-label': '选择要 @ 的成员', hidden: true });
     const tray = el('ul', { class: 'social-tray', role: 'list', 'aria-label': '待发送附件', hidden: true });
     const voice = el('div', { class: 'social-voice', role: 'status', hidden: true });
@@ -319,13 +320,20 @@ export function createChatComposer({ client, onSent }) {
     }
 
     /* ------------------------------------------------------------ reply */
+    function updateReplyText() {
+        const message = state.replyTo;
+        const member = state.ctx?.membersByIdentity?.get(message.sender?.identity);
+        const name = member?.nickname || member?.name || message.sender?.name || '';
+        replyText.textContent = `回复 ${name}：${String(message.body || '[附件]').replace(/\s+/g, ' ').slice(0, 60)}`;
+    }
     function setReply(message) {
         state.replyTo = message;
         if (!message) { reply.hidden = true; reply.replaceChildren(); return; }
         reply.replaceChildren(
-            el('span', { class: 'social-composer__reply-text', text: `回复 ${message.sender?.name || ''}：${String(message.body || '[附件]').replace(/\s+/g, ' ').slice(0, 60)}` }),
+            replyText,
             lqButton({ icon: 'x', variant: 'ghost', aria: '取消回复', onClick: () => setReply(null) }),
         );
+        updateReplyText();
         reply.hidden = false;
         input.focus();
     }
@@ -397,7 +405,7 @@ export function createChatComposer({ client, onSent }) {
     return {
         element: form,
         mount() { owner ||= enhanceComposer(root); sync(); if (!state.quota) void loadQuota(); },
-        /** @param {{key: string, type: 'dm'|'group', peer?: string, members?: object[], myRole?: string, writable: boolean, readOnlyReason?: string}} ctx */
+        /** @param {{key: string, type: 'dm'|'group', peer?: string, members?: object[], membersByIdentity?: Map<string, object>, myRole?: string, writable: boolean, readOnlyReason?: string}} ctx */
         setConversation(ctx) {
             if (state.busy && state.ctx?.key !== ctx.key) state.abort?.abort();
             const switched = state.ctx?.key !== ctx.key;
@@ -414,7 +422,7 @@ export function createChatComposer({ client, onSent }) {
                 setReply(null);
                 showNotice('');
                 renderTray();
-            }
+            } else if (state.replyTo) updateReplyText();
             input.placeholder = ctx.writable ? '输入消息，Enter 发送，Shift+Enter 换行' : (ctx.readOnlyReason || '无法发送消息');
             if (becameWritable) showNotice('');
             if (!ctx.writable) showNotice(ctx.readOnlyReason || '');

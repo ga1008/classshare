@@ -1,6 +1,7 @@
 """消息：权限、撤回、拍一拍、频率、幂等、@提醒、已读与未读 (docs/social-friends-groups-2026-10-27.md §5)."""
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import timedelta
 from unittest.mock import patch
@@ -64,6 +65,62 @@ class SocialMessageTest(SocialDbTestCase):
         _message, events = self.send(self.a, key, "退出后发送的合成消息")
         targets = {identity for audience, event in events if event["type"] == "message" for identity in audience}
         self.assertEqual(targets, {self.a, self.c})
+
+    def test_nickname_on_group_history_replies_and_push_is_scoped_to_each_group(self):
+        group, _ = self.run_service(groups.create_group, self.user(self.a), "一群", [self.b])
+        other, _ = self.run_service(groups.create_group, self.user(self.a), "二群", [self.b])
+        key = group["conversation_key"]
+        original, _ = self.send(self.b, key, "原有消息")
+        self.run_service(groups.update_me, self.user(self.b), group["id"], nickname="小乙", alias="私有群代称")
+        self.run_service(groups.update_me, self.user(self.b), other["id"], nickname="隔壁群的乙")
+        reply, events = self.send(self.a, key, "引用旧消息", reply_to_id=original["id"])
+        self.assertEqual(reply["reply_to"]["sender_identity"], self.b)
+        self.assertEqual(reply["reply_to"]["sender_name"], "小乙")
+        self.assertTrue(events)
+        for _, frame in events:
+            self.assertEqual(frame["message"]["reply_to"]["sender_name"], "小乙")
+        mention, events = self.send(self.b, key, "@请看", mentions=[self.a])
+        self.assertEqual(mention["sender"]["name"], "小乙")
+        self.assertEqual(mention["sender"]["nickname"], "小乙")
+        for _, frame in events:
+            self.assertEqual(frame["message"]["sender"]["name"], "小乙")
+            self.assertNotIn("私有群代称", str(frame))
+        with self.connect() as conn:
+            notice = conn.execute("SELECT title, metadata_json FROM message_center_notifications WHERE ref_id = ?",
+                                  (f"mention:{mention['id']}:{self.a}",)).fetchone()
+        self.assertIn("小乙", notice["title"])
+        self.assertEqual(json.loads(notice["metadata_json"])["context"][-1]["name"], "小乙")
+        self.assertEqual(self.send(self.b, other["conversation_key"])[0]["sender"]["name"], "隔壁群的乙")
+        self.assertEqual(self.send(self.b, self.key)[0]["sender"]["name"], "乙同学")
+        nudge, _ = self.run_service(messages.nudge, self.user(self.a), key, self.b)
+        self.assertEqual(nudge["body"], "甲同学 拍了拍 小乙")
+        for nickname, expected in (("小乙", "小乙"), ("", "乙同学")):
+            self.run_service(groups.update_me, self.user(self.b), group["id"], nickname=nickname)
+            history, _ = self.run_service(conversations.list_messages, self.user(self.a), key)
+            items = {item["id"]: item for item in history["items"]}
+            self.assertEqual(items[original["id"]]["sender"]["name"], expected)
+            self.assertEqual(items[original["id"]]["sender"]["nickname"], nickname)
+            self.assertEqual(items[reply["id"]]["reply_to"]["sender_name"], expected)
+
+    def test_history_batches_nicknames_for_authors_and_off_page_quotes(self):
+        group, _ = self.run_service(groups.create_group, self.user(self.a), "合成性能群", [self.b])
+        key = group["conversation_key"]
+        self.run_service(groups.update_me, self.user(self.b), group["id"], nickname="群内乙")
+        with self.connect() as conn:
+            original = conversations.insert_message(conn, key=key, sender=self.b, body="被引用的旧消息")
+            for index in range(100):
+                conversations.insert_message(conn, key=key, sender=self.a, body=str(index), reply_to_id=original)
+            for limit in (1, 100):
+                statements = []
+                conn.set_trace_callback(statements.append)
+                try:
+                    page = conversations.list_messages(conn, self.user(self.a), key, limit=limit)
+                finally:
+                    conn.set_trace_callback(None)
+                self.assertEqual(len(page["items"]), limit)
+                self.assertTrue(all(item["reply_to"]["sender_name"] == "群内乙" for item in page["items"]))
+                lookups = [sql for sql in statements if "SELECT member_identity, nickname " in sql]
+                self.assertEqual(len(lookups), 1)
 
     def test_body_limits_and_empty(self):
         with self.assertRaises(SocialError):

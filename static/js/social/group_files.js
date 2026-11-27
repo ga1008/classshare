@@ -4,8 +4,9 @@ import { socialApi, errorText } from './social_api.js';
 import { el, emptyState, formatRelative, formatSize, lqButton } from './social_dom.js';
 
 const KINDS = [['', '全部'], ['image', '图片'], ['video', '视频'], ['audio', '语音'], ['file', '文件']];
-export function createGroupFiles({ groupId, onUnavailable }) {
+export function createGroupFiles({ groupId, onUnavailable, memberName }) {
     let kind = '', generation = 0, disposed = false, busy = false, items = [], hasMore = false;
+    const captions = new Map();
     const list = el('div', { class: 'social-side__files', 'aria-live': 'polite' });
     const status = el('div', { class: 'social-group-files__status' });
     const more = lqButton({ label: '加载更多文件', variant: 'ghost', attrs: { 'data-group-files-more': '' }, onClick: () => void load(true) });
@@ -21,15 +22,26 @@ export function createGroupFiles({ groupId, onUnavailable }) {
             url.searchParams.set('download', 'true'); return `${url.pathname}${url.search}`;
         } catch { return null; }
     }
+    function updateSenderNames() {
+        for (const [item, caption] of captions) {
+            const sender = memberName(item.sender_identity) || item.sender_name;
+            const text = [formatSize(item.size), sender, formatRelative(item.sent_at)].filter(Boolean).join(' · ');
+            if (caption.textContent !== text) caption.textContent = text;
+        }
+    }
     function render() {
+        captions.clear();
         list.replaceChildren(items.length ? el('ul', { class: 'social-side__links', role: 'list' }, items.map(item => {
             const href = downloadLink(item);
+            const caption = el('small');
+            captions.set(item, caption);
             const unavailable = item.expired ? '已过期' : !item.server_ready ? '补传中' : !href ? '暂不可用' : '';
             return el('li', { 'data-group-file': item.id }, [unavailable
                 ? el('span', { text: `${item.filename || '文件'}（${unavailable}）` })
                 : el('a', { href, download: item.filename || 'file', text: item.filename || '文件' }),
-            el('small', { text: [formatSize(item.size), item.sender_name, formatRelative(item.sent_at)].filter(Boolean).join(' · ') })]);
+            caption]);
         })) : emptyState('还没有群文件', kind ? '试试其他文件类型。' : '聊天中分享的图片、语音和文件会收在这里。'));
+        updateSenderNames();
         more.hidden = !hasMore; more.disabled = busy;
     }
     async function load(append = false) {
@@ -37,7 +49,7 @@ export function createGroupFiles({ groupId, onUnavailable }) {
         const ticket = ++generation, requestedKind = kind;
         const before = append && items.length ? Math.min(...items.map(item => Number(item.id)).filter(Boolean)) : 0;
         busy = true; more.disabled = true; status.replaceChildren();
-        if (!append) list.replaceChildren(el('p', { class: 'social-hint', text: '正在读取群文件…' }));
+        if (!append) { captions.clear(); list.replaceChildren(el('p', { class: 'social-hint', text: '正在读取群文件…' })); }
         try {
             const page = await socialApi.groupFiles(groupId, requestedKind, before);
             if (disposed || ticket !== generation) return;
@@ -60,5 +72,5 @@ export function createGroupFiles({ groupId, onUnavailable }) {
         filters.querySelectorAll('[data-file-kind]').forEach(node => node.setAttribute('aria-pressed', String(node === choice)));
         void load();
     });
-    return { element, refresh: () => load(), destroy() { disposed = true; generation++; } };
+    return { element, refresh: () => load(), updateSenderNames, destroy() { disposed = true; generation++; } };
 }

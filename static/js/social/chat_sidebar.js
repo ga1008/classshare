@@ -11,7 +11,7 @@ import { confirm as confirmDialog } from '../lq/dialogs.js';
 import { bindMenu, createMenu } from '../lq/menus.js';
 import { renderAbilityRadar } from '../ability_radar.js';
 import { socialApi, errorText } from './social_api.js';
-import { el, emptyState, lqAvatar, lqButton, notify } from './social_dom.js';
+import { el, emptyState, groupAvatarSource, lqAvatar, lqButton, notify, reconcileChildren } from './social_dom.js';
 import { createGroupSettings } from './group_settings.js';
 import { createGroupInvite } from './group_invite.js';
 import { createGroupFiles } from './group_files.js';
@@ -30,9 +30,11 @@ export function createChatSidebar({ client, onChanged }) {
     let token = 0;
     let group = null;
     let dm = null;
-    let menus = [];
-    const clearMenus = () => { menus.forEach((menu) => menu.destroy()); menus = []; };
-    const clearGroup = () => { group?.settings.destroy(); group?.invite.destroy(); group?.files.destroy(); group = null; };
+    const clearGroup = () => {
+        if (!group) return;
+        for (const nodes of group.memberNodes.values()) nodes.menu?.destroy();
+        group.settings.destroy(); group.invite.destroy(); group.files.destroy(); group = null;
+    };
     const clearDm = () => { dm?.readController?.abort(); dm?.settings?.destroy(); dm = null; };
     // The socket presence cache wins for identities it knows; a group roster
     // snapshot fills in members whose status has not changed since connect.
@@ -51,7 +53,6 @@ export function createChatSidebar({ client, onChanged }) {
 
     /* ------------------------------------------------------------ DM */
     async function showDm(identity, ctx) {
-        clearMenus();
         clearGroup();
         const ticket = ++token;
         if (dm?.identity !== identity || dm.key !== ctx.key) {
@@ -148,41 +149,63 @@ export function createChatSidebar({ client, onChanged }) {
     }
 
     /* ------------------------------------------------------------ group */
-    function memberRow(member, detail, me, memberNodes) {
+    function memberRow(member, detail, name) {
         const myRole = detail.my_role;
-        const isMe = member.identity === me;
+        const isMe = member.identity === client.me;
         const online = isOnline(member.identity, member.online);
         const actions = [];
         if (!isMe && myRole === 'owner') {
             actions.push({ id: 'admin', label: member.group_role === 'admin' ? '取消管理员' : '设为管理员', attrs: { 'data-member-act': 'admin', 'data-identity': member.identity, 'data-admin': member.group_role === 'admin' ? '0' : '1' } });
-            actions.push({ id: 'transfer', label: '转让群主', attrs: { 'data-member-act': 'transfer', 'data-identity': member.identity, 'data-name': member.name } });
+            actions.push({ id: 'transfer', label: '转让群主', attrs: { 'data-member-act': 'transfer', 'data-identity': member.identity, 'data-name': name } });
         }
         if (!isMe && (myRole === 'owner' || (myRole === 'admin' && member.group_role === 'member'))) {
-            actions.push({ id: 'kick', label: '移出', danger: true, attrs: { 'data-member-act': 'kick', 'data-identity': member.identity, 'data-name': member.name } });
+            actions.push({ id: 'kick', label: '移出', danger: true, attrs: { 'data-member-act': 'kick', 'data-identity': member.identity, 'data-name': name } });
         }
         if (!isMe) actions.unshift({ id: 'nudge', label: '拍一拍', attrs: { 'data-member-act': 'nudge', 'data-identity': member.identity } });
         let actionSlot = null;
+        let binding = null;
         if (actions.length) {
-            const trigger = lqButton({ icon: 'ellipsis', aria: `${member.nickname || member.name}的更多操作`, variant: 'ghost', attrs: { 'data-member-menu': member.identity } });
-            const menu = createMenu({ label: `${member.nickname || member.name}的操作`, items: actions });
+            const trigger = lqButton({ icon: 'ellipsis', aria: `${name}的更多操作`, variant: 'ghost', attrs: { 'data-member-menu': member.identity } });
+            const menu = createMenu({ label: `${name}的操作`, items: actions });
             actionSlot = el('span', { class: 'social-member__actions' }, [trigger, menu]);
-            menus.push(bindMenu(trigger, menu, { placement: 'bottom-end', onAction: (_id, button) => memberAction(button, detail, { key: detail.conversation_key || `group:${detail.id}` }) }));
+            binding = bindMenu(trigger, menu, { placement: 'bottom-end', onAction: (_id, button) => memberAction(button, detail, { key: detail.conversation_key || `group:${detail.id}` }) });
         }
         const avatar = el('span', { class: 'social-avatar', 'data-online': online ? 'true' : 'false' }, [
-            lqAvatar(member.name, member.avatar_url, 32),
+            lqAvatar(name, groupAvatarSource(member.avatar_url, member.nickname), 32),
         ]);
         const status = el('small', { text: memberMeta(member, online) });
         const row = el('li', { class: 'social-member', 'data-online': online ? 'true' : 'false' }, [
             avatar,
             el('span', { class: 'social-member__copy' }, [
-                isMe ? el('strong', { text: `${member.nickname || member.name}（我）` })
-                    : lqButton({ label: member.nickname || member.name, variant: 'link', attrs: { 'data-user-card': member.identity, 'aria-haspopup': 'dialog', 'data-social-member-name': '' } }),
+                isMe ? el('strong', { text: `${name}（我）` })
+                    : lqButton({ label: name, variant: 'link', attrs: { 'data-user-card': member.identity, 'aria-haspopup': 'dialog', 'data-social-member-name': '' } }),
                 status,
             ]),
             actionSlot,
         ]);
-        memberNodes?.set(member.identity, { row, avatar, status });
-        return row;
+        return { row, avatar, status, name, menu: binding };
+    }
+
+    function renderMembers(detail) {
+        const previous = group.memberNodes;
+        const next = new Map();
+        for (const member of detail.members || []) {
+            const name = member.nickname || member.name;
+            const signature = JSON.stringify([name, groupAvatarSource(member.avatar_url, member.nickname), member.group_role, detail.my_role]);
+            let nodes = previous.get(member.identity);
+            if (nodes?.signature !== signature) {
+                nodes?.menu?.destroy();
+                nodes?.row.remove();
+                nodes = memberRow(member, detail, name);
+                nodes.signature = signature;
+            }
+            next.set(member.identity, nodes);
+            previous.delete(member.identity);
+        }
+        for (const nodes of previous.values()) { nodes.menu?.destroy(); nodes.row.remove(); }
+        group.memberNodes = next;
+        reconcileChildren(group.members, Array.from(next.values(), nodes => nodes.row));
+        applyPresence();
     }
 
     function groupCard(title, children, action = null, name = '') {
@@ -197,7 +220,7 @@ export function createChatSidebar({ client, onChanged }) {
         clearDm();
         const id = Number(detail.id);
         if (group?.id !== id) {
-            clearMenus(); clearGroup();
+            clearGroup();
             const current = { id, detail, key: ctx.key, memberNodes: new Map() };
             const changed = (reason, payload) => {
                 if (group !== current) return;
@@ -206,12 +229,13 @@ export function createChatSidebar({ client, onChanged }) {
             };
             const unavailable = () => {
                 if (group !== current) return;
-                clearMenus(); clearGroup(); element.replaceChildren(emptyState('群聊暂不可用', '你可能已离开本群，正在重新确认成员身份。'));
+                clearGroup(); element.replaceChildren(emptyState('群聊暂不可用', '你可能已离开本群，正在重新确认成员身份。'));
                 onChanged?.('unavailable', { groupId: id, key: current.key });
             };
             current.settings = createGroupSettings({ client, detail, onChanged: changed, onUnavailable: unavailable });
             current.invite = createGroupInvite({ detail, onChanged: changed, onUnavailable: unavailable });
-            current.files = createGroupFiles({ groupId: id, onUnavailable: unavailable });
+            current.files = createGroupFiles({ groupId: id, onUnavailable: unavailable,
+                memberName: identity => current.memberNodes.get(identity)?.name });
             current.title = el('strong', { class: 'social-group-card__title' });
             current.canonical = el('small', { class: 'social-hint' });
             current.counts = el('small', { class: 'social-hint' });
@@ -233,11 +257,9 @@ export function createChatSidebar({ client, onChanged }) {
         group.title.textContent = detail.display_name || detail.name;
         group.canonical.textContent = `群名：${detail.name}`;
         group.canonical.hidden = !detail.display_name || detail.display_name === detail.name;
-        paintGroupCounts();
         group.avatar.replaceChildren(lqAvatar(detail.name, detail.avatar_url, 56));
-        clearMenus();
-        group.memberNodes = new Map();
-        group.members.replaceChildren(...(detail.members || []).map(member => memberRow(member, detail, client.me, group.memberNodes)));
+        renderMembers(detail);
+        group.files.updateSenderNames();
         group.settings.update(detail);
         group.invite.update(detail);
     }
@@ -307,6 +329,6 @@ export function createChatSidebar({ client, onChanged }) {
                 group.settings.updatePreferences(preferences);
             }
         },
-        clear() { token += 1; clearMenus(); clearGroup(); clearDm(); element.replaceChildren(); },
+        clear() { token += 1; clearGroup(); clearDm(); element.replaceChildren(); },
     };
 }

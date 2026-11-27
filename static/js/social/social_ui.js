@@ -19,12 +19,12 @@ export async function createSocialUi(client) {
 
     const openChat = async (key, trigger = null) => {
         if (trigger && !trigger.closest('[data-lq-layer]')) lastTrigger = trigger;
-        chat ||= createChatModal(client, { openFriends: (trigger) => openFriends(trigger) });
+        chat ||= createChatModal(client, { openFriends });
         await chat.open(key, trigger || lastTrigger);
     };
-    const openFriends = (trigger) => {
+    const openFriends = (trigger, tab = null) => {
         friends ||= createFriendsModal(client, { openChat: (key) => openChat(key) });
-        friends.open(trigger || lastTrigger);
+        friends.open(trigger || lastTrigger, tab);
     };
 
     listenForLan(client, {

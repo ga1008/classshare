@@ -131,6 +131,21 @@ def load_people(conn: Any, identities: Iterable[str]) -> dict[str, dict[str, Any
     return people
 
 
+def conversation_people(conn: Any, identities: Iterable[str], group_id: Optional[int] = None) -> dict[str, dict[str, Any]]:
+    """Sender profiles for one conversation, including its public group nicknames."""
+    people = load_people(conn, identities)
+    if group_id is not None and people:
+        marks, params = in_clause(people)
+        for row in conn.execute(
+            f"SELECT member_identity, nickname FROM social_group_members "
+            f"WHERE group_id = ? AND member_identity IN ({marks}) AND nickname <> ''",
+            (int(group_id), *params),
+        ).fetchall():
+            person = people[row["member_identity"]]
+            person["name"] = person["nickname"] = row["nickname"]
+    return people
+
+
 def require_person(conn: Any, identity: Any) -> dict[str, Any]:
     """The active person behind ``identity``; 404 when missing or deactivated."""
     normalized = normalize_identity(identity)
@@ -195,44 +210,42 @@ def public_users(conn: Any, me: str, identities: Iterable[str]) -> list[dict[str
     return add_capability(conn, me, users)
 
 
-def sender_card(person: Optional[dict[str, Any]], identity: str) -> dict[str, Any]:
+def sender_card(person: Optional[dict[str, Any]], identity: str, *, group: bool = False) -> dict[str, Any]:
     """The compact ``Message.sender`` shape."""
     if not person:
         return {"identity": identity, "name": "系统" if identity == "system" else "已注销用户",
                 "avatar_url": None, "is_wanderer": False, "tier_badge": None}
-    return {
+    card = {
         "identity": identity,
         "name": person["name"],
         "avatar_url": avatar_url(identity),
         "is_wanderer": bool(person["is_wanderer"]),
         "tier_badge": person["tier_badge"],
     }
+    if group:
+        card["nickname"] = person.get("nickname", "")
+    return card
 
 
 # ---------------------------------------------------------------------------
 # Search and suggestions
 # ---------------------------------------------------------------------------
 
-def _clean_query(raw: Any) -> str:
-    text = str(raw or "").strip()[:40]
-    return "".join(ch for ch in text if ch not in "%_\\")
-
-
 def search_users(conn: Any, user: dict, query: Any) -> list[dict[str, Any]]:
     """Name, 学号, 工号, email or 散修 name within my 境界 scope (§12.1); at most 20; public fields only."""
     from .social_scope_service import scope_context, student_scope_sql, teacher_scope_sql
 
     me = user_identity(user)
-    needle = _clean_query(query)
+    needle = str(query or "").strip()[:254]
     ctx = scope_context(conn, user)
     if not needle or not ctx.can_add_anyone:
         return []
-    like = f"%{needle}%"
+    like = "%" + needle.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
     student_where, student_params = student_scope_sql(conn, ctx)
     student_rows = conn.execute(
         "SELECT s.id FROM students s LEFT JOIN classes c ON c.id = s.class_id "
         "WHERE COALESCE(s.enrollment_status, 'active') IN (?, ?) "
-        "AND (s.name LIKE ? OR s.student_id_number = ? OR LOWER(COALESCE(s.email, '')) = LOWER(?)) "
+        "AND (s.name LIKE ? ESCAPE '!' OR s.student_id_number = ? OR LOWER(COALESCE(s.email, '')) = LOWER(?)) "
         f"AND {student_where} "
         "ORDER BY CASE WHEN s.name = ? THEN 0 ELSE 1 END, s.id LIMIT ?",
         (*ACTIVE_STUDENT_STATUSES, like, needle, needle, *student_params, needle, SEARCH_LIMIT + 1),
@@ -240,7 +253,7 @@ def search_users(conn: Any, user: dict, query: Any) -> list[dict[str, Any]]:
     teacher_where, teacher_params = teacher_scope_sql(ctx)
     teacher_rows = conn.execute(
         "SELECT t.id FROM teachers t WHERE COALESCE(t.is_active, 1) = 1 "
-        "AND (t.name LIKE ? OR LOWER(t.email) = LOWER(?) OR (t.employee_number <> '' AND t.employee_number = ?)) "
+        "AND (t.name LIKE ? ESCAPE '!' OR LOWER(t.email) = LOWER(?) OR (t.employee_number <> '' AND t.employee_number = ?)) "
         f"AND {teacher_where} "
         "ORDER BY CASE WHEN t.name = ? THEN 0 ELSE 1 END, t.id LIMIT ?",
         (like, needle, needle, *teacher_params, needle, SEARCH_LIMIT + 1),

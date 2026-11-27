@@ -51,6 +51,21 @@ export function lqAvatar(name, src, size = 40) {
     return createComponent('avatar', { name: String(name || '?').trim() || '?', src: src || null, size });
 }
 
+/** Let the shared Avatar show its nickname initial when the account has no picture. */
+export function groupAvatarSource(src, nickname) {
+    return nickname && src?.startsWith('/api/profile/avatar?') ? `${src}&fallback=transparent` : src;
+}
+
+/** Keep unchanged conversation, message and member nodes attached and in order. */
+export function reconcileChildren(parent, nodes) {
+    let cursor = parent.firstChild;
+    for (const node of nodes) {
+        if (cursor === node) cursor = cursor.nextSibling;
+        else parent.insertBefore(node, cursor);
+    }
+    while (cursor) { const next = cursor.nextSibling; cursor.remove(); cursor = next; }
+}
+
 export function notify(message, tone = 'info', extra = {}) {
     try { toast(String(message || '操作完成'), { tone, ...extra }); } catch { /* toast is decorative */ }
 }

@@ -39,12 +39,14 @@ export function createFriendsModal(client, { openChat }) {
         ],
     }, document, panels);
     const blockButton = lqButton({ label: '黑名单', icon: 'ban', variant: 'ghost', attrs: { 'data-social-open-blocks': '' } });
-    const addButton = lqButton({ label: '新朋友', icon: 'plus', variant: 'soft', attrs: { 'data-social-open-add': '', 'aria-label': '+新朋友' } });
+    const addButton = lqButton({ icon: 'plus', variant: 'soft', aria: '添加好友',
+        attrs: { 'data-social-open-add': '', 'aria-haspopup': 'dialog', title: '添加好友' } });
     const status = el('p', { class: 'social-status', role: 'status', 'aria-live': 'polite' });
     const body = el('div', { class: 'social-friends' }, [tabsRoot]);
     const dialog = createSocialDialog({ id: 'social-friends', title: '好友', size: 'xl', body, className: 'social-friends-dialog' });
     // 黑名单 sits in the dialog head beside the close button; the count line heads the 好友 panel.
-    dialog.title.after(addButton, blockButton);
+    dialog.title.before(addButton);
+    dialog.title.after(blockButton);
     addButton.addEventListener('click', () => openAdd(addButton));
     blockButton.addEventListener('click', () => void openBlocks(blockButton));
     const tabsApi = enhanceTabs(tabsRoot, { onChange: ({ key }) => load(key) });
@@ -52,6 +54,8 @@ export function createFriendsModal(client, { openChat }) {
     let blocks = null;
     let searchAbort = null;
     let searchTicket = 0, addTicket = 0;
+    // Both dialogs read requests. A confirmed withdrawal also advances the snapshot.
+    let appliedRequestsTicket = 0, relationRefreshAfter = null;
     const loadTickets = new Map();
     let collapsibles = [];
 
@@ -103,7 +107,7 @@ export function createFriendsModal(client, { openChat }) {
             recommendations.length ? group('recommended', '推荐好友', recommendations) : null,
             ...state.errors.map((message) => emptyState('部分内容暂未加载', message, 'error')),
         ].filter(Boolean);
-        panel.replaceChildren(...(sections.length ? sections : [emptyState('从一个招呼开始', '点击右上角「+新朋友」，认识同学、老师或散修。')]));
+        panel.replaceChildren(...(sections.length ? sections : [emptyState('从一个招呼开始', '点击左上角的加号，认识同学、老师或散修。')]));
     }
 
     /* ------------------------------------------------------------ requests */
@@ -125,6 +129,17 @@ export function createFriendsModal(client, { openChat }) {
         ] : []));
         outgoingSlot.hidden = !outgoing.length;
         setTabBadge('friends', (state.requests.incoming || []).length);
+    }
+
+    function applyRequests({ version, requests }) {
+        if (version <= appliedRequestsTicket) return;
+        appliedRequestsTicket = version;
+        state.requests = requests;
+        renderRequests();
+    }
+
+    async function refreshRequests() {
+        applyRequests(await client.readFriendRequests());
     }
 
     function setTabBadge(key, count) {
@@ -224,16 +239,25 @@ export function createFriendsModal(client, { openChat }) {
     // Revealed once /scope answers, so a tier-0 student never sees the search box flash.
     searchBox.hidden = true;
     let aiSearch = null;
+    let composingSearch = false;
 
     function renderUsers(items, title) {
+        const focused = document.activeElement;
+        const identity = results.contains(focused) && focused.closest('.lq-row')?.querySelector('[data-user-card]')?.dataset.userCard;
         if (!items.length) {
             results.replaceChildren(emptyState('没有找到匹配的用户', '只会列出你当前境界可以添加的人。', 'no-results'));
-            return;
+        } else {
+            results.replaceChildren(el('h3', { class: 'social-section-title', text: title }), list(title, items.map((user) => userRow(user))));
         }
-        results.replaceChildren(el('h3', { class: 'social-section-title', text: title }), list(title, items.map((user) => userRow(user))));
+        if (identity) {
+            const profile = results.querySelector(`[data-user-card="${CSS.escape(identity)}"]`);
+            const action = profile?.closest('.lq-row')?.querySelector('[data-act]:not(:disabled)');
+            ((focused.hasAttribute('data-user-card') ? profile : action) || profile || searchField.querySelector('input')).focus({ preventScroll: true });
+        }
     }
 
     async function runSearch() {
+        if (composingSearch || !addDialog.isOpen() || searchBox.hidden) return;
         const ticket = ++searchTicket;
         const q = searchField.querySelector('input').value.trim();
         searchAbort?.abort();
@@ -254,7 +278,8 @@ export function createFriendsModal(client, { openChat }) {
     }
     const debouncedSearch = debounce(runSearch, SEARCH_DEBOUNCE_MS);
     searchField.querySelector('input').addEventListener('input', (event) => { if (!event.isComposing) debouncedSearch(); });
-    searchField.querySelector('input').addEventListener('compositionend', debouncedSearch);
+    searchField.querySelector('input').addEventListener('compositionstart', () => { composingSearch = true; });
+    searchField.querySelector('input').addEventListener('compositionend', () => { composingSearch = false; debouncedSearch(); });
 
     /** 添加 tab: ladder on top; tier 0 shows the locked state instead of the search box. */
     async function loadAdd(force = false) {
@@ -279,11 +304,11 @@ export function createFriendsModal(client, { openChat }) {
         addDialog.open(trigger);
         renderRequests();
         void loadAdd(true);
-        void socialApi.requests().then((data) => { state.requests = data; renderRequests(); }).catch(() => {});
+        void refreshRequests().catch(() => {});
     }
 
     /* ------------------------------------------------------------ data */
-    async function load(key = currentKey()) {
+    async function load(key = currentKey(), requestsReady = false) {
         const panel = panels.get(key);
         if (!panel) return;
         const ticket = (loadTickets.get(key) || 0) + 1;
@@ -291,14 +316,12 @@ export function createFriendsModal(client, { openChat }) {
         panel.setAttribute('aria-busy', 'true');
         try {
             if (key === 'friends') {
-                const responses = await Promise.allSettled([socialApi.friends(), socialApi.requests(), socialApi.recommendations()]);
+                const responses = await Promise.allSettled([socialApi.friends(), requestsReady ? null : refreshRequests(), socialApi.recommendations()]);
                 if (ticket !== loadTickets.get(key)) return;
                 state.errors = responses.filter((item) => item.status === 'rejected').map((item) => errorText(item.reason));
                 if (responses[0].status === 'fulfilled') { state.friends = responses[0].value.items || []; state.counts = responses[0].value.counts || {}; }
-                if (responses[1].status === 'fulfilled') state.requests = responses[1].value;
                 if (responses[2].status === 'fulfilled') state.recommendations = responses[2].value;
                 renderFriends();
-                renderRequests();
             } else if (key === 'groups') {
                 const [groups, friends] = await Promise.all([socialApi.groups(), state.friends.length ? null : socialApi.friends()]);
                 if (ticket !== loadTickets.get(key)) return;
@@ -321,6 +344,7 @@ export function createFriendsModal(client, { openChat }) {
     function settle(button, label) {
         const text = button.querySelector('.lq-btn__label');
         if (text) text.textContent = label; else button.textContent = label;
+        button.setAttribute('aria-label', label);
         button.classList.replace('lq-btn--prominent', 'lq-btn--ghost');
         button.removeAttribute('data-act');
         button.dataset.settled = 'true';
@@ -334,14 +358,20 @@ export function createFriendsModal(client, { openChat }) {
         try {
             if (action === 'accept') { await socialApi.acceptRequest(id); notify('已成为好友。', 'success'); }
             else if (action === 'decline') { await socialApi.declineRequest(id); }
-            else if (action === 'withdraw') { await socialApi.withdrawRequest(id); }
-            else if (action === 'request') {
+            else if (action === 'withdraw') {
+                await socialApi.withdrawRequest(id);
+                appliedRequestsTicket = client.friendRequestRead;
+                state.requests.outgoing = (state.requests.outgoing || []).filter((request) => String(request.id) !== id);
+                renderRequests();
+                if (addDialog.isOpen() && !searchBox.hidden) debouncedSearch();
+                return;
+            } else if (action === 'request') {
                 const message = addDialog.isOpen() ? addMessage.querySelector('input').value.trim() : '';
                 const result = await socialApi.sendRequest(identity, message);
                 notify(result.status === 'accepted' ? '对方也申请过你，已直接成为好友。' : '好友申请已发送。', 'success');
                 settle(button, result.status === 'accepted' ? '已成为好友' : '已申请');
                 client.refreshCounts();
-                void socialApi.requests().then((data) => { state.requests = data; renderRequests(); }).catch(() => {});
+                void refreshRequests().catch(() => {});
                 return;
             } else if (action === 'accept-user') {
                 const pending = (await socialApi.requests()).incoming.find((item) => item.user?.identity === identity);
@@ -383,21 +413,33 @@ export function createFriendsModal(client, { openChat }) {
         blocks.open(trigger);
     }
 
+    // The client's coalesced badge read already fetches incoming and outgoing requests.
+    function relationshipChanged() {
+        if (dialog.isOpen() || addDialog.isOpen()) relationRefreshAfter = client.friendRequestRead;
+    }
     const offs = [
         // A burst of presence frames settles into at most one paint per frame.
         client.on('presence-settled', () => { if (dialog.isOpen() && currentKey() === 'friends') renderFriends(); }),
-        client.on('friend_request', () => { if (dialog.isOpen()) void load(); }),
-        client.on('friend_accepted', () => { if (dialog.isOpen()) void load(); }),
-        client.on('friend_removed', () => { if (dialog.isOpen()) void load(); }),
+        client.on('friend_request', relationshipChanged),
+        client.on('friend_accepted', relationshipChanged),
+        client.on('friend_removed', relationshipChanged),
         client.on('group_changed', () => { if (dialog.isOpen() && currentKey() === 'groups') void load('groups'); }),
-        client.on('counts', ({ pendingIn }) => setTabBadge('friends', pendingIn)),
+        client.on('counts', ({ pendingIn, requestSnapshot }) => {
+            setTabBadge('friends', pendingIn);
+            if (relationRefreshAfter === null || !requestSnapshot || requestSnapshot.version <= relationRefreshAfter) return;
+            relationRefreshAfter = null;
+            if (!dialog.isOpen() && !addDialog.isOpen()) return;
+            applyRequests(requestSnapshot);
+            if (dialog.isOpen() && !state.creating) void load(currentKey(), true);
+            if (addDialog.isOpen() && !searchBox.hidden) debouncedSearch();
+        }),
     ];
 
     return {
         open(trigger, tab = null) {
+            if (tab === 'add') { openAdd(trigger); return; }
             dialog.open(trigger);
-            if (tab === 'add') openAdd(addButton);
-            else if (tab === 'groups' && tab !== currentKey()) tabsApi.select(tab);
+            if (tab === 'groups' && tab !== currentKey()) tabsApi.select(tab);
             else void load();
         },
         isOpen: () => dialog.isOpen(),

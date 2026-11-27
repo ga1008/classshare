@@ -48,6 +48,7 @@ class SocialClient {
         this.pingTimer = 0;
         this.countTimer = 0;
         this.countsAt = 0;          // when the totals were last read (throttle floor)
+        this.friendRequestRead = 0;
         this.bellTimer = 0;
         this.flashTimer = 0;
         this.baseTitle = doc.title;
@@ -239,6 +240,11 @@ class SocialClient {
     }
 
     /* ---------------------------------------------------------------- counts */
+    async readFriendRequests() {
+        const version = ++this.friendRequestRead;
+        return { version, requests: await socialApi.requests() };
+    }
+
     /**
      * Re-read the authoritative unread totals.
      * @param {number} [minInterval] floor in ms since the previous read, so a burst
@@ -254,13 +260,13 @@ class SocialClient {
         this.countTimer = window.setTimeout(async () => {
             this.countsAt = Date.now();
             try {
-                const [conversations, requests] = await Promise.all([socialApi.conversations(), socialApi.requests()]);
+                const [conversations, requestSnapshot] = await Promise.all([socialApi.conversations(), this.readFriendRequests()]);
                 const items = conversations?.items || [];
                 this.mutedKeys = new Set(items.filter((item) => item.muted).map((item) => item.conversation_key));
                 this.unreadMessages = items.reduce((sum, item) => sum + (Number(item.unread) || 0), 0);
-                this.pendingIn = (requests?.incoming || []).length;
+                this.pendingIn = (requestSnapshot.requests?.incoming || []).length;
                 this.paintBadge();
-                this.emit('counts', { unread: this.unreadMessages, pendingIn: this.pendingIn, conversations: items });
+                this.emit('counts', { unread: this.unreadMessages, pendingIn: this.pendingIn, conversations: items, requestSnapshot });
             } catch { /* badge keeps its last value; the socket or next action retries */ }
         }, wait);
     }

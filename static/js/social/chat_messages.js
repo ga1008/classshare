@@ -98,9 +98,12 @@ export function renderMedia(message) {
     return box;
 }
 
-function replyQuote(reply) {
-    return el('button', { type: 'button', class: 'social-quote', 'data-lq-shape': 'surface', 'data-jump': String(reply.id), 'aria-label': `跳到被引用的消息：${reply.sender_name}` }, [
-        el('strong', { text: reply.sender_name || '' }),
+const recallText = (mine, author) => `${mine ? '你' : author || '对方'}撤回了一条消息`;
+const quoteLabel = author => `跳到被引用的消息：${author || ''}`;
+
+function replyQuote(reply, author) {
+    return el('button', { type: 'button', class: 'social-quote', 'data-lq-shape': 'surface', 'data-jump': String(reply.id), 'aria-label': quoteLabel(author) }, [
+        el('strong', { text: author || '' }),
         el('span', { text: reply.preview || '' }),
     ]);
 }
@@ -111,26 +114,45 @@ function systemLine(message, text, extra = '') {
     ]);
 }
 
+/** Update names on a retained row without interrupting media playback or keyboard focus. */
+export function updateMessageNames(node, message, ctx, { author, quotedAuthor, avatarSrc }, previous) {
+    if (['system', 'nudge'].includes(message.message_type)) return;
+    if (message.recalled) {
+        node.firstElementChild.textContent = recallText(isMine(message, ctx.me), author);
+        return;
+    }
+    if (previous.author !== author || previous.avatarSrc !== avatarSrc) {
+        node.querySelector('.lq-bubble__author').textContent = author || '已注销用户';
+        const avatar = node.querySelector('.social-msg__avatar');
+        if (avatar.childElementCount) avatar.replaceChildren(lqAvatar(author, avatarSrc, 32));
+    }
+    const quote = node.querySelector('.social-quote');
+    if (quote && quote.firstElementChild.textContent !== quotedAuthor) {
+        quote.firstElementChild.textContent = quotedAuthor || '';
+        quote.setAttribute('aria-label', quoteLabel(quotedAuthor));
+    }
+}
+
 /**
  * @param {object} message Message (§7)
  * @param {RenderContext} ctx
- * @param {{connected?: boolean}} [options]
+ * @param {{connected?: boolean, author?: string, quotedAuthor?: string, avatarSrc?: string|null}} [options]
  * @returns {HTMLElement}
  */
-export function renderMessage(message, ctx, { connected = false } = {}) {
+export function renderMessage(message, ctx, { connected = false, author = message.sender?.name, quotedAuthor = message.reply_to?.sender_name, avatarSrc = message.sender?.avatar_url } = {}) {
     const mine = isMine(message, ctx.me);
     if (message.message_type === 'system') return systemLine(message, message.body);
     if (message.message_type === 'nudge') return systemLine(message, message.body || '拍了拍', 'social-msg--nudge');
-    if (message.recalled) return systemLine(message, `${mine ? '你' : message.sender?.name || '对方'}撤回了一条消息`);
+    if (message.recalled) return systemLine(message, recallText(mine, author));
 
     const slot = [];
-    if (message.reply_to) slot.push(replyQuote(message.reply_to));
+    if (message.reply_to) slot.push(replyQuote(message.reply_to, quotedAuthor));
     if (message.body) slot.push(renderMarkdown(message.body, message.body_format));
     const media = renderMedia(message);
     if (media) slot.push(media);
     const bubble = createContent('bubble', {
         side: mine ? 'outgoing' : 'incoming',
-        author: message.sender?.name || '已注销用户',
+        author: author || '已注销用户',
         time: formatClock(message.created_at) || '—',
         datetime: message.created_at || undefined,
         connected,
@@ -151,7 +173,7 @@ export function renderMessage(message, ctx, { connected = false } = {}) {
         'data-message-id': String(message.id), 'data-sender': message.sender?.identity || '',
     }, [
         // Pointer shortcut to the sender's 个人信息面板; the keyboard path is the header/member list.
-        el('span', { class: 'social-msg__avatar', 'aria-hidden': 'true', 'data-user-card': showAvatar ? (message.sender?.identity || 'off') : 'off' }, [showAvatar ? lqAvatar(message.sender?.name, message.sender?.avatar_url, 32) : null]),
+        el('span', { class: 'social-msg__avatar', 'aria-hidden': 'true', 'data-user-card': showAvatar ? (message.sender?.identity || 'off') : 'off' }, [showAvatar ? lqAvatar(author, avatarSrc, 32) : null]),
         el('div', { class: 'social-msg__column' }, [bubble, meta]),
     ]);
 }

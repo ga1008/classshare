@@ -537,6 +537,7 @@ def api_profile_avatar(
     user_id: int | None = None,
     user: dict = Depends(get_current_user),
     v: str | None = None,
+    fallback: str | None = None,
 ):
     requested_role = str(role or "").strip().lower()
     requested_user_id = int(user_id) if user_id is not None else None
@@ -569,8 +570,13 @@ def api_profile_avatar(
         except HTTPException:
             pass
 
+    if explicit_target and fallback == "transparent":
+        # The group avatar already has its nickname initial beneath the image.
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"/>'
+    else:
+        svg = _build_avatar_svg(profile)
     return Response(
-        content=_build_avatar_svg(profile),
+        content=svg,
         media_type="image/svg+xml",
         headers={"Cache-Control": "private, max-age=60", "Vary": "Cookie, Authorization"}
         if explicit_target and v == "default" and not file_hash else {"Cache-Control": "no-store"},

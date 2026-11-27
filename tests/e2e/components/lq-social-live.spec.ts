@@ -1,6 +1,7 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 // Explicit opt-in: real SSR/auth/services, but only this freshly seeded fixture.
 const runtime = process.env.SOCIAL_CHAT_RUNTIME ? path.resolve(process.env.SOCIAL_CHAT_RUNTIME) : '';
@@ -30,6 +31,129 @@ async function chat(page: Page) {
     await expect(page.locator('#social-chat')).toBeVisible();
     await expect(page.locator('#social-friends')).toBeHidden();
 }
+
+// The seed provides no uploaded avatar. A profile-name SVG, when present,
+// covers the LQ fallback, so checking the fallback text alone misses leaks.
+async function avatarInitials(avatar: Locator) {
+    return avatar.evaluate(async node => {
+        const image = node.querySelector<HTMLImageElement>('img.lq-avatar__image');
+        const fallback = node.querySelector('.lq-avatar__fallback')?.textContent || '';
+        if (!image) return fallback;
+        const response = await fetch(image.src);
+        const svg = new DOMParser().parseFromString(await response.text(), 'image/svg+xml');
+        const initials = svg.querySelector('text')?.textContent;
+        if (initials) return initials;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 32;
+        const context = canvas.getContext('2d')!;
+        context.drawImage(image, 0, 0, 32, 32);
+        const pixels = context.getImageData(0, 0, 32, 32).data;
+        const transparent = pixels.every((channel, index) => index % 4 !== 3 || channel === 0);
+        return transparent ? fallback : '';
+    });
+}
+
+test('LQ live upper-left shortcut sends and withdraws a friend request', async ({ page }) => {
+    await login(page);
+    await chat(page);
+    const plus = page.locator('[data-social-chat-add]');
+    await plus.click();
+    await expect(page.locator('#social-friends')).toBeHidden();
+    await page.locator('#social-user-search').fill(fixture.otherTeacher.email);
+    const identity = `teacher:${fixture.otherTeacher.id}`;
+    const result = page.locator('.social-results li').filter({ has: page.locator(`[data-user-card="${identity}"]`) });
+    const add = result.getByRole('button', { name: '加好友' });
+    await page.locator('#social-request-message').fill('一起备课');
+    await add.click();
+    await expect(result.getByRole('button', { name: '已申请' })).toBeDisabled();
+    const outgoing = page.locator('.social-add__outgoing li').filter({ has: page.locator(`[data-user-card="${identity}"]`) });
+    await expect(outgoing).toContainText('一起备课');
+    await outgoing.getByRole('button', { name: '撤回' }).click();
+    await expect(outgoing).toHaveCount(0);
+    await expect(add).toBeEnabled();
+    const data = await (await page.request.get(`${origin}/api/social/friends/requests`)).json();
+    expect(data.outgoing.some((item: any) => item.user.identity === identity)).toBe(false);
+    await page.keyboard.press('Escape');
+    await expect(plus).toBeFocused();
+});
+
+test('LQ live student nickname updates open group messages and quotes for another member', async ({ page: teacher, browser }, info) => {
+    const studentContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    try {
+        const student = await studentContext.newPage();
+        await login(teacher);
+        await login(student, true);
+        const { groupId, studentIdentity } = fixture.socialChatSeed;
+        const groupUrl = `${origin}/api/social/groups/${groupId}`;
+        const messagesUrl = `${origin}/api/social/conversations/group:${groupId}/messages`;
+        const reset = await student.request.patch(`${groupUrl}/me`, { data: { nickname: '' } });
+        expect(reset.ok()).toBeTruthy();
+        const group = await (await teacher.request.get(groupUrl)).json();
+        const name = group.members.find((item: any) => item.identity === studentIdentity).name;
+        const send = async (page: Page, body: string, replyTo?: number) => {
+            const response = await page.request.post(messagesUrl, { data: {
+                body, client_nonce: randomUUID(), ...(replyTo ? { reply_to_id: replyTo } : {}),
+            } });
+            expect(response.ok(), await response.text()).toBeTruthy();
+            return (await response.json()).id;
+        };
+        const original = await send(student, '这道合成题我来讲解');
+        const reply = await send(teacher, '好，我们接着讨论', original);
+        const openGroup = async (page: Page) => {
+            await chat(page);
+            await page.locator(`[data-conv="group:${groupId}"]`).click();
+            await expect(page.locator('[data-group-card=members]')).toBeVisible();
+        };
+        await openGroup(teacher);
+        await openGroup(student);
+        const author = teacher.locator(`[data-message-id="${original}"] .lq-bubble__author`);
+        const quote = teacher.locator(`[data-message-id="${reply}"] .social-quote strong`);
+        const member = teacher.locator(`[data-social-member-name][data-user-card="${studentIdentity}"]`);
+        const avatars = [
+            teacher.locator(`[data-message-id="${original}"] .social-msg__avatar`),
+            teacher.locator('.social-member').filter({ has: member }).locator('.social-avatar'),
+        ];
+        const expectInitials = async (displayName: string) => {
+            for (const avatar of avatars) await expect.poll(async () => {
+                const initials = await avatarInitials(avatar);
+                return initials.length > 0 && displayName.includes(initials);
+            }).toBe(true);
+        };
+        await expect(author).toHaveText(name);
+        await expect(quote).toHaveText(name);
+        await expectInitials(name);
+        const messageNode = await teacher.locator(`[data-message-id="${original}"]`).elementHandle();
+        const changeNickname = async (nickname: string) => {
+            await student.locator('[data-group-settings-open]').click();
+            await student.locator('#social-group-nickname').fill(nickname);
+            await student.locator('[data-group-private-form]').getByRole('button', { name: '保存我的设置', exact: true }).click();
+            await expect(student.locator('#social-group-settings')).toContainText('我的设置已保存');
+            await student.keyboard.press('Escape');
+            await expect(student.locator('[data-group-card=members]')).toContainText(`${nickname || name}（我）`);
+        };
+        await changeNickname('折纸星星');
+        await expect(author).toHaveText('折纸星星');
+        await expect(quote).toHaveText('折纸星星');
+        await expect(member).toHaveText('折纸星星');
+        await expectInitials('折纸星星');
+        expect(await messageNode!.evaluate(node => node.isConnected)).toBe(true);
+        await messageNode!.dispose();
+        await teacher.screenshot({ path: info.outputPath('group-member-nickname.png') });
+        const next = await send(student, '改名后再补充一条');
+        await expect(teacher.locator(`[data-message-id="${next}"] .lq-bubble__author`)).toHaveText('折纸星星');
+        await openGroup(teacher);
+        await expect(author).toHaveText('折纸星星');
+        await expect(quote).toHaveText('折纸星星');
+        await changeNickname('');
+        await expect(author).toHaveText(name);
+        await expect(quote).toHaveText(name);
+        await expect(member).toHaveText(name);
+        await expectInitials(name);
+    } finally {
+        await studentContext.close();
+    }
+});
 
 test('LQ live SSR chat entry, own avatar, private group settings and friend invitation', async ({ page, browser }) => {
     const errors: string[] = [];

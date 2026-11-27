@@ -17,9 +17,9 @@ from .social_common import (
     add_event,
     as_int,
     blocked_either,
+    dumps,
     ensure_schema,
     group_key,
-    in_clause,
     normalize_identity,
     now_iso,
     row_dict,
@@ -37,7 +37,7 @@ from .social_conversation_service import (
     media_payload,
     my_memberships,
 )
-from .social_identity_service import load_people, public_users
+from .social_identity_service import conversation_people, load_people, public_users
 from .social_relations import are_friends, group_member_identities
 from . import wanderer_social_resource_service as world_resources
 
@@ -96,19 +96,15 @@ def _groups_created(conn: Any, identity: str) -> int:
     return as_int(row["n"]) if row else 0
 
 
-def _names(conn: Any, identities: Iterable[str]) -> dict[str, str]:
-    return {key: person["name"] for key, person in load_people(conn, identities).items()}
+def _names(conn: Any, group_id: int, identities: Iterable[str]) -> dict[str, str]:
+    return {key: person["name"] for key, person in conversation_people(conn, identities, group_id).items()}
 
 
 def _display(conn: Any, group_id: int, identities: Iterable[str]) -> str:
     """Names joined by 、 using group nicknames when set."""
     wanted = list(identities)
-    names = _names(conn, wanted)
-    marks, params = in_clause(wanted)
-    nicknames = {str(row["member_identity"]): str(row["nickname"] or "") for row in conn.execute(
-        f"SELECT member_identity, nickname FROM social_group_members WHERE group_id = ? AND member_identity IN ({marks})",
-        (int(group_id), *params)).fetchall()}
-    return "、".join(nicknames.get(item) or names.get(item, "成员") for item in wanted)
+    names = _names(conn, group_id, wanted)
+    return "、".join(names.get(item, "成员") for item in wanted)
 
 
 # ---------------------------------------------------------------------------
@@ -241,22 +237,21 @@ def _member_cards(conn: Any, me: str, group_id: int) -> list[dict[str, Any]]:
     return members
 
 
-def _detail_version(conn: Any, group_id: int, updated_at: Any) -> str:
+def _detail_version(conn: Any, group: dict, mine: dict) -> str:
     """Structural fingerprint of a group detail, used as its HTTP ETag.
 
     ``updated_at`` alone misses "member count unchanged, but one person left and
     another joined", so the newest membership row and join stamp are folded in
-    too. Presence and unread stay out: they change constantly and would turn
-    every conditional request into a miss.
+    too. The public roster revision covers in-place edits and private settings
+    are versioned only for the viewer. Presence and unread stay out.
     """
     row = row_dict(conn.execute(
         "SELECT COUNT(*) AS total, COALESCE(MAX(id), 0) AS newest_id, "
         "COALESCE(MAX(joined_at), '') AS newest_joined "
         "FROM social_group_members WHERE group_id = ? AND left_at IS NULL",
-        (int(group_id),)).fetchone())
-    stamp = "|".join(str(part) for part in (
-        updated_at or "", row["total"] or 0, row["newest_id"] or 0, row["newest_joined"] or "",
-    ))
+        (int(group["id"]),)).fetchone())
+    stamp = dumps([group["updated_at"], group["roster_revision"], row["total"], row["newest_id"],
+                   row["newest_joined"], mine["member_identity"], mine["alias"], mine["muted"]])
     return hashlib.sha256(stamp.encode("utf-8")).hexdigest()[:32]
 
 
@@ -299,7 +294,7 @@ def group_detail_if_changed(conn: Any, user: dict, group_id: int,
     me = user_identity(user)
     group = _active_group(conn, group_id)
     mine = _require_member(conn, group_id, me)
-    version = _detail_version(conn, group_id, group["updated_at"])
+    version = _detail_version(conn, group, mine)
     if version in known_versions or "*" in known_versions:
         return None, version
     return _build_detail(conn, me, mine, group, group_id), version
@@ -517,14 +512,20 @@ def set_admin(conn: Any, user: dict, group_id: int, identity: Any, admin: Any,
     serialize_on(conn, "social-attention", [group_key(group_id)])
     _active_group(conn, group_id)
     _require_member(conn, group_id, me, roles=(ROLE_OWNER,))
-    _require_other_member(conn, group_id, me, target)
+    member = _require_other_member(conn, group_id, me, target)
     role = ROLE_ADMIN if bool(admin) else ROLE_MEMBER
     conn.execute("UPDATE social_group_members SET role = ? WHERE group_id = ? AND member_identity = ?",
                  (role, int(group_id), target))
+    if member["role"] != role:
+        _advance_roster_revision(conn, group_id)
     verb = "设为管理员" if role == ROLE_ADMIN else "取消了管理员"
     insert_system_message(conn, group_key(group_id), f"{_display(conn, group_id, [target])} 已被{verb}", events)
     _changed(events, conn, group_id, "admin_changed")
     return {"group_id": int(group_id), "identity": target, "role": role}
+
+
+def _advance_roster_revision(conn: Any, group_id: int) -> None:
+    conn.execute("UPDATE social_groups SET roster_revision = roster_revision + 1 WHERE id = ?", (int(group_id),))
 
 
 def update_me(conn: Any, user: dict, group_id: int, *, nickname: Any = None, muted: Any = None, alias: Any = None,
@@ -547,6 +548,7 @@ def update_me(conn: Any, user: dict, group_id: int, *, nickname: Any = None, mut
     if nickname is not None and nick != str(mine.get("nickname") or ""):
         conn.execute("UPDATE social_group_members SET nickname = ? WHERE id = ?",
                      (nick, int(mine["id"])))
+        _advance_roster_revision(conn, group_id)
         _changed(events, conn, group_id, "nickname")
     if alias is not None and alias != str(mine.get("alias") or ""):
         conn.execute("UPDATE social_group_members SET alias = ? WHERE id = ?", (alias, int(mine["id"])))
@@ -578,7 +580,7 @@ def list_group_files(conn: Any, user: dict, group_id: int, *, kind: Any = None, 
         "SELECT m.*, msg.sender_identity, msg.created_at AS sent_at FROM social_message_media m "
         "JOIN social_messages msg ON msg.id = m.message_id WHERE " + " AND ".join(where)
         + " ORDER BY m.id DESC LIMIT ?", (*params, FILES_PAGE + 1)).fetchall()]
-    names = _names(conn, [row["sender_identity"] for row in rows])
+    names = _names(conn, group_id, [row["sender_identity"] for row in rows])
     items = [{**media_payload(row), "message_id": int(row["message_id"]), "sender_identity": row["sender_identity"],
               "sender_name": names.get(row["sender_identity"], ""), "sent_at": row["sent_at"]}
              for row in rows[:FILES_PAGE]]

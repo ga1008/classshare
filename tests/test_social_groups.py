@@ -1,9 +1,12 @@
 """群组 (docs/social-friends-groups-2026-10-27.md §4, §7)."""
 from __future__ import annotations
 
+import sqlite3
 import unittest
+from contextlib import closing
 from unittest.mock import patch
 
+from classroom_app.db import schema_social
 from classroom_app.services import social_friend_service as friends
 from classroom_app.services import social_conversation_service as conversations
 from classroom_app.services import social_group_service as groups
@@ -219,6 +222,79 @@ class SocialGroupTest(SocialDbTestCase):
         fresh = client.get(f"/api/social/groups/{gid}", headers={"If-None-Match": etag})
         self.assertEqual(fresh.status_code, 200)
         self.assertNotEqual(fresh.headers["ETag"], etag)
+
+    def test_roster_revision_is_added_to_existing_sqlite_groups(self):
+        with closing(sqlite3.connect(":memory:")) as conn:
+            conn.row_factory = sqlite3.Row
+            with patch.object(schema_social, "_SCHEMA_READY", False):
+                schema_social.ensure_social_schema(conn, engine="sqlite")
+            conn.execute("ALTER TABLE social_groups DROP COLUMN roster_revision")
+            conn.execute("INSERT INTO social_groups (id, name, owner_identity, created_at, updated_at) "
+                         "VALUES (1, '旧群', 'student:1', 'c', 'v')")
+            conn.execute("INSERT INTO social_group_members (group_id, member_identity, nickname, joined_at) "
+                         "VALUES (1, 'student:1', '旧昵称', 'c')")
+            conn.commit()
+            with patch.object(schema_social, "_SCHEMA_READY", False):
+                schema_social.ensure_social_schema(conn, engine="sqlite")
+            self.assertEqual(tuple(conn.execute("SELECT name, updated_at, roster_revision FROM social_groups").fetchone()),
+                             ("旧群", "v", 0))
+            self.assertEqual(conn.execute("SELECT nickname FROM social_group_members").fetchone()[0], "旧昵称")
+
+    def test_group_avatar_fallback_hides_account_name_and_preserves_uploads(self):
+        client = self.client_as(self.a)
+        for identity in (self.b, self.teacher):
+            role, pk = identity.split(":")
+            url = f"/api/profile/avatar?role={role}&user_id={pk}"
+            self.assertIn("<text", client.get(url).text)
+            fallback = client.get(url + "&fallback=transparent")
+            self.assertEqual(fallback.status_code, 200)
+            self.assertNotIn("<text", fallback.text)
+            self.assertNotIn("<rect", fallback.text)
+            self.assertEqual(fallback.headers["cache-control"], "no-store")
+            versioned = client.get(url + "&v=default&fallback=transparent")
+            self.assertEqual(versioned.content, fallback.content)
+            self.assertEqual(versioned.headers["cache-control"], "private, max-age=60")
+        self.assertIn("<text", client.get("/api/profile/avatar?fallback=transparent").text)
+
+        image = bytes.fromhex("47494638396101000100800000000000ffffff21f90401000000002c00000000010001000002024401003b")
+        digest = self.put_global_file(image)
+        with self.connect() as conn:
+            conn.execute("INSERT INTO students (student_id_number, name, class_id, avatar_file_hash, avatar_mime_type) "
+                         "VALUES ('S-GROUP-AVATAR', '合成头像', ?, ?, 'image/gif')", (self.class_id, digest))
+            pk = conn.execute("SELECT id FROM students WHERE student_id_number='S-GROUP-AVATAR'").fetchone()[0]
+            conn.commit()
+        url = f"/api/profile/avatar?role=student&user_id={pk}&fallback=transparent"
+        uploaded = client.get(url)
+        self.assertEqual(uploaded.headers["content-type"], "image/gif")
+        self.assertEqual(uploaded.content, image)
+        with self.connect() as conn:
+            conn.execute("UPDATE students SET avatar_file_hash=? WHERE id=?", ("f" * 64, pk))
+            conn.commit()
+        self.assertEqual(client.get(url).content, fallback.content)
+
+    def test_public_nickname_revalidates_roster_without_conflicting_with_group_info(self):
+        card, _ = self.create([self.b])
+        gid = card["id"]
+        viewer = self.client_as(self.a)
+        url = f"/api/social/groups/{gid}"
+        before = viewer.get(url)
+        old_etag = {"If-None-Match": before.headers["ETag"]}
+        self.run_service(groups.update_me, self.user(self.b), gid, alias="私人群代称", muted=True)
+        self.assertEqual(viewer.get(url, headers=old_etag).status_code, 304)
+        for name in ("新的群昵称", ""):
+            self.run_service(groups.update_me, self.user(self.b), gid, nickname=name)
+            fresh = viewer.get(url, headers=old_etag)
+            self.assertEqual(fresh.status_code, 200)
+            detail = fresh.json()
+            self.assertEqual(next(m["nickname"] for m in detail["members"] if m["identity"] == self.b), name)
+            self.assertEqual(detail["updated_at"], before.json()["updated_at"])
+            self.assertNotIn("私人群代称", fresh.text)
+            old_etag = {"If-None-Match": fresh.headers["ETag"]}
+            _, events = self.run_service(groups.update_me, self.user(self.b), gid, nickname=name)
+            self.assertEqual(events, [])
+            self.assertEqual(viewer.get(url, headers=old_etag).status_code, 304)
+        self.run_service(groups.update_group, self.user(self.a), gid, announcement="保存中的公告",
+                         expected_updated_at=before.json()["updated_at"])
 
     def test_conditional_detail_still_refuses_non_members(self):
         card, _ = self.create([self.b])

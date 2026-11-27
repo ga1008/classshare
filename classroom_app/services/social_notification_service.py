@@ -93,7 +93,7 @@ def set_preferences(conn: Any, user: dict, key: str, muted: Any, events=None) ->
 
 
 def _contexts(conn: Any, parsed: dict, targets: list[str], message_id: int) -> dict[str, list[dict]]:
-    from .social_identity_service import load_people
+    from .social_identity_service import conversation_people
 
     if not targets:
         return {}
@@ -107,7 +107,7 @@ def _contexts(conn: Any, parsed: dict, targets: list[str], message_id: int) -> d
         "SELECT sender_identity, body, created_at, message_type FROM social_messages "
         "WHERE conversation_key = ? AND id <= ? AND recalled_at IS NULL AND message_type <> 'system'"
         " ORDER BY id DESC LIMIT 4", (parsed["key"], message_id)).fetchall()]
-    people = load_people(conn, [r["sender_identity"] for r in rows])
+    people = conversation_people(conn, [r["sender_identity"] for r in rows], parsed.get("group_id"))
     blocked = {target: set() for target in targets}
     for table in ("private_message_blocks", "social_blocks"):
         for row in conn.execute(f"SELECT owner_identity, blocked_identity FROM {table} "
@@ -192,10 +192,10 @@ def settle_read(conn: Any, me: str, key: str, through: int) -> None:
         conn.execute(f"UPDATE message_center_notifications SET read_at = ? WHERE id IN ({marks})", (now_iso(), *params))
 
 
-def _refresh_unread_card(conn: Any, row: dict, metadata: dict) -> None:
+def _refresh_unread_card(conn: Any, row: dict, metadata: dict, names: dict[tuple[str, str], str]) -> None:
     """A recall must not erase the earlier unread messages in an aggregate."""
     from .social_conversation_service import dm_read_cursor, require_access
-    from .social_identity_service import load_people
+    from .social_identity_service import conversation_people
 
     target, key = row["recipient_identity"], metadata["conversation_key"]
     try:
@@ -225,8 +225,10 @@ def _refresh_unread_card(conn: Any, row: dict, metadata: dict) -> None:
         return
     message = row_dict(conn.execute("SELECT * FROM social_messages WHERE id = ?", (remaining["last_id"],)).fetchone())
     actor = message["sender_identity"]
-    person = load_people(conn, [actor]).get(actor) or {}
-    name = person.get("name") or "好友"
+    if (key, actor) not in names:
+        person = conversation_people(conn, [actor], parsed.get("group_id")).get(actor) or {}
+        names[key, actor] = person.get("name") or "好友"
+    name = names[key, actor]
     count = as_int(remaining["n"])
     title = f"「{parsed['group']['name']}」有 {count} 条新消息" if parsed["type"] == "group" else f"{name} 发来 {count} 条消息"
     role, pk = split_identity(actor)
@@ -242,10 +244,11 @@ def recall_notifications(conn: Any, message_id: int, key: str) -> None:
                         "WHERE category = 'social' AND ref_type = 'social_message' AND "
                         "(ref_id = ? OR ref_id LIKE ? OR aggregate_key = ?)",
                         (str(message_id), f"mention:{message_id}:%", AGGREGATE_PREFIX + key)).fetchall()
+    names: dict[tuple[str, str], str] = {}
     for row in rows:
         data = json.loads(row["metadata_json"] or "{}")
         if row["aggregate_key"] and row["read_at"] is None:
-            _refresh_unread_card(conn, row_dict(row), data)
+            _refresh_unread_card(conn, row_dict(row), data, names)
         elif as_int(data.get("message_id")) == message_id:
             conn.execute("UPDATE message_center_notifications SET body_preview = ?, read_at = ?, "
                          "target_state = 'gone_message' WHERE id = ?", ("消息已撤回", now_iso(), row["id"]))

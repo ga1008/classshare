@@ -180,6 +180,9 @@ class ScopeEnforcementTest(ScopeWorld):
         self.assertEqual(names, {"测范课程", "测范学院", "测范散修"})
         self.assertFalse(found["locked"])
         self.assertTrue(all(item["can_add"] for item in found["items"]))
+        for literal in ("测_课程", "测%课程"):
+            with self.subTest(literal=literal):
+                self.assertEqual(client.get("/api/social/users/search", params={"q": literal}).json()["items"], [])
 
     def test_card_and_public_user_report_can_add(self):
         self.set_tier(self.a, 1)

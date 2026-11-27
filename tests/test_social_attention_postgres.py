@@ -180,6 +180,33 @@ class SocialAttentionPostgresTest(unittest.TestCase):
         with self.connect() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM social_messages').fetchone()[0], 1)
 
+    def test_roster_revision_migrates_old_groups_and_serializes_nickname_changes(self):
+        self.seed_group()
+        with self.connect() as conn:
+            conn.execute("UPDATE social_group_members SET nickname='existing', alias='private'")
+            conn.execute("ALTER TABLE social_groups DROP COLUMN roster_revision")
+            old_group = dict(conn.execute("SELECT * FROM social_groups WHERE id=1").fetchone())
+            with patch.object(schema_social, "_SCHEMA_READY", False):
+                schema_social.ensure_social_schema(conn)
+            conn.commit()
+            group = dict(conn.execute("SELECT * FROM social_groups WHERE id=1").fetchone())
+            self.assertEqual(group.pop("roster_revision"), 0)
+            self.assertEqual(group, old_group)
+            self.assertEqual(conn.execute("SELECT nickname FROM social_group_members").fetchone()[0], "existing")
+
+        def rename(index):
+            with self.connect() as conn:
+                groups.update_me(conn, {"role": "student", "id": 2}, 1, nickname=f"nickname {index}")
+                conn.commit()
+        self.race(4, rename)
+        with self.connect() as conn:
+            with patch.object(schema_social, "_SCHEMA_READY", False):
+                schema_social.ensure_social_schema(conn)
+            row = conn.execute("SELECT roster_revision, updated_at FROM social_groups WHERE id=1").fetchone()
+            self.assertEqual(row["roster_revision"], 4)
+            self.assertEqual(row["updated_at"], "v1")
+            self.assertEqual(conn.execute("SELECT alias FROM social_group_members").fetchone()[0], "private")
+
     def test_alias_additive_migration_keeps_existing_member_data(self):
         self.seed_group()
         with self.connect() as conn:

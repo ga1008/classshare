@@ -12,9 +12,9 @@ import { lanStore } from './social_lan.js';
 import { createChatComposer } from './chat_composer.js';
 import { createChatSidebar } from './chat_sidebar.js';
 import { recoverMessageWindow } from './message_recovery.js';
-import { daySeparator, isMine, joinsPrevious, renderMessage } from './chat_messages.js';
+import { daySeparator, isMine, joinsPrevious, renderMessage, updateMessageNames } from './chat_messages.js';
 import {
-    createSocialDialog, dayKey, debounce, el, emptyState, ensureMarkdown, formatRelative, lqAvatar, lqBadge, lqButton, notify,
+    createSocialDialog, dayKey, debounce, el, emptyState, ensureMarkdown, formatRelative, groupAvatarSource, lqAvatar, lqBadge, lqButton, notify, reconcileChildren,
 } from './social_dom.js';
 
 const PAGE = 50;
@@ -31,15 +31,6 @@ const SNAPSHOT_MS = 30_000;
 const DETAIL_DEBOUNCE_MS = 500;
 // A 200-member roster is ~77 KB, so keep only a handful of them.
 const GROUP_DETAIL_CACHE_MAX = 8;
-
-function reconcileChildren(parent, nodes) {
-    let cursor = parent.firstChild;
-    for (const node of nodes) {
-        if (cursor === node) cursor = cursor.nextSibling;
-        else parent.insertBefore(node, cursor);
-    }
-    while (cursor) { const next = cursor.nextSibling; cursor.remove(); cursor = next; }
-}
 
 function setText(node, value) {
     const text = String(value ?? '');
@@ -100,6 +91,11 @@ export function createChatModal(client, { openFriends }) {
             window.clearTimeout(typingTimer);
         },
     });
+    dialog.title.before(lqButton({
+        icon: 'plus', variant: 'soft', aria: '添加好友',
+        attrs: { 'data-social-chat-add': '', 'aria-haspopup': 'dialog', title: '添加好友' },
+        onClick: (event) => openFriends(event.currentTarget, 'add'),
+    }));
 
     const conversations = new Map();
     let order = [];
@@ -144,7 +140,7 @@ export function createChatModal(client, { openFriends }) {
         if (!isVisible()) return;
         paintRequestCount();
         if (!order.length) {
-            if (!listItems.querySelector('.social-empty')) listItems.replaceChildren(el('li', {}, [emptyState('还没有会话', '从左下角的好友管理开始认识新朋友。')]));
+            if (!listItems.querySelector('.social-empty')) listItems.replaceChildren(el('li', {}, [emptyState('还没有会话', '点击左上角的加号添加好友。')]));
             rows.clear();
             return;
         }
@@ -255,6 +251,11 @@ export function createChatModal(client, { openFriends }) {
     }, DETAIL_DEBOUNCE_MS);
 
     /* ------------------------------------------------------------ messages */
+    function setGroupDetail(current, detail) {
+        current.detail = detail;
+        current.membersByIdentity = new Map((detail?.members || []).map(member => [member.identity, member]));
+    }
+
     const ctxFor = () => ({
         me: client.me,
         type: active?.type || 'dm',
@@ -277,11 +278,21 @@ export function createChatModal(client, { openFriends }) {
                 nodes.push(dayNodes.get(day));
             }
             const connected = joinsPrevious(last, message);
+            const member = active.membersByIdentity?.get(message.sender?.identity);
+            const quotedMember = active.membersByIdentity?.get(message.reply_to?.sender_identity);
+            const author = member?.nickname || member?.name || message.sender?.name;
+            const quotedAuthor = quotedMember?.nickname || quotedMember?.name || message.reply_to?.sender_name;
+            const src = member?.avatar_url || message.sender?.avatar_url;
+            const avatarSrc = ctx.type === 'group' ? groupAvatarSource(src, member ? member.nickname : message.sender?.nickname) : src;
+            const display = { connected, author, quotedAuthor, avatarSrc };
             const signature = `${connected}|${ctx.canRecall(message)}|${JSON.stringify(message)}`;
             let cached = messageNodes.get(message.id);
             if (cached?.signature !== signature) {
-                cached = { signature, node: renderMessage(message, ctx, { connected }) };
+                cached = { signature, display, node: renderMessage(message, ctx, display) };
                 messageNodes.set(message.id, cached);
+            } else if (cached.display.author !== author || cached.display.quotedAuthor !== quotedAuthor || cached.display.avatarSrc !== avatarSrc) {
+                updateMessageNames(cached.node, message, ctx, display, cached.display);
+                cached.display = display;
             }
             nodes.push(cached.node);
             kept.add(message.id);
@@ -435,7 +446,7 @@ export function createChatModal(client, { openFriends }) {
         function groupDetailFor(groupId) {
             const cached = cachedGroupDetail(groupId);
             if (!cached) return readGroupDetail(groupId).then((result) => result.detail);
-            current.detail = cached.detail;
+            setGroupDetail(current, cached.detail);
             void reloadGroupDetail();
             return cached.detail;
         }
@@ -469,7 +480,7 @@ export function createChatModal(client, { openFriends }) {
             current.hasMore = recovered.hasMore;
             current.syncCursor = recovered.cursor;
             current.peerRead = Number(page.peer_read_message_id) || 0;
-            if (detailVersion === groupVersion) current.detail = detail;
+            if (type === 'group' && detailVersion === groupVersion) setGroupDetail(current, detail);
             current.muted = Boolean(page.muted);
             current.mentionQuota = page.mention_quota || null;
             current.loadedAt = Date.now();
@@ -521,7 +532,7 @@ export function createChatModal(client, { openFriends }) {
                 writable, readOnlyReason: writable ? '' : '你们已不是好友，无法继续发送消息。' });
         } else {
             composer.setConversation({
-                key: active.key, type: 'group', members: active.detail?.members || [], myRole: active.detail?.my_role,
+                key: active.key, type: 'group', members: active.detail?.members || [], membersByIdentity: active.membersByIdentity, myRole: active.detail?.my_role,
                 mentionQuota: active.mentionQuota,
                 writable: Boolean(active.detail), readOnlyReason: active.detail ? '' : '你不在该群聊中。',
             });
@@ -583,10 +594,10 @@ export function createChatModal(client, { openFriends }) {
         const cached = groupDetails.get(id);
         const pending = conditionalDetail(id, { etag: cached?.etag || '' }).then((result) => {
             if (result.notModified) {
-                if (cached) cached.at = Date.now();
+                if (cached && groupDetailFlight.get(id) === pending) cached.at = Date.now();
                 return { detail: cached?.detail || null, notModified: Boolean(cached) };
             }
-            if (result.detail) keepGroupDetail(id, { detail: result.detail, etag: result.etag, at: Date.now() });
+            if (result.detail && groupDetailFlight.get(id) === pending) keepGroupDetail(id, { detail: result.detail, etag: result.etag, at: Date.now() });
             return { detail: result.detail, notModified: false };
         }).finally(() => { if (groupDetailFlight.get(id) === pending) groupDetailFlight.delete(id); });
         groupDetailFlight.set(id, pending);
@@ -600,21 +611,22 @@ export function createChatModal(client, { openFriends }) {
         let result;
         try { result = await readGroupDetail(current.groupId); }
         catch (failure) {
-            if (![403, 404].includes(failure.status)) return;
+            if (active !== current || version !== groupVersion || ![403, 404].includes(failure.status)) return;
             groupDetails.delete(Number(current.groupId));
             result = { detail: null, notModified: false };
         }
         if (active !== current || version !== groupVersion || !isVisible()) return;
         // ETag hit: the roster, counts and title already on screen are current.
-        if (result.notModified) return;
+        if (result.notModified && current.detail === result.detail) return;
         const detail = result.detail;
-        current.detail = detail;
+        setGroupDetail(current, detail);
         if (detail) {
             const title = detail.display_name || detail.name;
             const item = conversations.get(current.key);
             if (item) { item.title = title; item.group_name = detail.name; }
             setHeading(title);
             renderList();
+            if (current.messages.length) renderMessages();
         }
         applyComposer();
         sidebarKey = null;
@@ -627,6 +639,14 @@ export function createChatModal(client, { openFriends }) {
         listVersion++;
         const key = active?.key;
         if ((meta.key && meta.key !== key) || (meta.groupId && active?.groupId !== Number(meta.groupId))) { refreshListSoon(); return; }
+        if (reason === 'me' && meta.detail) {
+            // The PATCH is committed. A roster read started before it cannot undo it.
+            groupDetailFlight.delete(active.groupId);
+            groupDetails.delete(active.groupId);
+            setGroupDetail(active, meta.detail);
+            applyComposer();
+            if (active.messages.length) renderMessages();
+        }
         if (reason === 'unfriended' || reason === 'blocked') {
             friendsLoadedAt = 0;
             friendsVersion++;
@@ -762,7 +782,11 @@ export function createChatModal(client, { openFriends }) {
         client.on('group_changed', ({ group_id: groupId }) => {
             listLoadedAt = 0;
             listVersion++;
-            if (active?.groupId === Number(groupId)) active.dirty = true;
+            const id = Number(groupId);
+            groupDetailFlight.delete(id);
+            const cached = groupDetails.get(id);
+            if (cached) cached.at = 0;
+            if (active?.groupId === id) { active.dirty = true; groupVersion++; }
             if (!isVisible()) return;
             // A burst of group changes costs one list refresh plus one detail check.
             if (active?.type === 'group' && active.groupId === Number(groupId)) conversationChanged();
@@ -833,7 +857,7 @@ export function createChatModal(client, { openFriends }) {
             const target = key || active?.key || order[0];
             if (target && ready) await select(target);
             else if (!target) {
-                scroller.replaceChildren(emptyState('从一个招呼开始', '在左下角打开好友管理，添加朋友或加入群组。'));
+                scroller.replaceChildren(emptyState('从一个招呼开始', '点击左上角的加号添加好友，或在好友管理中查看群组。'));
                 layout.dataset.listOpen = 'true';
                 listToggle.setAttribute('aria-expanded', 'true');
                 sidebar.clear();

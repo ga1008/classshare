@@ -127,7 +127,8 @@ export function createGroupSettings({ client, detail, onChanged, onUnavailable }
         try {
             const me = await socialApi.updateMe(groupId, patch);
             if (disposed || ticket !== generation) return;
-            latest = { ...latest, display_name: me.display_name || latest.name, me: { ...latest.me, ...me } };
+            const members = latest.members.map(member => member.identity === client.me ? { ...member, nickname: me.nickname } : member);
+            latest = { ...latest, members, display_name: me.display_name || latest.name, me: { ...latest.me, ...me } };
             applyMine(latest); client.setMuted(key, me.muted); client.refreshCounts();
             message(privateStatus, '我的设置已保存');
             onChanged?.('me', { groupId, key, me, detail: latest });

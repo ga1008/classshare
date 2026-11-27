@@ -77,6 +77,7 @@ def _table_statements(id_column: str) -> list[str]:
             announcement TEXT NOT NULL DEFAULT '',
             owner_identity TEXT NOT NULL,
             max_members INTEGER NOT NULL DEFAULT 200,
+            roster_revision INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             dissolved_at TEXT
@@ -321,6 +322,7 @@ _INDEX_STATEMENTS = (
 # (which discovers every ``*_file_hash`` column) sees social references
 # (docs/global-file-reference-protocol.md); it is cleared on expiry.
 _ADDED_COLUMNS = (
+    ("social_groups", "roster_revision", "INTEGER NOT NULL DEFAULT 0"),
     ("social_group_members", "alias", "TEXT NOT NULL DEFAULT ''"),
     ("social_message_media", "global_file_hash", "TEXT NOT NULL DEFAULT ''"),
     ("social_media_tokens", "global_file_hash", "TEXT NOT NULL DEFAULT ''"),
